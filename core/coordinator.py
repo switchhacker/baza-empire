@@ -1,7 +1,5 @@
 """
 Group chat coordinator — decides which agents should respond to a message.
-Routes each agent through the GPU pool so responses stream one by one,
-each grabbing the next free GPU as soon as it's available.
 """
 
 import re
@@ -9,30 +7,33 @@ import threading
 from core.gpu_pool import gpu_pool
 
 # Keywords that trigger each agent
+# Rules:
+#   - Agent name always triggers them
+#   - Keywords must be specific enough to avoid false positives
+#   - Phil should NOT respond to general "skills" or tech questions
 AGENT_TRIGGERS = {
     "brad_gant": [
         "infrastructure", "research", "intel", "server", "network", "hardware",
-        "data", "analysis", "investigate", "find out", "look into", "specs",
-        "performance", "monitoring", "brad"
+        "specs", "performance", "monitoring", "brad", "gant"
     ],
     "simon_bately": [
         "business", "client", "customer", "invoice", "payment", "payroll",
-        "website", "marketing", "email", "call", "meeting", "proposal",
-        "contract", "project", "schedule", "ahb123", "allhome", "simon"
+        "website", "marketing", "proposal", "leads", "lead generation",
+        "schedule", "allhome", "ahbco", "simon", "bately"
     ],
     "claw_batto": [
         "code", "build", "deploy", "install", "linux", "docker", "git",
-        "script", "bug", "fix", "database", "api", "server setup", "devops",
-        "python", "javascript", "node", "npm", "claw"
+        "script", "bug", "fix", "database", "api", "devops",
+        "python", "javascript", "node", "npm", "claw", "batto"
     ],
     "phil_hass": [
-        "legal", "law", "compliance", "contract", "liability", "tax",
-        "finance", "accounting", "regulation", "risk", "insurance",
-        "llc", "incorporate", "permit", "license", "phil"
+        "legal", "law", "compliance", "liability", "tax",
+        "accounting", "regulation", "risk", "insurance",
+        "llc", "incorporate", "permit", "license", "gdpr", "ccpa",
+        "phil", "hass"
     ]
 }
 
-# Agent display names for group chat headers
 AGENT_DISPLAY_NAMES = {
     "brad_gant": "Brad Gant",
     "simon_bately": "Simon Bately",
@@ -44,35 +45,33 @@ AGENT_DISPLAY_NAMES = {
 def should_agent_respond(agent_id: str, message: str, is_group: bool) -> bool:
     """
     In a private chat, always respond.
-    In a group chat, only respond if message is relevant to the agent.
+    In a group chat, only respond if the message is relevant to this agent.
     """
     if not is_group:
         return True
 
     message_lower = message.lower()
 
-    # Always respond if directly mentioned by name
-    agent_name = agent_id.replace("_", " ").lower()
-    if agent_name in message_lower:
-        return True
-
-    # Check keyword triggers
+    # Check keyword triggers (whole-word match to avoid partial hits)
     triggers = AGENT_TRIGGERS.get(agent_id, [])
     for trigger in triggers:
-        if trigger in message_lower:
-            return True
+        # Use word boundary matching for single words, substring for phrases
+        if " " in trigger:
+            if trigger in message_lower:
+                return True
+        else:
+            if re.search(rf"\b{re.escape(trigger)}\b", message_lower):
+                return True
 
     return False
 
 
 def get_relevant_agents(message: str, all_agents: list) -> list:
-    """Return list of agent IDs that should respond to this message in a group."""
     relevant = []
     for agent_id in all_agents:
         if should_agent_respond(agent_id, message, is_group=True):
             relevant.append(agent_id)
 
-    # If no specific agent matched, default to brad_gant as coordinator
     if not relevant:
         relevant = ["brad_gant"]
 
@@ -81,28 +80,13 @@ def get_relevant_agents(message: str, all_agents: list) -> list:
 
 def run_group_responses(agents: list, run_agent_fn, message: str,
                         send_fn, history: list = None):
-    """
-    Run multiple agents sequentially through the GPU pool.
-    Each agent waits for a free GPU, streams its response, then releases.
-    Responses are sent one by one as each agent finishes.
-
-    Args:
-        agents: list of agent_id strings to run
-        run_agent_fn: callable(agent_id, message, history) -> str
-        message: the user message
-        send_fn: callable(agent_id, text) — sends the response to the user
-        history: shared conversation history
-    """
     def run_one(agent_id):
         try:
             response = run_agent_fn(agent_id, message, history or [])
-            name = AGENT_DISPLAY_NAMES.get(agent_id, agent_id)
             send_fn(agent_id, response)
         except Exception as e:
             send_fn(agent_id, f"_(error: {str(e)})_")
 
-    # Run agents sequentially — each blocks on GPU pool internally
-    # Two can run in parallel if both GPUs are free
     threads = []
     for agent_id in agents:
         t = threading.Thread(target=run_one, args=(agent_id,), daemon=True)
@@ -114,7 +98,6 @@ def run_group_responses(agents: list, run_agent_fn, message: str,
 
 
 def build_group_context(history: list, current_task: str) -> str:
-    """Build context string for group chat so agents know what's been discussed."""
     context = ""
     if current_task:
         context += f"Current task: {current_task}\n\n"
@@ -127,12 +110,10 @@ def build_group_context(history: list, current_task: str) -> str:
 
 
 def is_task_complete(response: str) -> bool:
-    """Check if an agent signaled task completion."""
     return "TASK_COMPLETE" in response.upper()
 
 
 def gpu_status() -> str:
-    """Return a readable GPU pool status string."""
     slots = gpu_pool.status()
     lines = ["GPU Pool:"]
     for s in slots:
