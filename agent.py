@@ -236,7 +236,7 @@ def main():
     ))
 
     log.info(f"{agent['name']} is listening...")
-    app.run_polling(drop_pending_updates=True, concurrent_updates=True)
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
