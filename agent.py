@@ -1,6 +1,6 @@
 """
 Baza Empire Agent — runs as a single instance per agent.
-Usage: python agent.py --agent brad_gant
+Usage: python agent.py --agent claw_batto
 """
 
 import os
@@ -11,7 +11,7 @@ import logging
 import argparse
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TimedOut, RetryAfter
 from core.ollama_client import chat_stream_pooled, both_instances_available
 from core.memory import init_db, save_message, get_history, get_active_task, set_task, complete_task
 from core.coordinator import should_agent_respond, build_group_context, is_task_complete
@@ -19,7 +19,6 @@ from core.coordinator import should_agent_respond, build_group_context, is_task_
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
-# Load config
 with open("config/agents.yaml") as f:
     CONFIG = yaml.safe_load(f)
 
@@ -42,7 +41,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, age
     is_group = message.chat.type in ["group", "supergroup"]
     agent_id = agent["id"]
 
-    # In group chats, check if this agent should respond
     if is_group:
         if not should_agent_respond(agent_id, user_text, is_group=True):
             return
@@ -51,94 +49,74 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, age
 
     log.info(f"[{agent['name']}] chat_id={chat_id} msg={user_text[:80]}")
 
-    # Get conversation history scoped to THIS agent
     history = get_history(chat_id, agent_id=agent_id, limit=15)
     current_task = get_active_task(chat_id, agent_id=agent_id)
 
-    # Set task if new conversation
     if not current_task:
         set_task(chat_id, user_text[:500], agent_id=agent_id)
 
-    # Build messages for Ollama
     messages = []
 
-    # Add group context if needed
     if is_group and history:
         group_ctx = build_group_context(history, current_task)
         messages.append({"role": "user", "content": f"[Context]\n{group_ctx}"})
         messages.append({"role": "assistant", "content": "Understood, I have the context."})
 
-    # Add recent history (only this agent's own exchanges)
     for msg in history[-8:]:
         role = "assistant" if msg.get("agent") == agent_id else "user"
         messages.append({"role": role, "content": msg["content"]})
 
-    # Add current message
     messages.append({"role": "user", "content": user_text})
 
-    # Save user message
     save_message(chat_id, agent_id, "user", user_text)
 
-    # Send typing indicator
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-
-    # Send placeholder message
     sent = await message.reply_text("✍️ thinking...")
-
-    # Stream response via GPU pool (blocks until a GPU is free)
-    full_response = ""
-    last_edit_len = 0
-    UPDATE_EVERY = 30
 
     try:
         loop = asyncio.get_event_loop()
 
-        def _stream():
-            return list(chat_stream_pooled(
+        def _run_inference():
+            full = ""
+            for chunk in chat_stream_pooled(
                 model=agent["model"],
                 messages=messages,
                 system_prompt=agent["system_prompt"],
                 agent_id=agent_id
-            ))
+            ):
+                full += chunk
+            return full
 
-        # Run blocking GPU pool + inference in thread pool
-        chunks = await loop.run_in_executor(None, _stream)
+        # Run blocking inference in thread — no live edits, just wait for full response
+        full_response = await loop.run_in_executor(None, _run_inference)
 
-        for chunk in chunks:
-            full_response += chunk
-
-            if len(full_response) - last_edit_len >= UPDATE_EVERY:
-                try:
-                    display = full_response[-4000:] if len(full_response) > 4000 else full_response
-                    await sent.edit_text(display)
-                    last_edit_len = len(full_response)
-                    await asyncio.sleep(0.05)
-                except BadRequest:
-                    pass
-
-        # Final edit with complete response
-        if full_response:
-            if is_task_complete(full_response):
-                complete_task(chat_id, agent_id=agent_id)
-                full_response = full_response.replace("TASK_COMPLETE", "").strip()
-
-            if len(full_response) > 4000:
-                await sent.edit_text(full_response[:4000])
-                for chunk in [full_response[i:i+4000] for i in range(4000, len(full_response), 4000)]:
-                    await message.reply_text(chunk)
-            else:
-                try:
-                    await sent.edit_text(full_response)
-                except BadRequest:
-                    pass
-
-            save_message(chat_id, agent_id, "assistant", full_response)
-        else:
+        if not full_response:
             await sent.edit_text("_(no response)_")
+            return
+
+        if is_task_complete(full_response):
+            complete_task(chat_id, agent_id=agent_id)
+            full_response = full_response.replace("TASK_COMPLETE", "").strip()
+
+        save_message(chat_id, agent_id, "assistant", full_response)
+
+        # Send final response — split if over 4000 chars
+        chunks = [full_response[i:i+4000] for i in range(0, len(full_response), 4000)]
+        try:
+            await sent.edit_text(chunks[0])
+        except (BadRequest, TimedOut):
+            await message.reply_text(chunks[0])
+
+        for extra in chunks[1:]:
+            await asyncio.sleep(0.3)
+            await message.reply_text(extra)
 
     except Exception as e:
-        log.error(f"Streaming error: {e}", exc_info=True)
-        await sent.edit_text(f"Error: {str(e)}")
+        log.error(f"Inference error: {e}", exc_info=True)
+        try:
+            await sent.edit_text(f"⚠️ Error: {str(e)}")
+        except Exception:
+            pass
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE, agent: dict):
     await update.message.reply_text(
@@ -163,14 +141,13 @@ async def handle_reset(update: Update, context: ContextTypes.DEFAULT_TYPE, agent
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--agent", required=True, help="Agent ID (e.g. brad_gant)")
+    parser.add_argument("--agent", required=True)
     args = parser.parse_args()
 
     init_db()
 
-    # Check both GPU instances
     status = both_instances_available()
-    log.info(f"GPU status — AMD/Vulkan: {status['amd_vulkan']} | NVIDIA/CUDA: {status['nvidia_cuda']}")
+    log.info(f"GPU status — AMD:11434={status['amd_vulkan']} | NVIDIA:11435={status['nvidia_cuda']}")
 
     if not status['amd_vulkan'] and not status['nvidia_cuda']:
         log.error("No Ollama instances running! Start with: ollama serve")
