@@ -2,7 +2,7 @@
 set -e
 
 FRAMEWORK_DIR="/home/switchhacker/baza-empire/agent-framework-v3"
-AGENTS=("brad_gant" "simon_bately" "claw_batto" "phil_hass")
+AGENTS=("simon_bately" "claw_batto" "phil_hass")
 
 echo "=== Deploying Baza Agent Services ==="
 
@@ -41,5 +41,5 @@ done
 
 echo ""
 echo "=== All agents deployed ==="
-echo "Status:  sudo systemctl status baza-agent-brad-gant baza-agent-simon-bately baza-agent-claw-batto baza-agent-phil-hass"
-echo "Logs:    sudo journalctl -fu baza-agent-brad-gant"
+echo "Status:  sudo systemctl status baza-agent-simon-bately baza-agent-claw-batto baza-agent-phil-hass"
+echo "Logs:    sudo journalctl -fu baza-agent-claw-batto"

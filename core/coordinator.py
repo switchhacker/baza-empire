@@ -1,21 +1,13 @@
 """
 Group chat coordinator — decides which agents should respond to a message.
+Active agents: simon_bately, claw_batto, phil_hass
 """
 
 import re
 import threading
 from core.gpu_pool import gpu_pool
 
-# Keywords that trigger each agent
-# Rules:
-#   - Agent name always triggers them
-#   - Keywords must be specific enough to avoid false positives
-#   - Phil should NOT respond to general "skills" or tech questions
 AGENT_TRIGGERS = {
-    "brad_gant": [
-        "infrastructure", "research", "intel", "server", "network", "hardware",
-        "specs", "performance", "monitoring", "brad", "gant"
-    ],
     "simon_bately": [
         "business", "client", "customer", "invoice", "payment", "payroll",
         "website", "marketing", "proposal", "leads", "lead generation",
@@ -24,7 +16,8 @@ AGENT_TRIGGERS = {
     "claw_batto": [
         "code", "build", "deploy", "install", "linux", "docker", "git",
         "script", "bug", "fix", "database", "api", "devops",
-        "python", "javascript", "node", "npm", "claw", "batto"
+        "python", "javascript", "node", "npm", "claw", "batto",
+        "server", "infrastructure", "network", "hardware", "research"
     ],
     "phil_hass": [
         "legal", "law", "compliance", "liability", "tax",
@@ -35,27 +28,21 @@ AGENT_TRIGGERS = {
 }
 
 AGENT_DISPLAY_NAMES = {
-    "brad_gant": "Brad Gant",
     "simon_bately": "Simon Bately",
     "claw_batto": "Claw Batto",
     "phil_hass": "Phil Hass",
 }
 
+ACTIVE_AGENTS = ["simon_bately", "claw_batto", "phil_hass"]
+
 
 def should_agent_respond(agent_id: str, message: str, is_group: bool) -> bool:
-    """
-    In a private chat, always respond.
-    In a group chat, only respond if the message is relevant to this agent.
-    """
     if not is_group:
         return True
 
     message_lower = message.lower()
-
-    # Check keyword triggers (whole-word match to avoid partial hits)
     triggers = AGENT_TRIGGERS.get(agent_id, [])
     for trigger in triggers:
-        # Use word boundary matching for single words, substring for phrases
         if " " in trigger:
             if trigger in message_lower:
                 return True
@@ -72,8 +59,9 @@ def get_relevant_agents(message: str, all_agents: list) -> list:
         if should_agent_respond(agent_id, message, is_group=True):
             relevant.append(agent_id)
 
+    # Default fallback to simon if nothing matched
     if not relevant:
-        relevant = ["brad_gant"]
+        relevant = ["simon_bately"]
 
     return relevant
 
