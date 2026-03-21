@@ -12,7 +12,7 @@ import argparse
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from telegram.error import BadRequest
-from core.ollama_client import chat_stream, is_available
+from core.ollama_client import chat_stream_pooled, both_instances_available
 from core.memory import init_db, save_message, get_history, get_active_task, set_task, complete_task
 from core.coordinator import should_agent_respond, build_group_context, is_task_complete
 
@@ -85,17 +85,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, age
     # Send placeholder message
     sent = await message.reply_text("✍️ thinking...")
 
-    # Stream response from Ollama
+    # Stream response via GPU pool (blocks until a GPU is free)
     full_response = ""
     last_edit_len = 0
     UPDATE_EVERY = 30
 
     try:
-        for chunk in chat_stream(
-            model=agent["model"],
-            messages=messages,
-            system_prompt=agent["system_prompt"]
-        ):
+        loop = asyncio.get_event_loop()
+
+        def _stream():
+            return list(chat_stream_pooled(
+                model=agent["model"],
+                messages=messages,
+                system_prompt=agent["system_prompt"],
+                agent_id=agent_id
+            ))
+
+        # Run blocking GPU pool + inference in thread pool
+        chunks = await loop.run_in_executor(None, _stream)
+
+        for chunk in chunks:
             full_response += chunk
 
             if len(full_response) - last_edit_len >= UPDATE_EVERY:
@@ -107,7 +116,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, age
                 except BadRequest:
                     pass
 
-        # Final edit
+        # Final edit with complete response
         if full_response:
             if is_task_complete(full_response):
                 complete_task(chat_id, agent_id=agent_id)
@@ -128,8 +137,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, age
             await sent.edit_text("_(no response)_")
 
     except Exception as e:
-        log.error(f"Streaming error: {e}")
-        await sent.edit_text("Something went wrong. Try again.")
+        log.error(f"Streaming error: {e}", exc_info=True)
+        await sent.edit_text(f"Error: {str(e)}")
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE, agent: dict):
     await update.message.reply_text(
@@ -140,7 +149,6 @@ async def handle_reset(update: Update, context: ContextTypes.DEFAULT_TYPE, agent
     chat_id = update.message.chat_id
     agent_id = agent["id"]
     complete_task(chat_id, agent_id=agent_id)
-    # Clear this agent's message history
     try:
         from core.memory import get_conn
         conn = get_conn()
@@ -160,8 +168,12 @@ def main():
 
     init_db()
 
-    if not is_available():
-        log.error("Ollama is not running! Start it with: ollama serve")
+    # Check both GPU instances
+    status = both_instances_available()
+    log.info(f"GPU status — AMD/Vulkan: {status['amd_vulkan']} | NVIDIA/CUDA: {status['nvidia_cuda']}")
+
+    if not status['amd_vulkan'] and not status['nvidia_cuda']:
+        log.error("No Ollama instances running! Start with: ollama serve")
         sys.exit(1)
 
     agent = load_agent(args.agent)
