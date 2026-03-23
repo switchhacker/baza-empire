@@ -1,0 +1,15 @@
+[Unit]
+Description=Baza Empire Agent Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3/dashboard
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python app.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

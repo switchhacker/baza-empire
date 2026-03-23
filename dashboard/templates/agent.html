@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ agent.name }} — Baza Empire</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0f; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-bottom: 1px solid #0f3460;
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .back-btn { color: #8888cc; text-decoration: none; font-size: 14px; margin-right: 8px; }
+    .back-btn:hover { color: #e94560; }
+    .header h1 { font-size: 22px; font-weight: 700; color: #e94560; }
+    .header span { color: #a0a0b0; font-size: 14px; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 32px; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: #111120;
+      border: 1px solid #1e1e3a;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card-title { font-size: 12px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 16px; }
+
+    .status-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .status-badge { font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; }
+    .status-online { background: #0d2b1f; color: #00d084; border: 1px solid #00d084; }
+    .status-offline { background: #2b0d0d; color: #ff4d4d; border: 1px solid #ff4d4d; }
+    .status-unknown { background: #1e1e1e; color: #888; border: 1px solid #555; }
+
+    label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; margin-top: 14px; text-transform: uppercase; letter-spacing: 1px; }
+
+    input[type=text], select, textarea {
+      width: 100%;
+      background: #0d0d1a;
+      border: 1px solid #2a2a4a;
+      color: #e0e0e0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type=text]:focus, select:focus, textarea:focus { border-color: #e94560; }
+    textarea { font-family: 'Courier New', monospace; font-size: 13px; resize: vertical; min-height: 300px; }
+    select option { background: #111120; }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      margin-top: 14px;
+      margin-right: 8px;
+    }
+    .btn:hover { opacity: 0.8; }
+    .btn-save { background: #e94560; color: #fff; }
+    .btn-restart { background: #1a3a5c; color: #4da6ff; border: 1px solid #2a5a8c; }
+    .btn-stop { background: #3a1a1a; color: #ff6666; border: 1px solid #6a2a2a; }
+
+    .messages-list { max-height: 400px; overflow-y: auto; }
+    .msg { padding: 10px 12px; border-bottom: 1px solid #1a1a2a; font-size: 13px; }
+    .msg:last-child { border-bottom: none; }
+    .msg-role { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .msg-role.user { color: #4da6ff; }
+    .msg-role.assistant { color: #00d084; }
+    .msg-content { color: #ccc; line-height: 1.5; }
+
+    .log-box {
+      background: #060610;
+      border: 1px solid #1a1a2a;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: #6a8f6a;
+      max-height: 350px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: #1a3a1a; border: 1px solid #00d084; color: #00d084;
+      padding: 12px 20px; border-radius: 8px; font-size: 14px;
+      display: none; z-index: 999;
+    }
+    .agent-name-big { font-size: 28px; font-weight: 700; color: #fff; }
+    .agent-role-sub { font-size: 14px; color: #8888aa; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/" class="back-btn">← Back</a>
+  <div>
+    <h1>{{ agent.name }}</h1>
+    <span>{{ agent.role }}</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Status + Controls -->
+  <div class="card">
+    <div class="card-title">Agent Status</div>
+    <div class="status-row">
+      <span class="status-badge status-{{ status }}" id="status-badge">{{ status }}</span>
+      <span style="color:#666;font-size:13px;">Service: baza-agent-{{ agent_id.replace('_', '-') }}</span>
+    </div>
+    <button class="btn btn-restart" onclick="restartAgent()">⟳ Restart Agent</button>
+    <button class="btn btn-stop" onclick="stopAgent()">■ Stop Agent</button>
+  </div>
+
+  <div class="grid">
+
+    <!-- Edit Config -->
+    <div>
+      <div class="card">
+        <div class="card-title">Configuration</div>
+
+        <label>Model</label>
+        <select id="model-select">
+          {% for m in available_models %}
+          <option value="{{ m }}" {% if m == agent.model %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+
+        <label>Role / Description</label>
+        <input type="text" id="role-input" value="{{ agent.role }}">
+
+        <label>System Prompt</label>
+        <textarea id="prompt-input">{{ agent.system_prompt }}</textarea>
+
+        <button class="btn btn-save" onclick="saveConfig()">💾 Save & Apply</button>
+      </div>
+    </div>
+
+    <!-- Messages + Logs -->
+    <div>
+      <div class="card">
+        <div class="card-title">Recent Messages</div>
+        <div class="messages-list">
+          {% if messages %}
+            {% for msg in messages %}
+            <div class="msg">
+              <div class="msg-role {{ msg.role }}">{{ msg.role }}</div>
+              <div class="msg-content">{{ msg.content }}</div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <p style="color:#333;font-size:13px;font-style:italic;padding:12px 0;">No messages in Redis yet.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Service Logs
+          <button onclick="refreshLogs()" style="float:right;background:none;border:none;color:#555;cursor:pointer;font-size:12px;">↻ Refresh</button>
+        </div>
+        <div class="log-box" id="log-box">{{ logs }}</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast">✓ Saved successfully</div>
+
+<script>
+  const agentId = "{{ agent_id }}";
+
+  function saveConfig() {
+    const data = {
+      model: document.getElementById('model-select').value,
+      role: document.getElementById('role-input').value,
+      system_prompt: document.getElementById('prompt-input').value
+    };
+    fetch('/agent/' + agentId + '/edit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) showToast('✓ Config saved! Restart agent to apply.');
+      else showToast('✗ Save failed.');
+    });
+  }
+
+  function restartAgent() {
+    if (!confirm('Restart ' + agentId + '?')) return;
+    fetch('/agent/' + agentId + '/restart', {method: 'POST'})
+      .then(r => r.json())
+      .then(d => {
+        showToast(d.success ? '⟳ Agent restarting...' : '✗ Restart failed.');
+        setTimeout(refreshStatus, 3000);
+      });
+  }
+
+  function stopAgent() {
+    if (!confirm('Stop ' + agentId + '?')) return;
+    fetch('/agent/' + agentId + '/stop', {method: 'POST'})
+      .then(r => r.json())
+      .then(d => {
+        showToast(d.success ? '■ Agent stopped.' : '✗ Stop failed.');
+        setTimeout(refreshStatus, 2000);
+      });
+  }
+
+  function refreshStatus() {
+    fetch('/api/status')
+      .then(r => r.json())
+      .then(data => {
+        const s = data[agentId] || 'unknown';
+        const el = document.getElementById('status-badge');
+        el.textContent = s;
+        el.className = 'status-badge status-' + s;
+      });
+  }
+
+  function refreshLogs() {
+    fetch('/agent/' + agentId + '/logs?lines=50')
+      .then(r => r.json())
+      .then(d => {
+        document.getElementById('log-box').textContent = d.logs;
+      });
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 3000);
+  }
+
+  setInterval(refreshStatus, 15000);
+</script>
+
+</body>
+</html>
