@@ -1,0 +1,16 @@
+[Unit]
+Description=Baza Empire Agent — Sam Axe
+After=network.target redis.service ollama.service
+
+[Service]
+Type=simple
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python main.py sam_axe
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -81,11 +81,20 @@ class BazaAgent:
             'brad_gant':    ['infrastructure', 'research', 'server', 'network',
                               'hardware', 'intel', 'data', 'technical', 'brad'],
             'simon_bately': ['business', 'client', 'invoice', 'marketing',
-                              'website', 'customer', 'sales', 'revenue', 'payroll', 'simon'],
+                              'website', 'customer', 'sales', 'revenue', 'payroll', 'simon',
+                              'strategy', 'proposal', 'project', 'lead', 'coordinate'],
             'claw_batto':   ['code', 'build', 'deploy', 'linux', 'docker', 'git',
-                              'bug', 'script', 'install', 'devops', 'python', 'javascript', 'claw'],
+                              'bug', 'script', 'install', 'devops', 'python', 'javascript',
+                              'claw', 'security', 'hack', 'server', 'database', 'api'],
             'phil_hass':    ['legal', 'contract', 'compliance', 'tax', 'finance',
-                              'liability', 'regulation', 'accounting', 'phil'],
+                              'liability', 'regulation', 'accounting', 'phil',
+                              'license', 'gdpr', 'lawsuit', 'invoice tax', 'irs'],
+            'sam_axe':      ['analytics', 'data analysis', 'dashboard', 'kpi', 'metrics',
+                              'media', 'video', 'audio', 'podcast', 'sound', 'music',
+                              'marketing', 'campaign', 'ad', 'brand', 'seo', 'social',
+                              'design', 'visual', 'graphic', 'logo', 'image', 'photo',
+                              'architecture', 'render', 'drawing', 'layout', 'mockup',
+                              'ocr', 'edit', 'creative', 'art', 'color', 'font', 'sam'],
         }
 
         return any(kw in text_lower for kw in keywords.get(self.agent_id, []))
