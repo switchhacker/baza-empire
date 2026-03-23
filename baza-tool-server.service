@@ -1,0 +1,17 @@
+[Unit]
+Description=Baza Empire Tool Server
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3/tools
+EnvironmentFile=/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
