@@ -19,10 +19,13 @@ SIMON_TOKEN_ENV = "TELEGRAM_SIMON_BATELY"
 TOOL_SERVER = "http://localhost:8000"
 
 COMBINED_TRIGGERS = {
-    'mining': ['mining', 'miner', 'mine', 'xmrig'],
-    'crypto':  ['crypto', 'price', 'prices', 'coin', 'xmr', 'rvn', 'bitcoin', 'btc'],
-    'disk':    ['disk', 'storage', 'space'],
-    'docker':  ['docker', 'container'],
+    'mining':       ['mining status', 'miner status', 'check mining'],
+    'start_mining': ['start mining', 'start miners', 'start the mine', 'turn on mining', 'launch mining'],
+    'stop_mining':  ['stop mining', 'stop miners', 'turn off mining', 'halt mining', 'pause mining'],
+    'earnings':     ['earnings', 'earning', 'how much have i made', 'mining income', 'payout', 'how much xmr'],
+    'crypto':       ['crypto price', 'crypto prices', 'coin price', 'xmr price', 'rvn price', 'bitcoin price', 'btc price', 'prices'],
+    'disk':         ['disk', 'storage', 'space'],
+    'docker':       ['docker', 'container'],
 }
 
 
@@ -44,8 +47,14 @@ async def detect_and_fire_tools(text: str) -> dict:
     text_lower = text.lower()
     tasks = {}
 
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['mining']):
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['start_mining']):
+        tasks['start_mining'] = fire_tool('claw', 'start-mining', {})
+    elif any(kw in text_lower for kw in COMBINED_TRIGGERS['stop_mining']):
+        tasks['stop_mining'] = fire_tool('claw', 'stop-mining', {})
+    elif any(kw in text_lower for kw in COMBINED_TRIGGERS['mining']):
         tasks['mining_status'] = fire_tool('claw', 'mining-status', {})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['earnings']):
+        tasks['mining_earnings'] = fire_tool('sam', 'mining-earnings', {})
     if any(kw in text_lower for kw in COMBINED_TRIGGERS['crypto']):
         tasks['crypto_prices'] = fire_tool('sam', 'crypto-prices',
                                            {'coins': ['monero', 'ravencoin', 'bitcoin']})
@@ -79,8 +88,28 @@ def format_tool_results(results: dict) -> str:
 
         output = result.get('output', {})
 
-        if key == 'mining_status':
+        if key == 'start_mining':
+            parts = [f"{k}: {v}" for k, v in output.items()]
+            lines.append(f"MINING STARTED: {' | '.join(parts)}")
+
+        elif key == 'stop_mining':
+            parts = [f"{k}: {v}" for k, v in output.items()]
+            lines.append(f"MINING STOPPED: {' | '.join(parts)}")
+
+        elif key == 'mining_status':
             lines.append(f"MINING STATUS: {json.dumps(output)}")
+
+        elif key == 'mining_earnings':
+            hr = output.get('hashrate_hs', 0)
+            paid = output.get('paid_xmr', 0)
+            pending = output.get('pending_xmr', 0)
+            pending_usd = output.get('pending_usd', 0)
+            xmr_price = output.get('xmr_price_usd', 0)
+            lines.append(
+                f"MINING EARNINGS: Hashrate {hr} H/s | "
+                f"Paid {paid} XMR | Pending {pending} XMR (${pending_usd}) | "
+                f"XMR price ${xmr_price}"
+            )
 
         elif key == 'crypto_prices':
             parts = []

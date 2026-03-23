@@ -187,6 +187,95 @@ async def claw_mining_status(req: ToolRequest):
     return run_tool("claw/mining-status", _run, req)
 
 
+
+@app.post("/tools/claw/start-mining")
+async def claw_start_mining(req: ToolRequest):
+    """Start mining services on baza and NUC."""
+    def _run(inp):
+        services = inp.get("services", ["baza-mining", "baza-nuc-mining"])
+        results = {}
+        for svc in services:
+            r = subprocess.run(
+                f"sudo systemctl start {svc}",
+                shell=True, capture_output=True, text=True, timeout=15
+            )
+            # Check if it actually started
+            check = subprocess.run(
+                f"systemctl is-active {svc}",
+                shell=True, capture_output=True, text=True
+            )
+            results[svc] = check.stdout.strip()
+        return results
+
+    return run_tool("claw/start-mining", _run, req)
+
+
+@app.post("/tools/claw/stop-mining")
+async def claw_stop_mining(req: ToolRequest):
+    """Stop mining services on baza and NUC."""
+    def _run(inp):
+        services = inp.get("services", ["baza-mining", "baza-nuc-mining"])
+        results = {}
+        for svc in services:
+            r = subprocess.run(
+                f"sudo systemctl stop {svc}",
+                shell=True, capture_output=True, text=True, timeout=15
+            )
+            check = subprocess.run(
+                f"systemctl is-active {svc}",
+                shell=True, capture_output=True, text=True
+            )
+            results[svc] = check.stdout.strip()
+        return results
+
+    return run_tool("claw/stop-mining", _run, req)
+
+
+@app.post("/tools/sam/mining-earnings")
+async def sam_mining_earnings(req: ToolRequest):
+    """Fetch live mining earnings from supportxmr.com pool API."""
+    start = time.time()
+    wallet = req.input.get("wallet", os.environ.get("XMR_WALLET_ADDRESS", ""))
+    if not wallet:
+        return ToolResponse(success=False, output=None, tool="sam/mining-earnings",
+                            task_id=req.task_id, duration_ms=0,
+                            error="No wallet address. Set XMR_WALLET_ADDRESS in secrets.env")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            stats_resp = await client.get(
+                f"https://supportxmr.com/api/miner/{wallet}/stats"
+            )
+            stats_resp.raise_for_status()
+            data = stats_resp.json()
+
+            price_resp = await client.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": "monero", "vs_currencies": "usd"}
+            )
+            xmr_price = price_resp.json().get("monero", {}).get("usd", 0)
+
+        paid = data.get("amtPaid", 0) / 1e12
+        pending = data.get("amtDue", 0) / 1e12
+        hashrate = data.get("hash", 0)
+
+        output = {
+            "hashrate_hs": hashrate,
+            "paid_xmr": round(paid, 6),
+            "pending_xmr": round(pending, 6),
+            "pending_usd": round(pending * xmr_price, 4),
+            "xmr_price_usd": xmr_price,
+        }
+        return ToolResponse(success=True, output=output, tool="sam/mining-earnings",
+                            task_id=req.task_id,
+                            duration_ms=int((time.time() - start) * 1000))
+    except Exception as e:
+        logger.error(f"[mining-earnings] {e}")
+        return ToolResponse(success=False, output=None, tool="sam/mining-earnings",
+                            task_id=req.task_id,
+                            duration_ms=int((time.time() - start) * 1000),
+                            error=str(e))
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHIL HASS TOOLS — Legal, Finance, Documents
 # ═══════════════════════════════════════════════════════════════════════════════

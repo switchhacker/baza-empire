@@ -323,9 +323,22 @@ class SimonCommander:
             try:
                 parsed = json.loads(report)
                 # Format known tool outputs nicely
-                if tool == 'mining-status':
+                if tool in ('mining-status', 'start-mining', 'stop-mining'):
+                    action = {'mining-status': '📊 Status', 'start-mining': '▶️ Started', 'stop-mining': '⏹ Stopped'}.get(tool, tool)
                     parts = [f"{k}: <b>{v}</b>" for k, v in parsed.items()]
-                    report_text = "\n".join(parts)
+                    report_text = action + "\n" + "\n".join(parts)
+                elif tool == 'mining-earnings':
+                    hr = parsed.get('hashrate_hs', 0)
+                    paid = parsed.get('paid_xmr', 0)
+                    pending = parsed.get('pending_xmr', 0)
+                    pending_usd = parsed.get('pending_usd', 0)
+                    xmr_price = parsed.get('xmr_price_usd', 0)
+                    report_text = (
+                        f"Hashrate: <b>{hr} H/s</b>\n"
+                        f"Paid: <b>{paid} XMR</b>\n"
+                        f"Pending: <b>{pending} XMR</b> (${pending_usd})\n"
+                        f"XMR Price: <b>${xmr_price:,}</b>"
+                    )
                 elif tool == 'crypto-prices':
                     parts = []
                     for coin, cdata in parsed.items():
