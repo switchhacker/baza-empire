@@ -20,7 +20,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "[1/6] Installing system dependencies..."
 sudo apt-get install -y -q \
     git wget curl python3-pip python3-venv \
-    libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6 \
+    libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 \
     libgoogle-perftools-dev bc
 echo "      ✅ System deps ready"
 
