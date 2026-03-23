@@ -1,64 +1,88 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # Baza Empire — Sam Axe Imaging Tools Installer
-# Installs: rembg (background removal), Pillow, LLaVA vision model in Ollama
-# SD WebUI (port 7860) should already be running for generate/enhance/edit
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -e
-VENV="/home/switchhacker/baza-empire/agent-framework-v3/venv"
-PYTHON="$VENV/bin/python"
+
+BASE="/home/switchhacker/baza-empire/agent-framework-v3"
+VENV="$BASE/venv"
 PIP="$VENV/bin/pip"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Baza Empire — Sam Imaging Tools Installer"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# ── Python imaging deps ───────────────────────────────────────────────────────
-echo "[1/3] Installing Python imaging libraries..."
+# ── Install imaging deps into the tool server venv ───────────────────────────
+echo "[1/4] Installing imaging deps into venv..."
 $PIP install --quiet \
-    rembg[gpu] \
-    Pillow \
-    httpx \
-    opencv-python-headless \
-    numpy
+    "Pillow>=10.0.0" \
+    "opencv-python-headless>=4.8.0" \
+    "numpy>=1.24.0" \
+    "rembg[gpu]>=2.0.50" \
+    "httpx>=0.27.0"
 
-echo "      ✅ rembg, Pillow, opencv installed"
+echo "      ✅ Pillow, OpenCV, numpy, rembg installed"
+
+# ── Also install tesseract system package for OCR ────────────────────────────
+echo "[2/4] Installing tesseract OCR..."
+sudo apt-get install -y -q tesseract-ocr tesseract-ocr-eng 2>/dev/null && \
+    echo "      ✅ tesseract installed" || \
+    echo "      ⚠️  tesseract install failed (OCR will fall back to LLaVA)"
 
 # ── Pull LLaVA vision model ───────────────────────────────────────────────────
-echo "[2/3] Pulling LLaVA vision model (for analyze/tag/scan)..."
-echo "      This may take a few minutes on first run..."
-ollama pull llava:13b && echo "      ✅ llava:13b ready" || \
-    ollama pull llava:7b && echo "      ✅ llava:7b ready (fallback)" || \
-    echo "      ⚠️  LLaVA pull failed — check Ollama is running on port 11434"
+echo "[3/4] Checking LLaVA vision model..."
+if ollama list 2>/dev/null | grep -q "llava:13b"; then
+    echo "      ✅ llava:13b already present"
+else
+    echo "      Pulling llava:13b..."
+    ollama pull llava:13b && echo "      ✅ llava:13b ready" || \
+        ollama pull llava:7b && echo "      ✅ llava:7b ready (fallback)" || \
+        echo "      ⚠️  LLaVA pull failed"
+fi
 
 # ── Check SD WebUI ────────────────────────────────────────────────────────────
-echo "[3/3] Checking Stable Diffusion WebUI (port 7860)..."
+echo "[4/4] Checking Stable Diffusion WebUI (port 7860)..."
 if curl -s --max-time 3 http://localhost:7860/sdapi/v1/sd-models > /dev/null 2>&1; then
-    echo "      ✅ SD WebUI is running"
+    echo "      ✅ SD WebUI running — generate/enhance/edit ready"
 else
-    echo "      ⚠️  SD WebUI not detected on port 7860"
-    echo "         For generate/enhance/edit tools, ensure stable-diffusion-webui"
-    echo "         is running with --api flag:"
-    echo "         cd ~/stable-diffusion-webui && ./webui.sh --api --listen"
+    echo "      ⚠️  SD WebUI not running."
+    echo "         Generation tools need SD WebUI with --api flag."
+    echo "         Analysis/edit/restore tools (OpenCV + LLaVA) work WITHOUT it."
 fi
 
 # ── Restart tool server ───────────────────────────────────────────────────────
 echo ""
 echo "Restarting baza-tool-server..."
 sudo systemctl restart baza-tool-server
-sleep 2
-sudo systemctl status baza-tool-server --no-pager | tail -3
+sleep 3
+STATUS=$(systemctl is-active baza-tool-server)
+if [ "$STATUS" = "active" ]; then
+    echo "✅ baza-tool-server is running"
+else
+    echo "❌ baza-tool-server failed to start. Check logs:"
+    echo "   journalctl -u baza-tool-server -n 30 --no-pager"
+    sudo systemctl status baza-tool-server --no-pager -l | tail -20
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  ✅ Sam imaging tools ready!"
+echo "  Sam now has 49 imaging tools:"
 echo ""
-echo "  Commands Sam now understands:"
-echo "  • 'generate image of a sunset over mountains'"
-echo "  • 'analyze image https://...'"
-echo "  • 'tag image https://...'"
-echo "  • 'enhance image https://...'"
-echo "  • 'remove background from https://...'"
-echo "  • 'scan photos in /mnt/empirepool/media'"
+echo "  GENERATION (needs SD WebUI on :7860):"
+echo "  generate image, variations, inpaint, outpaint,"
+echo "  style transfer, sketch-to-image, logo, batch"
+echo ""
+echo "  ANALYSIS (works now with LLaVA):"
+echo "  analyze, tag, OCR, detect objects, detect faces,"
+echo "  color palette, similarity, EXIF, NSFW check"
+echo ""
+echo "  EDITING (works now with OpenCV + Pillow):"
+echo "  crop, resize, rotate, flip, watermark, color grade,"
+echo "  convert format, collage, GIF"
+echo ""
+echo "  QUALITY / RESTORATION (works now with OpenCV):"
+echo "  denoise, deblur, fix-pixels, restore, auto-enhance,"
+echo "  HDR tone map, JPEG fix, bit-depth enhance"
+echo "  (colorize, super-res, face-restore need SD WebUI)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

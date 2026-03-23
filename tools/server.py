@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Any
 import httpx
-from tools.sam_imaging import router as sam_imaging_router
+from sam_imaging import router as sam_imaging_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
