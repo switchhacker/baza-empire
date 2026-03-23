@@ -96,15 +96,18 @@ async def generate_image(req: ToolRequest):
         prompt = inp.get("prompt", "")
         if not prompt:
             raise ValueError("prompt required")
+        model = _pick_model(prompt)
+        await _set_model(model)
         payload = {
-            "prompt": prompt,
-            "negative_prompt": inp.get("negative_prompt", "blurry, low quality, watermark, text, ugly"),
-            "width": inp.get("width", 512),
-            "height": inp.get("height", 512),
-            "steps": inp.get("steps", 25),
-            "cfg_scale": inp.get("cfg_scale", 7),
-            "seed": inp.get("seed", -1),
-            "sampler_name": inp.get("sampler", "DPM++ 2M Karras"),
+            "prompt": prompt + ", masterpiece, best quality, ultra detailed, sharp focus, 8k",
+            "negative_prompt": inp.get("negative_prompt",
+                "blurry, low quality, watermark, text, ugly, EasyNegative"),
+            "width":  inp.get("width", 1024),
+            "height": inp.get("height", 1024),
+            "steps":  inp.get("steps", 6),
+            "cfg_scale": inp.get("cfg_scale", 2.0),
+            "seed":   inp.get("seed", -1),
+            "sampler_name": "DPM++ SDE Karras",
             "batch_size": inp.get("batch_size", 1),
         }
         async with httpx.AsyncClient(timeout=180) as c:
@@ -1050,16 +1053,18 @@ async def regen_image(req: ToolRequest):
         prompt = inp.get("prompt", "")
         if not prompt:
             raise ValueError("prompt required for regen")
+        model = _pick_model(prompt)
+        await _set_model(model)
         payload = {
             "prompt": prompt + ", masterpiece, best quality, ultra detailed, 8k",
             "negative_prompt": inp.get("negative_prompt",
-                "blurry, low quality, jpeg artifacts, noise, watermark, oversaturated"),
-            "width":  inp.get("width", 768),
-            "height": inp.get("height", 768),
-            "steps":  inp.get("steps", 40),
-            "cfg_scale": inp.get("cfg_scale", 8),
+                "blurry, low quality, jpeg artifacts, noise, watermark, oversaturated, EasyNegative"),
+            "width":  inp.get("width", 1024),
+            "height": inp.get("height", 1024),
+            "steps":  inp.get("steps", 8),
+            "cfg_scale": inp.get("cfg_scale", 2.0),
             "seed":   inp.get("seed", -1),
-            "sampler_name": "DPM++ 2M Karras",
+            "sampler_name": "DPM++ SDE Karras",
         }
         async with httpx.AsyncClient(timeout=240) as c:
             r = await c.post(f"{SD_API}/sdapi/v1/txt2img", json=payload)
