@@ -57,6 +57,19 @@ COMBINED_TRIGGERS = {
     'batch_rename':     ['batch rename', 'rename images', 'rename photos'],
     'build_gallery':    ['build gallery', 'create gallery', 'html gallery', 'photo gallery'],
     'image_metadata':   ['image metadata', 'file info', 'image info', 'image size'],
+    # ── Restoration & Quality ──────────────────────────────────────────────
+    'regen_image':      ['regen image', 'regenerate image', 're-generate', 'redo image', 'regenerate this'],
+    'denoise_image':    ['denoise', 'remove noise', 'remove grain', 'fix grain', 'clean noise'],
+    'deblur_image':     ['deblur', 'sharpen', 'fix blur', 'unblur', 'make sharper'],
+    'fix_pixels':       ['fix pixels', 'pixel correction', 'dead pixels', 'stuck pixels', 'fix artifacts', 'pixel artifacts'],
+    'restore_image':    ['restore image', 'restore photo', 'repair image', 'fix old photo', 'old photo'],
+    'auto_enhance':     ['auto enhance', 'auto-enhance', 'auto fix', 'quick enhance', 'improve photo'],
+    'hdr_tone_map':     ['hdr', 'tone map', 'cinematic look', 'hdr effect', 'tone mapping'],
+    'jpeg_artifact_fix':['jpeg artifacts', 'jpeg fix', 'compression artifacts', 'fix compression', 'blocky image'],
+    'colorize_image':   ['colorize', 'add color', 'colorise', 'color black and white', 'colour photo'],
+    'super_resolution': ['super resolution', 'super-resolution', 'ai upscale', 'ai upscaling', 'high resolution'],
+    'face_restore':     ['face restore', 'restore face', 'fix face', 'gfpgan', 'codeformer'],
+    'bit_depth_enhance':['bit depth', 'bit enhancement', 'banding fix', 'fix banding', 'dynamic range'],
 }
 
 
@@ -131,6 +144,19 @@ async def detect_and_fire_tools(text: str) -> dict:
         ('batch_rename',    'sam', 'batch-rename',      lambda: {'folder': _folder, 'dry_run': True}),
         ('build_gallery',   'sam', 'build-gallery',     lambda: {'folder': _folder}),
         ('image_metadata',  'sam', 'image-metadata',    lambda: {'image_path': _img} if _img else None),
+        # ── Restoration & Quality ──────────────────────────────────────────
+        ('regen_image',      'sam', 'regen-image',        lambda: {'prompt': text}),
+        ('denoise_image',    'sam', 'denoise-image',       lambda: {'image_path': _img} if _img else None),
+        ('deblur_image',     'sam', 'deblur-image',        lambda: {'image_path': _img} if _img else None),
+        ('fix_pixels',       'sam', 'fix-pixels',          lambda: {'image_path': _img} if _img else None),
+        ('restore_image',    'sam', 'restore-image',       lambda: {'image_path': _img} if _img else None),
+        ('auto_enhance',     'sam', 'auto-enhance',        lambda: {'image_path': _img} if _img else None),
+        ('hdr_tone_map',     'sam', 'hdr-tone-map',        lambda: {'image_path': _img} if _img else None),
+        ('jpeg_artifact_fix','sam', 'jpeg-artifact-fix',   lambda: {'image_path': _img} if _img else None),
+        ('colorize_image',   'sam', 'colorize-image',      lambda: {'image_path': _img} if _img else None),
+        ('super_resolution', 'sam', 'super-resolution',    lambda: {'image_path': _img} if _img else None),
+        ('face_restore',     'sam', 'face-restore',        lambda: {'image_path': _img} if _img else None),
+        ('bit_depth_enhance','sam', 'bit-depth-enhance',   lambda: {'image_path': _img} if _img else None),
     ]
     for trigger_key, agent_slug, tool_name, inp_builder in IMG_ROUTING:
         if any(kw in text_lower for kw in COMBINED_TRIGGERS.get(trigger_key, [])):
@@ -230,6 +256,22 @@ def format_tool_results(results: dict) -> str:
             catalog = output.get('catalog', [])
             summary = ' | '.join(f"{c['file']}: {c.get('description','?')}" for c in catalog[:3])
             lines.append(f"SMART SCAN: {scanned} images cataloged. Sample: {summary}")
+
+        elif key in ('regen_image', 'denoise_image', 'deblur_image', 'fix_pixels',
+                     'restore_image', 'auto_enhance', 'hdr_tone_map', 'jpeg_artifact_fix',
+                     'colorize_image', 'super_resolution', 'face_restore', 'bit_depth_enhance',
+                     'image_variations', 'inpaint_image', 'outpaint_image', 'style_transfer',
+                     'sketch_to_image', 'detect_objects', 'detect_faces', 'color_palette',
+                     'nsfw_check', 'read_exif', 'ocr_image', 'image_similarity',
+                     'crop_resize', 'rotate_flip', 'add_watermark', 'color_grade',
+                     'convert_format', 'make_collage', 'make_gif',
+                     'find_duplicates', 'batch_rename', 'build_gallery', 'image_metadata',
+                     'generate_logo', 'batch_generate', 'edit_image'):
+            label = key.replace('_', ' ').upper()
+            path = output.get('path', output.get('paths', ''))
+            extra_keys = [k for k in output if k not in ('path', 'paths')]
+            extra = {k: output[k] for k in extra_keys[:3]}
+            lines.append(f"{label}: {path} | {extra}")
 
     lines.append("\n[END REAL-TIME DATA — REPORT THESE EXACT NUMBERS TO SERGE]")
     return "\n".join(lines)

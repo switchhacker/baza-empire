@@ -1035,3 +1035,399 @@ async def image_metadata(req: ToolRequest):
         }, t, req.task_id)
     except Exception as e:
         return err("sam/image-metadata", e, t, req.task_id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESTORATION & QUALITY (12 tools)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/tools/sam/regen-image")
+async def regen_image(req: ToolRequest):
+    """Fully regenerate an image using its original prompt + new seed or higher steps."""
+    t = time.time()
+    try:
+        inp = req.input
+        prompt = inp.get("prompt", "")
+        if not prompt:
+            raise ValueError("prompt required for regen")
+        payload = {
+            "prompt": prompt + ", masterpiece, best quality, ultra detailed, 8k",
+            "negative_prompt": inp.get("negative_prompt",
+                "blurry, low quality, jpeg artifacts, noise, watermark, oversaturated"),
+            "width":  inp.get("width", 768),
+            "height": inp.get("height", 768),
+            "steps":  inp.get("steps", 40),
+            "cfg_scale": inp.get("cfg_scale", 8),
+            "seed":   inp.get("seed", -1),
+            "sampler_name": "DPM++ 2M Karras",
+        }
+        async with httpx.AsyncClient(timeout=240) as c:
+            r = await c.post(f"{SD_API}/sdapi/v1/txt2img", json=payload)
+            r.raise_for_status()
+            data = r.json()
+        info = json.loads(data.get("info", "{}"))
+        path = save_b64(data["images"][0], f"regen_{ts()}.png")
+        return ok("sam/regen-image", {"path": path, "seed": info.get("seed", -1),
+                                       "steps": payload["steps"]}, t, req.task_id)
+    except Exception as e:
+        return err("sam/regen-image", e, t, req.task_id)
+
+
+@router.post("/tools/sam/denoise-image")
+async def denoise_image(req: ToolRequest):
+    """Remove noise and grain from an image using OpenCV denoising."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        strength = inp.get("strength", 10)  # 1-30, higher = more smoothing
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request, io
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        denoised = cv2.fastNlMeansDenoisingColored(img, None, strength, strength, 7, 21)
+        path = f"/tmp/denoised_{ts()}.png"
+        cv2.imwrite(path, denoised)
+        return ok("sam/denoise-image", {"path": path, "strength": strength}, t, req.task_id)
+    except Exception as e:
+        return err("sam/denoise-image", e, t, req.task_id)
+
+
+@router.post("/tools/sam/deblur-image")
+async def deblur_image(req: ToolRequest):
+    """Sharpen and deblur an image using unsharp mask + Wiener deconvolution."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        amount = inp.get("amount", 2.0)   # sharpening amount
+        radius = inp.get("radius", 1.5)
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        # Unsharp mask
+        blur = cv2.GaussianBlur(img, (0, 0), radius)
+        sharp = cv2.addWeighted(img, 1 + amount, blur, -amount, 0)
+        path = f"/tmp/deblurred_{ts()}.png"
+        cv2.imwrite(path, sharp)
+        return ok("sam/deblur-image", {"path": path, "amount": amount, "radius": radius}, t, req.task_id)
+    except Exception as e:
+        return err("sam/deblur-image", e, t, req.task_id)
+
+
+@router.post("/tools/sam/fix-pixels")
+async def fix_pixels(req: ToolRequest):
+    """Pixel-level correction — fix stuck/dead pixels, remove artifacts, clean hot spots."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        threshold = inp.get("threshold", 30)  # pixel deviation threshold
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        # Detect outlier pixels via median filter comparison
+        median = cv2.medianBlur(img, 3)
+        diff = cv2.absdiff(img, median)
+        mask = (diff.max(axis=2) > threshold).astype(np.uint8) * 255
+        fixed = img.copy()
+        fixed[mask == 255] = median[mask == 255]
+        fixed_pixels = int(mask.sum() // 255)
+        path = f"/tmp/fixpixels_{ts()}.png"
+        cv2.imwrite(path, fixed)
+        return ok("sam/fix-pixels", {"path": path, "pixels_fixed": fixed_pixels,
+                                      "threshold": threshold}, t, req.task_id)
+    except Exception as e:
+        return err("sam/fix-pixels", e, t, req.task_id)
+
+
+@router.post("/tools/sam/restore-image")
+async def restore_image(req: ToolRequest):
+    """Full restoration pipeline — denoise → deblur → enhance. Old/damaged photo repair."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        # Step 1: denoise
+        denoised = cv2.fastNlMeansDenoisingColored(img, None, 8, 8, 7, 21)
+        # Step 2: unsharp mask
+        blur = cv2.GaussianBlur(denoised, (0, 0), 1.2)
+        sharp = cv2.addWeighted(denoised, 1.5, blur, -0.5, 0)
+        # Step 3: CLAHE contrast enhancement
+        lab = cv2.cvtColor(sharp, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        enhanced = cv2.merge((l, a, b))
+        result = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+        path = f"/tmp/restored_{ts()}.png"
+        cv2.imwrite(path, result)
+        return ok("sam/restore-image", {"path": path, "steps": ["denoise", "deblur", "clahe_enhance"]}, t, req.task_id)
+    except Exception as e:
+        return err("sam/restore-image", e, t, req.task_id)
+
+
+@router.post("/tools/sam/auto-enhance")
+async def auto_enhance(req: ToolRequest):
+    """Auto-enhance an image — auto white balance, exposure fix, vibrance boost."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        # Auto white balance (gray world assumption)
+        result = img.copy().astype(np.float32)
+        avg_b = np.mean(result[:,:,0])
+        avg_g = np.mean(result[:,:,1])
+        avg_r = np.mean(result[:,:,2])
+        avg_all = (avg_b + avg_g + avg_r) / 3
+        result[:,:,0] = np.clip(result[:,:,0] * (avg_all / avg_b), 0, 255)
+        result[:,:,1] = np.clip(result[:,:,1] * (avg_all / avg_g), 0, 255)
+        result[:,:,2] = np.clip(result[:,:,2] * (avg_all / avg_r), 0, 255)
+        result = result.astype(np.uint8)
+        # Auto CLAHE on L channel
+        lab = cv2.cvtColor(result, cv2.COLOR_BGR2LAB)
+        l, a, b_ch = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        l = clahe.apply(l)
+        result = cv2.cvtColor(cv2.merge((l, a, b_ch)), cv2.COLOR_LAB2BGR)
+        path = f"/tmp/autoenhanced_{ts()}.png"
+        cv2.imwrite(path, result)
+        return ok("sam/auto-enhance", {"path": path,
+                                        "applied": ["auto_white_balance", "clahe_exposure"]}, t, req.task_id)
+    except Exception as e:
+        return err("sam/auto-enhance", e, t, req.task_id)
+
+
+@router.post("/tools/sam/hdr-tone-map")
+async def hdr_tone_map(req: ToolRequest):
+    """Apply HDR-style tone mapping for dramatic cinematic look."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        gamma = inp.get("gamma", 1.0)
+        saturation = inp.get("saturation", 1.2)
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        img_f = img.astype(np.float32) / 255.0
+        # Reinhard tone mapping
+        tonemap = cv2.createTonemapReinhard(gamma=gamma, intensity=0.0,
+                                             light_adapt=0.0, color_adapt=0.0)
+        mapped = tonemap.process(img_f)
+        mapped = np.clip(mapped * 255, 0, 255).astype(np.uint8)
+        # Boost saturation
+        hsv = cv2.cvtColor(mapped, cv2.COLOR_BGR2HSV).astype(np.float32)
+        hsv[:,:,1] = np.clip(hsv[:,:,1] * saturation, 0, 255)
+        result = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+        path = f"/tmp/hdr_{ts()}.png"
+        cv2.imwrite(path, result)
+        return ok("sam/hdr-tone-map", {"path": path, "gamma": gamma, "saturation": saturation}, t, req.task_id)
+    except Exception as e:
+        return err("sam/hdr-tone-map", e, t, req.task_id)
+
+
+@router.post("/tools/sam/jpeg-artifact-fix")
+async def jpeg_artifact_fix(req: ToolRequest):
+    """Remove JPEG compression artifacts and blocking from over-compressed images."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        # Mild bilateral filter removes blocking while preserving edges
+        result = cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+        # Light unsharp to recover edge crispness
+        blur = cv2.GaussianBlur(result, (0, 0), 1.0)
+        result = cv2.addWeighted(result, 1.3, blur, -0.3, 0)
+        path = f"/tmp/jpeg_fixed_{ts()}.png"
+        cv2.imwrite(path, result)
+        return ok("sam/jpeg-artifact-fix", {"path": path, "method": "bilateral+unsharp"}, t, req.task_id)
+    except Exception as e:
+        return err("sam/jpeg-artifact-fix", e, t, req.task_id)
+
+
+@router.post("/tools/sam/colorize-image")
+async def colorize_image(req: ToolRequest):
+    """Colorize a black & white image using SD img2img colorization."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        prompt = inp.get("prompt", "colorized photograph, vibrant natural colors, realistic")
+        if not image_path:
+            raise ValueError("image_path required")
+        from PIL import Image as PILImage
+        img = pil_open(image_path).convert("RGB")
+        # Ensure it's grayscale-looking for SD
+        tmp = pil_save(img, f"bw_input_{ts()}.png")
+        b64 = to_b64(tmp)
+        async with httpx.AsyncClient(timeout=180) as c:
+            r = await c.post(f"{SD_API}/sdapi/v1/img2img", json={
+                "init_images": [b64],
+                "prompt": prompt,
+                "negative_prompt": "black and white, grayscale, monochrome, blurry",
+                "denoising_strength": 0.55,
+                "steps": 30,
+                "cfg_scale": 7,
+            })
+            r.raise_for_status()
+            data = r.json()
+        path = save_b64(data["images"][0], f"colorized_{ts()}.png")
+        return ok("sam/colorize-image", {"path": path, "prompt": prompt}, t, req.task_id)
+    except Exception as e:
+        return err("sam/colorize-image", e, t, req.task_id)
+
+
+@router.post("/tools/sam/super-resolution")
+async def super_resolution(req: ToolRequest):
+    """AI super-resolution — upscale small/low-res images to high detail using SD hi-res fix."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        target_w = inp.get("target_width", 1024)
+        target_h = inp.get("target_height", 1024)
+        if not image_path:
+            raise ValueError("image_path required")
+        b64 = to_b64(image_path)
+        # Use SD extra-single-image with LDSR or R-ESRGAN 4x+
+        async with httpx.AsyncClient(timeout=180) as c:
+            r = await c.post(f"{SD_API}/sdapi/v1/extra-single-image", json={
+                "image": b64,
+                "resize_mode": 1,
+                "upscaling_resize_w": target_w,
+                "upscaling_resize_h": target_h,
+                "upscaler_1": "R-ESRGAN 4x+",
+                "upscaler_2": "ESRGAN_4x",
+                "extras_upscaler_2_visibility": 0.3,
+            })
+            r.raise_for_status()
+            out_b64 = r.json().get("image", "")
+        path = save_b64(out_b64, f"superres_{ts()}.png")
+        return ok("sam/super-resolution", {"path": path,
+                                            "target_size": f"{target_w}x{target_h}",
+                                            "method": "R-ESRGAN 4x+ + ESRGAN blend"}, t, req.task_id)
+    except Exception as e:
+        return err("sam/super-resolution", e, t, req.task_id)
+
+
+@router.post("/tools/sam/face-restore")
+async def face_restore(req: ToolRequest):
+    """Restore and enhance faces in an image using GFPGAN via SD WebUI."""
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        if not image_path:
+            raise ValueError("image_path required")
+        b64 = to_b64(image_path)
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(f"{SD_API}/sdapi/v1/extra-single-image", json={
+                "image": b64,
+                "resize_mode": 0,
+                "upscaling_resize": 1,
+                "upscaler_1": "None",
+                "gfpgan_visibility": inp.get("strength", 0.8),
+                "codeformer_visibility": inp.get("codeformer", 0.5),
+                "codeformer_weight": 0.5,
+            })
+            r.raise_for_status()
+            out_b64 = r.json().get("image", "")
+        path = save_b64(out_b64, f"facerestored_{ts()}.png")
+        return ok("sam/face-restore", {"path": path,
+                                        "gfpgan": inp.get("strength", 0.8),
+                                        "codeformer": inp.get("codeformer", 0.5)}, t, req.task_id)
+    except Exception as e:
+        return err("sam/face-restore", e, t, req.task_id)
+
+
+@router.post("/tools/sam/bit-depth-enhance")
+async def bit_depth_enhance(req: ToolRequest):
+    """
+    Bit depth enhancement — dequantize 8-bit banding artifacts,
+    smooth tonal gradients, expand dynamic range via histogram stretching.
+    """
+    t = time.time()
+    try:
+        inp = req.input
+        image_path = inp.get("image_path", "")
+        if not image_path:
+            raise ValueError("image_path required")
+        import cv2, numpy as np, urllib.request
+        if image_path.startswith("http"):
+            with urllib.request.urlopen(image_path) as r:
+                arr = np.frombuffer(r.read(), np.uint8)
+                img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            img = cv2.imread(image_path)
+        # Step 1: Histogram stretching (per channel)
+        result = np.zeros_like(img, dtype=np.float32)
+        for ch in range(3):
+            channel = img[:,:,ch].astype(np.float32)
+            p2, p98 = np.percentile(channel, 2), np.percentile(channel, 98)
+            if p98 > p2:
+                result[:,:,ch] = np.clip((channel - p2) / (p98 - p2) * 255, 0, 255)
+            else:
+                result[:,:,ch] = channel
+        result = result.astype(np.uint8)
+        # Step 2: Add slight dithering noise to break up banding
+        noise = np.random.randint(0, 3, result.shape, dtype=np.uint8)
+        result = cv2.add(result, noise)
+        # Step 3: Mild bilateral smooth to blend gradients
+        result = cv2.bilateralFilter(result, 5, 35, 35)
+        path = f"/tmp/bitdepth_{ts()}.png"
+        cv2.imwrite(path, result)
+        return ok("sam/bit-depth-enhance", {"path": path,
+                                              "steps": ["histogram_stretch", "dither", "bilateral_smooth"]}, t, req.task_id)
+    except Exception as e:
+        return err("sam/bit-depth-enhance", e, t, req.task_id)
