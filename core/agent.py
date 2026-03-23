@@ -19,13 +19,20 @@ SIMON_TOKEN_ENV = "TELEGRAM_SIMON_BATELY"
 TOOL_SERVER = "http://localhost:8000"
 
 COMBINED_TRIGGERS = {
-    'mining':       ['mining status', 'miner status', 'check mining'],
-    'start_mining': ['start mining', 'start miners', 'start the mine', 'turn on mining', 'launch mining'],
-    'stop_mining':  ['stop mining', 'stop miners', 'turn off mining', 'halt mining', 'pause mining'],
-    'earnings':     ['earnings', 'earning', 'how much have i made', 'mining income', 'payout', 'how much xmr'],
-    'crypto':       ['crypto price', 'crypto prices', 'coin price', 'xmr price', 'rvn price', 'bitcoin price', 'btc price', 'prices'],
-    'disk':         ['disk', 'storage', 'space'],
-    'docker':       ['docker', 'container'],
+    'mining':         ['mining status', 'miner status', 'check mining'],
+    'start_mining':   ['start mining', 'start miners', 'start the mine', 'turn on mining', 'launch mining'],
+    'stop_mining':    ['stop mining', 'stop miners', 'turn off mining', 'halt mining', 'pause mining'],
+    'earnings':       ['earnings', 'earning', 'how much have i made', 'mining income', 'payout', 'how much xmr'],
+    'crypto':         ['crypto price', 'crypto prices', 'coin price', 'xmr price', 'rvn price', 'bitcoin price', 'btc price', 'prices'],
+    'disk':           ['disk', 'storage', 'space'],
+    'docker':         ['docker', 'container'],
+    'generate_image': ['generate image', 'create image', 'make image', 'draw', 'generate a', 'create a picture', 'make a picture'],
+    'analyze_image':  ['analyze image', 'analyse image', 'what is in this image', 'describe image', 'scan image', 'read image', 'what does this image show'],
+    'tag_image':      ['tag image', 'tag this image', 'tag photo', 'label image'],
+    'enhance_image':  ['enhance image', 'upscale', 'improve image quality', 'sharpen image'],
+    'remove_bg':      ['remove background', 'background removal', 'cut out background', 'remove bg'],
+    'edit_image':     ['edit image', 'edit this image', 'change the image', 'modify image'],
+    'smart_scan':     ['scan folder', 'scan photos', 'catalog images', 'smart scan', 'scan my photos'],
 }
 
 
@@ -62,6 +69,38 @@ async def detect_and_fire_tools(text: str) -> dict:
         tasks['disk_usage'] = fire_tool('claw', 'disk-usage', {})
     if any(kw in text_lower for kw in COMBINED_TRIGGERS['docker']):
         tasks['docker_status'] = fire_tool('claw', 'docker-status', {})
+    # ── Imaging triggers ──────────────────────────────────────────────────────
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['generate_image']):
+        prompt = text  # pass full message as prompt
+        tasks['generate_image'] = fire_tool('sam', 'generate-image', {'prompt': prompt})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['analyze_image']):
+        # Extract URL if present in message
+        import re as _re
+        urls = _re.findall(r'https?://\S+', text)
+        img_path = urls[0] if urls else ''
+        if img_path:
+            tasks['analyze_image'] = fire_tool('sam', 'analyze-image', {'image_path': img_path})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['enhance_image']):
+        import re as _re
+        urls = _re.findall(r'https?://\S+', text)
+        if urls:
+            tasks['enhance_image'] = fire_tool('sam', 'enhance-image', {'image_path': urls[0]})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['remove_bg']):
+        import re as _re
+        urls = _re.findall(r'https?://\S+', text)
+        if urls:
+            tasks['remove_bg'] = fire_tool('sam', 'remove-background', {'image_path': urls[0]})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['tag_image']):
+        import re as _re
+        urls = _re.findall(r'https?://\S+', text)
+        if urls:
+            tasks['tag_image'] = fire_tool('sam', 'tag-image', {'image_path': urls[0]})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['smart_scan']):
+        # Extract folder path if mentioned
+        import re as _re
+        match = _re.search(r'(/[\w/]+)', text)
+        folder = match.group(1) if match else '/mnt/empirepool/media'
+        tasks['smart_scan'] = fire_tool('sam', 'smart-scan', {'folder': folder, 'limit': 5})
 
     if not tasks:
         return {}
@@ -130,6 +169,31 @@ def format_tool_results(results: dict) -> str:
                 lines.append(f"DOCKER CONTAINERS ({output.get('count', 0)} running): {c_list}")
             else:
                 lines.append("DOCKER CONTAINERS: none running")
+
+        elif key == 'generate_image':
+            path = output.get('path', '')
+            seed = output.get('seed', '')
+            size = output.get('size', '')
+            lines.append(f"IMAGE GENERATED: saved to {path} | size {size} | seed {seed}")
+
+        elif key == 'analyze_image':
+            lines.append(f"IMAGE ANALYSIS:\n{output.get('analysis', '')}")
+
+        elif key == 'tag_image':
+            tags = ', '.join(output.get('tags', []))
+            lines.append(f"IMAGE TAGS: {tags}")
+
+        elif key == 'enhance_image':
+            lines.append(f"IMAGE ENHANCED: saved to {output.get('path','')} ({output.get('scale','4')}x via {output.get('method','')})")
+
+        elif key == 'remove_bg':
+            lines.append(f"BACKGROUND REMOVED: saved to {output.get('path','')}")
+
+        elif key == 'smart_scan':
+            scanned = output.get('scanned', 0)
+            catalog = output.get('catalog', [])
+            summary = ' | '.join(f"{c['file']}: {c.get('description','?')}" for c in catalog[:3])
+            lines.append(f"SMART SCAN: {scanned} images cataloged. Sample: {summary}")
 
     lines.append("\n[END REAL-TIME DATA — REPORT THESE EXACT NUMBERS TO SERGE]")
     return "\n".join(lines)
