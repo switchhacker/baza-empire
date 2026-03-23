@@ -315,20 +315,39 @@ class SimonCommander:
             self.redis.hset(f"job:{job_id}", "status", "complete")
 
     async def _send_final_report(self, job_id: str, reports: dict) -> None:
-        lines = [f"<b>✅ Mission Complete — Job {job_id.split('_', 1)[-1]}</b>\n"]
+        lines = ["<b>✅ Mission Complete</b>\n"]
         for agent_name, data in reports.items():
             tool = data.get('tool', 'none')
             report = data.get('report', '')
-            # Truncate long JSON tool outputs
+            # Pretty-format tool output
             try:
                 parsed = json.loads(report)
-                report_text = json.dumps(parsed, indent=2)[:800]
+                # Format known tool outputs nicely
+                if tool == 'mining-status':
+                    parts = [f"{k}: <b>{v}</b>" for k, v in parsed.items()]
+                    report_text = "\n".join(parts)
+                elif tool == 'crypto-prices':
+                    parts = []
+                    for coin, cdata in parsed.items():
+                        price = cdata.get('usd', 0)
+                        change = cdata.get('usd_24h_change', 0)
+                        arrow = '▲' if change >= 0 else '▼'
+                        parts.append(f"{coin.capitalize()}: <b>${price:,.2f}</b> {arrow}{abs(change):.1f}%")
+                    report_text = "\n".join(parts)
+                elif tool == 'disk-usage':
+                    report_text = f"<code>{parsed.get('output','')[:400]}</code>"
+                elif tool == 'docker-status':
+                    count = parsed.get('count', 0)
+                    containers = ', '.join(c['name'] for c in parsed.get('containers', []))
+                    report_text = f"{count} running: {containers}" if containers else "No containers running"
+                else:
+                    report_text = json.dumps(parsed, indent=2)[:400]
             except Exception:
-                report_text = report[:800]
-            tool_tag = f" <i>[via {tool}]</i>" if tool != 'none' else ""
-            lines.append(f"<b>{agent_name}{tool_tag}:</b>\n<code>{report_text}</code>\n")
+                report_text = report[:400]
+            tool_tag = f" <i>({tool})</i>" if tool != 'none' else ""
+            lines.append(f"<b>{agent_name}{tool_tag}:</b>\n{report_text}\n")
 
-        lines.append("<b>Simon:</b> All tasks complete. Standing by.")
+        lines.append("<i>Simon standing by.</i>")
         full_report = "\n".join(lines)
 
         async with httpx.AsyncClient(timeout=15) as client:

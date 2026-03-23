@@ -325,6 +325,9 @@ class BazaAgent:
         try:
             response = await self.query_ollama(history)
             clean = response.replace("TASK_COMPLETE", "").strip()
+            # Strip any "Name: " prefix the LLM added to itself
+            import re
+            clean = re.sub(rf"^{re.escape(self.name)}:\s*", "", clean, flags=re.IGNORECASE).strip()
 
             # ── Simon: check for DISPATCH commands ───────────────────────────
             if self.is_simon and self.commander:
@@ -376,6 +379,9 @@ class BazaAgent:
         messages = [{"role": "user", "content": f"Simon orders: {instruction}"}]
         response = await self.query_ollama(messages)
         clean = response.replace("TASK_COMPLETE", "").strip()
+            # Strip any "Name: " prefix the LLM added to itself
+            import re
+            clean = re.sub(rf"^{re.escape(self.name)}:\s*", "", clean, flags=re.IGNORECASE).strip()
 
         report_msg = f"REPORT:{task_id}:{clean}"
         simon_token = os.environ.get(SIMON_TOKEN_ENV)
