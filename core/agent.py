@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import logging
 import json
@@ -17,42 +18,6 @@ logger = logging.getLogger(__name__)
 SIMON_TOKEN_ENV = "TELEGRAM_SIMON_BATELY"
 TOOL_SERVER = "http://localhost:8000"
 
-# ─── Direct tool trigger map ──────────────────────────────────────────────────
-# If Serge's message matches keywords → fire these tools immediately, no LLM needed
-DIRECT_TOOL_TRIGGERS = [
-    {
-        'keywords': ['mining status', 'mining', 'miner', 'mine'],
-        'tools': [
-            {'agent': 'claw', 'tool': 'mining-status', 'input': {}}
-        ]
-    },
-    {
-        'keywords': ['crypto price', 'crypto prices', 'coin price', 'xmr price', 'rvn price', 'bitcoin price'],
-        'tools': [
-            {'agent': 'sam', 'tool': 'crypto-prices', 'input': {'coins': ['monero', 'ravencoin', 'bitcoin']}}
-        ]
-    },
-    {
-        'keywords': ['disk', 'storage', 'disk space', 'disk usage'],
-        'tools': [
-            {'agent': 'claw', 'tool': 'disk-usage', 'input': {}}
-        ]
-    },
-    {
-        'keywords': ['docker', 'containers', 'container status'],
-        'tools': [
-            {'agent': 'claw', 'tool': 'docker-status', 'input': {}}
-        ]
-    },
-    {
-        'keywords': ['prices', 'crypto', 'coin', 'xmr', 'rvn', 'bitcoin', 'btc'],
-        'tools': [
-            {'agent': 'sam', 'tool': 'crypto-prices', 'input': {'coins': ['monero', 'ravencoin', 'bitcoin']}}
-        ]
-    },
-]
-
-# Combined trigger — if message has BOTH mining and crypto keywords
 COMBINED_TRIGGERS = {
     'mining': ['mining', 'miner', 'mine', 'xmrig'],
     'crypto':  ['crypto', 'price', 'prices', 'coin', 'xmr', 'rvn', 'bitcoin', 'btc'],
@@ -62,7 +27,6 @@ COMBINED_TRIGGERS = {
 
 
 async def fire_tool(agent_slug: str, tool: str, input_data: dict) -> dict:
-    """Fire a single tool endpoint and return result."""
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -73,51 +37,40 @@ async def fire_tool(agent_slug: str, tool: str, input_data: dict) -> dict:
             return resp.json()
     except Exception as e:
         logger.error(f"Tool {agent_slug}/{tool} failed: {e}")
-        return {"success": False, "error": str(e), "tool": f"{agent_slug}/{tool}"}
+        return {"success": False, "error": str(e)}
 
 
 async def detect_and_fire_tools(text: str) -> dict:
-    """
-    Detect what tools to fire based on message text.
-    Returns dict of {tool_key: result} for all fired tools.
-    """
     text_lower = text.lower()
     tasks = {}
 
-    # Check each category
-    wants_mining = any(kw in text_lower for kw in COMBINED_TRIGGERS['mining'])
-    wants_crypto  = any(kw in text_lower for kw in COMBINED_TRIGGERS['crypto'])
-    wants_disk    = any(kw in text_lower for kw in COMBINED_TRIGGERS['disk'])
-    wants_docker  = any(kw in text_lower for kw in COMBINED_TRIGGERS['docker'])
-
-    if wants_mining:
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['mining']):
         tasks['mining_status'] = fire_tool('claw', 'mining-status', {})
-    if wants_crypto:
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['crypto']):
         tasks['crypto_prices'] = fire_tool('sam', 'crypto-prices',
-                                            {'coins': ['monero', 'ravencoin', 'bitcoin']})
-    if wants_disk:
+                                           {'coins': ['monero', 'ravencoin', 'bitcoin']})
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['disk']):
         tasks['disk_usage'] = fire_tool('claw', 'disk-usage', {})
-    if wants_docker:
+    if any(kw in text_lower for kw in COMBINED_TRIGGERS['docker']):
         tasks['docker_status'] = fire_tool('claw', 'docker-status', {})
 
     if not tasks:
         return {}
 
-    # Fire all tools in parallel
     results = {}
     tool_results = await asyncio.gather(*tasks.values(), return_exceptions=True)
     for key, result in zip(tasks.keys(), tool_results):
         results[key] = result if not isinstance(result, Exception) else {"success": False, "error": str(result)}
 
+    logger.info(f"Tools fired: {list(results.keys())}")
     return results
 
 
 def format_tool_results(results: dict) -> str:
-    """Format tool results into a clean context string for the LLM."""
     if not results:
         return ""
 
-    lines = ["[REAL-TIME DATA FROM BAZA SYSTEMS — USE THIS DATA IN YOUR RESPONSE, DO NOT MAKE UP NUMBERS]\n"]
+    lines = ["[REAL-TIME DATA FROM BAZA SYSTEMS — USE THIS EXACT DATA, DO NOT MAKE UP NUMBERS]\n"]
 
     for key, result in results.items():
         if not result.get('success'):
@@ -151,6 +104,11 @@ def format_tool_results(results: dict) -> str:
 
     lines.append("\n[END REAL-TIME DATA — REPORT THESE EXACT NUMBERS TO SERGE]")
     return "\n".join(lines)
+
+
+def strip_name_prefix(text: str, name: str) -> str:
+    """Remove leading 'Name: ' or 'Name Surname: ' that the LLM adds to itself."""
+    return re.sub(rf"^{re.escape(name)}:\s*", "", text, flags=re.IGNORECASE).strip()
 
 
 class BazaAgent:
@@ -210,18 +168,18 @@ class BazaAgent:
             return True
         keywords = {
             'simon_bately': ['business', 'client', 'invoice', 'marketing',
-                              'website', 'customer', 'sales', 'revenue', 'payroll', 'simon',
-                              'strategy', 'proposal', 'project', 'lead', 'coordinate', 'plan',
-                              'brief', 'schedule', 'meeting', 'report', 'summary'],
+                             'website', 'customer', 'sales', 'revenue', 'payroll', 'simon',
+                             'strategy', 'proposal', 'project', 'lead', 'coordinate', 'plan',
+                             'brief', 'schedule', 'meeting', 'report', 'summary'],
             'claw_batto':   ['code', 'build', 'deploy', 'linux', 'docker', 'git',
-                              'bug', 'script', 'install', 'devops', 'python', 'javascript',
-                              'claw', 'security', 'server', 'database', 'api'],
+                             'bug', 'script', 'install', 'devops', 'python', 'javascript',
+                             'claw', 'security', 'server', 'database', 'api'],
             'phil_hass':    ['legal', 'contract', 'compliance', 'tax', 'finance',
-                              'liability', 'regulation', 'accounting', 'phil',
-                              'license', 'gdpr', 'irs'],
+                             'liability', 'regulation', 'accounting', 'phil',
+                             'license', 'gdpr', 'irs'],
             'sam_axe':      ['analytics', 'dashboard', 'kpi', 'metrics',
-                              'media', 'video', 'audio', 'campaign', 'brand', 'seo',
-                              'design', 'visual', 'graphic', 'image', 'creative', 'sam'],
+                             'media', 'video', 'audio', 'campaign', 'brand', 'seo',
+                             'design', 'visual', 'graphic', 'image', 'creative', 'sam'],
         }
         return any(kw in text_lower for kw in keywords.get(self.agent_id, []))
 
@@ -249,7 +207,7 @@ class BazaAgent:
     def is_task_already_complete(self, chat_id: str) -> bool:
         return self.redis.exists(f"chat:{chat_id}:task_complete") == 1
 
-    # ─── Simon: parse DISPATCH lines from LLM ────────────────────────────────
+    # ─── Simon: parse DISPATCH lines ─────────────────────────────────────────
 
     def parse_dispatch(self, response: str) -> dict:
         assignments = {}
@@ -312,22 +270,15 @@ class BazaAgent:
             tool_results = await detect_and_fire_tools(text)
             if tool_results:
                 tool_context = format_tool_results(tool_results)
-                logger.info(f"Simon fired {len(tool_results)} tools for: {text[:60]}")
 
-        # Build message with real data injected
-        user_message = text
-        if tool_context:
-            user_message = f"{text}\n\n{tool_context}"
-
+        user_message = f"{text}\n\n{tool_context}" if tool_context else text
         self.save_message(chat_id, "user", f"{sender}: {user_message}")
         history = self.get_chat_history(chat_id)
 
         try:
             response = await self.query_ollama(history)
             clean = response.replace("TASK_COMPLETE", "").strip()
-            # Strip any "Name: " prefix the LLM added to itself
-            import re
-            clean = re.sub(rf"^{re.escape(self.name)}:\s*", "", clean, flags=re.IGNORECASE).strip()
+            clean = strip_name_prefix(clean, self.name)
 
             # ── Simon: check for DISPATCH commands ───────────────────────────
             if self.is_simon and self.commander:
@@ -339,7 +290,7 @@ class BazaAgent:
                         if not l.startswith("DISPATCH:")
                     ).strip()
                     dispatch_summary = "\n".join(
-                        f"  → {aid.replace('_',' ').title()}: {inst[:80]}..."
+                        f"  → {aid.replace('_', ' ').title()}: {inst[:80]}..."
                         for aid, inst in assignments.items()
                     )
                     notify = f"{visible}\n\n<b>Dispatching team:</b>\n{dispatch_summary}"
@@ -367,7 +318,7 @@ class BazaAgent:
     # ─── Non-Simon: handle Simon dispatch ────────────────────────────────────
 
     async def _handle_dispatch(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                chat_id: str, text: str):
+                               chat_id: str, text: str):
         try:
             task_id = text.split("[TASK:")[1].split("]")[0]
             instruction = text.split("Simon says:\n\n")[1].split("\n\nReport back")[0].strip()
@@ -378,10 +329,7 @@ class BazaAgent:
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
         messages = [{"role": "user", "content": f"Simon orders: {instruction}"}]
         response = await self.query_ollama(messages)
-        clean = response.replace("TASK_COMPLETE", "").strip()
-            # Strip any "Name: " prefix the LLM added to itself
-            import re
-            clean = re.sub(rf"^{re.escape(self.name)}:\s*", "", clean, flags=re.IGNORECASE).strip()
+        clean = strip_name_prefix(response.replace("TASK_COMPLETE", "").strip(), self.name)
 
         report_msg = f"REPORT:{task_id}:{clean}"
         simon_token = os.environ.get(SIMON_TOKEN_ENV)
