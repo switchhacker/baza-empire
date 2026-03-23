@@ -26,13 +26,37 @@ COMBINED_TRIGGERS = {
     'crypto':         ['crypto price', 'crypto prices', 'coin price', 'xmr price', 'rvn price', 'bitcoin price', 'btc price', 'prices'],
     'disk':           ['disk', 'storage', 'space'],
     'docker':         ['docker', 'container'],
-    'generate_image': ['generate image', 'create image', 'make image', 'draw', 'generate a', 'create a picture', 'make a picture'],
-    'analyze_image':  ['analyze image', 'analyse image', 'what is in this image', 'describe image', 'scan image', 'read image', 'what does this image show'],
-    'tag_image':      ['tag image', 'tag this image', 'tag photo', 'label image'],
-    'enhance_image':  ['enhance image', 'upscale', 'improve image quality', 'sharpen image'],
-    'remove_bg':      ['remove background', 'background removal', 'cut out background', 'remove bg'],
-    'edit_image':     ['edit image', 'edit this image', 'change the image', 'modify image'],
-    'smart_scan':     ['scan folder', 'scan photos', 'catalog images', 'smart scan', 'scan my photos'],
+    'generate_image':   ['generate image', 'create image', 'make image', 'draw', 'generate a picture', 'create a picture'],
+    'generate_logo':    ['generate logo', 'create logo', 'make a logo', 'design logo'],
+    'image_variations': ['image variations', 'variations of', 'make variations'],
+    'inpaint':          ['inpaint', 'fill in', 'replace area', 'fix area'],
+    'outpaint':         ['outpaint', 'extend image', 'expand image', 'extend canvas'],
+    'style_transfer':   ['style transfer', 'apply style', 'make it look like', 'art style'],
+    'sketch_to_image':  ['sketch to image', 'sketch to photo', 'turn sketch into'],
+    'batch_generate':   ['batch generate', 'generate multiple images', 'multiple images'],
+    'analyze_image':    ['analyze image', 'analyse image', 'describe image', 'what is in this image', 'what does this image show'],
+    'tag_image':        ['tag image', 'tag this image', 'tag photo', 'label image'],
+    'ocr_image':        ['ocr', 'read text', 'extract text', 'text in image', 'transcribe image'],
+    'detect_objects':   ['detect objects', 'what objects', 'find objects', 'object detection'],
+    'detect_faces':     ['detect faces', 'find faces', 'how many faces', 'face detection'],
+    'color_palette':    ['color palette', 'colour palette', 'extract colors', 'dominant colors'],
+    'nsfw_check':       ['nsfw check', 'is this nsfw', 'safe for work', 'content check'],
+    'read_exif':        ['exif', 'image metadata', 'photo info', 'camera data'],
+    'edit_image':       ['edit image', 'edit this image', 'modify image', 'change the image'],
+    'enhance_image':    ['enhance image', 'upscale', 'improve image quality', 'sharpen image'],
+    'remove_bg':        ['remove background', 'background removal', 'cut out background', 'remove bg'],
+    'crop_resize':      ['crop', 'resize image', 'crop image'],
+    'rotate_flip':      ['rotate image', 'flip image', 'turn image'],
+    'add_watermark':    ['add watermark', 'watermark image', 'stamp image'],
+    'color_grade':      ['color grade', 'colour grade', 'adjust brightness', 'adjust contrast', 'adjust saturation'],
+    'convert_format':   ['convert image', 'convert to jpg', 'convert to png', 'convert to webp', 'image format'],
+    'make_collage':     ['make collage', 'create collage', 'image collage', 'photo collage'],
+    'make_gif':         ['make gif', 'create gif', 'animated gif', 'make animation'],
+    'smart_scan':       ['scan folder', 'scan photos', 'catalog images', 'smart scan', 'scan my photos'],
+    'find_duplicates':  ['find duplicates', 'duplicate images', 'duplicate photos'],
+    'batch_rename':     ['batch rename', 'rename images', 'rename photos'],
+    'build_gallery':    ['build gallery', 'create gallery', 'html gallery', 'photo gallery'],
+    'image_metadata':   ['image metadata', 'file info', 'image info', 'image size'],
 }
 
 
@@ -70,37 +94,49 @@ async def detect_and_fire_tools(text: str) -> dict:
     if any(kw in text_lower for kw in COMBINED_TRIGGERS['docker']):
         tasks['docker_status'] = fire_tool('claw', 'docker-status', {})
     # ── Imaging triggers ──────────────────────────────────────────────────────
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['generate_image']):
-        prompt = text  # pass full message as prompt
-        tasks['generate_image'] = fire_tool('sam', 'generate-image', {'prompt': prompt})
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['analyze_image']):
-        # Extract URL if present in message
-        import re as _re
-        urls = _re.findall(r'https?://\S+', text)
-        img_path = urls[0] if urls else ''
-        if img_path:
-            tasks['analyze_image'] = fire_tool('sam', 'analyze-image', {'image_path': img_path})
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['enhance_image']):
-        import re as _re
-        urls = _re.findall(r'https?://\S+', text)
-        if urls:
-            tasks['enhance_image'] = fire_tool('sam', 'enhance-image', {'image_path': urls[0]})
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['remove_bg']):
-        import re as _re
-        urls = _re.findall(r'https?://\S+', text)
-        if urls:
-            tasks['remove_bg'] = fire_tool('sam', 'remove-background', {'image_path': urls[0]})
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['tag_image']):
-        import re as _re
-        urls = _re.findall(r'https?://\S+', text)
-        if urls:
-            tasks['tag_image'] = fire_tool('sam', 'tag-image', {'image_path': urls[0]})
-    if any(kw in text_lower for kw in COMBINED_TRIGGERS['smart_scan']):
-        # Extract folder path if mentioned
-        import re as _re
-        match = _re.search(r'(/[\w/]+)', text)
-        folder = match.group(1) if match else '/mnt/empirepool/media'
-        tasks['smart_scan'] = fire_tool('sam', 'smart-scan', {'folder': folder, 'limit': 5})
+    _urls = re.findall(r'https?://\S+|/[\w/.-]+\.(?:jpg|jpeg|png|webp|gif)', text)
+    _img  = _urls[0] if _urls else ''
+    _folder_match = re.search(r'(/[\w/]+)', text)
+    _folder = _folder_match.group(1) if _folder_match else '/mnt/empirepool/media'
+
+    IMG_ROUTING = [
+        ('generate_image',  'sam', 'generate-image',    lambda: {'prompt': text}),
+        ('generate_logo',   'sam', 'generate-logo',     lambda: {'name': text.replace('logo','').replace('generate','').strip()}),
+        ('image_variations','sam', 'image-variations',  lambda: {'image_path': _img} if _img else None),
+        ('inpaint',         'sam', 'inpaint-image',     lambda: {'image_path': _img, 'prompt': text} if _img else None),
+        ('outpaint',        'sam', 'outpaint-image',    lambda: {'image_path': _img} if _img else None),
+        ('style_transfer',  'sam', 'style-transfer',    lambda: {'image_path': _img} if _img else None),
+        ('sketch_to_image', 'sam', 'sketch-to-image',   lambda: {'image_path': _img, 'prompt': text} if _img else None),
+        ('batch_generate',  'sam', 'batch-generate',    lambda: {'prompts': [text]}),
+        ('analyze_image',   'sam', 'analyze-image',     lambda: {'image_path': _img} if _img else None),
+        ('tag_image',       'sam', 'tag-image',         lambda: {'image_path': _img} if _img else None),
+        ('ocr_image',       'sam', 'ocr-image',         lambda: {'image_path': _img} if _img else None),
+        ('detect_objects',  'sam', 'detect-objects',    lambda: {'image_path': _img} if _img else None),
+        ('detect_faces',    'sam', 'detect-faces',      lambda: {'image_path': _img} if _img else None),
+        ('color_palette',   'sam', 'color-palette',     lambda: {'image_path': _img} if _img else None),
+        ('nsfw_check',      'sam', 'nsfw-check',        lambda: {'image_path': _img} if _img else None),
+        ('read_exif',       'sam', 'read-exif',         lambda: {'image_path': _img} if _img else None),
+        ('edit_image',      'sam', 'edit-image',        lambda: {'image_path': _img, 'instruction': text} if _img else None),
+        ('enhance_image',   'sam', 'enhance-image',     lambda: {'image_path': _img} if _img else None),
+        ('remove_bg',       'sam', 'remove-background', lambda: {'image_path': _img} if _img else None),
+        ('crop_resize',     'sam', 'crop-resize',       lambda: {'image_path': _img} if _img else None),
+        ('rotate_flip',     'sam', 'rotate-flip',       lambda: {'image_path': _img} if _img else None),
+        ('add_watermark',   'sam', 'add-watermark',     lambda: {'image_path': _img, 'text': '© Baza Empire'} if _img else None),
+        ('color_grade',     'sam', 'color-grade',       lambda: {'image_path': _img} if _img else None),
+        ('convert_format',  'sam', 'convert-format',    lambda: {'image_path': _img, 'format': 'webp'} if _img else None),
+        ('make_collage',    'sam', 'make-collage',      lambda: {'images': _urls} if len(_urls) >= 2 else None),
+        ('make_gif',        'sam', 'make-gif',          lambda: {'images': _urls} if len(_urls) >= 2 else None),
+        ('smart_scan',      'sam', 'smart-scan',        lambda: {'folder': _folder, 'limit': 5}),
+        ('find_duplicates', 'sam', 'find-duplicates',   lambda: {'folder': _folder}),
+        ('batch_rename',    'sam', 'batch-rename',      lambda: {'folder': _folder, 'dry_run': True}),
+        ('build_gallery',   'sam', 'build-gallery',     lambda: {'folder': _folder}),
+        ('image_metadata',  'sam', 'image-metadata',    lambda: {'image_path': _img} if _img else None),
+    ]
+    for trigger_key, agent_slug, tool_name, inp_builder in IMG_ROUTING:
+        if any(kw in text_lower for kw in COMBINED_TRIGGERS.get(trigger_key, [])):
+            inp = inp_builder()
+            if inp is not None:
+                tasks[trigger_key] = fire_tool(agent_slug, tool_name, inp)
 
     if not tasks:
         return {}
