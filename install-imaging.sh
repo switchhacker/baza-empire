@@ -20,7 +20,7 @@ $PIP install --quiet \
     "opencv-python-headless>=4.8.0" \
     "numpy>=1.24.0" \
     "rembg[gpu]>=2.0.50" \
-    "httpx>=0.27.0"
+    "httpx~=0.27.0"
 
 echo "      ✅ Pillow, OpenCV, numpy, rembg installed"
 
