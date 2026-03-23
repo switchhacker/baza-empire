@@ -5,6 +5,7 @@ import json
 import random
 import time
 import requests as req
+import httpx
 import redis
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -14,6 +15,142 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SIMON_TOKEN_ENV = "TELEGRAM_SIMON_BATELY"
+TOOL_SERVER = "http://localhost:8000"
+
+# ─── Direct tool trigger map ──────────────────────────────────────────────────
+# If Serge's message matches keywords → fire these tools immediately, no LLM needed
+DIRECT_TOOL_TRIGGERS = [
+    {
+        'keywords': ['mining status', 'mining', 'miner', 'mine'],
+        'tools': [
+            {'agent': 'claw', 'tool': 'mining-status', 'input': {}}
+        ]
+    },
+    {
+        'keywords': ['crypto price', 'crypto prices', 'coin price', 'xmr price', 'rvn price', 'bitcoin price'],
+        'tools': [
+            {'agent': 'sam', 'tool': 'crypto-prices', 'input': {'coins': ['monero', 'ravencoin', 'bitcoin']}}
+        ]
+    },
+    {
+        'keywords': ['disk', 'storage', 'disk space', 'disk usage'],
+        'tools': [
+            {'agent': 'claw', 'tool': 'disk-usage', 'input': {}}
+        ]
+    },
+    {
+        'keywords': ['docker', 'containers', 'container status'],
+        'tools': [
+            {'agent': 'claw', 'tool': 'docker-status', 'input': {}}
+        ]
+    },
+    {
+        'keywords': ['prices', 'crypto', 'coin', 'xmr', 'rvn', 'bitcoin', 'btc'],
+        'tools': [
+            {'agent': 'sam', 'tool': 'crypto-prices', 'input': {'coins': ['monero', 'ravencoin', 'bitcoin']}}
+        ]
+    },
+]
+
+# Combined trigger — if message has BOTH mining and crypto keywords
+COMBINED_TRIGGERS = {
+    'mining': ['mining', 'miner', 'mine', 'xmrig'],
+    'crypto':  ['crypto', 'price', 'prices', 'coin', 'xmr', 'rvn', 'bitcoin', 'btc'],
+    'disk':    ['disk', 'storage', 'space'],
+    'docker':  ['docker', 'container'],
+}
+
+
+async def fire_tool(agent_slug: str, tool: str, input_data: dict) -> dict:
+    """Fire a single tool endpoint and return result."""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{TOOL_SERVER}/tools/{agent_slug}/{tool}",
+                json={"input": input_data}
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        logger.error(f"Tool {agent_slug}/{tool} failed: {e}")
+        return {"success": False, "error": str(e), "tool": f"{agent_slug}/{tool}"}
+
+
+async def detect_and_fire_tools(text: str) -> dict:
+    """
+    Detect what tools to fire based on message text.
+    Returns dict of {tool_key: result} for all fired tools.
+    """
+    text_lower = text.lower()
+    tasks = {}
+
+    # Check each category
+    wants_mining = any(kw in text_lower for kw in COMBINED_TRIGGERS['mining'])
+    wants_crypto  = any(kw in text_lower for kw in COMBINED_TRIGGERS['crypto'])
+    wants_disk    = any(kw in text_lower for kw in COMBINED_TRIGGERS['disk'])
+    wants_docker  = any(kw in text_lower for kw in COMBINED_TRIGGERS['docker'])
+
+    if wants_mining:
+        tasks['mining_status'] = fire_tool('claw', 'mining-status', {})
+    if wants_crypto:
+        tasks['crypto_prices'] = fire_tool('sam', 'crypto-prices',
+                                            {'coins': ['monero', 'ravencoin', 'bitcoin']})
+    if wants_disk:
+        tasks['disk_usage'] = fire_tool('claw', 'disk-usage', {})
+    if wants_docker:
+        tasks['docker_status'] = fire_tool('claw', 'docker-status', {})
+
+    if not tasks:
+        return {}
+
+    # Fire all tools in parallel
+    results = {}
+    tool_results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+    for key, result in zip(tasks.keys(), tool_results):
+        results[key] = result if not isinstance(result, Exception) else {"success": False, "error": str(result)}
+
+    return results
+
+
+def format_tool_results(results: dict) -> str:
+    """Format tool results into a clean context string for the LLM."""
+    if not results:
+        return ""
+
+    lines = ["[REAL-TIME DATA FROM BAZA SYSTEMS — USE THIS DATA IN YOUR RESPONSE, DO NOT MAKE UP NUMBERS]\n"]
+
+    for key, result in results.items():
+        if not result.get('success'):
+            lines.append(f"{key}: ERROR — {result.get('error', 'unknown')}")
+            continue
+
+        output = result.get('output', {})
+
+        if key == 'mining_status':
+            lines.append(f"MINING STATUS: {json.dumps(output)}")
+
+        elif key == 'crypto_prices':
+            parts = []
+            for coin, data in output.items():
+                price = data.get('usd', 'N/A')
+                change = data.get('usd_24h_change', 0)
+                direction = '▲' if change >= 0 else '▼'
+                parts.append(f"{coin.upper()}: ${price:,.2f} {direction}{abs(change):.1f}%")
+            lines.append(f"LIVE CRYPTO PRICES: {' | '.join(parts)}")
+
+        elif key == 'disk_usage':
+            lines.append(f"DISK USAGE:\n{output.get('output', '')}")
+
+        elif key == 'docker_status':
+            containers = output.get('containers', [])
+            if containers:
+                c_list = ', '.join(c['name'] for c in containers)
+                lines.append(f"DOCKER CONTAINERS ({output.get('count', 0)} running): {c_list}")
+            else:
+                lines.append("DOCKER CONTAINERS: none running")
+
+    lines.append("\n[END REAL-TIME DATA — REPORT THESE EXACT NUMBERS TO SERGE]")
+    return "\n".join(lines)
 
 
 class BazaAgent:
@@ -26,17 +163,13 @@ class BazaAgent:
         self.system_prompt = config['system_prompt']
         self.token = os.environ.get(config['telegram_token_env'])
         self.is_simon = (agent_id == 'simon_bately')
+        self.commander = None
 
         self.redis = redis.Redis(
             host=global_config['redis']['host'],
             port=global_config['redis']['port'],
             decode_responses=True
         )
-
-        # Simon gets the commander module
-        if self.is_simon:
-            from core.commander import SimonCommander
-            self.commander = None  # initialized after first message (need Serge's chat_id)
 
     # ─── Ollama via GPU Pool ──────────────────────────────────────────────────
 
@@ -72,12 +205,9 @@ class BazaAgent:
     def should_respond(self, text: str, is_group: bool) -> bool:
         if not is_group:
             return True
-
         text_lower = text.lower()
-
         if self.name.lower().split()[0] in text_lower:
             return True
-
         keywords = {
             'simon_bately': ['business', 'client', 'invoice', 'marketing',
                               'website', 'customer', 'sales', 'revenue', 'payroll', 'simon',
@@ -85,18 +215,14 @@ class BazaAgent:
                               'brief', 'schedule', 'meeting', 'report', 'summary'],
             'claw_batto':   ['code', 'build', 'deploy', 'linux', 'docker', 'git',
                               'bug', 'script', 'install', 'devops', 'python', 'javascript',
-                              'claw', 'security', 'hack', 'server', 'database', 'api'],
+                              'claw', 'security', 'server', 'database', 'api'],
             'phil_hass':    ['legal', 'contract', 'compliance', 'tax', 'finance',
                               'liability', 'regulation', 'accounting', 'phil',
-                              'license', 'gdpr', 'lawsuit', 'irs'],
+                              'license', 'gdpr', 'irs'],
             'sam_axe':      ['analytics', 'dashboard', 'kpi', 'metrics',
-                              'media', 'video', 'audio', 'podcast', 'sound',
-                              'marketing', 'campaign', 'ad', 'brand', 'seo', 'social',
-                              'design', 'visual', 'graphic', 'logo', 'image', 'photo',
-                              'architecture', 'render', 'drawing', 'layout', 'mockup',
-                              'ocr', 'creative', 'art', 'sam'],
+                              'media', 'video', 'audio', 'campaign', 'brand', 'seo',
+                              'design', 'visual', 'graphic', 'image', 'creative', 'sam'],
         }
-
         return any(kw in text_lower for kw in keywords.get(self.agent_id, []))
 
     # ─── Redis History ────────────────────────────────────────────────────────
@@ -123,24 +249,15 @@ class BazaAgent:
     def is_task_already_complete(self, chat_id: str) -> bool:
         return self.redis.exists(f"chat:{chat_id}:task_complete") == 1
 
-    # ─── Simon: parse delegation instructions from LLM output ────────────────
+    # ─── Simon: parse DISPATCH lines from LLM ────────────────────────────────
 
     def parse_dispatch(self, response: str) -> dict:
-        """
-        Simon's LLM can include a dispatch block like:
-        DISPATCH:claw_batto:Set up the new VPS with Docker and Nginx.
-        DISPATCH:phil_hass:Review the new contractor agreement for compliance.
-        DISPATCH:sam_axe:Design a logo concept for AHBCO LLC.
-        Returns dict of {agent_id: instruction}
-        """
         assignments = {}
         for line in response.splitlines():
             if line.startswith("DISPATCH:"):
                 parts = line.split(":", 2)
                 if len(parts) == 3:
-                    agent_id = parts[1].strip()
-                    instruction = parts[2].strip()
-                    assignments[agent_id] = instruction
+                    assignments[parts[1].strip()] = parts[2].strip()
         return assignments
 
     def init_commander(self, serge_chat_id: str):
@@ -152,7 +269,7 @@ class BazaAgent:
                 simon_token=self.token
             )
 
-    # ─── Message Handler ─────────────────────────────────────────────────────
+    # ─── Main message handler ─────────────────────────────────────────────────
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.text:
@@ -166,24 +283,19 @@ class BazaAgent:
 
         if is_group and update.message.from_user.is_bot:
             return
-
         if is_group and self.is_task_already_complete(chat_id):
             return
-
         if is_group and not self.should_respond(text, is_group):
             return
 
-        # ── Non-Simon agents: register chat with Simon + handle REPORT ───────
+        # ── Non-Simon: register chat ID + handle dispatches ───────────────────
         if not self.is_simon:
-            # Store this chat_id so Simon can dispatch back
             self.redis.set(f"agent:{self.agent_id}:serge_chat_id", chat_id, ex=86400 * 30)
-
-            # If this is a Simon dispatch, route through and send REPORT back
             if text.startswith("[TASK:") and "Simon says:" in text:
                 await self._handle_dispatch(update, context, chat_id, text)
                 return
 
-        # ── Simon: init commander with Serge's chat_id ───────────────────────
+        # ── Simon: init commander ─────────────────────────────────────────────
         if self.is_simon and not is_group:
             self.init_commander(chat_id)
 
@@ -192,45 +304,52 @@ class BazaAgent:
             if self.is_task_already_complete(chat_id):
                 return
 
-        self.save_message(chat_id, "user", f"{sender}: {text}")
-        history = self.get_chat_history(chat_id)
-
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+
+        # ── Simon: fire tools BEFORE querying LLM ────────────────────────────
+        tool_context = ""
+        if self.is_simon:
+            tool_results = await detect_and_fire_tools(text)
+            if tool_results:
+                tool_context = format_tool_results(tool_results)
+                logger.info(f"Simon fired {len(tool_results)} tools for: {text[:60]}")
+
+        # Build message with real data injected
+        user_message = text
+        if tool_context:
+            user_message = f"{text}\n\n{tool_context}"
+
+        self.save_message(chat_id, "user", f"{sender}: {user_message}")
+        history = self.get_chat_history(chat_id)
 
         try:
             response = await self.query_ollama(history)
             clean = response.replace("TASK_COMPLETE", "").strip()
 
-            # ── Simon: extract and execute any DISPATCH commands ─────────────
+            # ── Simon: check for DISPATCH commands ───────────────────────────
             if self.is_simon and self.commander:
                 assignments = self.parse_dispatch(clean)
                 if assignments:
                     job_id = f"job_{int(time.time())}"
-                    # Strip DISPATCH lines from the visible response
                     visible = "\n".join(
                         l for l in clean.splitlines()
                         if not l.startswith("DISPATCH:")
                     ).strip()
-                    # Notify Serge of the plan
                     dispatch_summary = "\n".join(
-                        f"  → {aid.replace('_', ' ').title()}: {inst[:80]}..."
+                        f"  → {aid.replace('_',' ').title()}: {inst[:80]}..."
                         for aid, inst in assignments.items()
                     )
                     notify = f"{visible}\n\n<b>Dispatching team:</b>\n{dispatch_summary}"
                     await update.message.reply_text(
-                        f"<b>{self.name}:</b> {notify}",
-                        parse_mode="HTML"
+                        f"<b>{self.name}:</b> {notify}", parse_mode="HTML"
                     )
                     self.save_message(chat_id, "assistant", f"{self.name}: {visible}")
                     self.commander.create_job(job_id, assignments)
-                    if self.is_task_complete(response):
-                        self.mark_task_complete(chat_id)
                     return
 
             if clean:
                 await update.message.reply_text(
-                    f"<b>{self.name}:</b> {clean}",
-                    parse_mode="HTML"
+                    f"<b>{self.name}:</b> {clean}", parse_mode="HTML"
                 )
                 self.save_message(chat_id, "assistant", f"{self.name}: {clean}")
 
@@ -242,30 +361,23 @@ class BazaAgent:
             if not is_group:
                 await update.message.reply_text(f"Error: {str(e)}")
 
-    # ─── Non-Simon agents: handle a Simon dispatch ───────────────────────────
+    # ─── Non-Simon: handle Simon dispatch ────────────────────────────────────
 
     async def _handle_dispatch(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                 chat_id: str, text: str):
-        """Process a task dispatched by Simon, then send REPORT back."""
-        # Extract task_id and instruction
         try:
-            task_line = text.split("\n")[0]  # [TASK:job_xxx:agent_id]
-            task_id = task_line.split("[TASK:")[1].rstrip("]")
-            instruction = text.split("Simon says:\n\n")[1].split("\n\nWhen complete")[0].strip()
+            task_id = text.split("[TASK:")[1].split("]")[0]
+            instruction = text.split("Simon says:\n\n")[1].split("\n\nReport back")[0].strip()
         except Exception:
             instruction = text
             task_id = f"unknown_{int(time.time())}"
 
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-
         messages = [{"role": "user", "content": f"Simon orders: {instruction}"}]
         response = await self.query_ollama(messages)
         clean = response.replace("TASK_COMPLETE", "").strip()
 
-        # Send report back — Simon's commander will pick this up
         report_msg = f"REPORT:{task_id}:{clean}"
-
-        # Find Simon's chat ID for this agent to reply to
         simon_token = os.environ.get(SIMON_TOKEN_ENV)
         simon_chat_id = self.redis.get(f"agent:simon_bately:serge_chat_id")
 
@@ -275,13 +387,9 @@ class BazaAgent:
                 json={"chat_id": simon_chat_id, "text": report_msg},
                 timeout=15
             )
-            logger.info(f"[{self.name}] Report sent to Simon for task {task_id}")
-        else:
-            logger.warning(f"[{self.name}] Could not find Simon's chat to report back")
 
-        # Also confirm to Serge directly
         await update.message.reply_text(
-            f"<b>{self.name}:</b> Task received from Simon. Working on it now.",
+            f"<b>{self.name}:</b> On it. Report sent to Simon.",
             parse_mode="HTML"
         )
 
@@ -291,7 +399,6 @@ class BazaAgent:
         if not self.token:
             logger.error(f"No token for {self.name} (env: {self.config['telegram_token_env']})")
             return
-
         logger.info(f"Starting {self.name}...")
         app = Application.builder().token(self.token).build()
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
