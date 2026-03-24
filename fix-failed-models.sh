@@ -1,68 +1,94 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # Baza Empire — Fix Failed Model Downloads
-# Re-downloads the 3 that failed using working URLs
+# Uses huggingface-cli (handles Xet storage, no auth needed for public models)
 # ─────────────────────────────────────────────────────────────────────────────
 
 CKPT_DIR="/home/switchhacker/stable-diffusion-webui/models/Stable-diffusion"
 UPSCALE_DIR="/home/switchhacker/stable-diffusion-webui/models/ESRGAN"
+VENV="/home/switchhacker/baza-empire/agent-framework-v3/venv"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Baza Empire — Fixing failed model downloads"
+echo "  Baza Empire — Fix failed model downloads"
+echo "  Using huggingface-cli (handles Xet storage)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Clean up 0-byte stub files left by failed downloads
+# Clean 0-byte stubs
 echo "Cleaning 0-byte stubs..."
 for f in \
     "$CKPT_DIR/RealVisXL_V5.0_Lightning.safetensors" \
-    "$CKPT_DIR/DreamShaper_XL_v2_Turbo.safetensors" \
-    "$UPSCALE_DIR/RealESRGAN_x4plus.pth"; do
+    "$CKPT_DIR/DreamShaper_XL_v2_Turbo.safetensors"; do
     if [ -f "$f" ] && [ ! -s "$f" ]; then
         rm -f "$f"
-        echo "  🗑️  Removed stub: $(basename $f)"
+        echo "  🗑️  Removed: $(basename $f)"
     fi
 done
 echo ""
 
-# ── 1. RealVisXL V5 Lightning — via CivitAI (no auth needed) ─────────────────
-echo "[1/3] RealVisXL V5 Lightning (~6.5GB) — CivitAI"
-DEST="$CKPT_DIR/RealVisXL_V5.0_Lightning.safetensors"
-if [ -f "$DEST" ] && [ -s "$DEST" ]; then
-    echo "  ✅ Already downloaded"
+# ── Ensure huggingface_hub is installed ───────────────────────────────────────
+echo "Checking huggingface_hub..."
+if "$VENV/bin/python" -c "import huggingface_hub" 2>/dev/null; then
+    echo "  ✅ Already installed"
 else
-    # CivitAI model version ID 798204 = RealVisXL V5.0 Lightning fp16
-    wget -q --show-progress --content-disposition \
-        "https://civitai.com/api/download/models/798204?type=Model&format=SafeTensor&size=pruned&fp=fp16" \
-        -O "$DEST" && echo "  ✅ Done" || echo "  ❌ Failed"
+    echo "  Installing..."
+    "$VENV/bin/pip" install -q "huggingface_hub[hf_xet]"
+    echo "  ✅ Done"
 fi
+HF_CLI="$VENV/bin/huggingface-cli"
+# fallback to system if venv doesn't have it
+[ -f "$HF_CLI" ] || HF_CLI="$(which huggingface-cli 2>/dev/null || echo '')"
+[ -z "$HF_CLI" ] && "$VENV/bin/pip" install -q "huggingface_hub[hf_xet]" && HF_CLI="$VENV/bin/huggingface-cli"
+echo ""
+
+# ── Download helper using huggingface_hub python API ─────────────────────────
+download_hf() {
+    local repo="$1"
+    local filename="$2"
+    local dest="$3"
+
+    if [ -f "$dest" ] && [ -s "$dest" ]; then
+        echo "  ✅ Already have: $(basename $dest)"
+        return 0
+    fi
+
+    echo "  ⬇️  $repo → $(basename $dest)"
+    "$VENV/bin/python" - << PYEOF
+import sys
+from huggingface_hub import hf_hub_download
+import shutil, os
+
+try:
+    path = hf_hub_download(
+        repo_id="$repo",
+        filename="$filename",
+        local_dir="/tmp/hf_downloads",
+        local_dir_use_symlinks=False,
+    )
+    shutil.move(path, "$dest")
+    size = os.path.getsize("$dest") / (1024**3)
+    print(f"  ✅ Done ({size:.2f} GB)")
+except Exception as e:
+    print(f"  ❌ Failed: {e}")
+    sys.exit(1)
+PYEOF
+}
+
+# ── 1. RealVisXL V5 Lightning fp16 (~6.9GB) ──────────────────────────────────
+echo "[1/2] RealVisXL V5.0 Lightning fp16"
+download_hf \
+    "SG161222/RealVisXL_V5.0_Lightning" \
+    "RealVisXL_V5.0_Lightning_fp16.safetensors" \
+    "$CKPT_DIR/RealVisXL_V5.0_Lightning.safetensors"
 
 echo ""
 
-# ── 2. DreamShaper XL v2 Turbo — via CivitAI ─────────────────────────────────
-echo "[2/3] DreamShaper XL v2 Turbo (~6.5GB) — CivitAI"
-DEST="$CKPT_DIR/DreamShaper_XL_v2_Turbo.safetensors"
-if [ -f "$DEST" ] && [ -s "$DEST" ]; then
-    echo "  ✅ Already downloaded"
-else
-    # CivitAI model version ID 351306 = DreamShaper XL v2 Turbo DPM++ SDE
-    wget -q --show-progress --content-disposition \
-        "https://civitai.com/api/download/models/351306?type=Model&format=SafeTensor" \
-        -O "$DEST" && echo "  ✅ Done" || echo "  ❌ Failed"
-fi
-
-echo ""
-
-# ── 3. R-ESRGAN 4x+ — via GitHub releases (original repo, no auth) ───────────
-echo "[3/3] R-ESRGAN 4x+ (~64MB) — GitHub"
-DEST="$UPSCALE_DIR/RealESRGAN_x4plus.pth"
-if [ -f "$DEST" ] && [ -s "$DEST" ]; then
-    echo "  ✅ Already downloaded"
-else
-    wget -q --show-progress \
-        "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" \
-        -O "$DEST" && echo "  ✅ Done" || echo "  ❌ Failed"
-fi
+# ── 2. DreamShaper XL v2 Turbo (~6.9GB) ──────────────────────────────────────
+echo "[2/2] DreamShaper XL v2 Turbo"
+download_hf \
+    "Lykon/dreamshaper-xl-v2-turbo" \
+    "DreamShaperXL_Turbo_v2_1.safetensors" \
+    "$CKPT_DIR/DreamShaper_XL_v2_Turbo.safetensors"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -75,7 +101,6 @@ echo "  UPSCALERS:"
 ls -lh "$UPSCALE_DIR"/*.pth 2>/dev/null | awk '{print "  "$5"  "$(NF)}'
 echo ""
 
-# Check all models are non-zero
 FAILS=0
 for f in \
     "$CKPT_DIR/sdxl_base_1.0.safetensors" \
@@ -91,12 +116,12 @@ done
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then
-    echo "  ✅ All models good — restarting SD WebUI..."
+    echo "  All models ready — restarting SD WebUI..."
     sudo systemctl restart baza-sd-webui
     sleep 5
     systemctl is-active --quiet baza-sd-webui && \
         echo "  ✅ SD WebUI up — run: bash check-sd-webui.sh" || \
-        echo "  ⚠️  Check logs: journalctl -u baza-sd-webui -n 30 --no-pager"
+        echo "  ⚠️  Check: journalctl -u baza-sd-webui -n 30 --no-pager"
 else
     echo "  ⚠️  $FAILS model(s) still missing"
 fi
