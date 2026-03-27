@@ -5,7 +5,8 @@ Imaging, Graphics, Media, Architectural & Engineering Visualization
 import re
 import asyncio
 import logging
-from telegram import Update
+from pathlib import Path
+from telegram import Update, InputFile
 from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from core.base_agent import BaseAgent
@@ -48,16 +49,17 @@ When asked for visuals, you deliver — no excuses, just results.
 Short replies for ops talk. Descriptive when discussing creative direction.
 
 == CRITICAL RULES ==
-1. NEVER describe an image you didn't actually generate — run the skill first.
+1. NEVER describe an image you didn't actually generate — run the skill IMMEDIATELY.
 2. NEVER fabricate file paths. Report actual output paths from skill results.
-3. If SD WebUI is offline, say so and suggest alternatives.
+3. If SD WebUI is offline, say so clearly.
 4. Always save generated images to /mnt/empirepool/media/generated/
 5. When writing image prompts: be specific about style, lighting, composition, color palette, camera angle.
+6. When someone says "show me" or "generate" — DO NOT ask for more info, just run the skill NOW.
+7. The image will be automatically sent to Telegram after the skill runs — just confirm it.
 
 == IMAGE REQUEST WORKFLOW ==
-1. Confirm the creative direction in 1-2 sentences
-2. Run the appropriate skill with a detailed prompt
-3. Report back: output path + brief description of what was generated
+1. Run ##SKILL: generate_image## immediately with a detailed prompt
+2. The system sends the image — you confirm: "Generated [description]. Sent above."
 
 == SKILLS AVAILABLE ==
 Image generation:
@@ -126,8 +128,39 @@ For elevations: front-facing, realistic lighting, show materials clearly.
         if not response:
             response = "_(no response)_"
 
-        # Let base skill engine handle any ##SKILL: tags Sam emits
-        # (image generation still goes through the two-pass flow)
+        # ── Execute any ##SKILL:## calls the LLM emitted ──────────────────
+        response, skill_results = self.skills.parse_and_run(response, chat_id=chat_id)
+
+        # ── Pass 2: if skills ran, let LLM reformat with real output ──────
+        successful = [r for r in skill_results if r.get("success")]
+        if successful:
+            skill_data = "\n\n".join(
+                f"[{r['skill']} result]\n{r['output']}" for r in successful
+            )
+            import json as _json
+            reformat_msgs = [
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": response},
+                {"role": "user", "content": (
+                    f"Skill results:\n{skill_data}\n\n"
+                    "Report the result concisely. "
+                    "If an image was generated, state the filename and confirm it will be sent. "
+                    "No markdown, no fabrication."
+                )}
+            ]
+            reformatted = await loop.run_in_executor(
+                None, self.llm_chat, reformat_msgs, system
+            )
+            if reformatted:
+                response = reformatted
+
+        # ── Report any skill failures ──────────────────────────────────────
+        failed = [r for r in skill_results if not r.get("success")]
+        if failed:
+            response += "\n\n⚠️ " + "; ".join(
+                f"{r.get('skill','?')}: {r.get('error','unknown')}" for r in failed
+            )
+
         save_message(chat_id, self.AGENT_ID, "assistant", response)
         self.journal(
             task_type="llm_response",
@@ -137,6 +170,39 @@ For elevations: front-facing, realistic lighting, show materials clearly.
             chat_id=chat_id
         )
         self._auto_remember(chat_id, text, response)
+
+        # ── Send any generated images as Telegram photos ──────────────────
+        image_sent = False
+        for r in successful:
+            out = r.get("output", "")
+            # Check skill output for an image_path field (JSON or plain path)
+            img_path = None
+            try:
+                import json as _json
+                parsed = _json.loads(out)
+                img_path = parsed.get("image_path")
+            except Exception:
+                match = re.search(r'(/[^\s"]+\.(?:png|jpg|jpeg|webp))', out)
+                if match:
+                    img_path = match.group(1)
+
+            if img_path and Path(img_path).exists():
+                try:
+                    await context.bot.send_chat_action(
+                        chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO
+                    )
+                    with open(img_path, "rb") as f:
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=InputFile(f, filename=Path(img_path).name),
+                            caption=f"🎨 {Path(img_path).stem[:100]}"
+                        )
+                    image_sent = True
+                    logger.info(f"[sam_axe] Sent photo: {img_path}")
+                except Exception as e:
+                    logger.error(f"[sam_axe] Failed to send photo {img_path}: {e}")
+                    response += f"\n\n📁 Saved: `{img_path}`"
+
         await self._send_response(context.bot, chat_id, response)
 
     def _auto_remember(self, chat_id: int, user_msg: str, agent_reply: str):
