@@ -106,6 +106,13 @@ For elevations: front-facing, realistic lighting, show materials clearly.
         system = self.build_system_prompt()
 
         if self._is_image_request(text):
+            # Send "generating" notice immediately so user knows it's working
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="🎨 Generating... this takes ~1-2 min"
+            )
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
+
             # For image requests, remind him strongly to actually run the skill
             augmented_messages = messages + [{
                 "role": "user",

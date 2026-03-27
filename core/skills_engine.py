@@ -39,7 +39,9 @@ class SkillsEngine:
             env["SKILL_ARGS"] = json.dumps(args)
             env["AGENT_ID"] = self.agent_id
             cmd = ["python3", path] if path.endswith(".py") else ["bash", path]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
+            # Image generation can take several minutes; give it 10 min
+            skill_timeout = 600 if any(kw in skill_name for kw in ("image", "generate", "render", "enhance")) else 90
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=skill_timeout, env=env)
             duration_ms = int((time.time()-start)*1000)
             success = proc.returncode == 0
             output = proc.stdout.strip() if success else proc.stderr.strip()
