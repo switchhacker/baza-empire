@@ -11,6 +11,10 @@ import redis
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from core.gpu_pool import gpu_pool
+from core.context_mixin import ContextMixin
+from core.context_db import init_context_db, journal_log, save_summary
+from core.skills_engine import SkillsEngine
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -282,7 +286,7 @@ def strip_name_prefix(text: str, name: str) -> str:
     return re.sub(rf"^{re.escape(name)}:\s*", "", text, flags=re.IGNORECASE).strip()
 
 
-class BazaAgent:
+class BazaAgent(ContextMixin):
     def __init__(self, agent_id: str, config: dict, global_config: dict):
         self.agent_id = agent_id
         self.config = config
@@ -300,6 +304,16 @@ class BazaAgent:
             decode_responses=True
         )
 
+        # ── Context DB + Skills ───────────────────────────────────────────────
+        try:
+            init_context_db()
+            self.init_context()   # ContextMixin: loads identity, skills engine
+            self._msg_counts = {} # chat_id -> message count for auto-summarize
+            logger.info(f"[{self.agent_id}] Context DB ready.")
+        except Exception as e:
+            logger.warning(f"[{self.agent_id}] Context DB unavailable: {e}")
+            self._msg_counts = {}
+
     # ─── Ollama via GPU Pool ──────────────────────────────────────────────────
 
     async def query_ollama(self, messages: list) -> str:
@@ -312,7 +326,7 @@ class BazaAgent:
             try:
                 payload = {
                     "model": self.model,
-                    "messages": [{"role": "system", "content": self.system_prompt}] + messages,
+                    "messages": [{"role": "system", "content": self._get_enriched_prompt()}] + messages,
                     "stream": False
                 }
                 resp = req.post(
@@ -517,6 +531,28 @@ class BazaAgent:
             f"<b>{self.name}:</b> On it. Report sent to Simon.",
             parse_mode="HTML"
         )
+
+
+    async def _auto_summarize(self, chat_id: str, history: list):
+        """Compress recent conversation into a summary and save to context DB."""
+        try:
+            recent = history[-15:]
+            history_text = "\n".join(
+                f"{m['role'].upper()}: {m['content'][:200]}" for m in recent
+            )
+            summarize_msgs = [{"role": "user", "content":
+                f"Summarize this conversation in 2-3 sentences. Focus on facts and decisions:\n\n{history_text}"}]
+            summary = await self.query_ollama(summarize_msgs)
+            if summary and len(summary) > 20:
+                save_summary(
+                    agent_id=self.agent_id,
+                    summary=summary[:500],
+                    chat_id=int(chat_id) if chat_id.isdigit() else 0,
+                    message_count=len(recent)
+                )
+                logger.info(f"[{self.agent_id}] Session summarized: {summary[:80]}")
+        except Exception as e:
+            logger.debug(f"Auto-summarize failed: {e}")
 
     # ─── Start ────────────────────────────────────────────────────────────────
 

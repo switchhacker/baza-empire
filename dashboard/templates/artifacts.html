@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Artifacts</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+
+    .container{max-width:1500px;margin:0 auto;padding:24px 28px}
+
+    /* Header */
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:16px;flex-wrap:wrap}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+    .header-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+    /* Buttons */
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s}
+    .btn:hover{opacity:.82}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-danger{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+    .btn-sm{padding:5px 11px;font-size:11px;border-radius:5px}
+
+    /* Stats bar */
+    .stats-bar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+    .stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:8px;padding:12px 18px;min-width:90px;text-align:center}
+    .stat-val{font-size:20px;font-weight:800}
+    .stat-lbl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+
+    /* Toolbar */
+    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+    .search-box{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 14px;color:#e0e0e0;font-size:13px;outline:none;width:280px;transition:border-color .2s}
+    .search-box:focus{border-color:#7c3aed}
+    .filter-pills{display:flex;gap:6px;flex-wrap:wrap}
+    .pill{padding:6px 12px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid #1a1a2e;background:#0a0a16;color:#555;transition:all .2s}
+    .pill:hover,.pill.active{border-color:#7c3aed;color:#c4b5fd;background:#120d22}
+    .view-toggle{display:flex;gap:4px;margin-left:auto}
+    .view-btn{padding:7px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;font-size:13px;cursor:pointer;color:#555;transition:all .2s}
+    .view-btn.active{border-color:#7c3aed;color:#c4b5fd;background:#120d22}
+
+    /* Layout */
+    .artifacts-layout{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:start}
+    @media(max-width:800px){.artifacts-layout{grid-template-columns:1fr}}
+
+    /* Sidebar */
+    .sidebar{background:#0a0a16;border:1px solid #111;border-radius:10px;padding:14px;position:sticky;top:72px}
+    .sidebar-title{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px}
+    .proj-item{padding:7px 10px;border-radius:6px;font-size:12px;color:#555;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:space-between}
+    .proj-item:hover,.proj-item.active{background:#1a1a2e;color:#c4b5fd}
+    .proj-count{font-size:10px;color:#333;background:#0d0d1a;padding:2px 6px;border-radius:10px}
+
+    /* Grid view */
+    .files-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+    .file-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:9px;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;position:relative}
+    .file-card:hover{border-color:#7c3aed;transform:translateY(-1px)}
+    .file-card.selected{border-color:#e94560;background:#1a0a12}
+    .file-card-preview{height:100px;display:flex;align-items:center;justify-content:center;background:#080814;font-size:36px;position:relative;overflow:hidden}
+    .file-card-preview img{width:100%;height:100%;object-fit:cover}
+    .file-card-preview .pdf-thumb{font-size:40px}
+    .file-card-body{padding:10px}
+    .file-card-name{font-size:11px;font-weight:700;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+    .file-card-meta{font-size:10px;color:#333}
+    .file-card-check{position:absolute;top:6px;left:6px;width:18px;height:18px;background:#e94560;border-radius:4px;display:none;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:800}
+    .file-card.selected .file-card-check{display:flex}
+    .file-card-actions{position:absolute;top:6px;right:6px;display:none;gap:4px}
+    .file-card:hover .file-card-actions{display:flex}
+    .fca-btn{width:24px;height:24px;border-radius:4px;border:none;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;transition:opacity .2s}
+    .fca-btn:hover{opacity:.75}
+
+    /* List view */
+    .files-list{display:none;flex-direction:column;gap:0}
+    .files-list.show{display:flex}
+    .file-row{display:grid;grid-template-columns:28px 32px 1fr 100px 90px 130px 100px;gap:10px;padding:10px 14px;border-bottom:1px solid #0a0a14;align-items:center;cursor:pointer;transition:background .15s}
+    .file-row:hover{background:#0d0d1a}
+    .file-row.selected{background:#1a0a12}
+    .file-row-icon{font-size:18px;text-align:center}
+    .file-row-name{font-size:13px;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .file-row-ext{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;text-align:center}
+    .file-row-size{font-size:11px;color:#444;text-align:right}
+    .file-row-date{font-size:11px;color:#333}
+    .file-row-actions{display:flex;gap:6px;justify-content:flex-end}
+    .list-header{display:grid;grid-template-columns:28px 32px 1fr 100px 90px 130px 100px;gap:10px;padding:8px 14px;border-bottom:1px solid #111;font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px}
+
+    /* Drag-drop zone */
+    .drop-zone{border:2px dashed #1a1a2e;border-radius:12px;padding:40px;text-align:center;transition:all .2s;margin-bottom:16px;display:none}
+    .drop-zone.visible{display:block}
+    .drop-zone.dragover{border-color:#7c3aed;background:#0d0820;color:#c4b5fd}
+    .drop-zone-icon{font-size:36px;margin-bottom:10px}
+    .drop-zone-text{font-size:14px;color:#444}
+    .drop-zone-sub{font-size:11px;color:#333;margin-top:6px}
+
+    /* Progress bar */
+    .upload-progress{display:none;background:#0a0a16;border:1px solid #1a1a2e;border-radius:8px;padding:14px;margin-bottom:14px}
+    .upload-progress.show{display:block}
+    .progress-bar-outer{background:#111;border-radius:10px;height:6px;margin-top:8px;overflow:hidden}
+    .progress-bar-inner{background:linear-gradient(90deg,#7c3aed,#e94560);height:100%;border-radius:10px;transition:width .3s}
+    .progress-label{font-size:12px;color:#888;display:flex;justify-content:space-between}
+
+    /* Selection bar */
+    .selection-bar{display:none;position:sticky;bottom:16px;left:0;right:0;margin:16px 0 0;background:#0d0820;border:1px solid #7c3aed;border-radius:10px;padding:12px 20px;align-items:center;gap:12px;z-index:100}
+    .selection-bar.show{display:flex}
+    .sel-count{font-size:13px;font-weight:700;color:#c4b5fd}
+
+    /* Modals */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;align-items:center;justify-content:center}
+    .modal-overlay.open{display:flex}
+    .modal{background:#0d0d1e;border:1px solid #2a2a4a;border-radius:14px;padding:28px;max-width:700px;width:100%;margin:20px;max-height:92vh;display:flex;flex-direction:column}
+    .modal-title{font-size:16px;font-weight:800;color:#fff;margin-bottom:6px}
+    .modal-sub{font-size:12px;color:#444;margin-bottom:20px}
+    .modal-body{flex:1;overflow-y:auto}
+    .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid #111}
+
+    /* Preview modal */
+    .preview-content{background:#020208;border:1px solid #1a1a2e;border-radius:8px;overflow:auto;max-height:60vh}
+    .preview-code{font-family:'Courier New',monospace;font-size:12px;color:#a0f0a0;padding:16px;white-space:pre-wrap;word-break:break-word;line-height:1.6}
+    .preview-img{max-width:100%;max-height:60vh;display:block;margin:0 auto}
+    .preview-pdf{width:100%;height:60vh;border:none}
+    .preview-binary{text-align:center;padding:40px;color:#555}
+
+    /* Upload modal */
+    .drop-target{border:2px dashed #2a2a4a;border-radius:10px;padding:36px;text-align:center;cursor:pointer;transition:all .2s}
+    .drop-target:hover,.drop-target.dragover{border-color:#7c3aed;background:#0d0820}
+    .drop-target-icon{font-size:32px;margin-bottom:8px}
+    .drop-target-text{font-size:14px;color:#888}
+    .drop-target-sub{font-size:11px;color:#333;margin-top:4px}
+    .file-queue{margin-top:14px;display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto}
+    .file-q-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#070712;border:1px solid #111;border-radius:6px;font-size:12px}
+    .file-q-name{flex:1;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .file-q-size{color:#444;font-family:monospace}
+    .file-q-status{font-size:10px;font-weight:700}
+    .file-q-status.ok{color:#00d084}
+    .file-q-status.err{color:#ff6666}
+    .file-q-status.pending{color:#7c3aed}
+    .form-label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;display:block}
+    .form-input{width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:9px 12px;color:#e0e0e0;font-size:13px;outline:none}
+    .form-input:focus{border-color:#7c3aed}
+    .form-group{margin-bottom:14px}
+
+    /* Ext badges */
+    .ext-py{background:#0d1a0d;color:#4CAF50;border-color:#1a3a1a}
+    .ext-js,.ext-ts,.ext-jsx,.ext-tsx{background:#1a1500;color:#f0c040;border-color:#3a2a00}
+    .ext-html,.ext-htm{background:#1a0d00;color:#ff8c00;border-color:#3a1a00}
+    .ext-css{background:#000d1a;color:#4da6ff;border-color:#001a3a}
+    .ext-json,.ext-yaml,.ext-yml{background:#0d001a;color:#c084fc;border-color:#1a003a}
+    .ext-md,.ext-txt,.ext-rst{background:#0a0a0a;color:#888;border-color:#222}
+    .ext-sh,.ext-bash{background:#001a0a;color:#00d084;border-color:#003a1a}
+    .ext-png,.ext-jpg,.ext-jpeg,.ext-gif,.ext-webp,.ext-svg{background:#1a000d;color:#ff69b4;border-color:#3a001a}
+    .ext-pdf{background:#1a0000;color:#ff4444;border-color:#3a0000}
+    .ext-zip,.ext-gz,.ext-tar{background:#0a0a00;color:#aaa000;border-color:#1a1a00}
+    .ext-mp4,.ext-mp3,.ext-wav{background:#0d0014;color:#9f7aea;border-color:#1a0028}
+    .ext-default{background:#0a0a0a;color:#555;border-color:#1a1a1a}
+
+    .empty-state{text-align:center;padding:60px 20px;color:#333}
+    .empty-icon{font-size:48px;margin-bottom:14px}
+
+    .toast{position:fixed;bottom:20px;right:20px;padding:11px 18px;border-radius:8px;font-size:13px;font-weight:700;z-index:9999;display:none;animation:su .3s ease}
+    .toast.ok{background:#061a10;border:1px solid #00d084;color:#00d084}
+    .toast.err{background:#1a0606;border:1px solid #ff6666;color:#ff6666}
+    @keyframes su{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/crons">Cron Hub</a>
+  <a class="nav-link active" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/email">Email</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  <a class="nav-link" href="/infra">Infra Map</a>
+</nav>
+
+<div class="container">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">📦 Artifacts Hub</div>
+      <div class="page-sub">Central file store for all agents — any type, drag-drop, preview, organize</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick="toggleDropZone()">⬇ Drop Zone</button>
+      <button class="btn btn-secondary" onclick="openNewText()">✎ New File</button>
+      <button class="btn btn-primary" onclick="openUpload()">↑ Upload Files</button>
+    </div>
+  </div>
+
+  <!-- Recent activity strip -->
+  <div id="recentStrip" style="display:none;margin-bottom:16px;background:#090916;border:1px solid #1a1a2e;border-radius:8px;padding:10px 16px">
+    <div style="font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px">Recent Agent Uploads</div>
+    <div id="recentItems" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-val" id="st-total" style="color:#fff">—</div><div class="stat-lbl">Total Files</div></div>
+    <div class="stat"><div class="stat-val" id="st-size" style="color:#7c3aed">—</div><div class="stat-lbl">Total Size</div></div>
+    <div class="stat"><div class="stat-val" id="st-images" style="color:#ff69b4">—</div><div class="stat-lbl">Images</div></div>
+    <div class="stat"><div class="stat-val" id="st-code" style="color:#4da6ff">—</div><div class="stat-lbl">Code</div></div>
+    <div class="stat"><div class="stat-val" id="st-docs" style="color:#00d084">—</div><div class="stat-lbl">Docs</div></div>
+    <div class="stat"><div class="stat-val" id="st-other" style="color:#888">—</div><div class="stat-lbl">Other</div></div>
+  </div>
+
+  <!-- Global drop zone (hidden by default) -->
+  <div class="drop-zone" id="globalDrop"
+       ondragover="event.preventDefault();this.classList.add('dragover')"
+       ondragleave="this.classList.remove('dragover')"
+       ondrop="handleGlobalDrop(event)">
+    <div class="drop-zone-icon">📂</div>
+    <div class="drop-zone-text">Drop any files here</div>
+    <div class="drop-zone-sub">Any type — images, zips, PDFs, code, binaries, anything</div>
+  </div>
+
+  <!-- Upload progress -->
+  <div class="upload-progress" id="uploadProgress">
+    <div class="progress-label"><span id="prog-label">Uploading...</span><span id="prog-pct">0%</span></div>
+    <div class="progress-bar-outer"><div class="progress-bar-inner" id="prog-bar" style="width:0%"></div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input class="search-box" type="text" placeholder="🔍 Search files..." oninput="applyFilters()" id="searchBox">
+    <div class="filter-pills">
+      <span class="pill active" onclick="setTypeFilter('all',this)">All</span>
+      <span class="pill" onclick="setTypeFilter('image',this)">🖼 Images</span>
+      <span class="pill" onclick="setTypeFilter('code',this)">💻 Code</span>
+      <span class="pill" onclick="setTypeFilter('document',this)">📄 Docs</span>
+      <span class="pill" onclick="setTypeFilter('archive',this)">📦 Archives</span>
+      <span class="pill" onclick="setTypeFilter('other',this)">⬡ Other</span>
+    </div>
+    <div class="view-toggle">
+      <button class="view-btn active" id="vb-grid" onclick="setView('grid')" title="Grid">⊞</button>
+      <button class="view-btn" id="vb-list" onclick="setView('list')" title="List">☰</button>
+    </div>
+  </div>
+
+  <!-- Main layout -->
+  <div class="artifacts-layout">
+
+    <!-- Sidebar — project filter -->
+    <div class="sidebar">
+      <div class="sidebar-title">Projects</div>
+      <div id="projList">
+        <div class="proj-item active" onclick="setProject('',this)">
+          <span>All Projects</span><span class="proj-count" id="pc-all">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Files area -->
+    <div>
+      <!-- Grid -->
+      <div class="files-grid" id="filesGrid"></div>
+      <!-- List -->
+      <div class="files-list" id="filesList">
+        <div class="list-header">
+          <div></div><div>Type</div><div>Name</div><div>Agent</div><div>Ext</div><div>Modified</div><div>Actions</div>
+        </div>
+        <div id="filesListBody"></div>
+      </div>
+      <div id="emptyState" class="empty-state" style="display:none">
+        <div class="empty-icon">📭</div>
+        <div style="font-size:14px;margin-bottom:8px">No files yet</div>
+        <div style="font-size:12px;color:#444">Upload something or drag files here</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Selection bar -->
+  <div class="selection-bar" id="selBar">
+    <span class="sel-count" id="selCount">0 selected</span>
+    <button class="btn btn-secondary btn-sm" onclick="downloadSelected()">⬇ Download</button>
+    <button class="btn btn-secondary btn-sm" onclick="moveSelected()">↗ Move</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteSelected()">✕ Delete</button>
+    <button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="clearSelection()">✕ Deselect</button>
+  </div>
+
+</div>
+
+<!-- ── Upload Modal ── -->
+<div class="modal-overlay" id="uploadModal">
+  <div class="modal">
+    <div class="modal-title">↑ Upload Files</div>
+    <div class="modal-sub">Any file type, any size. Multiple files supported.</div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Project / Folder</label>
+        <select class="form-input" id="uploadProject">
+          <option value="shared">shared</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Subfolder (optional)</label>
+        <input class="form-input" id="uploadSubfolder" placeholder="e.g. designs/v2">
+      </div>
+      <div class="drop-target" id="modalDropTarget"
+           onclick="document.getElementById('fileInputMulti').click()"
+           ondragover="event.preventDefault();this.classList.add('dragover')"
+           ondragleave="this.classList.remove('dragover')"
+           ondrop="handleModalDrop(event)">
+        <div class="drop-target-icon">📂</div>
+        <div class="drop-target-text">Click to browse or drag files here</div>
+        <div class="drop-target-sub">Any type — images, PDFs, zips, code, videos, binaries</div>
+      </div>
+      <input type="file" id="fileInputMulti" multiple style="display:none" onchange="queueFiles(this.files)">
+      <div class="file-queue" id="fileQueue"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('uploadModal')">Cancel</button>
+      <button class="btn btn-primary" id="uploadBtn" onclick="uploadQueued()" disabled>↑ Upload All</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── New Text File Modal ── -->
+<div class="modal-overlay" id="newTextModal">
+  <div class="modal" style="max-width:800px">
+    <div class="modal-title">✎ New File</div>
+    <div class="modal-sub">Create any text-based file — code, markdown, config, scripts</div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
+        <div class="form-group">
+          <label class="form-label">Filename</label>
+          <input class="form-input" id="newFileName" placeholder="e.g. script.py">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Project</label>
+          <select class="form-input" id="newFileProject">
+            <option value="shared">shared</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Template</label>
+          <select class="form-input" id="newFileTemplate" onchange="applyTemplate()">
+            <option value="">Blank</option>
+            <option value="py">Python script</option>
+            <option value="sh">Shell script</option>
+            <option value="md">Markdown doc</option>
+            <option value="json">JSON file</option>
+            <option value="yaml">YAML config</option>
+            <option value="html">HTML page</option>
+            <option value="sql">SQL file</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Content</div>
+      <textarea class="form-input" id="newFileContent" rows="18" style="font-family:monospace;font-size:12px;line-height:1.6;resize:vertical" placeholder="Start typing..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('newTextModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewText()">💾 Save File</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Preview Modal ── -->
+<div class="modal-overlay" id="previewModal">
+  <div class="modal" style="max-width:900px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div class="modal-title" id="previewTitle">File</div>
+        <div style="font-size:11px;color:#444" id="previewMeta"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" id="previewDownloadBtn">⬇ Download</button>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('previewModal')">✕ Close</button>
+      </div>
+    </div>
+    <div class="modal-body preview-content" id="previewBody"></div>
+  </div>
+</div>
+
+<!-- ── Rename Modal ── -->
+<div class="modal-overlay" id="renameModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">Rename File</div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label">New Name</label>
+        <input class="form-input" id="renameInput" placeholder="filename.ext">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('renameModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmRename()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Move Modal ── -->
+<div class="modal-overlay" id="moveModal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">Move to Project</div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-top:12px">
+        <label class="form-label">Destination Project</label>
+        <select class="form-input" id="moveProjectInput">
+          <option value="shared">shared</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('moveModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmMove()">Move</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allFiles      = [];
+let filtered      = [];
+let selectedFiles = new Set(); // keys = "project_id::name"
+let currentView   = 'grid';
+let currentType   = 'all';
+let currentProj   = '';
+let currentAgent  = '';
+let renameTarget  = null;
+let moveTargets   = [];
+let pendingUpload = [];
+let knownProjects = [];
+let knownAgents   = [];
+
+// ── Type detection ────────────────────────────────────────────────────────────
+const IMAGE_EXT  = new Set(['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.ico','.tiff']);
+const CODE_EXT   = new Set(['.py','.js','.ts','.jsx','.tsx','.html','.htm','.css','.sh','.bash',
+                             '.json','.yaml','.yml','.toml','.ini','.cfg','.sql','.xml','.env',
+                             '.php','.rb','.go','.rs','.c','.cpp','.h','.java','.kt','.swift']);
+const DOC_EXT    = new Set(['.md','.txt','.rst','.csv','.log','.pdf','.docx','.doc','.xls','.xlsx']);
+const ARCHIVE_EXT= new Set(['.zip','.gz','.tar','.tgz','.bz2','.7z','.rar','.xz']);
+const VIDEO_EXT  = new Set(['.mp4','.mov','.avi','.mkv','.webm']);
+const AUDIO_EXT  = new Set(['.mp3','.wav','.ogg','.flac','.m4a','.aac']);
+
+function getType(ext) {
+  if(IMAGE_EXT.has(ext))   return 'image';
+  if(CODE_EXT.has(ext))    return 'code';
+  if(DOC_EXT.has(ext))     return 'document';
+  if(ARCHIVE_EXT.has(ext)) return 'archive';
+  if(VIDEO_EXT.has(ext))   return 'video';
+  if(AUDIO_EXT.has(ext))   return 'audio';
+  return 'other';
+}
+
+function getEmoji(ext) {
+  if(IMAGE_EXT.has(ext))   return '🖼';
+  if(VIDEO_EXT.has(ext))   return '🎬';
+  if(AUDIO_EXT.has(ext))   return '🎵';
+  if(ARCHIVE_EXT.has(ext)) return '📦';
+  if(ext==='.pdf')         return '📕';
+  if(ext==='.md')          return '📝';
+  if(['.py'].includes(ext))return '🐍';
+  if(['.sh','.bash'].includes(ext)) return '⚙️';
+  if(['.json','.yaml','.yml','.toml'].includes(ext)) return '⚙';
+  if(CODE_EXT.has(ext))    return '💻';
+  if(DOC_EXT.has(ext))     return '📄';
+  return '📁';
+}
+
+function fmtSize(bytes) {
+  if(!bytes) return '—';
+  if(bytes < 1024) return bytes+'B';
+  if(bytes < 1024*1024) return (bytes/1024).toFixed(1)+'KB';
+  return (bytes/1024/1024).toFixed(1)+'MB';
+}
+
+function fileKey(f) { return f.project_id+'::'+f.name; }
+
+// ── Load ──────────────────────────────────────────────────────────────────────
+function loadArtifacts() {
+  // Load project/agent list for dropdowns
+  fetch('/api/artifacts/project-list').then(r=>r.json()).then(d=>{
+    knownProjects = d.projects || [];
+    knownAgents   = d.agents   || [];
+    populateSelects();
+  }).catch(()=>{});
+
+  fetch('/api/artifacts').then(r=>r.json()).then(data => {
+    allFiles = (Array.isArray(data) ? data : (data.files || [])).map(f => ({
+      ...f,
+      ext: (f.ext || (f.name.includes('.') ? '.'+f.name.split('.').pop() : '')).toLowerCase(),
+    }));
+    allFiles.forEach(f => { if(!f.file_type) f.file_type = getType(f.ext); });
+    // Newest first
+    allFiles.sort((a,b)=>(b.modified||'').localeCompare(a.modified||''));
+    buildProjectSidebar();
+    updateStats();
+    applyFilters();
+  }).catch(e => {
+    document.getElementById('emptyState').style.display='block';
+  });
+}
+
+function populateSelects() {
+  const opts = knownProjects.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  ['uploadProject','newFileProject','moveProjectInput'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const cur = el.value;
+    el.innerHTML = opts || '<option value="shared">shared</option>';
+    if(cur) el.value = cur;
+  });
+}
+
+function buildProjectSidebar() {
+  const projCounts  = {};
+  const agentCounts = {};
+  allFiles.forEach(f => {
+    projCounts[f.project_id]  = (projCounts[f.project_id]||0)+1;
+    if(f.agent_id && f.agent_id !== 'unknown')
+      agentCounts[f.agent_id] = (agentCounts[f.agent_id]||0)+1;
+  });
+  document.getElementById('pc-all').textContent = allFiles.length;
+  const list = document.getElementById('projList');
+  [...list.querySelectorAll('.proj-item.dynamic')].forEach(e=>e.remove());
+
+  // Projects section
+  Object.entries(projCounts).sort().forEach(([proj, cnt]) => {
+    const el = document.createElement('div');
+    el.className = 'proj-item dynamic';
+    el.innerHTML = `<span>📁 ${proj}</span><span class="proj-count">${cnt}</span>`;
+    el.onclick = () => { currentAgent=''; setProject(proj, el); };
+    list.appendChild(el);
+  });
+
+  // Agents section
+  if(Object.keys(agentCounts).length) {
+    const sep = document.createElement('div');
+    sep.className = 'dynamic';
+    sep.style.cssText='font-size:10px;font-weight:700;color:#222;text-transform:uppercase;letter-spacing:2px;padding:12px 10px 6px';
+    sep.textContent = 'Agents';
+    list.appendChild(sep);
+    Object.entries(agentCounts).sort().forEach(([agent, cnt]) => {
+      const el = document.createElement('div');
+      el.className = 'proj-item dynamic';
+      el.innerHTML = `<span>🤖 ${agent}</span><span class="proj-count">${cnt}</span>`;
+      el.onclick = () => { currentProj=''; setAgent(agent, el); };
+      list.appendChild(el);
+    });
+  }
+}
+
+function updateStats() {
+  const total = allFiles.length;
+  const totalSize = allFiles.reduce((s,f)=>s+(f.size||0),0);
+  const images = allFiles.filter(f=>f.file_type==='image').length;
+  const code   = allFiles.filter(f=>f.file_type==='code').length;
+  const docs   = allFiles.filter(f=>f.file_type==='document').length;
+  const other  = total - images - code - docs;
+  document.getElementById('st-total').textContent  = total;
+  document.getElementById('st-size').textContent   = fmtSize(totalSize);
+  document.getElementById('st-images').textContent = images;
+  document.getElementById('st-code').textContent   = code;
+  document.getElementById('st-docs').textContent   = docs;
+  document.getElementById('st-other').textContent  = other;
+
+  // Recent activity strip — show last 8 files with agent badge
+  const recent = allFiles.slice(0, 8);
+  const strip  = document.getElementById('recentStrip');
+  const items  = document.getElementById('recentItems');
+  if(recent.length) {
+    strip.style.display = 'block';
+    items.innerHTML = recent.map(f=>`
+      <div onclick="previewFile('${esc(f.project_id)}','${esc(f.name)}','${esc(f.ext)}',${f.size||0})"
+           style="background:#0d0d1e;border:1px solid #1a1a2e;border-radius:6px;padding:7px 10px;cursor:pointer;font-size:11px;max-width:160px;transition:border-color .2s"
+           onmouseover="this.style.borderColor='#7c3aed'" onmouseout="this.style.borderColor='#1a1a2e'">
+        <div style="font-size:18px;margin-bottom:3px">${getEmoji(f.ext)}</div>
+        <div style="color:#ccc;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</div>
+        ${f.agent_id&&f.agent_id!=='unknown'?`<div style="color:#7c3aed;font-size:9px;font-family:monospace;margin-top:2px">🤖 ${esc(f.agent_id)}</div>`:''}
+        <div style="color:#333;font-size:10px;margin-top:2px">${(f.modified||'').substring(5,16)}</div>
+      </div>`).join('');
+  }
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function setTypeFilter(type, btn) {
+  currentType = type;
+  document.querySelectorAll('.pill').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+function setProject(proj, el) {
+  currentProj  = proj;
+  currentAgent = '';
+  document.querySelectorAll('.proj-item').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  applyFilters();
+}
+function setAgent(agent, el) {
+  currentAgent = agent;
+  currentProj  = '';
+  document.querySelectorAll('.proj-item').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  applyFilters();
+}
+function applyFilters() {
+  const q = (document.getElementById('searchBox').value||'').toLowerCase();
+  filtered = allFiles.filter(f => {
+    if(currentProj  && f.project_id !== currentProj)  return false;
+    if(currentAgent && f.agent_id   !== currentAgent) return false;
+    if(currentType !== 'all' && f.file_type !== currentType) return false;
+    if(q && !f.name.toLowerCase().includes(q)
+         && !(f.project_id||'').toLowerCase().includes(q)
+         && !(f.agent_id||'').toLowerCase().includes(q)) return false;
+    return true;
+  });
+  renderFiles();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function setView(v) {
+  currentView = v;
+  document.getElementById('vb-grid').classList.toggle('active', v==='grid');
+  document.getElementById('vb-list').classList.toggle('active', v==='list');
+  document.getElementById('filesGrid').style.display = v==='grid'?'grid':'none';
+  document.getElementById('filesList').classList.toggle('show', v==='list');
+  renderFiles();
+}
+
+function renderFiles() {
+  const empty = document.getElementById('emptyState');
+  if(!filtered.length) { empty.style.display='block'; document.getElementById('filesGrid').innerHTML=''; document.getElementById('filesListBody').innerHTML=''; return; }
+  empty.style.display='none';
+  if(currentView==='grid') renderGrid();
+  else renderList();
+}
+
+function renderGrid() {
+  const grid = document.getElementById('filesGrid');
+  grid.innerHTML = filtered.map(f => {
+    const key  = fileKey(f);
+    const sel  = selectedFiles.has(key);
+    const ext  = f.ext||'';
+    const preview = IMAGE_EXT.has(ext)
+      ? `<img src="/api/artifacts/serve/${f.project_id}/${encodeURIComponent(f.name)}" loading="lazy" onerror="this.parentNode.innerHTML='${getEmoji(ext)}';">`
+      : `<span>${getEmoji(ext)}</span>`;
+    return `<div class="file-card${sel?' selected':''}" id="fc-${esc(key)}" onclick="cardClick(event,'${esc(key)}','${esc(f.project_id)}','${esc(f.name)}')">
+      <div class="file-card-check">✓</div>
+      <div class="file-card-preview">${preview}</div>
+      <div class="file-card-actions">
+        <button class="fca-btn" style="background:#0d2040;color:#4da6ff" title="Preview" onclick="event.stopPropagation();previewFile('${esc(f.project_id)}','${esc(f.name)}','${esc(f.ext)}',${f.size||0})">👁</button>
+        <button class="fca-btn" style="background:#0d2040;color:#00d084" title="Download" onclick="event.stopPropagation();downloadFile('${esc(f.project_id)}','${esc(f.name)}')">⬇</button>
+        <button class="fca-btn" style="background:#2a0d0d;color:#ff6666" title="Delete" onclick="event.stopPropagation();deleteFile('${esc(f.project_id)}','${esc(f.name)}')">✕</button>
+      </div>
+      <div class="file-card-body">
+        <div class="file-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
+        <div class="file-card-meta">${fmtSize(f.size)} · ${(f.modified||'').substring(0,10)}</div>
+        ${f.agent_id && f.agent_id!=='unknown' ? `<div style="font-size:9px;color:#7c3aed;margin-top:3px;font-family:monospace">🤖 ${esc(f.agent_id)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderList() {
+  const body = document.getElementById('filesListBody');
+  body.innerHTML = filtered.map(f => {
+    const key = fileKey(f);
+    const sel = selectedFiles.has(key);
+    const ext = f.ext||'';
+    const extClass = 'ext-'+(ext.slice(1)||'default');
+    return `<div class="file-row${sel?' selected':''}" onclick="cardClick(event,'${esc(key)}','${esc(f.project_id)}','${esc(f.name)}')">
+      <input type="checkbox" ${sel?'checked':''} style="accent-color:#e94560;cursor:pointer" onclick="event.stopPropagation();toggleSel('${esc(key)}')">
+      <div class="file-row-icon">${getEmoji(ext)}</div>
+      <div class="file-row-name" title="${esc(f.name)}">${esc(f.name)}</div>
+      <div style="font-size:10px;color:#7c3aed;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.agent_id&&f.agent_id!=='unknown'?esc(f.agent_id):'—'}</div>
+      <div class="file-row-ext"><span class="file-card-meta ${extClass}" style="padding:2px 6px;border-radius:4px;border:1px solid;font-size:10px;font-weight:700">${esc(ext||'—')}</span></div>
+      <div class="file-row-date">${f.modified||'—'}</div>
+      <div class="file-row-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-secondary btn-sm" onclick="previewFile('${esc(f.project_id)}','${esc(f.name)}','${esc(ext)}',${f.size||0})">👁</button>
+        <button class="btn btn-secondary btn-sm" onclick="downloadFile('${esc(f.project_id)}','${esc(f.name)}')">⬇</button>
+        <button class="btn btn-secondary btn-sm" onclick="openRename('${esc(f.project_id)}','${esc(f.name)}')">✎</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteFile('${esc(f.project_id)}','${esc(f.name)}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+function cardClick(event, key, proj, name) {
+  if(event.shiftKey || event.ctrlKey || event.metaKey) {
+    toggleSel(key);
+  } else if(selectedFiles.size > 0) {
+    toggleSel(key);
+  } else {
+    const f = allFiles.find(x=>fileKey(x)===key);
+    if(f) previewFile(f.project_id, f.name, f.ext, f.size);
+  }
+}
+function toggleSel(key) {
+  if(selectedFiles.has(key)) selectedFiles.delete(key);
+  else selectedFiles.add(key);
+  updateSelBar();
+  renderFiles();
+}
+function clearSelection() { selectedFiles.clear(); updateSelBar(); renderFiles(); }
+function updateSelBar() {
+  const bar = document.getElementById('selBar');
+  const cnt = selectedFiles.size;
+  bar.classList.toggle('show', cnt > 0);
+  document.getElementById('selCount').textContent = cnt+' selected';
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function downloadFile(proj, name) {
+  window.open(`/api/artifacts/download/${proj}/${encodeURIComponent(name)}`,'_blank');
+}
+function downloadSelected() {
+  selectedFiles.forEach(key => {
+    const [proj,...rest] = key.split('::');
+    const name = rest.join('::');
+    downloadFile(proj, name);
+  });
+}
+function deleteFile(proj, name) {
+  if(!confirm(`Delete: ${name}?`)) return;
+  fetch('/api/artifacts/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project_id:proj, name})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ allFiles=allFiles.filter(f=>!(f.project_id===proj&&f.name===name)); applyFilters(); updateStats(); buildProjectSidebar(); showToast('Deleted: '+name,'ok'); }
+      else showToast('Delete failed','err');
+    });
+}
+function deleteSelected() {
+  if(!confirm(`Delete ${selectedFiles.size} file(s)?`)) return;
+  const files = [...selectedFiles].map(key=>{const [proj,...r]=key.split('::');return{project_id:proj,name:r.join('::')}});
+  fetch('/api/artifacts/delete-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files})})
+    .then(r=>r.json()).then(d=>{
+      showToast(`Deleted ${d.deleted} file(s)`,'ok');
+      selectedFiles.clear();
+      loadArtifacts();
+    });
+}
+function openRename(proj, name) {
+  renameTarget = {proj, name};
+  document.getElementById('renameInput').value = name;
+  document.getElementById('renameModal').classList.add('open');
+}
+function confirmRename() {
+  const newName = document.getElementById('renameInput').value.trim();
+  if(!newName||!renameTarget) return;
+  fetch('/api/artifacts/rename',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({project_id:renameTarget.proj,old_name:renameTarget.name,new_name:newName})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ closeModal('renameModal'); loadArtifacts(); showToast('Renamed','ok'); }
+      else showToast('Rename failed: '+d.error,'err');
+    });
+}
+function moveSelected() {
+  moveTargets = [...selectedFiles].map(key=>{const [proj,...r]=key.split('::');return{project_id:proj,name:r.join('::')}});
+  document.getElementById('moveModal').classList.add('open');
+}
+function confirmMove() {
+  const dest = document.getElementById('moveProjectInput').value;
+  Promise.all(moveTargets.map(f=>
+    fetch('/api/artifacts/move',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({from_project:f.project_id,to_project:dest,name:f.name})}).then(r=>r.json())
+  )).then(()=>{ closeModal('moveModal'); selectedFiles.clear(); loadArtifacts(); showToast('Moved','ok'); });
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────────
+function previewFile(proj, name, ext, size) {
+  document.getElementById('previewTitle').textContent = name;
+  document.getElementById('previewMeta').textContent  = `${proj} · ${ext} · ${fmtSize(size)}`;
+  document.getElementById('previewDownloadBtn').onclick = ()=>downloadFile(proj,name);
+  const body = document.getElementById('previewBody');
+  body.innerHTML = '<div style="padding:40px;text-align:center;color:#444">Loading…</div>';
+  document.getElementById('previewModal').classList.add('open');
+
+  if(IMAGE_EXT.has(ext)) {
+    body.innerHTML = `<img class="preview-img" src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}">`;
+    return;
+  }
+  if(ext==='.pdf') {
+    body.innerHTML = `<iframe class="preview-pdf" src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}"></iframe>`;
+    return;
+  }
+  if(['.mp4','.webm'].includes(ext)) {
+    body.innerHTML = `<video controls style="width:100%;max-height:60vh"><source src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}"></video>`;
+    return;
+  }
+  if(['.mp3','.wav','.ogg','.flac'].includes(ext)) {
+    body.innerHTML = `<audio controls style="width:100%;margin:20px 0"><source src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}"></audio>`;
+    return;
+  }
+  // Text/code
+  fetch(`/api/artifacts/view/${proj}/${encodeURIComponent(name)}`)
+    .then(r=>r.json()).then(d=>{
+      if(d.content!==undefined) {
+        body.innerHTML = `<pre class="preview-code">${esc(d.content)}</pre>`;
+      } else {
+        body.innerHTML = `<div class="preview-binary"><div style="font-size:36px;margin-bottom:12px">📦</div><div>Binary file — download to open</div><div style="margin-top:12px"><button class="btn btn-primary" onclick="downloadFile('${esc(proj)}','${esc(name)}')">⬇ Download</button></div></div>`;
+      }
+    }).catch(()=>{
+      body.innerHTML = `<div class="preview-binary"><div style="font-size:36px;margin-bottom:12px">📦</div><div>Cannot preview this file type</div></div>`;
+    });
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+function openUpload() {
+  pendingUpload = [];
+  document.getElementById('fileQueue').innerHTML = '';
+  document.getElementById('uploadBtn').disabled = true;
+  document.getElementById('uploadModal').classList.add('open');
+}
+function handleModalDrop(event) {
+  event.preventDefault();
+  document.getElementById('modalDropTarget').classList.remove('dragover');
+  queueFiles(event.dataTransfer.files);
+}
+function queueFiles(fileList) {
+  const newFiles = [...fileList];
+  pendingUpload.push(...newFiles);
+  renderQueue();
+  document.getElementById('uploadBtn').disabled = pendingUpload.length === 0;
+}
+function renderQueue() {
+  const q = document.getElementById('fileQueue');
+  q.innerHTML = pendingUpload.map((f,i)=>`
+    <div class="file-q-item">
+      <span style="font-size:16px">${getEmoji('.'+f.name.split('.').pop())}</span>
+      <span class="file-q-name">${esc(f.name)}</span>
+      <span class="file-q-size">${fmtSize(f.size)}</span>
+      <span class="file-q-status pending" id="fqs-${i}">queued</span>
+    </div>`).join('');
+}
+async function uploadQueued() {
+  const proj      = document.getElementById('uploadProject').value;
+  const subfolder = document.getElementById('uploadSubfolder').value.trim();
+  const prog      = document.getElementById('uploadProgress');
+  const bar       = document.getElementById('prog-bar');
+  const pct       = document.getElementById('prog-pct');
+  const label     = document.getElementById('prog-label');
+
+  prog.classList.add('show');
+  document.getElementById('uploadBtn').disabled = true;
+
+  let done = 0;
+  for(let i = 0; i < pendingUpload.length; i++) {
+    const f  = pendingUpload[i];
+    const el = document.getElementById('fqs-'+i);
+    if(el) { el.textContent='uploading…'; el.className='file-q-status pending'; }
+    label.textContent = `Uploading ${f.name}…`;
+
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('project_id', proj);
+    if(subfolder) fd.append('subfolder', subfolder);
+
+    try {
+      const resp = await fetch('/api/artifacts/upload',{method:'POST',body:fd});
+      const data = await resp.json();
+      if(data.success || (data.files && data.files.length)) {
+        done++;
+        if(el) { el.textContent='✅'; el.className='file-q-status ok'; }
+      } else {
+        if(el) { el.textContent='✗ '+(data.error||'failed'); el.className='file-q-status err'; }
+      }
+    } catch(e) {
+      if(el) { el.textContent='✗ error'; el.className='file-q-status err'; }
+    }
+
+    const p = Math.round(((i+1)/pendingUpload.length)*100);
+    bar.style.width = p+'%';
+    pct.textContent = p+'%';
+  }
+
+  label.textContent = `Done — ${done}/${pendingUpload.length} uploaded`;
+  showToast(`✅ Uploaded ${done} file(s)`,'ok');
+  setTimeout(()=>{ prog.classList.remove('show'); closeModal('uploadModal'); loadArtifacts(); }, 1200);
+}
+
+// ── Global drop zone ──────────────────────────────────────────────────────────
+function toggleDropZone() {
+  const dz = document.getElementById('globalDrop');
+  dz.classList.toggle('visible');
+}
+function handleGlobalDrop(event) {
+  event.preventDefault();
+  document.getElementById('globalDrop').classList.remove('dragover');
+  const files = [...event.dataTransfer.files];
+  if(!files.length) return;
+  pendingUpload = files;
+  renderQueue();
+  document.getElementById('uploadBtn').disabled = false;
+  document.getElementById('uploadModal').classList.add('open');
+}
+
+// ── New text file ─────────────────────────────────────────────────────────────
+const TEMPLATES = {
+  py:   '#!/usr/bin/env python3\n"""Baza Empire — """\n\nimport os\n\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()\n',
+  sh:   '#!/bin/bash\n# Baza Empire —\nset -e\n\nFW="/home/switchhacker/baza-empire/agent-framework-v3"\n\n',
+  md:   '# Title\n\n## Overview\n\n## Notes\n\n',
+  json: '{\n  "key": "value"\n}\n',
+  yaml: '# Config\nkey: value\nlist:\n  - item1\n  - item2\n',
+  html: '<!DOCTYPE html>\n<html>\n<head><meta charset="UTF-8"><title></title></head>\n<body>\n\n</body>\n</html>\n',
+  sql:  '-- SQL\nSELECT *\nFROM table_name\nWHERE condition = true;\n',
+};
+function openNewText() {
+  document.getElementById('newFileName').value='';
+  document.getElementById('newFileContent').value='';
+  document.getElementById('newFileTemplate').value='';
+  document.getElementById('newTextModal').classList.add('open');
+}
+function applyTemplate() {
+  const t = document.getElementById('newFileTemplate').value;
+  if(t && TEMPLATES[t]) {
+    document.getElementById('newFileContent').value = TEMPLATES[t];
+    if(!document.getElementById('newFileName').value) {
+      const exts = {py:'script.py',sh:'script.sh',md:'README.md',json:'config.json',yaml:'config.yaml',html:'index.html',sql:'query.sql'};
+      document.getElementById('newFileName').value = exts[t]||'';
+    }
+  }
+}
+function saveNewText() {
+  const name    = document.getElementById('newFileName').value.trim();
+  const project = document.getElementById('newFileProject').value;
+  const content = document.getElementById('newFileContent').value;
+  if(!name) { showToast('Filename required','err'); return; }
+  fetch('/api/artifacts/save-text',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({filename:name, project_id:project, content})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ closeModal('newTextModal'); loadArtifacts(); showToast('Saved: '+d.name,'ok'); }
+      else showToast('Error: '+(d.error||'failed'),'err');
+    });
+}
+
+// ── Modals ────────────────────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-overlay').forEach(m=>{
+  m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('open'); });
+});
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function showToast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.className='toast '+type;t.style.display='block';
+  setTimeout(()=>t.style.display='none',2800);
+}
+
+// ── Page-level drag-drop (whole window) ───────────────────────────────────────
+window.addEventListener('dragover', e=>e.preventDefault());
+window.addEventListener('drop', e=>{
+  e.preventDefault();
+  const files=[...e.dataTransfer.files];
+  if(!files.length) return;
+  pendingUpload=files;
+  renderQueue();
+  document.getElementById('uploadBtn').disabled=false;
+  document.getElementById('uploadModal').classList.add('open');
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadArtifacts();
+</script>
+</body>
+</html>

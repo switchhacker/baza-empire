@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Settings</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:100}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:960px;margin:0 auto;padding:28px 32px}
+    .page-title{font-size:22px;font-weight:800;color:#fff;margin-bottom:28px}
+
+    .settings-section{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;margin-bottom:24px;overflow:hidden}
+    .section-head{padding:18px 24px;border-bottom:1px solid #111;display:flex;align-items:center;justify-content:space-between}
+    .section-title{font-size:14px;font-weight:700;color:#fff}
+    .section-desc{font-size:12px;color:#444;margin-top:2px}
+    .section-body{padding:24px}
+
+    .form-row{display:grid;grid-template-columns:200px 1fr auto;gap:12px;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #0d0d1e}
+    .form-row:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+    .field-key{font-size:13px;font-weight:600;color:#888;font-family:monospace}
+    .field-val{background:#111;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:13px;font-family:monospace;outline:none;width:100%;transition:border-color .2s}
+    .field-val:focus{border-color:#7c3aed}
+    .btn-save-field{background:#0d2040;color:#4da6ff;border:1px solid #1a3a6a;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+    .btn-save-field:hover{opacity:.8}
+    .btn-del-field{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a;padding:8px 10px;border-radius:6px;font-size:12px;cursor:pointer}
+
+    .add-secret-row{display:grid;grid-template-columns:200px 1fr 1fr auto;gap:10px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid #111}
+    .field-new{background:#111;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:13px;font-family:monospace;outline:none;width:100%}
+    .field-new:focus{border-color:#7c3aed}
+    .btn-add{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .info-item{background:#070718;border:1px solid #111;border-radius:8px;padding:14px}
+    .info-label{font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+    .info-value{font-size:13px;color:#ccc;font-family:monospace;word-break:break-all}
+
+    .agent-config-list{display:grid;gap:12px}
+    .agent-row{background:#070718;border:1px solid #111;border-radius:8px;padding:16px;display:grid;grid-template-columns:160px 1fr 160px;gap:16px;align-items:start}
+    .agent-name-label{font-size:13px;font-weight:700;color:#ccc}
+    .agent-id-label{font-size:11px;color:#444;font-family:monospace;margin-top:2px}
+    .model-select{background:#111;border:1px solid #1a1a2e;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:12px;outline:none;width:100%}
+    .btn-save-agent{background:#0d2040;color:#4da6ff;border:1px solid #1a3a6a;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/crons">Cron Jobs</a>
+  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link active" href="/settings">Settings</a>
+  <a class="nav-link" href="/infra">Infra Map</a>
+</nav>
+
+<div class="container">
+  <div class="page-title">⚙️ Settings</div>
+
+  <!-- Environment Secrets -->
+  <div class="settings-section">
+    <div class="section-head">
+      <div>
+        <div class="section-title">🔐 Environment Secrets</div>
+        <div class="section-desc">API keys, tokens, and credentials stored in secrets.env</div>
+      </div>
+    </div>
+    <div class="section-body">
+      {% if secret_keys %}
+        {% for key in secret_keys %}
+        <div class="form-row" id="secret-row-{{ key }}">
+          <div class="field-key">{{ key }}</div>
+          <input class="field-val" type="password" id="secret-val-{{ key }}" value="{{ secrets.get(key, '') }}" placeholder="(hidden)">
+          <div style="display:flex;gap:6px">
+            <button class="btn-save-field" onclick="saveSecret('{{ key }}')">Save</button>
+            <button class="btn-del-field" onclick="deleteSecret('{{ key }}')">✕</button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="color:#444;font-size:13px;margin-bottom:16px">No secrets configured yet.</div>
+      {% endif %}
+
+      <div class="add-secret-row">
+        <div style="font-size:12px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px">Add New Secret</div>
+        <input class="field-new" type="text" id="newSecretKey" placeholder="KEY_NAME">
+        <input class="field-new" type="text" id="newSecretVal" placeholder="value">
+        <button class="btn-add" onclick="addSecret()">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Model Settings -->
+  <div class="settings-section">
+    <div class="section-head">
+      <div>
+        <div class="section-title">🤖 Agent Models</div>
+        <div class="section-desc">Change the Ollama model each agent uses</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="agent-config-list">
+        {% for agent_id, agent_data in config.get('agents', {}).items() %}
+        <div class="agent-row">
+          <div>
+            <div class="agent-name-label">{{ agent_data.get('name', agent_id) }}</div>
+            <div class="agent-id-label">{{ agent_id }}</div>
+          </div>
+          <select class="model-select" id="model-{{ agent_id }}">
+            {% set current_model = agent_data.get('model', '') %}
+            {% for m in ['mistral-small:22b','qwen2.5:14b','deepseek-coder-v2:16b','nemotron-3-nano:latest','llama3.1:8b','codellama:13b'] %}
+            <option value="{{ m }}" {% if m == current_model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+            <option value="{{ current_model }}" {% if current_model not in ['mistral-small:22b','qwen2.5:14b','deepseek-coder-v2:16b','nemotron-3-nano:latest','llama3.1:8b','codellama:13b'] %}selected{% endif %}>{{ current_model }} (current)</option>
+          </select>
+          <button class="btn-save-agent" onclick="saveAgentModel('{{ agent_id }}')">Save Model</button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- System Info -->
+  <div class="settings-section">
+    <div class="section-head">
+      <div>
+        <div class="section-title">🖥️ System Info</div>
+        <div class="section-desc">Baza Empire infrastructure reference</div>
+      </div>
+    </div>
+    <div class="section-body">
+      <div class="info-grid">
+        <div class="info-item">
+          <div class="info-label">Framework</div>
+          <div class="info-value">/home/switchhacker/baza-empire/agent-framework-v3</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Dashboard Port</div>
+          <div class="info-value">8888</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Ollama</div>
+          <div class="info-value">localhost:11434</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Tailscale IP</div>
+          <div class="info-value">100.127.118.103</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Hardware</div>
+          <div class="info-value">Ryzen 7 5700G · RTX 3070 · RX 6700 XT · 64GB</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Company</div>
+          <div class="info-value">All Home Building Co LLC (AHBCO LLC)</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Mining Pool (CPU)</div>
+          <div class="info-value">supportxmr.com · rig-id: baza-nuc</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">Mining Pool (GPU)</div>
+          <div class="info-value">flypool.org · RVN</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3</div>
+
+<script>
+function saveSecret(key){
+  const val = document.getElementById('secret-val-'+key).value;
+  fetch('/api/settings/secret',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key, value: val})})
+    .then(r=>r.json()).then(d=>showToast(d.success?'Saved: '+key:'Failed','ok'));
+}
+
+function deleteSecret(key){
+  if(!confirm('Delete secret: '+key+'?')) return;
+  fetch('/api/settings/secret/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ document.getElementById('secret-row-'+key)?.remove(); showToast('Deleted','ok') }
+    });
+}
+
+function addSecret(){
+  const key = document.getElementById('newSecretKey').value.trim();
+  const val = document.getElementById('newSecretVal').value.trim();
+  if(!key) return;
+  fetch('/api/settings/secret',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({key, value: val})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ showToast('Added: '+key,'ok'); setTimeout(()=>location.reload(),600) }
+    });
+}
+
+function saveAgentModel(agentId){
+  const model = document.getElementById('model-'+agentId).value;
+  fetch('/agent/'+agentId+'/edit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model})})
+    .then(r=>r.json()).then(d=>showToast(d.success?'Model saved for '+agentId:'Failed',d.success?'ok':'err'));
+}
+
+function showToast(msg,type){
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:'+(type==='ok'?'#0a2a1a':'#2a0a0a')+';border:1px solid '+(type==='ok'?'#00d084':'#ff5555')+';color:'+(type==='ok'?'#00d084':'#ff5555')+';padding:12px 20px;border-radius:8px;font-size:13px;font-weight:700;z-index:9999';
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(),2500);
+}
+</script>
+</body>
+</html>

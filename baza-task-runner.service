@@ -1,0 +1,13 @@
+[Unit]
+Description=Baza Empire — Autonomous Task Runner
+After=network.target ollama.service
+
+[Service]
+Type=oneshot
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python core/task_runner.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=baza-task-runner

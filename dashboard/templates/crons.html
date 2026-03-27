@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Cron Hub</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:100}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
+
+    /* ── Page header ── */
+    .page-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;gap:20px;flex-wrap:wrap}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-subtitle{font-size:13px;color:#444;margin-top:4px}
+    .header-actions{display:flex;gap:10px;flex-wrap:wrap}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .2s}
+    .btn-primary:hover{opacity:.85}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a;padding:10px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+
+    /* ── Stats bar ── */
+    .stats-bar{display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap}
+    .stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:8px;padding:14px 20px;text-align:center;min-width:100px}
+    .stat-val{font-size:22px;font-weight:800}
+    .stat-label{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-top:3px}
+
+    /* ── Layout: tree + main ── */
+    .hub-layout{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start}
+    @media(max-width:900px){.hub-layout{grid-template-columns:1fr}}
+
+    /* ── Job Tree ── */
+    .job-tree{background:#0a0a18;border:1px solid #141428;border-radius:10px;padding:16px;position:sticky;top:72px}
+    .tree-title{font-size:11px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:2px;margin-bottom:14px}
+    .tree-group{margin-bottom:14px}
+    .tree-group-label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;padding:6px 8px;display:flex;align-items:center;gap:6px;cursor:pointer;border-radius:5px;transition:background .2s}
+    .tree-group-label:hover{background:#111}
+    .tree-item{padding:6px 8px 6px 24px;font-size:12px;color:#555;cursor:pointer;border-radius:5px;transition:all .2s;display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tree-item:hover,.tree-item.active{background:#1a1a2e;color:#c4b5fd}
+    .tree-item .dot{width:6px;height:6px;border-radius:50%;background:#333;flex-shrink:0}
+    .tree-item.enabled .dot{background:#00d084}
+    .tree-item.disabled .dot{background:#444}
+
+    /* ── Main panel ── */
+    .main-panel{}
+
+    /* ── Tabs ── */
+    .tabs{display:flex;gap:0;border-bottom:1px solid #1a1a2e;margin-bottom:24px}
+    .tab{padding:11px 18px;font-size:13px;font-weight:600;color:#444;cursor:pointer;border-bottom:3px solid transparent;transition:all .2s}
+    .tab:hover,.tab.active{color:#e0e0e0;border-bottom-color:#7c3aed}
+
+    /* ── Cron Cards ── */
+    .cron-cards{display:flex;flex-direction:column;gap:12px}
+    .cron-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;transition:border-color .2s}
+    .cron-card:hover{border-color:#2a2a4a}
+    .cron-card-head{padding:16px 20px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;cursor:pointer}
+    .cron-name{font-size:14px;font-weight:700;color:#fff;margin-bottom:5px}
+    .cron-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .tag-schedule{font-family:monospace;font-size:11px;color:#a78bfa;background:#160d30;padding:3px 9px;border-radius:4px;border:1px solid #2a1a5a}
+    .tag-human{font-size:11px;color:#555}
+    .tag-agent{font-size:11px;color:#4da6ff;background:#06111e;padding:2px 8px;border-radius:4px;border:1px solid #0a2a40}
+    .tag-status-on{font-size:10px;font-weight:700;color:#00d084;background:#061a10;padding:2px 8px;border-radius:4px;border:1px solid #0a3a1a;text-transform:uppercase}
+    .tag-status-off{font-size:10px;font-weight:700;color:#555;background:#111;padding:2px 8px;border-radius:4px;border:1px solid #222;text-transform:uppercase}
+    .cron-controls{display:flex;align-items:center;gap:8px}
+    .toggle-switch{position:relative;display:inline-block;width:40px;height:21px;flex-shrink:0}
+    .toggle-switch input{opacity:0;width:0;height:0}
+    .toggle-slider{position:absolute;cursor:pointer;inset:0;background:#222;border-radius:21px;transition:.3s}
+    .toggle-slider:before{content:'';position:absolute;height:15px;width:15px;left:3px;bottom:3px;background:#555;border-radius:50%;transition:.3s}
+    input:checked+.toggle-slider{background:#00d084}
+    input:checked+.toggle-slider:before{transform:translateX(19px);background:#fff}
+    .btn-xs{padding:5px 11px;font-size:11px;border-radius:5px;border:none;cursor:pointer;font-weight:700;transition:opacity .2s}
+    .btn-xs:hover{opacity:.75}
+    .btn-run{background:#0d2040;color:#4da6ff;border:1px solid #1a3a6a}
+    .btn-del{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+    .btn-edit2{background:#1a1a2e;color:#999;border:1px solid #2a2a4a}
+
+    /* Expand panel */
+    .cron-expand{display:none;border-top:1px solid #111;padding:16px 20px;background:#080816}
+    .cron-expand.open{display:block}
+    .expand-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media(max-width:700px){.expand-grid{grid-template-columns:1fr}}
+    .expand-label{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+    .expand-val{font-family:monospace;font-size:12px;color:#888;background:#050510;border:1px solid #111;border-radius:5px;padding:8px;word-break:break-all}
+    .next-runs{margin-top:14px}
+    .next-run-title{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .next-run-list{display:flex;gap:8px;flex-wrap:wrap}
+    .next-run-pill{background:#0a0a1e;border:1px solid #1a1a3a;border-radius:20px;padding:4px 12px;font-size:11px;color:#7c3aed;font-family:monospace}
+    .log-tail{margin-top:14px}
+    .log-tail-title{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
+    .log-box{background:#020208;border:1px solid #0d0d1e;border-radius:6px;padding:10px;font-family:monospace;font-size:11px;color:#555;max-height:120px;overflow-y:auto;line-height:1.5}
+    .edit-inline{margin-top:14px;display:none}
+    .edit-inline.show{display:block}
+    .edit-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}
+    .edit-input{width:100%;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:12px;font-family:monospace;outline:none}
+    .edit-input:focus{border-color:#7c3aed}
+
+    /* ── Cron Builder Modal ── */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
+    .modal-overlay.open{display:flex}
+    .modal{background:#0d0d1e;border:1px solid #2a2a4a;border-radius:14px;padding:28px;max-width:680px;width:100%;margin:20px;max-height:90vh;overflow-y:auto}
+    .modal-title{font-size:18px;font-weight:800;color:#fff;margin-bottom:6px}
+    .modal-sub{font-size:12px;color:#444;margin-bottom:24px}
+    .form-section{margin-bottom:20px}
+    .form-section-title{font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #111}
+    .form-group{margin-bottom:14px}
+    .form-label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;display:block}
+    .form-input{width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:10px 12px;color:#e0e0e0;font-size:13px;font-family:monospace;outline:none;transition:border-color .2s}
+    .form-input:focus{border-color:#7c3aed}
+    .form-input-text{font-family:'Segoe UI',system-ui,sans-serif}
+    .form-hint{font-size:11px;color:#333;margin-top:4px}
+    .form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+    /* Cron expression builder */
+    .cron-builder{background:#070712;border:1px solid #1a1a2e;border-radius:8px;padding:16px;margin-bottom:14px}
+    .cron-fields{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+    .cron-field{text-align:center}
+    .cron-field-label{font-size:9px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+    .cron-field-input{width:100%;background:#0a0a1a;border:1px solid #2a2a4a;border-radius:5px;padding:8px 4px;color:#a78bfa;font-family:monospace;font-size:14px;text-align:center;outline:none}
+    .cron-field-input:focus{border-color:#7c3aed}
+    .cron-preview-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .cron-preview-str{font-family:monospace;font-size:13px;color:#a78bfa;background:#0a0a1a;border:1px solid #1a1a2e;padding:6px 12px;border-radius:6px}
+    .cron-preview-human{font-size:12px;color:#555}
+    .presets-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+    .preset{padding:5px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;font-size:11px;color:#666;cursor:pointer;font-family:monospace;transition:all .2s}
+    .preset:hover{border-color:#7c3aed;color:#c4b5fd;background:#140d28}
+
+    /* Next runs preview */
+    .next-runs-preview{margin-top:12px}
+    .next-runs-title{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+    .next-runs-grid{display:flex;gap:8px;flex-wrap:wrap}
+    .next-pill{background:#090914;border:1px solid #1a1a2e;border-radius:20px;padding:4px 12px;font-size:11px;color:#7c3aed;font-family:monospace}
+
+    /* Security + context */
+    .check-list{display:flex;flex-direction:column;gap:8px}
+    .check-item{display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+    .check-item input[type=checkbox]{width:16px;height:16px;accent-color:#7c3aed;flex-shrink:0;margin-top:1px;cursor:pointer}
+    .check-text{font-size:12px;color:#888;line-height:1.4}
+    .check-label{font-weight:700;color:#ccc;display:block;margin-bottom:1px}
+    .env-selector{display:flex;gap:8px}
+    .env-btn{padding:8px 16px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:6px;font-size:12px;color:#555;cursor:pointer;transition:all .2s;font-weight:600}
+    .env-btn:hover,.env-btn.active{border-color:#7c3aed;color:#c4b5fd;background:#140d28}
+
+    /* History / version drawer */
+    .history-drawer{display:none;background:#0a0a14;border:1px solid #111;border-radius:8px;padding:14px;margin-top:10px}
+    .history-drawer.open{display:block}
+    .history-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #0d0d18;font-size:12px}
+    .history-row:last-child{border-bottom:none}
+    .history-ts{color:#444;font-family:monospace}
+    .history-change{color:#888;flex:1;margin:0 12px}
+    .history-restore{font-size:11px;color:#7c3aed;cursor:pointer;border:none;background:none;font-weight:700}
+    .history-restore:hover{text-decoration:underline}
+
+    /* Quick install */
+    .quick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:28px}
+    .quick-card{background:#080816;border:1px solid #111;border-radius:8px;padding:14px;cursor:pointer;transition:border-color .2s}
+    .quick-card:hover{border-color:#7c3aed;background:#0d0a1a}
+    .quick-name{font-size:13px;font-weight:700;color:#ccc;margin-bottom:4px}
+    .quick-desc{font-size:11px;color:#333;margin-bottom:8px;line-height:1.4}
+    .quick-sched{font-family:monospace;font-size:11px;color:#7c3aed;background:#0a0818;padding:3px 8px;border-radius:4px;display:inline-block}
+
+    /* Raw editor */
+    .raw-pane{display:none}
+    .raw-pane.show{display:block}
+    .raw-textarea{width:100%;background:#020208;border:1px solid #1a1a2e;border-radius:8px;padding:16px;color:#a0f0a0;font-family:'Courier New',monospace;font-size:12px;line-height:1.7;resize:vertical;min-height:300px;outline:none}
+    .raw-textarea:focus{border-color:#7c3aed}
+    .raw-actions{display:flex;gap:10px;margin-top:12px}
+
+    /* Audit log */
+    .audit-pane{display:none}
+    .audit-pane.show{display:block}
+    .audit-row{display:grid;grid-template-columns:140px 120px 1fr;gap:12px;padding:10px 14px;border-bottom:1px solid #0a0a14;font-size:12px;align-items:center}
+    .audit-row:hover{background:#090914}
+    .audit-time{color:#333;font-family:monospace}
+    .audit-type{font-weight:700}
+    .audit-type.create{color:#00d084}
+    .audit-type.edit{color:#ffaa00}
+    .audit-type.delete{color:#ff6666}
+    .audit-type.run{color:#4da6ff}
+    .audit-type.toggle{color:#a78bfa}
+    .audit-msg{color:#555}
+
+    .empty-state{text-align:center;padding:48px;color:#333;background:#0a0a16;border:1px dashed #1a1a2e;border-radius:10px}
+    .empty-icon{font-size:36px;margin-bottom:12px}
+
+    /* Toast */
+    .toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:700;z-index:9999;display:none;animation:slideUp .3s ease}
+    .toast.ok{background:#0a2a1a;border:1px solid #00d084;color:#00d084}
+    .toast.err{background:#2a0a0a;border:1px solid #ff6666;color:#ff6666}
+    @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link active" href="/crons">Cron Hub</a>
+  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/email">Email</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  <a class="nav-link" href="/infra">Infra Map</a>
+</nav>
+
+<div class="container">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div>
+      <div class="page-title">⏰ Cron Hub</div>
+      <div class="page-subtitle">Unified scheduler for all agents &amp; services — create, schedule, version, audit</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" onclick="switchTab('audit')">📋 Audit Log</button>
+      <button class="btn-secondary" onclick="switchTab('raw')">✎ Raw Crontab</button>
+      <button class="btn-primary" onclick="openBuilder()">＋ New Job</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat"><div class="stat-val" id="st-total" style="color:#fff">—</div><div class="stat-label">Total Jobs</div></div>
+    <div class="stat"><div class="stat-val" id="st-enabled" style="color:#00d084">—</div><div class="stat-label">Enabled</div></div>
+    <div class="stat"><div class="stat-val" id="st-disabled" style="color:#555">—</div><div class="stat-label">Disabled</div></div>
+    <div class="stat"><div class="stat-val" id="st-agents" style="color:#4da6ff">—</div><div class="stat-label">Agents</div></div>
+  </div>
+
+  <!-- Main layout -->
+  <div class="hub-layout">
+
+    <!-- Tree sidebar -->
+    <div class="job-tree" id="jobTree">
+      <div class="tree-title">Job Library</div>
+      <div id="treeContent"><div style="color:#222;font-size:12px">Loading...</div></div>
+    </div>
+
+    <!-- Main panel -->
+    <div class="main-panel">
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('visual')" id="tab-btn-visual">Visual</div>
+        <div class="tab" onclick="switchTab('quick')" id="tab-btn-quick">Quick Install</div>
+        <div class="tab" onclick="switchTab('raw')" id="tab-btn-raw">Raw Crontab</div>
+        <div class="tab" onclick="switchTab('audit')" id="tab-btn-audit">Audit Log</div>
+      </div>
+
+      <!-- ── Visual Tab ── -->
+      <div id="tab-visual">
+        <div id="cronList">
+          {% if crons %}
+          <div class="cron-cards">
+            {% for cron in crons %}
+            <div class="cron-card" id="card-{{ cron.id }}">
+              <div class="cron-card-head" onclick="toggleExpand('{{ cron.id }}')">
+                <div>
+                  <div class="cron-name">{{ cron.id }}</div>
+                  <div class="cron-meta">
+                    <span class="tag-schedule">{{ cron.schedule or '?' }}</span>
+                    <span class="tag-human" id="human-{{ cron.id }}">{{ cron.schedule or '' }}</span>
+                    <span class="{% if cron.enabled %}tag-status-on{% else %}tag-status-off{% endif %}">{% if cron.enabled %}● ON{% else %}○ OFF{% endif %}</span>
+                  </div>
+                  <div style="font-family:monospace;font-size:11px;color:#333;margin-top:6px;word-break:break-all">$ {{ (cron.command or '')[:120] }}{% if (cron.command or '')|length > 120 %}…{% endif %}</div>
+                </div>
+                <div class="cron-controls" onclick="event.stopPropagation()">
+                  <label class="toggle-switch">
+                    <input type="checkbox" {% if cron.enabled %}checked{% endif %}
+                           onchange="toggleCron('{{ cron.id }}', this.checked)">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <button class="btn-xs btn-run" onclick="runNow('{{ cron.id }}')">▶</button>
+                  <button class="btn-xs btn-edit2" onclick="openEditInline('{{ cron.id }}','{{ cron.schedule or '' }}',event)">✎</button>
+                  <button class="btn-xs btn-del" onclick="delCron('{{ cron.id }}',event)">✕</button>
+                </div>
+              </div>
+              <!-- Expand panel -->
+              <div class="cron-expand" id="expand-{{ cron.id }}">
+                <div class="expand-grid">
+                  <div>
+                    <div class="expand-label">Full Command</div>
+                    <div class="expand-val">{{ cron.command or '' }}</div>
+                  </div>
+                  <div>
+                    <div class="expand-label">Cron Expression</div>
+                    <div class="expand-val">{{ cron.schedule or '' }}</div>
+                  </div>
+                </div>
+                <div class="next-runs" id="nextruns-{{ cron.id }}">
+                  <div class="next-run-title">Next 5 Scheduled Runs</div>
+                  <div class="next-run-list"><span class="next-run-pill">Computing…</span></div>
+                </div>
+                <div class="log-tail">
+                  <div class="log-tail-title">
+                    <span>Recent Log</span>
+                    <button class="btn-xs btn-run" onclick="fetchLog('{{ cron.id }}')">↻ Fetch</button>
+                  </div>
+                  <div class="log-box" id="log-{{ cron.id }}">Click ↻ Fetch to load logs…</div>
+                </div>
+                <!-- Inline edit -->
+                <div class="edit-inline" id="editpanel-{{ cron.id }}">
+                  <div class="edit-row">
+                    <div>
+                      <div class="expand-label">Schedule</div>
+                      <input class="edit-input" id="edit-sched-{{ cron.id }}" value="{{ cron.schedule or '' }}" placeholder="0 8 * * *">
+                    </div>
+                    <div>
+                      <div class="expand-label">Command</div>
+                      <input class="edit-input" id="edit-cmd-{{ cron.id }}" value="{{ cron.command or '' }}" placeholder="python script.py">
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px">
+                    <button class="btn-xs btn-run" onclick="saveEdit('{{ cron.id }}')">💾 Save</button>
+                    <button class="btn-xs btn-edit2" onclick="cancelEdit('{{ cron.id }}')">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="empty-state"><div class="empty-icon">⏰</div><div>No cron jobs yet.</div><div style="font-size:12px;margin-top:8px">Use Quick Install or click + New Job</div></div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- ── Quick Install Tab ── -->
+      <div id="tab-quick" style="display:none">
+        <div class="quick-grid" id="quickGrid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- ── Raw Tab ── -->
+      <div id="tab-raw" class="raw-pane">
+        <textarea class="raw-textarea" id="rawCrontab" spellcheck="false">{{ raw_crontab }}</textarea>
+        <div class="raw-actions">
+          <button class="btn-primary" onclick="saveRaw()">💾 Save Crontab</button>
+          <button class="btn-secondary" onclick="reloadRaw()">↻ Reload</button>
+        </div>
+      </div>
+
+      <!-- ── Audit Log Tab ── -->
+      <div id="tab-audit" class="audit-pane">
+        <div style="background:#0a0a14;border:1px solid #111;border-radius:8px;overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid #0d0d18;display:grid;grid-template-columns:140px 120px 1fr;gap:12px;font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px">
+            <span>Time</span><span>Action</span><span>Detail</span>
+          </div>
+          <div id="auditBody">
+            <div class="audit-row" style="color:#333">No audit log entries yet.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /main-panel -->
+  </div><!-- /hub-layout -->
+</div>
+
+<!-- ── Builder Modal ── -->
+<div class="modal-overlay" id="builderModal">
+  <div class="modal">
+    <div class="modal-title">⏰ New Cron Job</div>
+    <div class="modal-sub">Schedule a task for any agent or service</div>
+
+    <div class="form-section">
+      <div class="form-section-title">Identity</div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label class="form-label">Job Name</label>
+          <input class="form-input form-input-text" id="b-name" placeholder="e.g. claw_daily_report">
+          <div class="form-hint">snake_case, no spaces</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Agent</label>
+          <select class="form-input form-input-text" id="b-agent">
+            <option value="global">Global / System</option>
+            <option value="simon_bately">Simon Bately — Co-CEO</option>
+            <option value="claw_batto">Claw Batto — DevOps</option>
+            <option value="phil_hass">Phil Hass — Legal/Finance</option>
+            <option value="sam_axe">Sam Axe — Design</option>
+            <option value="duke_harmon">Duke Harmon — PM</option>
+            <option value="rex_valor">Rex Valor — Voicemail</option>
+            <option value="scout_reeves">Scout Reeves — Research</option>
+            <option value="nova_sterling">Nova Sterling — Client Chat</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Schedule</div>
+      <div class="presets-row" id="presetsRow">
+        <span class="preset" onclick="applyPreset('0 8 * * *')">8am daily</span>
+        <span class="preset" onclick="applyPreset('0 20 * * *')">8pm daily</span>
+        <span class="preset" onclick="applyPreset('0 */2 * * *')">every 2h</span>
+        <span class="preset" onclick="applyPreset('*/15 * * * *')">every 15m</span>
+        <span class="preset" onclick="applyPreset('*/30 * * * *')">every 30m</span>
+        <span class="preset" onclick="applyPreset('0 9 * * 1-5')">9am weekdays</span>
+        <span class="preset" onclick="applyPreset('0 0 * * *')">midnight</span>
+        <span class="preset" onclick="applyPreset('0 2 * * *')">2am daily</span>
+        <span class="preset" onclick="applyPreset('*/5 * * * *')">every 5m</span>
+        <span class="preset" onclick="applyPreset('0 8 * * 1')">Monday 8am</span>
+      </div>
+      <div class="cron-builder">
+        <div class="cron-fields">
+          <div class="cron-field"><div class="cron-field-label">Min</div><input class="cron-field-input" id="cf-min" value="0" oninput="rebuildCron()"></div>
+          <div class="cron-field"><div class="cron-field-label">Hour</div><input class="cron-field-input" id="cf-hr" value="8" oninput="rebuildCron()"></div>
+          <div class="cron-field"><div class="cron-field-label">Day</div><input class="cron-field-input" id="cf-dom" value="*" oninput="rebuildCron()"></div>
+          <div class="cron-field"><div class="cron-field-label">Month</div><input class="cron-field-input" id="cf-mon" value="*" oninput="rebuildCron()"></div>
+          <div class="cron-field"><div class="cron-field-label">Weekday</div><input class="cron-field-input" id="cf-dow" value="*" oninput="rebuildCron()"></div>
+        </div>
+        <div class="cron-preview-row">
+          <span class="cron-preview-str" id="cronPreviewStr">0 8 * * *</span>
+          <span class="cron-preview-human" id="cronPreviewHuman">Every day at 8:00 AM</span>
+        </div>
+      </div>
+      <div class="next-runs-preview">
+        <div class="next-runs-title">Next 5 runs (approximate)</div>
+        <div class="next-runs-grid" id="nextRunsPreview"></div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Command</div>
+      <div class="form-group">
+        <label class="form-label">Script / Command</label>
+        <input class="form-input" id="b-cmd" placeholder="/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python ...">
+        <div class="form-hint">Full path. Output will be redirected to logs/</div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Execution Context</div>
+      <div class="form-group">
+        <label class="form-label">Environment</label>
+        <div class="env-selector">
+          <button class="env-btn active" onclick="setEnv('dev',this)">Dev</button>
+          <button class="env-btn" onclick="setEnv('prod',this)">Production</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Security Policies</div>
+      <div class="check-list">
+        <label class="check-item">
+          <input type="checkbox" id="pol-net">
+          <div class="check-text"><span class="check-label">Network Access</span>Allow outbound network connections (HTTP, Telegram, APIs)</div>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" id="pol-secrets" checked>
+          <div class="check-text"><span class="check-label">Secret Access</span>Load from configs/secrets.env (API keys, tokens)</div>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" id="pol-write">
+          <div class="check-text"><span class="check-label">File Write</span>Allow writing artifacts and logs</div>
+        </label>
+        <label class="check-item">
+          <input type="checkbox" id="pol-sudo">
+          <div class="check-text"><span class="check-label">⚠ Sudo / Privilege</span>Run with elevated permissions (systemctl, apt, etc.)</div>
+        </label>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+      <button class="btn-secondary" onclick="closeBuilder()">Cancel</button>
+      <button class="btn-primary" onclick="submitBuilder()">⏰ Schedule Job</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const FW = '/home/switchhacker/baza-empire/agent-framework-v3';
+const PY = FW + '/venv/bin/python';
+
+// ── Builtin job definitions ──────────────────────────────────────────────────
+const BUILTINS = [
+  { name:'simon_team_briefing',      agent:'simon_bately',  schedule:'0 */2 * * *',  desc:'Full team status + project updates every 2 hours.',                   icon:'👔', cmd: PY+' '+FW+'/agents/simon_bately/briefing_cron.py >> '+FW+'/logs/simon_briefing.log 2>&1' },
+  { name:'duke_daily_standup',       agent:'duke_harmon',   schedule:'0 8 * * *',    desc:'Daily 8am standup: blocked tasks, ETA to launch, team status.',        icon:'📋', cmd: PY+' '+FW+'/agents/duke_harmon/agent.py --task daily_standup >> '+FW+'/logs/duke_standup.log 2>&1' },
+  { name:'claw_infra_report_am',     agent:'claw_batto',    schedule:'0 8 * * *',    desc:'Morning infra report: agents, services, mining, system health.',        icon:'🔧', cmd: PY+' '+FW+'/skills/shared/infra_report.py >> '+FW+'/logs/infra_report.log 2>&1' },
+  { name:'claw_infra_report_pm',     agent:'claw_batto',    schedule:'30 16 * * *',  desc:'Afternoon infra snapshot at 4:30 PM.',                                 icon:'🔧', cmd: PY+' '+FW+'/skills/shared/infra_report.py >> '+FW+'/logs/infra_report.log 2>&1' },
+  { name:'claw_git_backup',          agent:'claw_batto',    schedule:'0 2 * * *',    desc:'Auto-commit + push all framework changes to Git at 2:00 AM.',           icon:'💾', cmd: 'cd '+FW+' && git add -A && git commit -m "auto: daily backup $(date +%Y%m%d)" && git push >> '+FW+'/logs/git_backup.log 2>&1' },
+  { name:'mining_watchdog',          agent:'claw_batto',    schedule:'*/5 * * * *',  desc:'Every 5 min: check XMRig + GPU miners, auto-restart if crashed.',       icon:'⛏️', cmd: PY+' '+FW+'/mining-stack/watchdog.py >> '+FW+'/logs/watchdog.log 2>&1' },
+  { name:'mining_earnings_daily',    agent:'claw_batto',    schedule:'0 9 * * *',    desc:'Daily mining earnings report: XMR + RVN balances, hashrate, payout ETA.',icon:'💰', cmd: PY+' '+FW+'/skills/shared/mining_earnings.py >> '+FW+'/logs/mining_earnings.log 2>&1' },
+  { name:'scout_daily_research',     agent:'scout_reeves',  schedule:'0 7 * * *',    desc:'Scout pulls daily brief: material prices, permit news, competitor intel.',icon:'🔭', cmd: PY+' '+FW+'/agents/scout_reeves/agent.py --task daily_research >> '+FW+'/logs/scout_research.log 2>&1' },
+  { name:'simon_blocked_escalation', agent:'simon_bately',  schedule:'0 8 * * *',    desc:'Simon checks for blocked tasks and Telegrams Serge with what is needed.',icon:'🚨', cmd: PY+' '+FW+'/agents/simon_bately/briefing_cron.py --blocked-only >> '+FW+'/logs/simon_blocked.log 2>&1' },
+  { name:'nova_lead_followup',       agent:'nova_sterling', schedule:'0 10 * * *',   desc:'Nova follows up on pending leads from the previous day.',                icon:'💬', cmd: PY+' '+FW+'/agents/nova_sterling/agent.py --task lead_followup >> '+FW+'/logs/nova_followup.log 2>&1' },
+  { name:'phil_weekly_summary',      agent:'phil_hass',     schedule:'0 9 * * 1',    desc:'Monday 9am: Phil sends weekly legal/finance summary to Serge.',          icon:'⚖️', cmd: PY+' '+FW+'/agents/phil_hass/agent.py --task weekly_summary >> '+FW+'/logs/phil_summary.log 2>&1' },
+  { name:'sam_design_digest',        agent:'sam_axe',       schedule:'0 17 * * 5',   desc:'Friday 5pm: Sam sends weekly design output & artifact summary.',         icon:'🎨', cmd: PY+' '+FW+'/agents/sam_axe/agent.py --task weekly_digest >> '+FW+'/logs/sam_digest.log 2>&1' },
+];
+
+// ── Audit log (in-memory, persisted via localStorage) ─────────────────────────
+function loadAudit(){ try{ return JSON.parse(localStorage.getItem('cronAudit')||'[]') }catch{return[]} }
+function saveAudit(log){ localStorage.setItem('cronAudit', JSON.stringify(log.slice(-100))) }
+function addAudit(type, msg){
+  const log = loadAudit();
+  log.push({ ts: new Date().toISOString(), type, msg });
+  saveAudit(log);
+  renderAudit();
+}
+
+function renderAudit(){
+  const log = loadAudit().reverse();
+  const body = document.getElementById('auditBody');
+  if(!log.length){ body.innerHTML='<div class="audit-row" style="color:#333">No audit log entries yet.</div>'; return; }
+  body.innerHTML = log.map(e=>`
+    <div class="audit-row">
+      <span class="audit-time">${new Date(e.ts).toLocaleString()}</span>
+      <span class="audit-type ${e.type}">${e.type.toUpperCase()}</span>
+      <span class="audit-msg">${esc(e.msg)}</span>
+    </div>`).join('');
+}
+
+// ── Cron expression human readable ───────────────────────────────────────────
+function cronHuman(expr){
+  if(!expr) return '';
+  const p = expr.trim().split(/\s+/);
+  if(p.length<5) return expr;
+  const [min,hr,dom,mon,dow] = p;
+  if(expr==='* * * * *') return 'Every minute';
+  if(dom==='*'&&mon==='*'&&dow==='*'){
+    if(hr.startsWith('*/')){ const n=hr.slice(2); return `Every ${n} hour${n>1?'s':''}` }
+    if(min.startsWith('*/')){ const n=min.slice(2); return `Every ${n} minute${n>1?'s':''}` }
+    const hh=parseInt(hr), mm=parseInt(min)||0;
+    const ampm=hh>=12?'PM':'AM', h=hh%12||12, m=mm.toString().padStart(2,'0');
+    const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    if(dow==='1-5') return `Weekdays at ${h}:${m} ${ampm}`;
+    if(dow==='*') return `Every day at ${h}:${m} ${ampm}`;
+    return `${days[parseInt(dow)]||dow} at ${h}:${m} ${ampm}`;
+  }
+  return expr;
+}
+
+// ── Next runs preview (simple approximation) ──────────────────────────────────
+function nextRuns(expr, n=5){
+  const runs=[];
+  const now=new Date();
+  let d=new Date(now.getTime()+60000);
+  const [min,hr,dom,mon,dow] = (expr||'').trim().split(/\s+/);
+  // Simple: step minute by minute for up to 10080 mins (1 week)
+  for(let i=0;i<10080&&runs.length<n;i++){
+    d=new Date(d.getTime()+60000);
+    if(matchCronField(min,d.getMinutes())&&matchCronField(hr,d.getHours())&&
+       matchCronField(dom,d.getDate())&&matchCronField(mon,d.getMonth()+1)&&
+       matchCronField(dow,d.getDay())){
+      runs.push(new Date(d));
+    }
+  }
+  return runs;
+}
+function matchCronField(field,val){
+  if(!field||field==='*') return true;
+  if(field.includes('/')){
+    const [,step]=field.split('/');
+    return val%parseInt(step)===0;
+  }
+  if(field.includes('-')){
+    const [a,b]=field.split('-');
+    return val>=parseInt(a)&&val<=parseInt(b);
+  }
+  if(field.includes(',')){
+    return field.split(',').map(Number).includes(val);
+  }
+  return parseInt(field)===val;
+}
+function formatRunTime(d){
+  return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+
+         ' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Cron builder ──────────────────────────────────────────────────────────────
+function rebuildCron(){
+  const min=document.getElementById('cf-min').value||'*';
+  const hr =document.getElementById('cf-hr').value||'*';
+  const dom=document.getElementById('cf-dom').value||'*';
+  const mon=document.getElementById('cf-mon').value||'*';
+  const dow=document.getElementById('cf-dow').value||'*';
+  const expr=`${min} ${hr} ${dom} ${mon} ${dow}`;
+  document.getElementById('cronPreviewStr').textContent=expr;
+  document.getElementById('cronPreviewHuman').textContent=cronHuman(expr);
+  renderNextRunsPreview(expr);
+}
+function applyPreset(expr){
+  const p=expr.split(' ');
+  if(p.length>=5){
+    document.getElementById('cf-min').value=p[0];
+    document.getElementById('cf-hr').value=p[1];
+    document.getElementById('cf-dom').value=p[2];
+    document.getElementById('cf-mon').value=p[3];
+    document.getElementById('cf-dow').value=p[4];
+  }
+  rebuildCron();
+}
+function renderNextRunsPreview(expr){
+  const el=document.getElementById('nextRunsPreview');
+  const runs=nextRuns(expr);
+  el.innerHTML=runs.length?runs.map(r=>`<span class="next-pill">${formatRunTime(r)}</span>`).join(''):
+    '<span style="color:#333;font-size:11px">Cannot compute — check expression</span>';
+}
+function setEnv(env,btn){
+  document.querySelectorAll('.env-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── Modal open/close ──────────────────────────────────────────────────────────
+function openBuilder(){
+  rebuildCron();
+  renderNextRunsPreview('0 8 * * *');
+  document.getElementById('builderModal').classList.add('open');
+}
+function closeBuilder(){ document.getElementById('builderModal').classList.remove('open') }
+document.getElementById('builderModal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('builderModal')) closeBuilder();
+});
+
+function submitBuilder(){
+  const name    = document.getElementById('b-name').value.trim();
+  const agent   = document.getElementById('b-agent').value;
+  const cmd     = document.getElementById('b-cmd').value.trim();
+  const expr    = document.getElementById('cronPreviewStr').textContent.trim();
+  if(!name||!cmd){ showToast('Name and command are required','err'); return; }
+  const comment = `# agent=${agent} env=prod`;
+  const finalCmd = cmd + (cmd.includes('>>') ? '' : ' >> '+FW+'/logs/'+name+'.log 2>&1');
+  fetch('/api/crons/add',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name, schedule:expr, command:finalCmd+' '+comment})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        addAudit('create',`Created job: ${name} [${expr}] agent=${agent}`);
+        showToast('✅ Job scheduled: '+name,'ok');
+        closeBuilder();
+        setTimeout(()=>location.reload(),900);
+      } else showToast('Error: '+d.error,'err');
+    });
+}
+
+// ── Visual tab helpers ────────────────────────────────────────────────────────
+function toggleExpand(id){
+  const el=document.getElementById('expand-'+id);
+  el.classList.toggle('open');
+  if(el.classList.contains('open')) computeNextRuns(id);
+}
+function computeNextRuns(id){
+  const card=document.getElementById('card-'+id);
+  const schedEl=card.querySelector('.tag-schedule');
+  if(!schedEl) return;
+  const expr=schedEl.textContent.trim();
+  const runs=nextRuns(expr);
+  const el=document.getElementById('nextruns-'+id);
+  if(el) el.innerHTML=`<div class="next-run-title">Next 5 Scheduled Runs</div><div class="next-run-list">${
+    runs.map(r=>`<span class="next-run-pill">${formatRunTime(r)}</span>`).join('')||'<span style="color:#333">—</span>'
+  }</div>`;
+}
+function openEditInline(id,sched,event){
+  event.stopPropagation();
+  const expand=document.getElementById('expand-'+id);
+  expand.classList.add('open');
+  document.getElementById('editpanel-'+id).classList.add('show');
+}
+function cancelEdit(id){ document.getElementById('editpanel-'+id).classList.remove('show') }
+function saveEdit(id){
+  const sched=document.getElementById('edit-sched-'+id).value.trim();
+  const cmd  =document.getElementById('edit-cmd-'+id).value.trim();
+  // Remove old + add updated
+  fetch('/api/crons/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:id})})
+    .then(()=>fetch('/api/crons/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:id,schedule:sched,command:cmd})}))
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        addAudit('edit',`Edited job: ${id} → schedule=${sched}`);
+        showToast('Saved: '+id,'ok');
+        setTimeout(()=>location.reload(),700);
+      } else showToast('Error: '+d.error,'err');
+    });
+}
+function fetchLog(id){
+  const name=id.replace(/_/g,'-');
+  const logFile=FW+'/logs/'+id+'.log';
+  fetch('/api/crons/run-now',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:'_log_read_'+id, command:'tail -30 '+logFile})})
+    .then(r=>r.json()).then(d=>{
+      const el=document.getElementById('log-'+id);
+      if(el) el.textContent=d.output||'No log output found at '+logFile;
+    }).catch(()=>{
+      const el=document.getElementById('log-'+id);
+      if(el) el.textContent='Could not load log — check '+logFile+' on baza';
+    });
+}
+
+// ── Global operations ─────────────────────────────────────────────────────────
+function toggleCron(name,enabled){
+  fetch('/api/crons/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,enabled})})
+    .then(r=>r.json()).then(d=>{
+      addAudit('toggle',`${enabled?'Enabled':'Disabled'} job: ${name}`);
+      showToast((enabled?'✅ Enabled: ':'⏸ Disabled: ')+name,'ok');
+    });
+}
+function runNow(name){
+  fetch('/api/crons/run-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json()).then(d=>{
+      addAudit('run',`Manual run: ${name} — ${d.success?'started':'FAILED: '+d.error}`);
+      showToast(d.success?'▶ Running: '+name:'Failed: '+(d.error||'unknown'),'ok');
+    });
+}
+function delCron(name,event){
+  event.stopPropagation();
+  if(!confirm('Delete cron job: '+name+'?')) return;
+  fetch('/api/crons/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        addAudit('delete','Deleted job: '+name);
+        document.getElementById('card-'+name)?.remove();
+        showToast('Deleted: '+name,'ok');
+        updateStats();
+      }
+    });
+}
+function saveRaw(){
+  const content=document.getElementById('rawCrontab').value;
+  fetch('/api/crons/raw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})})
+    .then(r=>r.json()).then(d=>{
+      addAudit('edit','Raw crontab saved');
+      showToast(d.success?'✅ Crontab saved':'Failed: '+d.error, d.success?'ok':'err');
+    });
+}
+function reloadRaw(){
+  fetch('/api/crons/raw').then(r=>r.json()).then(d=>{ document.getElementById('rawCrontab').value=d.content||'' });
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(tab){
+  ['visual','quick','raw','audit'].forEach(t=>{
+    const el=document.getElementById('tab-'+t);
+    const btn=document.getElementById('tab-btn-'+t);
+    if(!el||!btn) return;
+    const isActive=t===tab;
+    btn.classList.toggle('active',isActive);
+    if(t==='raw'){
+      el.classList.toggle('show',isActive);
+      el.style.display='';
+    } else if(t==='audit'){
+      el.classList.toggle('show',isActive);
+      el.style.display='';
+    } else {
+      el.style.display=isActive?'block':'none';
+    }
+    if(isActive&&t==='audit') renderAudit();
+    if(isActive&&t==='quick') renderQuick();
+  });
+}
+
+// ── Quick install ─────────────────────────────────────────────────────────────
+function renderQuick(){
+  const existing = [...document.querySelectorAll('.cron-name')].map(e=>e.textContent.trim());
+  const grid=document.getElementById('quickGrid');
+  grid.innerHTML=BUILTINS.map(b=>{
+    const installed=existing.includes(b.name);
+    return `<div class="quick-card" onclick="${installed?'':'installBuiltin(\''+b.name+'\')'}">
+      <div class="quick-name">${b.icon} ${b.name.replace(/_/g,' ')}</div>
+      <div style="font-size:10px;color:#4da6ff;margin-bottom:6px">${b.agent.replace(/_/g,' ')}</div>
+      <div class="quick-desc">${b.desc}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+        <span class="quick-sched">${b.schedule}</span>
+        <span style="font-size:11px;font-weight:700;color:${installed?'#00d084':'#7c3aed'}">${installed?'✅ Installed':'+ Install'}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+function installBuiltin(name){
+  const b=BUILTINS.find(x=>x.name===name);
+  if(!b){ showToast('Not found: '+name,'err'); return; }
+  if(!confirm('Install: '+name+'\n'+b.schedule+'\n'+b.desc)) return;
+  fetch('/api/crons/add',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:b.name, schedule:b.schedule, command:b.cmd})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){
+        addAudit('create','Installed builtin: '+name+' ['+b.schedule+']');
+        showToast('✅ Installed: '+name,'ok');
+        setTimeout(()=>location.reload(),900);
+      } else showToast('Error: '+d.error,'err');
+    });
+}
+
+// ── Tree sidebar ──────────────────────────────────────────────────────────────
+function buildTree(){
+  const cards=[...document.querySelectorAll('.cron-card')];
+  const byAgent={};
+  cards.forEach(c=>{
+    const name=c.querySelector('.cron-name')?.textContent||'';
+    const sched=c.querySelector('.tag-schedule')?.textContent||'';
+    const on=!!c.querySelector('input[type=checkbox]:checked');
+    // Try to extract agent from comment or name prefix
+    let agent='global';
+    for(const b of BUILTINS){ if(b.name===name){ agent=b.agent; break; } }
+    if(!byAgent[agent]) byAgent[agent]={};
+    byAgent[agent][name]={on,sched};
+  });
+  const tree=document.getElementById('treeContent');
+  let html='';
+  const agentLabels={
+    global:'🌐 Global',simon_bately:'👔 Simon',claw_batto:'🔧 Claw',phil_hass:'⚖️ Phil',
+    sam_axe:'🎨 Sam',duke_harmon:'📋 Duke',rex_valor:'📞 Rex',scout_reeves:'🔭 Scout',nova_sterling:'💬 Nova'
+  };
+  for(const [agent,jobs] of Object.entries(byAgent)){
+    const names=Object.keys(jobs);
+    html+=`<div class="tree-group">
+      <div class="tree-group-label">${agentLabels[agent]||agent.replace(/_/g,' ')} <span style="color:#333;font-size:10px">(${names.length})</span></div>`;
+    names.forEach(n=>{
+      const j=jobs[n];
+      html+=`<div class="tree-item ${j.on?'enabled':'disabled'}" onclick="scrollToCard('${n}')">`+
+        `<span class="dot"></span>${n.replace(/_/g,' ')}</div>`;
+    });
+    html+='</div>';
+  }
+  if(!html) html='<div style="color:#222;font-size:11px;padding:8px">No jobs yet</div>';
+  tree.innerHTML=html;
+}
+function scrollToCard(id){
+  switchTab('visual');
+  setTimeout(()=>{
+    const el=document.getElementById('card-'+id);
+    if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.borderColor='#7c3aed'; setTimeout(()=>el.style.borderColor='',1500); }
+  },100);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats(){
+  const cards=[...document.querySelectorAll('.cron-card')];
+  const enabled=cards.filter(c=>c.querySelector('input[type=checkbox]:checked')).length;
+  document.getElementById('st-total').textContent=cards.length;
+  document.getElementById('st-enabled').textContent=enabled;
+  document.getElementById('st-disabled').textContent=cards.length-enabled;
+  const agents=new Set();
+  cards.forEach(c=>{
+    const name=c.querySelector('.cron-name')?.textContent||'';
+    for(const b of BUILTINS){ if(b.name===name){ agents.add(b.agent); break; } }
+  });
+  document.getElementById('st-agents').textContent=agents.size||'—';
+}
+
+// ── Human-readable for existing cards ────────────────────────────────────────
+function populateHumans(){
+  document.querySelectorAll('[id^="human-"]').forEach(el=>{
+    el.textContent=cronHuman(el.textContent.trim());
+  });
+}
+
+// ── Utility ──────────────────────────────────────────────────────────────────
+function showToast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast '+type; t.style.display='block';
+  setTimeout(()=>t.style.display='none',2800);
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+populateHumans();
+updateStats();
+buildTree();
+renderAudit();
+renderNextRunsPreview('0 8 * * *');
+// default: show visual tab properly
+document.getElementById('tab-quick').style.display='none';
+</script>
+
+</body>
+</html>

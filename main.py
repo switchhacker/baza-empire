@@ -1,46 +1,51 @@
-#!/usr/bin/env python3
-"""
-Baza Empire Agent Framework v3
-Launches all agents as concurrent processes.
-"""
-import os
-import sys
-import yaml
-import multiprocessing
-from core.agent import BazaAgent
+import asyncio, logging, sys, os
+sys.path.insert(0, os.path.dirname(__file__))
 
-def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), 'config', 'agents.yaml')
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+from agents.claw_batto.agent import ClawBatto
+from agents.simon_bately.agent import SimonBately
+from agents.phil_hass.agent import PhilHass
+from agents.sam_axe.agent import SamAxe
+from agents.rex_valor.agent import RexValor
+from agents.duke_harmon.agent import DukeHarmon
+from agents.scout_reeves.agent import ScoutReeves
+from agents.nova_sterling.agent import NovaSterling
+from core.context_db import init_context_db
 
-def run_agent(agent_id: str, agent_config: dict, global_config: dict):
-    """Run a single agent in its own process."""
-    agent = BazaAgent(agent_id, agent_config, global_config)
-    agent.run()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger("baza.main")
 
-def main():
-    config = load_config()
-    agents = config.get('agents', {})
-    
-    # Filter to specific agent if passed as argument
-    target = sys.argv[1] if len(sys.argv) > 1 else None
-    
-    processes = []
-    for agent_id, agent_config in agents.items():
-        if target and agent_id != target:
-            continue
-        p = multiprocessing.Process(
-            target=run_agent,
-            args=(agent_id, agent_config, config),
-            name=agent_id
-        )
-        p.start()
-        processes.append(p)
-        print(f"✅ Started {agent_config['name']}")
+AGENTS = {
+    "simon": SimonBately,
+    "claw":  ClawBatto,
+    "phil":  PhilHass,
+    "sam":   SamAxe,
+    "rex":   RexValor,
+    "duke":  DukeHarmon,
+    "scout": ScoutReeves,
+    "nova":  NovaSterling,
+}
 
-    for p in processes:
-        p.join()
+async def run_agent(AgentClass, name):
+    while True:
+        try:
+            logger.info(f"Starting {name}...")
+            await AgentClass().run()
+        except Exception as e:
+            logger.error(f"{name} crashed: {e}. Restarting in 10s...")
+            await asyncio.sleep(10)
 
-if __name__ == '__main__':
-    main()
+async def main():
+    init_context_db()
+    args = sys.argv[1:]
+    selected = {k:v for k,v in AGENTS.items() if k in args} if args else AGENTS
+    if args and not selected:
+        print(f"Unknown: {args}. Available: {list(AGENTS.keys())}"); sys.exit(1)
+    logger.info(f"Launching: {list(selected.keys())}")
+    tasks = [asyncio.create_task(run_agent(C, n)) for n,C in selected.items()]
+    try:
+        await asyncio.gather(*tasks)
+    except (KeyboardInterrupt, SystemExit):
+        [t.cancel() for t in tasks]
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Tasks</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+    .nav-status{font-size:12px;color:#444;padding:6px 12px;background:#111;border-radius:6px;border:1px solid #1e1e1e}
+    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
+
+    /* Header */
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+
+    /* Buttons */
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s,transform .1s}
+    .btn:hover{opacity:.85;transform:translateY(-1px)}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-danger{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+    .btn-sm{padding:5px 10px;font-size:11px;border-radius:5px}
+
+    /* Stats */
+    .stats-row{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+    .stat-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px 22px;min-width:110px;text-align:center;transition:border-color .2s}
+    .stat-card:hover{border-color:#2a2a4a}
+    .stat-val{font-size:26px;font-weight:800}
+    .stat-lbl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+    .stat-total .stat-val{color:#e0e0e0}
+    .stat-pending .stat-val{color:#f59e0b}
+    .stat-progress .stat-val{color:#4da6ff}
+    .stat-done .stat-val{color:#00d084}
+    .stat-blocked .stat-val{color:#ff5555}
+
+    /* Toolbar */
+    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+    .search-box{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 14px;color:#e0e0e0;font-size:13px;outline:none;width:260px;transition:border-color .2s}
+    .search-box:focus{border-color:#7c3aed}
+    select.filter-select{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 12px;color:#888;font-size:12px;outline:none;cursor:pointer;transition:border-color .2s}
+    select.filter-select:focus{border-color:#7c3aed;color:#e0e0e0}
+
+    /* Task board / table */
+    .tasks-table{width:100%;border-collapse:collapse;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden}
+    .tasks-table th{padding:12px 16px;text-align:left;font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;background:#0a0a18;border-bottom:1px solid #1a1a2e}
+    .tasks-table td{padding:12px 16px;font-size:13px;border-bottom:1px solid #0d0d1e;vertical-align:middle}
+    .tasks-table tr:last-child td{border-bottom:none}
+    .tasks-table tr:hover td{background:#111122}
+
+    .task-title{font-weight:600;color:#ddd;cursor:pointer;transition:color .2s}
+    .task-title:hover{color:#c4b5fd}
+    .task-desc{font-size:11px;color:#444;margin-top:3px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    .badge{display:inline-block;padding:3px 9px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .badge-pending{background:#2a1a00;color:#f59e0b;border:1px solid #f59e0b}
+    .badge-in_progress{background:#001a3a;color:#4da6ff;border:1px solid #4da6ff}
+    .badge-completed{background:#001a10;color:#00d084;border:1px solid #00d084}
+    .badge-blocked{background:#2a0808;color:#ff5555;border:1px solid #ff5555}
+    .badge-cancelled{background:#1a1a1a;color:#555;border:1px solid #333}
+
+    .priority-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+    .p-high{background:#ff5555}
+    .p-medium{background:#f59e0b}
+    .p-low{background:#00d084}
+
+    .agent-chip{font-size:10px;font-family:monospace;background:#1a0a3a;color:#c4b5fd;border:1px solid #2a1a5a;padding:2px 7px;border-radius:10px}
+    .project-chip{font-size:10px;font-family:monospace;background:#0a1a2a;color:#7bc8ff;border:1px solid #1a3a5a;padding:2px 7px;border-radius:10px}
+
+    .row-actions{display:flex;gap:6px}
+    .btn-icon{background:transparent;border:1px solid #2a2a4a;border-radius:5px;padding:5px 8px;color:#666;cursor:pointer;font-size:12px;transition:all .2s}
+    .btn-icon:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-icon.del:hover{border-color:#ff5555;color:#ff5555}
+
+    /* Progress bar */
+    .progress-bar{height:4px;background:#111;border-radius:2px;margin-top:6px;overflow:hidden}
+    .progress-fill{height:100%;background:linear-gradient(90deg,#e94560,#7c3aed);border-radius:2px;transition:width .4s}
+
+    /* Empty state */
+    .empty-state{text-align:center;padding:60px 20px;color:#333}
+    .empty-state .empty-icon{font-size:48px;margin-bottom:16px;opacity:.3}
+    .empty-state h3{color:#444;font-size:16px;margin-bottom:8px}
+    .empty-state p{font-size:13px}
+
+    /* Modal */
+    .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:center;justify-content:center}
+    .modal-bg.open{display:flex}
+    .modal{background:#0e0e1e;border:1px solid #2a2a4a;border-radius:14px;padding:32px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto}
+    .modal h2{font-size:18px;font-weight:700;color:#fff;margin-bottom:6px}
+    .modal-sub{font-size:12px;color:#444;margin-bottom:24px}
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block;font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+    .form-group input,.form-group select,.form-group textarea{width:100%;background:#111;border:1px solid #2a2a4a;border-radius:7px;padding:10px 12px;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;transition:border-color .2s}
+    .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:#7c3aed}
+    .form-group textarea{resize:vertical;min-height:80px;font-family:inherit}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .modal-actions{display:flex;gap:10px;margin-top:24px}
+    .btn-cancel{background:#1a1a2e;color:#888;border:1px solid #2a2a4a;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer}
+
+    /* Detail panel slide */
+    .detail-panel{position:fixed;right:0;top:0;bottom:0;width:480px;background:#0b0b1a;border-left:1px solid #1a1a3a;z-index:500;transform:translateX(100%);transition:transform .3s;overflow-y:auto;padding:28px}
+    .detail-panel.open{transform:translateX(0)}
+    .detail-close{position:absolute;top:20px;right:20px;background:transparent;border:1px solid #2a2a4a;border-radius:5px;color:#666;cursor:pointer;padding:6px 10px;font-size:14px}
+    .detail-close:hover{border-color:#e94560;color:#e94560}
+
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px;margin-top:40px}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/crons">Crons</a>
+  <a class="nav-link active" href="/tasks">Tasks</a>
+  <a class="nav-link" href="/skills">Skills</a>
+  <a class="nav-link" href="/journal">Journal</a>
+  <a class="nav-link" href="/memory">Memory</a>
+  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/infra">Infra</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  <div class="nav-right">
+    <span class="nav-status" id="nav-clock">—</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📋 Task Manager</div>
+      <div class="page-sub">Track every task across all projects and agents</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="loadTasks()">↻ Refresh</button>
+      <button class="btn btn-primary" onclick="openNewTask()">+ New Task</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card stat-total"><div class="stat-val" id="stat-total">—</div><div class="stat-lbl">Total</div></div>
+    <div class="stat-card stat-pending"><div class="stat-val" id="stat-pending">—</div><div class="stat-lbl">Pending</div></div>
+    <div class="stat-card stat-progress"><div class="stat-val" id="stat-progress">—</div><div class="stat-lbl">In Progress</div></div>
+    <div class="stat-card stat-done"><div class="stat-val" id="stat-done">—</div><div class="stat-lbl">Done</div></div>
+    <div class="stat-card stat-blocked"><div class="stat-val" id="stat-blocked">—</div><div class="stat-lbl">Blocked</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input class="search-box" type="text" id="search-input" placeholder="🔍 Search tasks..." oninput="filterTasks()">
+    <select class="filter-select" id="filter-status" onchange="filterTasks()">
+      <option value="">All Statuses</option>
+      <option value="pending">Pending</option>
+      <option value="in_progress">In Progress</option>
+      <option value="completed">Completed</option>
+      <option value="blocked">Blocked</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <select class="filter-select" id="filter-agent" onchange="filterTasks()">
+      <option value="">All Agents</option>
+    </select>
+    <select class="filter-select" id="filter-project" onchange="filterTasks()">
+      <option value="">All Projects</option>
+    </select>
+    <select class="filter-select" id="filter-priority" onchange="filterTasks()">
+      <option value="">All Priorities</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <button class="btn btn-secondary btn-sm" onclick="clearFilters()">✕ Clear</button>
+  </div>
+
+  <!-- Tasks Table -->
+  <table class="tasks-table" id="tasks-table">
+    <thead>
+      <tr>
+        <th style="width:40px"></th>
+        <th>Task</th>
+        <th>Status</th>
+        <th>Agent</th>
+        <th>Project</th>
+        <th>Due</th>
+        <th style="width:100px">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="tasks-tbody">
+      <tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading tasks...</td></tr>
+    </tbody>
+  </table>
+
+</div>
+
+<!-- New / Edit Task Modal -->
+<div class="modal-bg" id="taskModal">
+  <div class="modal">
+    <h2 id="modal-title">New Task</h2>
+    <div class="modal-sub" id="modal-sub">Create a new task and assign it to an agent</div>
+    <input type="hidden" id="edit-task-id">
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="task-title" placeholder="Short description of the task">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="task-description" rows="3" placeholder="Detailed task description..."></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Status</label>
+        <select id="task-status">
+          <option value="pending">Pending</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="blocked">Blocked</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="task-priority">
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Assigned Agent</label>
+        <select id="task-agent">
+          <option value="">Unassigned</option>
+          <option value="simon_bately">Simon Bately</option>
+          <option value="claw_batto">Claw Batto</option>
+          <option value="phil_hass">Phil Hass</option>
+          <option value="sam_axe">Sam Axe</option>
+          <option value="rex_valor">Rex Valor</option>
+          <option value="duke_harmon">Duke Harmon</option>
+          <option value="scout_reeves">Scout Reeves</option>
+          <option value="nova_sterling">Nova Sterling</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Project</label>
+        <select id="task-project">
+          <option value="">No Project</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Due Date</label>
+      <input type="date" id="task-due">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="task-notes" rows="2" placeholder="Additional notes, blockers, context..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveTask()">Save Task</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task Detail Panel -->
+<div class="detail-panel" id="detail-panel">
+  <button class="detail-close" onclick="closeDetail()">✕</button>
+  <div id="detail-content">
+    <div style="color:#333;font-size:13px">Select a task to view details</div>
+  </div>
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3 — All Home Building Co LLC</div>
+
+<script>
+let allTasks = [];
+let projects = [];
+
+function updateClock(){
+  document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateClock,1000); updateClock();
+
+async function loadTasks(){
+  try{
+    const [tasksRes, statsRes, projRes] = await Promise.all([
+      fetch('/api/tasks'),
+      fetch('/api/tasks/stats'),
+      fetch('/api/projects')
+    ]);
+    allTasks = await tasksRes.json();
+    const stats = await statsRes.json();
+    projects = await projRes.json();
+    renderStats(stats);
+    populateProjectFilter();
+    populateAgentFilter();
+    renderTasks(allTasks);
+  }catch(e){
+    console.error(e);
+    document.getElementById('tasks-tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:#ff5555">Error loading tasks: '+e.message+'</td></tr>';
+  }
+}
+
+function renderStats(stats){
+  document.getElementById('stat-total').textContent = stats.total ?? 0;
+  document.getElementById('stat-pending').textContent = stats.pending ?? 0;
+  document.getElementById('stat-progress').textContent = stats.in_progress ?? 0;
+  document.getElementById('stat-done').textContent = stats.completed ?? 0;
+  document.getElementById('stat-blocked').textContent = stats.blocked ?? 0;
+}
+
+function populateProjectFilter(){
+  const sel = document.getElementById('filter-project');
+  const taskSel = document.getElementById('task-project');
+  const existing = new Set([...sel.options].map(o=>o.value).filter(Boolean));
+  projects.forEach(p=>{
+    if(!existing.has(String(p.id))){
+      sel.add(new Option(p.name, p.id));
+    }
+    const opt = new Option(p.name, p.id);
+    taskSel.add(opt);
+  });
+}
+
+function populateAgentFilter(){
+  const agentIds = [...new Set(allTasks.map(t=>t.agent_id).filter(Boolean))];
+  const sel = document.getElementById('filter-agent');
+  sel.innerHTML = '<option value="">All Agents</option>';
+  agentIds.forEach(a=>sel.add(new Option(a.replace(/_/g,' '), a)));
+}
+
+function renderTasks(tasks){
+  const tbody = document.getElementById('tasks-tbody');
+  if(!tasks.length){
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📋</div><h3>No tasks found</h3><p>Create your first task to get started</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = tasks.map(t=>`
+    <tr id="task-row-${t.id}">
+      <td>
+        <span class="priority-dot p-${t.priority||'medium'}" title="Priority: ${t.priority||'medium'}"></span>
+      </td>
+      <td>
+        <div class="task-title" onclick="openDetail(${t.id})">${escHtml(t.title)}</div>
+        ${t.description ? `<div class="task-desc">${escHtml(t.description)}</div>` : ''}
+      </td>
+      <td><span class="badge badge-${t.status}">${t.status}</span></td>
+      <td>${t.agent_id ? `<span class="agent-chip">${t.agent_id}</span>` : '<span style="color:#333">—</span>'}</td>
+      <td>${t.project_name ? `<span class="project-chip">${escHtml(t.project_name)}</span>` : '<span style="color:#333">—</span>'}</td>
+      <td style="font-size:12px;color:${isDueSoon(t.due_date)?'#ff9900':'#555'}">${formatDate(t.due_date)}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn-icon" onclick="openEdit(${t.id})" title="Edit">✏</button>
+          <button class="btn-icon del" onclick="deleteTask(${t.id})" title="Delete">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function filterTasks(){
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const status = document.getElementById('filter-status').value;
+  const agent = document.getElementById('filter-agent').value;
+  const project = document.getElementById('filter-project').value;
+  const priority = document.getElementById('filter-priority').value;
+  const filtered = allTasks.filter(t=>{
+    if(q && !t.title.toLowerCase().includes(q) && !(t.description||'').toLowerCase().includes(q)) return false;
+    if(status && t.status !== status) return false;
+    if(agent && t.agent_id !== agent) return false;
+    if(project && String(t.project_id) !== String(project)) return false;
+    if(priority && t.priority !== priority) return false;
+    return true;
+  });
+  renderTasks(filtered);
+}
+
+function clearFilters(){
+  document.getElementById('search-input').value = '';
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-agent').value = '';
+  document.getElementById('filter-project').value = '';
+  document.getElementById('filter-priority').value = '';
+  renderTasks(allTasks);
+}
+
+function openNewTask(){
+  document.getElementById('modal-title').textContent = '+ New Task';
+  document.getElementById('modal-sub').textContent = 'Create a new task and assign it to an agent';
+  document.getElementById('edit-task-id').value = '';
+  document.getElementById('task-title').value = '';
+  document.getElementById('task-description').value = '';
+  document.getElementById('task-status').value = 'pending';
+  document.getElementById('task-priority').value = 'medium';
+  document.getElementById('task-agent').value = '';
+  document.getElementById('task-project').value = '';
+  document.getElementById('task-due').value = '';
+  document.getElementById('task-notes').value = '';
+  document.getElementById('taskModal').classList.add('open');
+}
+
+function openEdit(id){
+  const t = allTasks.find(x=>x.id===id);
+  if(!t) return;
+  document.getElementById('modal-title').textContent = '✏ Edit Task';
+  document.getElementById('modal-sub').textContent = 'Update task #'+id;
+  document.getElementById('edit-task-id').value = id;
+  document.getElementById('task-title').value = t.title||'';
+  document.getElementById('task-description').value = t.description||'';
+  document.getElementById('task-status').value = t.status||'pending';
+  document.getElementById('task-priority').value = t.priority||'medium';
+  document.getElementById('task-agent').value = t.agent_id||'';
+  document.getElementById('task-project').value = t.project_id||'';
+  document.getElementById('task-due').value = t.due_date||'';
+  document.getElementById('task-notes').value = t.notes||'';
+  document.getElementById('taskModal').classList.add('open');
+}
+
+async function saveTask(){
+  const id = document.getElementById('edit-task-id').value;
+  const data = {
+    title: document.getElementById('task-title').value.trim(),
+    description: document.getElementById('task-description').value.trim(),
+    status: document.getElementById('task-status').value,
+    priority: document.getElementById('task-priority').value,
+    agent_id: document.getElementById('task-agent').value||null,
+    project_id: document.getElementById('task-project').value||null,
+    due_date: document.getElementById('task-due').value||null,
+    notes: document.getElementById('task-notes').value.trim()
+  };
+  if(!data.title){ alert('Title is required'); return; }
+  try{
+    const url = id ? `/api/tasks/${id}` : '/api/tasks';
+    const method = id ? 'PATCH' : 'POST';
+    const res = await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    if(!res.ok) throw new Error(await res.text());
+    closeModal();
+    loadTasks();
+  }catch(e){
+    alert('Error saving task: '+e.message);
+  }
+}
+
+async function deleteTask(id){
+  if(!confirm('Delete task #'+id+'?')) return;
+  await fetch('/api/tasks/'+id,{method:'DELETE'});
+  loadTasks();
+}
+
+function openDetail(id){
+  const t = allTasks.find(x=>x.id===id);
+  if(!t) return;
+  document.getElementById('detail-content').innerHTML = `
+    <h2 style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px;padding-right:40px">${escHtml(t.title)}</h2>
+    <div style="margin-bottom:20px;display:flex;gap:8px;flex-wrap:wrap">
+      <span class="badge badge-${t.status}">${t.status}</span>
+      ${t.priority?`<span class="badge" style="background:#1a1a1a;color:#888;border:1px solid #333">P: ${t.priority}</span>`:''}
+    </div>
+    ${t.description?`<div style="font-size:13px;color:#aaa;margin-bottom:20px;line-height:1.6">${escHtml(t.description)}</div>`:''}
+    <div style="font-size:12px;color:#444;border-top:1px solid #1a1a2e;padding-top:14px;display:grid;gap:8px">
+      ${t.agent_id?`<div>Agent: <span class="agent-chip">${t.agent_id}</span></div>`:''}
+      ${t.project_name?`<div>Project: <span class="project-chip">${escHtml(t.project_name)}</span></div>`:''}
+      ${t.due_date?`<div>Due: <span style="color:${isDueSoon(t.due_date)?'#ff9900':'#888'}">${formatDate(t.due_date)}</span></div>`:''}
+      ${t.created_at?`<div>Created: <span style="color:#888">${new Date(t.created_at).toLocaleString()}</span></div>`:''}
+      ${t.updated_at?`<div>Updated: <span style="color:#888">${new Date(t.updated_at).toLocaleString()}</span></div>`:''}
+    </div>
+    ${t.notes?`<div style="margin-top:16px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:14px;font-size:12px;color:#666;line-height:1.6">${escHtml(t.notes)}</div>`:''}
+    <div style="margin-top:24px;display:flex;gap:8px">
+      <button class="btn btn-secondary btn-sm" onclick="openEdit(${t.id})">✏ Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteTask(${t.id})">✕ Delete</button>
+    </div>
+  `;
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function closeDetail(){
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+function closeModal(){
+  document.getElementById('taskModal').classList.remove('open');
+}
+
+function formatDate(d){
+  if(!d) return '—';
+  return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+
+function isDueSoon(d){
+  if(!d) return false;
+  return (new Date(d) - new Date()) < 3*86400*1000;
+}
+
+function escHtml(s){
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadTasks();
+</script>
+</body>
+</html>

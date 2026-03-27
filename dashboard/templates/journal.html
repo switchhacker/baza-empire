@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Activity Journal</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+    .nav-status{font-size:12px;color:#444;padding:6px 12px;background:#111;border-radius:6px;border:1px solid #1e1e1e}
+    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
+
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s}
+    .btn:hover{opacity:.85}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-sm{padding:5px 10px;font-size:11px;border-radius:5px}
+
+    /* Stats */
+    .stats-row{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+    .stat-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px 20px;min-width:100px;text-align:center}
+    .stat-val{font-size:22px;font-weight:800;color:#e0e0e0}
+    .stat-lbl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-top:3px}
+
+    /* Toolbar */
+    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+    .search-box{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 14px;color:#e0e0e0;font-size:13px;outline:none;width:240px;transition:border-color .2s}
+    .search-box:focus{border-color:#7c3aed}
+    select.filter-select{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 12px;color:#888;font-size:12px;outline:none;cursor:pointer}
+    select.filter-select:focus{border-color:#7c3aed;color:#e0e0e0}
+
+    /* Timeline / log entries */
+    .journal-feed{display:flex;flex-direction:column;gap:1px}
+    .journal-entry{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px 20px;cursor:pointer;transition:border-color .15s;position:relative}
+    .journal-entry:hover{border-color:#2a2a4a}
+    .journal-entry.success-entry{border-left:3px solid #00d084}
+    .journal-entry.fail-entry{border-left:3px solid #ff5555}
+    .entry-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+    .entry-type{font-size:12px;font-weight:700;font-family:monospace;color:#c4b5fd;background:#1a0a3a;padding:2px 8px;border-radius:10px;border:1px solid #2a1a5a}
+    .entry-agent{font-size:11px;font-family:monospace;color:#7bc8ff;background:#0a1a2a;padding:2px 8px;border-radius:10px;border:1px solid #1a3a5a}
+    .entry-time{font-size:11px;color:#333;white-space:nowrap}
+    .entry-desc{font-size:13px;color:#888;margin-bottom:8px;line-height:1.4}
+    .entry-result{font-size:12px;font-family:monospace;color:#555;background:#080814;padding:8px 12px;border-radius:6px;border:1px solid #111;white-space:pre-wrap;max-height:80px;overflow:hidden;transition:max-height .3s}
+    .entry-result.expanded{max-height:400px}
+    .entry-footer{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+    .duration-badge{font-size:10px;color:#444;background:#111;padding:2px 7px;border-radius:8px;font-family:monospace}
+    .success-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px}
+    .success-badge.ok{background:#001a10;color:#00d084;border:1px solid #00d084}
+    .success-badge.err{background:#2a0808;color:#ff5555;border:1px solid #ff5555}
+    .expand-btn{font-size:10px;color:#333;cursor:pointer;transition:color .2s;margin-left:auto}
+    .expand-btn:hover{color:#7c3aed}
+
+    /* Pagination */
+    .pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:24px;padding:16px 0}
+    .page-btn{padding:7px 14px;background:#0e0e1e;border:1px solid #2a2a4a;border-radius:6px;color:#888;cursor:pointer;font-size:12px;transition:all .2s}
+    .page-btn:hover{border-color:#7c3aed;color:#c4b5fd}
+    .page-btn.active{background:#1a0a3a;border-color:#7c3aed;color:#c4b5fd}
+    .page-btn:disabled{opacity:.3;cursor:default}
+    .page-info{font-size:12px;color:#333;padding:0 10px}
+
+    /* Live indicator */
+    .live-dot{display:inline-block;width:7px;height:7px;background:#00d084;border-radius:50%;animation:pulse 2s infinite;margin-right:6px}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+    .empty-state{text-align:center;padding:60px;color:#333}
+    .empty-state .icon{font-size:48px;opacity:.2;margin-bottom:16px}
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px;margin-top:40px}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/crons">Crons</a>
+  <a class="nav-link" href="/tasks">Tasks</a>
+  <a class="nav-link" href="/skills">Skills</a>
+  <a class="nav-link active" href="/journal">Journal</a>
+  <a class="nav-link" href="/memory">Memory</a>
+  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/infra">Infra</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  <div class="nav-right">
+    <span class="nav-status" id="nav-clock">—</span>
+    <span class="nav-status"><span class="live-dot"></span>Live</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📓 Activity Journal</div>
+      <div class="page-sub">Real-time log of all agent actions, skill runs, and task completions</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#444;cursor:pointer">
+        <input type="checkbox" id="auto-refresh-toggle" checked onchange="toggleAutoRefresh(this.checked)"> Auto-refresh
+      </label>
+      <button class="btn btn-secondary" onclick="loadJournal()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-card"><div class="stat-val" id="stat-total">—</div><div class="stat-lbl">Total Entries</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:#00d084" id="stat-success">—</div><div class="stat-lbl">Successful</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:#ff5555" id="stat-errors">—</div><div class="stat-lbl">Errors</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:#4da6ff" id="stat-today">—</div><div class="stat-lbl">Today</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input class="search-box" type="text" id="search-input" placeholder="🔍 Search journal..." oninput="filterEntries()">
+    <select class="filter-select" id="filter-agent" onchange="filterEntries()">
+      <option value="">All Agents</option>
+    </select>
+    <select class="filter-select" id="filter-type" onchange="filterEntries()">
+      <option value="">All Types</option>
+    </select>
+    <select class="filter-select" id="filter-success" onchange="filterEntries()">
+      <option value="">All Results</option>
+      <option value="1">Success only</option>
+      <option value="0">Errors only</option>
+    </select>
+    <select class="filter-select" id="filter-range" onchange="loadJournal()">
+      <option value="100">Last 100</option>
+      <option value="250">Last 250</option>
+      <option value="500">Last 500</option>
+      <option value="1000">Last 1000</option>
+    </select>
+    <button class="btn btn-secondary btn-sm" onclick="clearFilters()">✕ Clear</button>
+  </div>
+
+  <!-- Feed -->
+  <div id="journal-feed" class="journal-feed">
+    <div class="empty-state"><div class="icon">📓</div><p>Loading journal...</p></div>
+  </div>
+
+  <div class="pagination" id="pagination"></div>
+
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3 — All Home Building Co LLC</div>
+
+<script>
+let allEntries = [];
+let filteredEntries = [];
+let currentPage = 1;
+const PAGE_SIZE = 50;
+let autoRefreshTimer = null;
+
+function updateClock(){
+  document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateClock,1000); updateClock();
+
+async function loadJournal(){
+  const limit = document.getElementById('filter-range').value;
+  try{
+    const res = await fetch(`/api/journal?limit=${limit}`);
+    allEntries = await res.json();
+    populateFilterOptions();
+    computeStats();
+    filterEntries();
+  }catch(e){
+    document.getElementById('journal-feed').innerHTML = `<div style="text-align:center;padding:40px;color:#ff5555">Error: ${e.message}</div>`;
+  }
+}
+
+function computeStats(){
+  const today = new Date().toDateString();
+  document.getElementById('stat-total').textContent = allEntries.length;
+  document.getElementById('stat-success').textContent = allEntries.filter(e=>e.success).length;
+  document.getElementById('stat-errors').textContent = allEntries.filter(e=>!e.success).length;
+  document.getElementById('stat-today').textContent = allEntries.filter(e=>e.created_at && new Date(e.created_at).toDateString()===today).length;
+}
+
+function populateFilterOptions(){
+  const agents = [...new Set(allEntries.map(e=>e.agent_id).filter(Boolean))];
+  const types = [...new Set(allEntries.map(e=>e.task_type).filter(Boolean))];
+  const agentSel = document.getElementById('filter-agent');
+  agentSel.innerHTML = '<option value="">All Agents</option>' + agents.map(a=>`<option value="${a}">${a}</option>`).join('');
+  const typeSel = document.getElementById('filter-type');
+  typeSel.innerHTML = '<option value="">All Types</option>' + types.map(t=>`<option value="${t}">${t}</option>`).join('');
+}
+
+function filterEntries(){
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const agent = document.getElementById('filter-agent').value;
+  const type = document.getElementById('filter-type').value;
+  const succ = document.getElementById('filter-success').value;
+  filteredEntries = allEntries.filter(e=>{
+    if(q && !(e.task_description||'').toLowerCase().includes(q) && !(e.result||'').toLowerCase().includes(q)) return false;
+    if(agent && e.agent_id !== agent) return false;
+    if(type && e.task_type !== type) return false;
+    if(succ === '1' && !e.success) return false;
+    if(succ === '0' && e.success) return false;
+    return true;
+  });
+  currentPage = 1;
+  renderPage();
+}
+
+function renderPage(){
+  const start = (currentPage-1)*PAGE_SIZE;
+  const pageEntries = filteredEntries.slice(start, start+PAGE_SIZE);
+  const feed = document.getElementById('journal-feed');
+  if(!pageEntries.length){
+    feed.innerHTML = '<div class="empty-state"><div class="icon">📓</div><h3>No entries match your filters</h3></div>';
+  } else {
+    feed.innerHTML = pageEntries.map((e,i)=>renderEntry(e, start+i)).join('');
+  }
+  renderPagination();
+}
+
+function renderEntry(e, idx){
+  const timeStr = e.created_at ? timeAgo(new Date(e.created_at)) : '—';
+  const absoluteTime = e.created_at ? new Date(e.created_at).toLocaleString() : '';
+  return `
+    <div class="journal-entry ${e.success?'success-entry':'fail-entry'}" id="entry-${idx}">
+      <div class="entry-header">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${e.task_type?`<span class="entry-type">${escHtml(e.task_type)}</span>`:''}
+          ${e.agent_id?`<span class="entry-agent">${escHtml(e.agent_id)}</span>`:''}
+        </div>
+        <span class="entry-time" title="${absoluteTime}">${timeStr}</span>
+      </div>
+      ${e.task_description?`<div class="entry-desc">${escHtml(e.task_description)}</div>`:''}
+      ${e.result?`<pre class="entry-result" id="result-${idx}">${escHtml(e.result)}</pre>`:''}
+      <div class="entry-footer">
+        <span class="success-badge ${e.success?'ok':'err'}">${e.success?'✓ OK':'✗ ERROR'}</span>
+        ${e.duration_ms?`<span class="duration-badge">${e.duration_ms}ms</span>`:''}
+        ${e.result&&e.result.length>100?`<span class="expand-btn" onclick="toggleExpand(${idx})">expand ↕</span>`:''}
+      </div>
+    </div>
+  `;
+}
+
+function toggleExpand(idx){
+  const el = document.getElementById('result-'+idx);
+  if(el) el.classList.toggle('expanded');
+}
+
+function renderPagination(){
+  const totalPages = Math.ceil(filteredEntries.length / PAGE_SIZE);
+  const pag = document.getElementById('pagination');
+  if(totalPages <= 1){ pag.innerHTML = ''; return; }
+  let html = `<button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage<=1?'disabled':''}>← Prev</button>`;
+  const start = Math.max(1, currentPage-2), end = Math.min(totalPages, currentPage+2);
+  if(start>1) html += `<button class="page-btn" onclick="goPage(1)">1</button>${start>2?'<span class="page-info">…</span>':''}`;
+  for(let p=start;p<=end;p++) html+=`<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  if(end<totalPages) html += `${end<totalPages-1?'<span class="page-info">…</span>':''}<button class="page-btn" onclick="goPage(${totalPages})">${totalPages}</button>`;
+  html += `<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage>=totalPages?'disabled':''}>Next →</button>`;
+  html += `<span class="page-info">${filteredEntries.length} entries</span>`;
+  pag.innerHTML = html;
+}
+
+function goPage(p){
+  currentPage = p;
+  renderPage();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function clearFilters(){
+  document.getElementById('search-input').value='';
+  document.getElementById('filter-agent').value='';
+  document.getElementById('filter-type').value='';
+  document.getElementById('filter-success').value='';
+  filterEntries();
+}
+
+function toggleAutoRefresh(enabled){
+  if(enabled){
+    autoRefreshTimer = setInterval(loadJournal, 15000);
+  } else {
+    clearInterval(autoRefreshTimer);
+  }
+}
+
+function timeAgo(date){
+  const secs = Math.floor((new Date()-date)/1000);
+  if(secs<60) return `${secs}s ago`;
+  if(secs<3600) return `${Math.floor(secs/60)}m ago`;
+  if(secs<86400) return `${Math.floor(secs/3600)}h ago`;
+  return `${Math.floor(secs/86400)}d ago`;
+}
+
+function escHtml(s){
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Start
+loadJournal();
+toggleAutoRefresh(true);
+</script>
+</body>
+</html>

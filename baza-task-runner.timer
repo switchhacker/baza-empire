@@ -1,0 +1,11 @@
+[Unit]
+Description=Baza Empire — Task Runner Timer (every 30 min)
+Requires=baza-task-runner.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Unit=baza-task-runner.service
+
+[Install]
+WantedBy=timers.target

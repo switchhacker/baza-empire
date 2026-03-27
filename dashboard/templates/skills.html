@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Skills Lab</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+    .nav-status{font-size:12px;color:#444;padding:6px 12px;background:#111;border-radius:6px;border:1px solid #1e1e1e}
+    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
+
+    /* Layout */
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+    .skills-layout{display:grid;grid-template-columns:300px 1fr;gap:0;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden;min-height:600px}
+
+    /* Sidebar */
+    .skills-sidebar{background:#0a0a18;border-right:1px solid #1a1a2e;display:flex;flex-direction:column}
+    .sidebar-header{padding:14px 16px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between}
+    .sidebar-search{width:100%;background:#111;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:12px;outline:none}
+    .sidebar-search:focus{border-color:#7c3aed}
+    .skill-list{flex:1;overflow-y:auto;padding:8px}
+    .skill-item{padding:10px 12px;border-radius:7px;cursor:pointer;transition:background .15s;border:1px solid transparent;margin-bottom:2px}
+    .skill-item:hover{background:#111;border-color:#1a1a2e}
+    .skill-item.active{background:#1a0a3a;border-color:#7c3aed}
+    .skill-item-name{font-size:13px;font-weight:600;color:#ccc;font-family:monospace}
+    .skill-item.active .skill-item-name{color:#c4b5fd}
+    .skill-item-meta{font-size:10px;color:#333;margin-top:2px}
+    .skill-item.active .skill-item-meta{color:#666}
+    .skill-scope{font-size:9px;padding:1px 6px;border-radius:8px;display:inline-block;margin-right:4px}
+    .scope-shared{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
+    .scope-agent{background:#1a0a3a;color:#c4b5fd;border:1px solid #7c3aed}
+    .sidebar-new-btn{margin:8px;padding:10px;background:#1a0a3a;border:1px dashed #7c3aed;border-radius:7px;color:#c4b5fd;font-size:12px;font-weight:600;cursor:pointer;text-align:center;transition:background .2s}
+    .sidebar-new-btn:hover{background:#250e50}
+
+    /* Editor area */
+    .skills-editor{display:flex;flex-direction:column;background:#0e0e1e}
+    .editor-toolbar{padding:12px 16px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#0a0a18}
+    .skill-name-input{background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:7px 12px;color:#e0e0e0;font-size:13px;font-family:monospace;outline:none;width:220px;transition:border-color .2s}
+    .skill-name-input:focus{border-color:#7c3aed}
+    .skill-desc-input{background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:7px 12px;color:#e0e0e0;font-size:13px;outline:none;flex:1;min-width:200px;transition:border-color .2s}
+    .skill-desc-input:focus{border-color:#7c3aed}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s,transform .1s}
+    .btn:hover{opacity:.85;transform:translateY(-1px)}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#111;color:#aaa;border:1px solid #2a2a4a}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-success{background:#0d2a0d;color:#66cc66;border:1px solid #1a5a1a}
+    .btn-success:hover{background:#112a11}
+    .btn-danger{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+    .btn-sm{padding:6px 12px;font-size:11px;border-radius:5px}
+
+    .code-area{flex:1;display:flex;flex-direction:column;min-height:0}
+    .code-editor{flex:1;background:#050510;border:none;color:#c9d1d9;font-family:'Cascadia Code','Fira Code','Courier New',monospace;font-size:13px;padding:20px;outline:none;resize:none;line-height:1.6;min-height:300px;tab-size:4}
+    .code-editor::placeholder{color:#333}
+
+    /* Run Panel */
+    .run-panel{border-top:1px solid #1a1a2e;background:#080814}
+    .run-panel-header{padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1a1a2e;cursor:pointer;user-select:none}
+    .run-panel-header:hover{background:#0a0a18}
+    .run-panel-title{font-size:12px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;flex:1}
+    .run-panel-body{padding:14px 16px;display:none}
+    .run-panel-body.open{display:block}
+    .run-args-input{width:100%;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#e0e0e0;font-size:12px;font-family:monospace;outline:none;transition:border-color .2s}
+    .run-args-input:focus{border-color:#7c3aed}
+    .run-output{margin-top:10px;background:#050510;border:1px solid #1a1a2e;border-radius:7px;padding:14px;font-family:monospace;font-size:12px;color:#8b949e;max-height:200px;overflow-y:auto;white-space:pre-wrap;line-height:1.5;display:none}
+    .run-output.visible{display:block}
+    .run-output.success{color:#00d084;border-color:#00400028}
+    .run-output.error{color:#ff6666;border-color:#44000028}
+    .run-status{font-size:11px;color:#444;margin-top:6px}
+
+    /* Empty state */
+    .empty-editor{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#333;gap:12px;padding:60px}
+    .empty-editor .icon{font-size:48px;opacity:.2}
+    .empty-editor h3{font-size:16px;color:#444}
+    .empty-editor p{font-size:12px;text-align:center;line-height:1.6}
+
+    /* Stats bar */
+    .skills-stats{display:flex;gap:16px;margin-bottom:20px}
+    .skill-stat{font-size:12px;color:#444}
+    .skill-stat span{color:#aaa;font-weight:700;margin-left:4px}
+
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px;margin-top:40px}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/crons">Crons</a>
+  <a class="nav-link" href="/tasks">Tasks</a>
+  <a class="nav-link active" href="/skills">Skills</a>
+  <a class="nav-link" href="/journal">Journal</a>
+  <a class="nav-link" href="/memory">Memory</a>
+  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/infra">Infra</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  <div class="nav-right">
+    <span class="nav-status" id="nav-clock">—</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">⚙ Skills Lab</div>
+      <div class="page-sub">Create, edit, and run agent skills from the browser</div>
+    </div>
+    <div class="skills-stats">
+      <div class="skill-stat">Shared:<span id="count-shared">—</span></div>
+      <div class="skill-stat">Agent-specific:<span id="count-agent">—</span></div>
+      <div class="skill-stat">Total:<span id="count-total">—</span></div>
+    </div>
+  </div>
+
+  <div class="skills-layout">
+    <!-- Sidebar -->
+    <div class="skills-sidebar">
+      <div class="sidebar-header">
+        <input class="sidebar-search" type="text" placeholder="🔍 Search skills..." oninput="filterSkills(this.value)" id="skills-search">
+      </div>
+      <div class="skill-list" id="skills-list">
+        <div style="text-align:center;padding:30px;color:#333;font-size:12px">Loading...</div>
+      </div>
+      <div class="sidebar-new-btn" onclick="newSkill()">+ New Skill</div>
+    </div>
+
+    <!-- Editor -->
+    <div class="skills-editor" id="editor-area">
+      <div class="editor-toolbar" id="editor-toolbar" style="display:none">
+        <input class="skill-name-input" type="text" id="current-skill-name" placeholder="skill_name" readonly>
+        <input class="skill-desc-input" type="text" id="current-skill-desc" placeholder="What this skill does...">
+        <button class="btn btn-success btn-sm" onclick="saveSkill()">💾 Save</button>
+        <button class="btn btn-primary btn-sm" onclick="toggleRunPanel()">▶ Run</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteSkill()">✕</button>
+      </div>
+
+      <div class="code-area">
+        <div class="empty-editor" id="editor-empty">
+          <div class="icon">⚙</div>
+          <h3>Skills Lab</h3>
+          <p>Select a skill from the list to view and edit its code.<br>Or create a new skill from scratch.</p>
+        </div>
+        <textarea class="code-editor" id="code-editor" placeholder="#!/usr/bin/env python3
+import os, json
+args = json.loads(os.environ.get('SKILL_ARGS', '{}'))
+
+# Your skill code here
+print('result')" style="display:none"></textarea>
+      </div>
+
+      <!-- Run Panel -->
+      <div class="run-panel" id="run-panel" style="display:none">
+        <div class="run-panel-header" onclick="toggleRunPanel()">
+          <div class="run-panel-title">▶ Run Panel</div>
+          <span id="run-chevron" style="color:#444;font-size:14px">▲</span>
+        </div>
+        <div class="run-panel-body open" id="run-panel-body">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <input class="run-args-input" type="text" id="run-args" placeholder='JSON args: {"key": "value"} — leave empty for {}'>
+            <button class="btn btn-success btn-sm" onclick="runSkill()" id="run-btn">▶ Run Now</button>
+          </div>
+          <pre class="run-output" id="run-output"></pre>
+          <div class="run-status" id="run-status"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3 — All Home Building Co LLC</div>
+
+<script>
+let allSkills = [];
+let currentSkillName = null;
+let runPanelOpen = true;
+
+function updateClock(){
+  document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateClock,1000); updateClock();
+
+async function loadSkills(){
+  try{
+    const res = await fetch('/api/skills/list');
+    allSkills = await res.json();
+    document.getElementById('count-shared').textContent = allSkills.filter(s=>s.scope==='shared').length;
+    document.getElementById('count-agent').textContent = allSkills.filter(s=>s.scope!=='shared').length;
+    document.getElementById('count-total').textContent = allSkills.length;
+    renderSkillsList(allSkills);
+  }catch(e){
+    document.getElementById('skills-list').innerHTML = '<div style="color:#ff5555;font-size:12px;padding:16px">Error loading: '+e.message+'</div>';
+  }
+}
+
+function renderSkillsList(skills){
+  const el = document.getElementById('skills-list');
+  if(!skills.length){
+    el.innerHTML = '<div style="color:#333;font-size:12px;padding:16px;text-align:center">No skills found</div>';
+    return;
+  }
+  el.innerHTML = skills.map(s=>`
+    <div class="skill-item ${s.name===currentSkillName?'active':''}" onclick="openSkill('${s.name}')">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="skill-item-name">${s.name}</div>
+        <span class="skill-scope scope-${s.scope==='shared'?'shared':'agent'}">${s.scope==='shared'?'shared':s.scope||'?'}</span>
+      </div>
+      ${s.description?`<div class="skill-item-meta">${s.description.substring(0,50)}${s.description.length>50?'...':''}</div>`:''}
+    </div>
+  `).join('');
+}
+
+function filterSkills(q){
+  const filtered = allSkills.filter(s=>
+    s.name.toLowerCase().includes(q.toLowerCase()) ||
+    (s.description||'').toLowerCase().includes(q.toLowerCase())
+  );
+  renderSkillsList(filtered);
+}
+
+async function openSkill(name){
+  currentSkillName = name;
+  try{
+    const res = await fetch(`/api/skills/read/${encodeURIComponent(name)}`);
+    const data = await res.json();
+    showEditor();
+    const nameInput = document.getElementById('current-skill-name');
+    nameInput.value = data.name;
+    nameInput.readOnly = true;
+    document.getElementById('current-skill-desc').value = data.description||'';
+    document.getElementById('code-editor').value = data.code||'';
+    renderSkillsList(allSkills); // refresh active state
+  }catch(e){
+    alert('Error loading skill: '+e.message);
+  }
+}
+
+function newSkill(){
+  currentSkillName = null;
+  showEditor();
+  const nameInput = document.getElementById('current-skill-name');
+  nameInput.value = '';
+  nameInput.readOnly = false;
+  document.getElementById('current-skill-desc').value = '';
+  document.getElementById('code-editor').value = `#!/usr/bin/env python3
+import os, json
+
+args = json.loads(os.environ.get('SKILL_ARGS', '{}'))
+
+# Your skill code here
+result = "hello"
+print(result)
+`;
+  renderSkillsList(allSkills);
+}
+
+function showEditor(){
+  document.getElementById('editor-empty').style.display = 'none';
+  document.getElementById('code-editor').style.display = 'block';
+  document.getElementById('editor-toolbar').style.display = 'flex';
+  document.getElementById('run-panel').style.display = 'block';
+}
+
+async function saveSkill(){
+  const name = document.getElementById('current-skill-name').value.trim();
+  const desc = document.getElementById('current-skill-desc').value.trim();
+  const code = document.getElementById('code-editor').value;
+  if(!name){ alert('Skill name is required'); return; }
+  if(!/^[a-z][a-z0-9_]{1,49}$/.test(name)){ alert('Name must be snake_case (a-z, 0-9, underscore), 2-50 chars'); return; }
+  try{
+    const res = await fetch('/api/skills/save',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,description:desc,code})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Save failed');
+    currentSkillName = name;
+    document.getElementById('current-skill-name').readOnly = true;
+    loadSkills();
+    showToast('Skill saved: '+name);
+  }catch(e){
+    alert('Error: '+e.message);
+  }
+}
+
+async function runSkill(){
+  const name = document.getElementById('current-skill-name').value.trim();
+  const argsRaw = document.getElementById('run-args').value.trim()||'{}';
+  let args;
+  try{ args = JSON.parse(argsRaw); }
+  catch(e){ alert('Invalid JSON args: '+e.message); return; }
+  const btn = document.getElementById('run-btn');
+  const out = document.getElementById('run-output');
+  const status = document.getElementById('run-status');
+  btn.textContent = '⏳ Running...';
+  btn.disabled = true;
+  out.className = 'run-output visible';
+  out.textContent = '...';
+  status.textContent = '';
+  try{
+    const start = Date.now();
+    const res = await fetch('/api/skills/run',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,args})
+    });
+    const data = await res.json();
+    const elapsed = Date.now()-start;
+    if(data.success){
+      out.textContent = data.output||'(no output)';
+      out.className = 'run-output visible success';
+      status.textContent = `✓ Completed in ${data.duration_ms||elapsed}ms`;
+    }else{
+      out.textContent = data.error||'Unknown error';
+      out.className = 'run-output visible error';
+      status.textContent = `✗ Failed after ${elapsed}ms`;
+    }
+  }catch(e){
+    out.textContent = e.message;
+    out.className = 'run-output visible error';
+  }finally{
+    btn.textContent = '▶ Run Now';
+    btn.disabled = false;
+  }
+}
+
+async function deleteSkill(){
+  const name = currentSkillName||document.getElementById('current-skill-name').value.trim();
+  if(!name) return;
+  if(!confirm(`Delete skill "${name}"? This cannot be undone.`)) return;
+  try{
+    const res = await fetch('/api/skills/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error);
+    currentSkillName = null;
+    document.getElementById('editor-empty').style.display = 'flex';
+    document.getElementById('code-editor').style.display = 'none';
+    document.getElementById('editor-toolbar').style.display = 'none';
+    document.getElementById('run-panel').style.display = 'none';
+    loadSkills();
+    showToast('Skill deleted: '+name);
+  }catch(e){
+    alert('Error: '+e.message);
+  }
+}
+
+function toggleRunPanel(){
+  const body = document.getElementById('run-panel-body');
+  const chevron = document.getElementById('run-chevron');
+  runPanelOpen = !runPanelOpen;
+  body.classList.toggle('open', runPanelOpen);
+  chevron.textContent = runPanelOpen ? '▲' : '▼';
+}
+
+function showToast(msg){
+  const t = document.createElement('div');
+  t.textContent = msg;
+  Object.assign(t.style,{
+    position:'fixed',bottom:'24px',right:'24px',background:'#1a0a3a',border:'1px solid #7c3aed',
+    color:'#c4b5fd',padding:'12px 20px',borderRadius:'8px',fontSize:'13px',
+    fontWeight:'600',zIndex:'9999',transition:'opacity .4s'
+  });
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400)},2500);
+}
+
+loadSkills();
+</script>
+</body>
+</html>

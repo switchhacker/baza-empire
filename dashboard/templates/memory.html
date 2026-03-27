@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Memory</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+    .nav-status{font-size:12px;color:#444;padding:6px 12px;background:#111;border-radius:6px;border:1px solid #1e1e1e}
+    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
+
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s,transform .1s}
+    .btn:hover{opacity:.85;transform:translateY(-1px)}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-danger{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+    .btn-sm{padding:5px 10px;font-size:11px;border-radius:5px}
+
+    /* Tab bar */
+    .tabs{display:flex;gap:0;border-bottom:1px solid #1a1a2e;margin-bottom:24px}
+    .tab{padding:12px 20px;font-size:13px;font-weight:600;color:#555;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+    .tab:hover{color:#888}
+    .tab.active{color:#c4b5fd;border-bottom-color:#7c3aed}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+
+    /* Agent selector */
+    .agent-selector{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+    .agent-pill{padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #1a1a2e;background:#0a0a16;color:#555;transition:all .2s;font-family:monospace}
+    .agent-pill:hover{border-color:#7c3aed;color:#c4b5fd;background:#120d22}
+    .agent-pill.active{border-color:#7c3aed;color:#c4b5fd;background:#1a0a3a}
+
+    /* Memory entries */
+    .memory-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+    .search-box{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 14px;color:#e0e0e0;font-size:13px;outline:none;width:240px;transition:border-color .2s}
+    .search-box:focus{border-color:#7c3aed}
+
+    .memory-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+    .memory-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:18px;transition:border-color .2s;position:relative}
+    .memory-card:hover{border-color:#2a2a4a}
+    .mem-key{font-size:12px;font-weight:700;color:#c4b5fd;font-family:monospace;margin-bottom:8px;word-break:break-all}
+    .mem-value{font-size:13px;color:#888;line-height:1.5;word-break:break-word;max-height:100px;overflow:hidden;position:relative}
+    .mem-value.expanded{max-height:none}
+    .mem-meta{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid #111}
+    .mem-time{font-size:10px;color:#333}
+    .mem-actions{display:flex;gap:6px}
+    .btn-icon{background:transparent;border:1px solid #2a2a4a;border-radius:5px;padding:4px 8px;color:#666;cursor:pointer;font-size:11px;transition:all .2s}
+    .btn-icon:hover{border-color:#7c3aed;color:#c4b5fd}
+    .btn-icon.del:hover{border-color:#ff5555;color:#ff5555}
+
+    /* Empire knowledge */
+    .knowledge-table{width:100%;border-collapse:collapse;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden}
+    .knowledge-table th{padding:12px 16px;text-align:left;font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;background:#0a0a18;border-bottom:1px solid #1a1a2e}
+    .knowledge-table td{padding:12px 16px;font-size:13px;border-bottom:1px solid #0d0d1e;vertical-align:top}
+    .knowledge-table tr:last-child td{border-bottom:none}
+    .knowledge-table tr:hover td{background:#111122}
+
+    /* New memory form inline */
+    .new-mem-row{background:#0a0a16;border:1px dashed #2a2a4a;border-radius:10px;padding:16px;margin-bottom:16px;display:none}
+    .new-mem-row.open{display:block}
+    .new-mem-row input,.new-mem-row textarea{width:100%;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;margin-bottom:8px;transition:border-color .2s}
+    .new-mem-row input:focus,.new-mem-row textarea:focus{border-color:#7c3aed}
+    .new-mem-row textarea{resize:vertical;min-height:60px;font-family:monospace}
+
+    /* Empire knowledge panel */
+    .empire-panel{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden}
+    .empire-panel-header{padding:12px 16px;background:#0a0a18;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between}
+    .empire-panel-title{font-size:12px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px}
+
+    /* Empty state */
+    .empty-state{text-align:center;padding:50px;color:#333}
+    .empty-icon{font-size:40px;opacity:.2;margin-bottom:12px}
+
+    /* Edit modal */
+    .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;align-items:center;justify-content:center}
+    .modal-bg.open{display:flex}
+    .modal{background:#0e0e1e;border:1px solid #2a2a4a;border-radius:14px;padding:32px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
+    .modal h2{font-size:18px;font-weight:700;color:#fff;margin-bottom:20px}
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block;font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+    .form-group input,.form-group textarea{width:100%;background:#111;border:1px solid #2a2a4a;border-radius:7px;padding:10px 12px;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;transition:border-color .2s}
+    .form-group input:focus,.form-group textarea:focus{border-color:#7c3aed}
+    .form-group textarea{resize:vertical;min-height:100px;font-family:monospace}
+    .modal-actions{display:flex;gap:10px;margin-top:20px}
+    .btn-cancel{background:#1a1a2e;color:#888;border:1px solid #2a2a4a;padding:10px 20px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer}
+
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px;margin-top:40px}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/crons">Crons</a>
+  <a class="nav-link" href="/tasks">Tasks</a>
+  <a class="nav-link" href="/skills">Skills</a>
+  <a class="nav-link" href="/journal">Journal</a>
+  <a class="nav-link active" href="/memory">Memory</a>
+  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/infra">Infra</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  <div class="nav-right">
+    <span class="nav-status" id="nav-clock">—</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧠 Memory</div>
+      <div class="page-sub">Agent memory banks and empire-wide knowledge base</div>
+    </div>
+    <button class="btn btn-secondary" onclick="loadAll()">↻ Refresh</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('agent-memory')">Agent Memory</div>
+    <div class="tab" onclick="switchTab('empire-knowledge')">Empire Knowledge</div>
+  </div>
+
+  <!-- Agent Memory Tab -->
+  <div class="tab-panel active" id="tab-agent-memory">
+    <!-- Agent selector -->
+    <div class="agent-selector" id="agent-selector">
+      <div class="agent-pill active" data-agent="" onclick="selectAgent(this, '')">All Agents</div>
+      <div class="agent-pill" data-agent="simon_bately" onclick="selectAgent(this,'simon_bately')">Simon</div>
+      <div class="agent-pill" data-agent="claw_batto" onclick="selectAgent(this,'claw_batto')">Claw</div>
+      <div class="agent-pill" data-agent="phil_hass" onclick="selectAgent(this,'phil_hass')">Phil</div>
+      <div class="agent-pill" data-agent="sam_axe" onclick="selectAgent(this,'sam_axe')">Sam</div>
+      <div class="agent-pill" data-agent="rex_valor" onclick="selectAgent(this,'rex_valor')">Rex</div>
+      <div class="agent-pill" data-agent="duke_harmon" onclick="selectAgent(this,'duke_harmon')">Duke</div>
+      <div class="agent-pill" data-agent="scout_reeves" onclick="selectAgent(this,'scout_reeves')">Scout</div>
+      <div class="agent-pill" data-agent="nova_sterling" onclick="selectAgent(this,'nova_sterling')">Nova</div>
+    </div>
+
+    <div class="memory-toolbar">
+      <input class="search-box" type="text" id="mem-search" placeholder="🔍 Search memory..." oninput="filterMemory()">
+      <button class="btn btn-primary btn-sm" onclick="toggleNewMem()">+ Add Memory</button>
+    </div>
+
+    <!-- New memory form -->
+    <div class="new-mem-row" id="new-mem-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+        <select id="new-mem-agent" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#888;font-size:12px;outline:none">
+          <option value="simon_bately">Simon</option>
+          <option value="claw_batto">Claw</option>
+          <option value="phil_hass">Phil</option>
+          <option value="sam_axe">Sam</option>
+          <option value="rex_valor">Rex</option>
+          <option value="duke_harmon">Duke</option>
+          <option value="scout_reeves">Scout</option>
+          <option value="nova_sterling">Nova</option>
+        </select>
+        <input type="text" id="new-mem-key" placeholder="memory_key" style="font-family:monospace">
+        <input type="text" id="new-mem-category" placeholder="category (optional)">
+      </div>
+      <textarea id="new-mem-value" placeholder="Memory value..."></textarea>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveNewMemory()">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="toggleNewMem()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="memory-grid" id="memory-grid">
+      <div class="empty-state"><div class="empty-icon">🧠</div><p>Loading memory...</p></div>
+    </div>
+  </div>
+
+  <!-- Empire Knowledge Tab -->
+  <div class="tab-panel" id="tab-empire-knowledge">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:12px;color:#444">Shared knowledge available to all agents</div>
+      <button class="btn btn-primary btn-sm" onclick="openAddKnowledge()">+ Add Entry</button>
+    </div>
+    <div class="empire-panel">
+      <table class="knowledge-table" id="knowledge-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Category</th>
+            <th>Value</th>
+            <th>Updated</th>
+            <th style="width:80px">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="knowledge-tbody">
+          <tr><td colspan="5" style="text-align:center;padding:40px;color:#333">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Memory Modal -->
+<div class="modal-bg" id="editModal">
+  <div class="modal">
+    <h2>✏ Edit Memory</h2>
+    <input type="hidden" id="edit-mem-id">
+    <div class="form-group">
+      <label>Key</label>
+      <input type="text" id="edit-mem-key" readonly style="opacity:.6">
+    </div>
+    <div class="form-group">
+      <label>Value</label>
+      <textarea id="edit-mem-value" rows="5"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveEditMemory()">Save</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Empire Knowledge Modal -->
+<div class="modal-bg" id="knowledgeModal">
+  <div class="modal">
+    <h2>+ Empire Knowledge</h2>
+    <div class="form-group">
+      <label>Key</label>
+      <input type="text" id="k-key" placeholder="knowledge_key" style="font-family:monospace">
+    </div>
+    <div class="form-group">
+      <label>Category</label>
+      <input type="text" id="k-category" placeholder="e.g. business, tech, legal">
+    </div>
+    <div class="form-group">
+      <label>Value</label>
+      <textarea id="k-value" rows="4" placeholder="Knowledge content..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveKnowledge()">Save</button>
+      <button class="btn-cancel" onclick="closeModal2()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3 — All Home Building Co LLC</div>
+
+<script>
+let allMemory = [];
+let allKnowledge = [];
+let selectedAgent = '';
+let currentTab = 'agent-memory';
+
+function updateClock(){
+  document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateClock,1000); updateClock();
+
+function switchTab(tab){
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active', ['agent-memory','empire-knowledge'][i]===tab);
+  });
+  document.getElementById('tab-agent-memory').classList.toggle('active', tab==='agent-memory');
+  document.getElementById('tab-empire-knowledge').classList.toggle('active', tab==='empire-knowledge');
+  if(tab==='empire-knowledge') loadKnowledge();
+}
+
+async function loadAll(){
+  await loadMemory();
+}
+
+async function loadMemory(){
+  const url = selectedAgent ? `/api/memory?agent_id=${selectedAgent}` : '/api/memory';
+  try{
+    const res = await fetch(url);
+    allMemory = await res.json();
+    renderMemory(allMemory);
+  }catch(e){
+    document.getElementById('memory-grid').innerHTML = `<div style="color:#ff5555;font-size:13px;padding:20px">Error: ${e.message}</div>`;
+  }
+}
+
+function renderMemory(entries){
+  const grid = document.getElementById('memory-grid');
+  if(!entries.length){
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🧠</div><h3>No memory entries</h3><p>Agents will add memories as they work</p></div>';
+    return;
+  }
+  grid.innerHTML = entries.map(m=>`
+    <div class="memory-card">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
+        <div class="mem-key">${escHtml(m.memory_key||m.key)}</div>
+        ${m.agent_id?`<span style="font-size:10px;font-family:monospace;background:#1a0a3a;color:#c4b5fd;border:1px solid #2a1a5a;padding:1px 6px;border-radius:8px">${m.agent_id}</span>`:''}
+      </div>
+      ${m.category?`<div style="font-size:10px;color:#444;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">${escHtml(m.category)}</div>`:''}
+      <div class="mem-value" id="mv-${m.id}">${escHtml(m.memory_value||m.value||'')}</div>
+      <div class="mem-meta">
+        <span class="mem-time">${m.updated_at?timeAgo(new Date(m.updated_at)):'—'}</span>
+        <div class="mem-actions">
+          <button class="btn-icon" onclick="openEdit(${m.id},'${escAttr(m.memory_key||m.key)}','${escAttr(m.memory_value||m.value||'')}')">✏</button>
+          <button class="btn-icon del" onclick="deleteMemory(${m.id})">✕</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterMemory(){
+  const q = document.getElementById('mem-search').value.toLowerCase();
+  const filtered = allMemory.filter(m=>
+    (m.memory_key||m.key||'').toLowerCase().includes(q) ||
+    (m.memory_value||m.value||'').toLowerCase().includes(q) ||
+    (m.category||'').toLowerCase().includes(q)
+  );
+  renderMemory(filtered);
+}
+
+function selectAgent(el, agent){
+  document.querySelectorAll('.agent-pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  selectedAgent = agent;
+  loadMemory();
+}
+
+function toggleNewMem(){
+  document.getElementById('new-mem-form').classList.toggle('open');
+}
+
+async function saveNewMemory(){
+  const agent = document.getElementById('new-mem-agent').value;
+  const key = document.getElementById('new-mem-key').value.trim();
+  const value = document.getElementById('new-mem-value').value.trim();
+  const category = document.getElementById('new-mem-category').value.trim();
+  if(!key||!value){ alert('Key and value are required'); return; }
+  try{
+    const res = await fetch('/api/memory',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({agent_id:agent,key,value,category})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    document.getElementById('new-mem-form').classList.remove('open');
+    document.getElementById('new-mem-key').value='';
+    document.getElementById('new-mem-value').value='';
+    document.getElementById('new-mem-category').value='';
+    loadMemory();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+function openEdit(id,key,value){
+  document.getElementById('edit-mem-id').value = id;
+  document.getElementById('edit-mem-key').value = key;
+  document.getElementById('edit-mem-value').value = value;
+  document.getElementById('editModal').classList.add('open');
+}
+
+async function saveEditMemory(){
+  const id = document.getElementById('edit-mem-id').value;
+  const value = document.getElementById('edit-mem-value').value.trim();
+  try{
+    const res = await fetch('/api/memory',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:parseInt(id),value})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    closeModal();
+    loadMemory();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+async function deleteMemory(id){
+  if(!confirm('Delete this memory entry?')) return;
+  try{
+    const res = await fetch('/api/memory/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    if(!res.ok) throw new Error(await res.text());
+    loadMemory();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+async function loadKnowledge(){
+  try{
+    const res = await fetch('/api/empire');
+    allKnowledge = await res.json();
+    renderKnowledge(allKnowledge);
+  }catch(e){
+    document.getElementById('knowledge-tbody').innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:#ff5555">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function renderKnowledge(entries){
+  const tbody = document.getElementById('knowledge-tbody');
+  if(!entries.length){
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:#333">No empire knowledge yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.map(k=>`
+    <tr>
+      <td style="font-family:monospace;font-size:12px;color:#c4b5fd">${escHtml(k.key||k.knowledge_key)}</td>
+      <td><span style="font-size:10px;background:#0a1a2a;color:#7bc8ff;border:1px solid #1a3a5a;padding:2px 7px;border-radius:8px">${escHtml(k.category||'—')}</span></td>
+      <td style="max-width:400px;color:#777;font-size:12px;word-break:break-word">${escHtml((k.value||k.knowledge_value||'').substring(0,200))}</td>
+      <td style="font-size:11px;color:#333">${k.updated_at?timeAgo(new Date(k.updated_at)):'—'}</td>
+      <td>
+        <button class="btn-icon del" onclick="deleteKnowledge(${k.id})" style="font-size:10px">✕</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openAddKnowledge(){
+  document.getElementById('k-key').value='';
+  document.getElementById('k-category').value='';
+  document.getElementById('k-value').value='';
+  document.getElementById('knowledgeModal').classList.add('open');
+}
+
+async function saveKnowledge(){
+  const key = document.getElementById('k-key').value.trim();
+  const category = document.getElementById('k-category').value.trim();
+  const value = document.getElementById('k-value').value.trim();
+  if(!key||!value){ alert('Key and value required'); return; }
+  try{
+    const res = await fetch('/api/empire',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,category,value})});
+    if(!res.ok) throw new Error(await res.text());
+    closeModal2();
+    loadKnowledge();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+async function deleteKnowledge(id){
+  if(!confirm('Delete this knowledge entry?')) return;
+  await fetch('/api/memory/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,type:'empire'})});
+  loadKnowledge();
+}
+
+function closeModal(){ document.getElementById('editModal').classList.remove('open'); }
+function closeModal2(){ document.getElementById('knowledgeModal').classList.remove('open'); }
+
+function timeAgo(date){
+  const s = Math.floor((new Date()-date)/1000);
+  if(s<60) return s+'s ago';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+
+function escHtml(s){
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s){
+  if(!s) return '';
+  return String(s).replace(/'/g,"&#39;").replace(/"/g,'&quot;');
+}
+
+loadMemory();
+</script>
+</body>
+</html>

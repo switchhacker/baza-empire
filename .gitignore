@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+logs/
+configs/secrets.env
+configs/gmail_token.json
+configs/credentials.json
+baza-web/
+dashboard/artifacts/
+*.bak
+email-pipeline/credentials.json
+email-pipeline/token.json
+email-pipeline/sync_state.json
