@@ -54,21 +54,33 @@ def get_team_status() -> str:
     return "\n".join(lines)
 
 def get_tasks_summary() -> str:
-    """Fetch live tasks from Base44 entities API."""
-    app_id   = os.getenv("BASE44_APP_ID", "69b1ca3946762f8c7cf1fe6a")
-    api_base = os.getenv("BASE44_API", "https://app.base44.com/api/apps")
+    """Fetch live tasks from local baza_projects.db SQLite."""
+    db_candidates = [
+        os.path.join(FRAMEWORK_DIR, "dashboard", "baza_projects.db"),
+        os.path.join(FRAMEWORK_DIR, "baza_projects.db"),
+    ]
+    db_path = next((p for p in db_candidates if os.path.exists(p)), None)
+    if not db_path:
+        return "TASKS: local DB not found"
 
     try:
-        url = f"{api_base}/{app_id}/entities/AHBTask/query"
-        payload = json.dumps({"limit": 60, "sort": "-updated_date"}).encode()
-        req = urllib.request.Request(url, data=payload,
-            headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.loads(r.read())
-            tasks = data.get("records", data) if isinstance(data, dict) else data
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.title, t.status, t.priority, t.assigned_to, t.notes,
+                   t.updated_at, p.name as project_name
+            FROM tasks t
+            LEFT JOIN projects p ON t.project_id = p.id
+            WHERE t.is_subtask = 0
+            ORDER BY t.updated_at DESC
+            LIMIT 60
+        """)
+        tasks = [dict(r) for r in cur.fetchall()]
+        conn.close()
     except Exception as e:
-        log.warning(f"Base44 tasks API failed: {e}")
-        return "TASKS: Base44 API unavailable"
+        log.warning(f"Local tasks DB failed: {e}")
+        return "TASKS: DB read error"
 
     if not tasks:
         return "TASKS: no tasks found"
@@ -78,30 +90,29 @@ def get_tasks_summary() -> str:
         s = (t.get("status") or "pending").lower()
         by_status.setdefault(s, []).append(t)
 
-    total    = len(tasks)
-    done     = len(by_status.get("completed", []) + by_status.get("done", []))
-    blocked  = len(by_status.get("blocked", []))
-    in_prog  = len(by_status.get("in_progress", []))
-    pending  = len(by_status.get("pending", []))
-    pct      = int(done / total * 100) if total else 0
+    total   = len(tasks)
+    done    = len(by_status.get("completed", []) + by_status.get("done", []))
+    blocked = len(by_status.get("blocked", []))
+    in_prog = len(by_status.get("in_progress", []))
+    pending = len(by_status.get("pending", []))
+    pct     = int(done / total * 100) if total else 0
 
-    lines = [f"TASK BOARD: {total} tasks total | {done} done ({pct}%) | {in_prog} active | {blocked} BLOCKED | {pending} pending"]
+    lines = [f"TASK BOARD: {total} tasks | {done} done ({pct}%) | {in_prog} active | {blocked} BLOCKED | {pending} pending"]
 
-    # Show blockers first — these need Serge
     if by_status.get("blocked"):
         lines.append("\n  🚫 BLOCKED — SERGE ACTION NEEDED:")
         for t in by_status["blocked"][:5]:
-            lines.append(f"    [{t.get('assigned_to','?')}] {t.get('title','?')[:70]}")
+            proj = t.get("project_name") or "?"
+            lines.append(f"    [{t.get('assigned_to','?')}] {t.get('title','?')[:70]} ({proj})")
             if t.get("notes"):
                 lines.append(f"      → {t['notes'][:80]}")
 
-    # In progress
     if by_status.get("in_progress"):
         lines.append("\n  🔄 IN PROGRESS:")
-        for t in by_status["in_progress"][:5]:
-            lines.append(f"    [{t.get('assigned_to','?')}] {t.get('title','?')[:70]}")
+        for t in by_status["in_progress"][:6]:
+            proj = t.get("project_name") or "?"
+            lines.append(f"    [{t.get('assigned_to','?')}] {t.get('title','?')[:70]} ({proj})")
 
-    # High priority pending
     high_pending = [t for t in by_status.get("pending", []) if t.get("priority") == "high"]
     if high_pending:
         lines.append("\n  ⏳ HIGH PRIORITY PENDING:")
