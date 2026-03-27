@@ -1,0 +1,148 @@
+# Baza Empire — LiteLLM Cloud Proxy Config
+# Exposes all cloud models through a single OpenAI-compatible API on port 4000
+# Agents access via: http://localhost:4000/v1
+# Auth header: Authorization: Bearer baza-litellm (internal only)
+
+general_settings:
+  master_key: "baza-litellm-internal"
+  completion_model: "gpt-4o"
+  drop_params: true
+  max_budget: 50.0
+  budget_duration: "30d"
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  fallbacks:
+    - gpt-4o: ["claude-3-5-sonnet", "gemini-pro-1.5"]
+    - claude-3-5-sonnet: ["gpt-4o", "gemini-pro-1.5"]
+
+# ── Cloud Models ───────────────────────────────────────────────────────────────
+model_list:
+
+  # ── OpenAI ──────────────────────────────────────────────────────────────────
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: gpt-4-turbo
+    litellm_params:
+      model: openai/gpt-4-turbo
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: o1
+    litellm_params:
+      model: openai/o1
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: o3-mini
+    litellm_params:
+      model: openai/o3-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  # ── Anthropic ───────────────────────────────────────────────────────────────
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  - model_name: claude-3-5-haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-4-6
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  # ── Google ───────────────────────────────────────────────────────────────────
+  - model_name: gemini-2-flash
+    litellm_params:
+      model: gemini/gemini-2.0-flash-exp
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: gemini-pro-1.5
+    litellm_params:
+      model: gemini/gemini-1.5-pro-latest
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # ── xAI Grok ─────────────────────────────────────────────────────────────────
+  - model_name: grok-2
+    litellm_params:
+      model: xai/grok-2-latest
+      api_key: "os.environ/XAI_API_KEY"
+
+  - model_name: grok-beta
+    litellm_params:
+      model: xai/grok-beta
+      api_key: "os.environ/XAI_API_KEY"
+
+  # ── Mistral ───────────────────────────────────────────────────────────────────
+  - model_name: mistral-large
+    litellm_params:
+      model: mistral/mistral-large-latest
+      api_key: "os.environ/MISTRAL_API_KEY"
+
+  - model_name: codestral
+    litellm_params:
+      model: mistral/codestral-latest
+      api_key: "os.environ/MISTRAL_API_KEY"
+
+  # ── Groq (fast inference) ───────────────────────────────────────────────────
+  - model_name: groq-llama3-70b
+    litellm_params:
+      model: groq/llama3-70b-8192
+      api_key: "os.environ/GROQ_API_KEY"
+
+  - model_name: groq-llama3-8b
+    litellm_params:
+      model: groq/llama3-8b-8192
+      api_key: "os.environ/GROQ_API_KEY"
+
+  - model_name: groq-mixtral
+    litellm_params:
+      model: groq/mixtral-8x7b-32768
+      api_key: "os.environ/GROQ_API_KEY"
+
+  # ── Ollama Local (routed through LiteLLM for unified access) ─────────────────
+  - model_name: local/qwen2.5-14b
+    litellm_params:
+      model: ollama/qwen2.5:14b
+      api_base: http://localhost:11434
+
+  - model_name: local/mistral-small
+    litellm_params:
+      model: ollama/mistral-small:22b
+      api_base: http://localhost:11434
+
+  - model_name: local/deepseek-coder
+    litellm_params:
+      model: ollama/deepseek-coder-v2:16b
+      api_base: http://localhost:11434
+
+  - model_name: local/llama3.1-8b
+    litellm_params:
+      model: ollama/llama3.1:8b
+      api_base: http://localhost:11435
+
+  - model_name: local/nemotron
+    litellm_params:
+      model: ollama/nemotron-3-nano:latest
+      api_base: http://localhost:11435
+
+  - model_name: local/glm-flash
+    litellm_params:
+      model: ollama/glm-4.7-flash:latest
+      api_base: http://localhost:11434
+
+  - model_name: local/llava-vision
+    litellm_params:
+      model: ollama/llava:13b
+      api_base: http://localhost:11434
