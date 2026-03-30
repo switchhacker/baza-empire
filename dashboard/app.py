@@ -273,10 +273,44 @@ def agent_detail(agent_id):
     messages = get_recent_messages(agent_id, 40)
     logs     = get_agent_logs(agent_id, 80)
     crons    = [c for c in list_crons() if agent_id.replace('_','-') in c.get('command','') or agent_id in c.get('id','')]
-    available_models = [
-        "mistral-small:22b", "qwen2.5:14b", "deepseek-coder-v2:16b",
-        "nemotron-3-nano:latest", "llama3.1:8b", "codellama:13b",
-    ]
+    def _fetch_ollama_models(port):
+        try:
+            import json as _j
+            r = subprocess.run(['curl','-s',f'http://localhost:{port}/api/tags'],
+                               capture_output=True, text=True, timeout=3)
+            return sorted([m["name"] for m in _j.loads(r.stdout).get("models",[])])
+        except:
+            return []
+
+    def _fetch_litellm_models():
+        try:
+            import json as _j
+            r = subprocess.run([
+                'curl','-s','-H','Authorization: Bearer baza-litellm-internal',
+                'http://localhost:4000/v1/models'
+            ], capture_output=True, text=True, timeout=3)
+            return sorted([m["id"] for m in _j.loads(r.stdout).get("data",[])])
+        except:
+            return []
+
+    amd_models  = _fetch_ollama_models(11434)
+    cuda_models = _fetch_ollama_models(11435)
+    cloud_models = _fetch_litellm_models()
+
+    # Fallback so current model always appears even if Ollama is briefly offline
+    current_model = agent_config.get("model","")
+    if current_model:
+        if current_model.startswith(("gpt-","claude-","gemini-","grok-","groq-","mistral-large","codestral","o1","o3")):
+            if current_model not in cloud_models:
+                cloud_models.insert(0, current_model)
+        elif current_model not in amd_models and current_model not in cuda_models:
+            amd_models.insert(0, current_model)
+
+    available_models = {
+        "Local — AMD GPU (11434)":   amd_models  or ["(offline)"],
+        "Local — CUDA GPU (11435)":  cuda_models or ["(offline)"],
+        "Cloud via LiteLLM (4000)":  cloud_models or ["(offline)"],
+    }
     return render_template('agent.html',
         agent_id=agent_id, agent=agent_config,
         status=status, messages=messages, logs=logs,
@@ -400,11 +434,12 @@ def api_live():
         "online": online,
         "total": len(statuses),
         "metrics": {
-            "cpu_temp":  cpu_temp or "N/A",
-            "mem":       _run("free -h | awk '/^Mem:/{print $3\"/\"$2}'"),
-            "disk":      _run("df -h / | tail -1 | awk '{print $5}'"),
+            "cpu_temp":   cpu_temp or "N/A",
+            "mem":        _run("free -h | awk '/^Mem:/{print $3\"/\"$2}'"),
+            "disk":       _run("df -h / | tail -1 | awk '{print $5}'"),
             "ollama_amd": _port("localhost", 11434),
             "ollama_gpu": _port("localhost", 11435),
+            "litellm":    _port("localhost", 4000),
         }
     })
 

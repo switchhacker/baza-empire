@@ -5,7 +5,8 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_SHARED_DIR = os.path.join(BASE_DIR, "skills", "shared")
-SKILL_CALL_PATTERN = re.compile(r'##SKILL:\s*(\w[\w\-]+)\s*({.*?})?##', re.DOTALL)
+# Accept both ##SKILL: name {args}## (correct) and ##SKILL: name {args} (LLM often forgets closing ##)
+SKILL_CALL_PATTERN = re.compile(r'##SKILL:\s*(\w[\w\-]+)\s*({.*?})?\s*(?:##|(?=\n|$))', re.DOTALL)
 
 class SkillsEngine:
     def __init__(self, agent_id):

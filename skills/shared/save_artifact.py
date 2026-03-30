@@ -77,6 +77,45 @@ def save_artifact(
         return {"success": False, "error": str(e)}
 
 
+def save_binary_artifact(
+    filename: str,
+    data: bytes,
+    project_id: str = "shared",
+    agent_id: str = "",
+) -> dict:
+    """
+    Upload a binary file (image, zip, pdf, etc.) to the dashboard artifacts.
+    Uses multipart/form-data POST to /api/artifacts/upload.
+    Returns dict: { success, name, project_id, size, download_url }
+    """
+    boundary = "bazaartifactboundary"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="project_id"\r\n\r\n'
+        f"{project_id}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: application/octet-stream\r\n\r\n"
+    ).encode("utf-8") + data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    url = f"{DASHBOARD_URL}/api/artifacts/upload"
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            files = result.get("files", [])
+            if files:
+                return {"success": True, **files[0]}
+            return {"success": result.get("success", False)}
+    except urllib.error.URLError as e:
+        return {"success": False, "error": str(e)}
+
+
 def detect_project(content: str, default: str = "shared") -> str:
     """Guess project_id from content keywords."""
     low = content.lower()

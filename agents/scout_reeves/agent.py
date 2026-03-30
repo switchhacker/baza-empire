@@ -21,6 +21,14 @@ RESEARCH_KEYWORDS = [
     "regulation", "market", "intel", "rate", "cost", "compare", "search"
 ]
 
+LOCAL_SEARCH_KEYWORDS = [
+    "near me", "near 19020", "near zip", "in my area", "local",
+    "find a ", "find me a", "find me an", "find an ", "find some",
+    "who does", "who can", "where can i", "recommend a", "recommend an",
+    "closest", "nearby", "in bensalem", "in philly", "in philadelphia",
+    "contractor near", "shop near", "service near", "provider near",
+]
+
 
 class ScoutReeves(BaseAgent):
     AGENT_ID = "scout_reeves"
@@ -48,10 +56,24 @@ You report directly to Serge (Master Orchestrator).
 - Finance: crypto prices, mining ROI, material cost trends
 
 == AVAILABLE SKILLS ==
-  ##SKILL: news {"category": "construction"}##
-  ##SKILL: news {"category": "crypto"}##
-  ##SKILL: crypto_prices {"coins": ["bitcoin", "monero", "ravencoin"]}##
-  ##SKILL: weather {"location": "Philadelphia, PA"}##
+LOCAL BUSINESS SEARCH (use this when asked to find a service, contractor, shop, or pro near a location):
+  ##SKILL:local_business_search{"query": "auto glass replacement", "zip": "19020", "n": 5}##
+  ##SKILL:local_business_search{"query": "plumber", "zip": "19020", "radius": 10}##
+  The skill returns real businesses with name, phone, address, and hours.
+  Default zip is 19020 (Bensalem PA — Baza HQ). Always use this for "find a __ near me" requests.
+
+WEB RESEARCH:
+  ##SKILL:web_search{"query": "Philadelphia HIC permit requirements 2025", "n": 5}##
+  ##SKILL:web_fetch{"url": "https://www.phila.gov/permits/", "max_chars": 6000}##
+  ##SKILL:news{"category": "construction"}##
+  ##SKILL:news{"category": "crypto"}##
+  ##SKILL:crypto_prices{"coins": ["bitcoin", "monero", "ravencoin"]}##
+  ##SKILL:weather{"location": "Philadelphia, PA"}##
+
+Use local_business_search for ANY request to find a local service provider near a zip code.
+Use web_search to find current info on any research topic.
+Use web_fetch to read the full content of a specific URL.
+Always cite phone numbers and addresses from skill results — never fabricate them.
 
 == CRITICAL FORMATTING RULES ==
 NO markdown. NO ### headers. NO ** bold. NO --- dividers.
@@ -77,6 +99,15 @@ Use emoji for structure. Use plain text. Use ━━━ for dividers.
         t = text.lower()
         return any(kw in t for kw in RESEARCH_KEYWORDS)
 
+    def _is_local_search_request(self, text: str) -> bool:
+        t = text.lower()
+        if any(kw in t for kw in LOCAL_SEARCH_KEYWORDS):
+            return True
+        # Also catch "near XXXXX" with any 5-digit zip
+        if re.search(r'\bnear\s+\d{5}\b', t):
+            return True
+        return False
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         text = update.message.text or ""
@@ -94,21 +125,82 @@ Use emoji for structure. Use plain text. Use ━━━ for dividers.
         messages = [{"role": h["role"], "content": h["content"]} for h in history]
         loop = asyncio.get_event_loop()
 
-        system = self.build_system_prompt()
+        system = self.build_system_prompt() or ""
 
-        if self._is_research_request(text):
-            # Pull latest news as context for research queries
-            news_data = ""
-            r = self.skills.run("news", {"category": "construction"})
-            if r.get("success") and r.get("output"):
-                news_data = r["output"]
+        if self._is_local_search_request(text):
+            # Extract zip from message if provided, else default to 19020
+            zip_m    = re.search(r'\b(\d{5})\b', text)
+            zip_in   = zip_m.group(1) if zip_m else "19020"
+
+            # Clean query: strip zip, agent name prefix, trigger phrases
+            query_clean = re.sub(r'\b\d{5}\b', '', text)
+            query_clean = re.sub(r'^scout\b\s*', '', query_clean, flags=re.IGNORECASE).strip()
+            query_clean = re.sub(
+                r'\b(?:find me a|find me an|find a|find an|find me|find some|find|'
+                r'search for|look for|near me|near|local|in my area|recommend a|'
+                r'recommend an|recommend|closest|nearby|who does|who can|where can i|'
+                r'research|search|a list|i need a list|please|can you)\b',
+                ' ', query_clean, flags=re.IGNORECASE
+            )
+            query_clean = re.sub(r'\s+', ' ', query_clean).strip()
+            query_clean = query_clean or text[:100]
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"🔍 Searching for {query_clean} near {zip_in}... (~30s)"
+            )
+
+            # Run skill in executor so it doesn't block the event loop
+            biz_data = ""
+            try:
+                br = await loop.run_in_executor(
+                    None, lambda: self.skills.run("local_business_search", {
+                        "query": query_clean, "zip": zip_in, "n": 5
+                    })
+                )
+                if br.get("success") and br.get("output"):
+                    biz_data = br["output"]
+            except Exception as e:
+                logger.error(f"[scout_reeves] local_business_search error: {e}")
+
+            if biz_data:
+                # Send the raw results directly — clear and useful without LLM reformat
+                save_message(chat_id, self.AGENT_ID, "assistant", biz_data)
+                self.journal("llm_response", f"Local search: {query_clean}", result=biz_data[:300], success=True, chat_id=chat_id)
+                await self._send_response(context.bot, chat_id, biz_data)
+            else:
+                response = f"⚠️ No results found for '{query_clean}' near {zip_in}. Try a different search term."
+                save_message(chat_id, self.AGENT_ID, "assistant", response)
+                await self._send_response(context.bot, chat_id, response)
+            return
+
+        elif self._is_research_request(text):
+            # Run web search in executor (non-blocking)
+            web_data = ""
+            try:
+                wr = await loop.run_in_executor(
+                    None, lambda: self.skills.run("web_search", {"query": text[:200], "n": 5, "output": "json"})
+                )
+                if wr.get("success") and wr.get("output"):
+                    import json as _json
+                    ws_results = _json.loads(wr["output"]).get("results", [])
+                    if ws_results:
+                        lines = ["WEB SEARCH RESULTS:"]
+                        for i, res in enumerate(ws_results, 1):
+                            lines.append(f"{i}. {res.get('title', '')}")
+                            lines.append(f"   {res.get('url', '')}")
+                            if res.get("snippet"):
+                                lines.append(f"   {res['snippet']}")
+                        web_data = "\n".join(lines)
+            except Exception as e:
+                logger.error(f"[scout_reeves] web_search error: {e}")
 
             augmented_system = system
-            if news_data:
+            if web_data:
                 augmented_system += (
-                    "\n\n== LIVE NEWS CONTEXT ==\n"
-                    + news_data
-                    + "\n== END NEWS ==\n"
+                    "\n\n== LIVE WEB SEARCH RESULTS ==\n"
+                    + web_data
+                    + "\n== END WEB SEARCH ==\n"
                 )
             messages_with_user = messages + [{
                 "role": "user",

@@ -1,25 +1,53 @@
 #!/usr/bin/env python3
 """
 Shared Skill: web_search
-Search the web using DuckDuckGo (no API key needed).
-Returns top N results with title, url, snippet.
+Search the web using Ollama's Web Search API (requires OLLAMA_API_KEY).
+Falls back to DuckDuckGo HTML scraping if OLLAMA_API_KEY is not set.
 
 Usage from agent:
-    result = self.skills.run("web_search", {"query": "PA HIC license renewal 2025", "n": 5})
+    ##SKILL:web_search{"query": "PA HIC license renewal 2025", "n": 5}##
 
 CLI:
-    SKILL_ARGS='{"query":"PA HIC license renewal","n":5}' python web_search.py
+    OLLAMA_API_KEY=<key> SKILL_ARGS='{"query":"PA HIC license renewal","n":5}' python web_search.py
+    SKILL_ARGS='{"query":"test","n":3}' python web_search.py  # DDG fallback
 """
 import os, sys, json, urllib.request, urllib.parse, urllib.error, html, re
 
-args    = json.loads(os.environ.get("SKILL_ARGS", "{}"))
-query   = args.get("query", "")
-n       = int(args.get("n", 5))
-output  = args.get("output", "text")   # "text" or "json"
+args   = json.loads(os.environ.get("SKILL_ARGS", "{}"))
+query  = args.get("query", "")
+n      = int(args.get("n", 5))
+output = args.get("output", "text")   # "text" or "json"
 
 if not query:
     print(json.dumps({"success": False, "error": "query is required"}))
     sys.exit(1)
+
+# ── Ollama API Search ──────────────────────────────────────────────────────────
+
+def ollama_search(query: str, max_results: int = 5) -> list:
+    """Use Ollama's web search API. Returns list of {title, url, snippet}."""
+    import ollama
+    try:
+        response = ollama.web_search(query, max_results=max_results)
+        results = []
+        for r in (response.results if hasattr(response, "results") else response.get("results", [])):
+            if hasattr(r, "title"):
+                results.append({
+                    "title":   r.title or "",
+                    "url":     r.url or "",
+                    "snippet": r.content or "",
+                })
+            else:
+                results.append({
+                    "title":   r.get("title", ""),
+                    "url":     r.get("url", ""),
+                    "snippet": r.get("content", ""),
+                })
+        return results
+    except Exception as e:
+        return [{"error": str(e)}]
+
+# ── DuckDuckGo Fallback ────────────────────────────────────────────────────────
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -28,7 +56,7 @@ HEADERS = {
 }
 
 def ddg_search(query: str, max_results: int = 5) -> list:
-    """Query DuckDuckGo HTML endpoint and parse results."""
+    """DuckDuckGo HTML scraper fallback (no API key required)."""
     encoded = urllib.parse.quote_plus(query)
     url     = f"https://html.duckduckgo.com/html/?q={encoded}&kl=us-en"
     req     = urllib.request.Request(url, headers=HEADERS)
@@ -39,41 +67,45 @@ def ddg_search(query: str, max_results: int = 5) -> list:
         return [{"error": str(e)}]
 
     results = []
-    # Parse result blocks
-    blocks = re.findall(r'<div class="result[^"]*".*?</div>\s*</div>', body, re.DOTALL)
+    blocks  = re.findall(r'<div class="result[^"]*".*?</div>\s*</div>', body, re.DOTALL)
     for block in blocks[:max_results * 2]:
         title_m   = re.search(r'<a[^>]+class="result__a"[^>]*>(.*?)</a>', block, re.DOTALL)
         url_m     = re.search(r'<a[^>]+class="result__a"[^>]+href="([^"]+)"', block)
         snippet_m = re.search(r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>', block, re.DOTALL)
-
         if not title_m:
             continue
-
         title   = html.unescape(re.sub(r'<[^>]+>', '', title_m.group(1))).strip()
         url_raw = url_m.group(1) if url_m else ""
         snippet = html.unescape(re.sub(r'<[^>]+>', '', snippet_m.group(1))).strip() if snippet_m else ""
-
-        # DuckDuckGo sometimes wraps URLs — unwrap
         if url_raw.startswith("//duckduckgo.com/l/?"):
-            qs = urllib.parse.parse_qs(urllib.parse.urlparse("https:" + url_raw).query)
+            qs      = urllib.parse.parse_qs(urllib.parse.urlparse("https:" + url_raw).query)
             url_raw = qs.get("uddg", [url_raw])[0]
-
         if title:
             results.append({"title": title, "url": url_raw, "snippet": snippet})
         if len(results) >= max_results:
             break
-
     return results
 
+# ── Execute ────────────────────────────────────────────────────────────────────
 
-results = ddg_search(query, n)
+api_key = os.environ.get("OLLAMA_API_KEY", "")
+
+if api_key:
+    results = ollama_search(query, n)
+    source  = "ollama"
+else:
+    results = ddg_search(query, n)
+    source  = "duckduckgo"
+
+# Strip error-only results
+results = [r for r in results if not (len(r) == 1 and "error" in r)] or results
 
 if output == "json":
-    print(json.dumps({"success": True, "query": query, "results": results}))
+    print(json.dumps({"success": True, "query": query, "source": source, "results": results}))
 else:
-    lines = [f"WEB SEARCH: {query}", ""]
+    lines = [f"WEB SEARCH ({source.upper()}): {query}", ""]
     for i, r in enumerate(results, 1):
-        lines.append(f"{i}. {r.get('title','(no title)')}")
+        lines.append(f"{i}. {r.get('title', '(no title)')}")
         if r.get("url"):
             lines.append(f"   {r['url']}")
         if r.get("snippet"):

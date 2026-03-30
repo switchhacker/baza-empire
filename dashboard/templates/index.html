@@ -148,6 +148,7 @@
   <div class="metric-item">Disk <span class="metric-val" id="m-disk">—</span></div>
   <div class="metric-item"><span class="metric-dot" id="m-amd-dot"></span>Ollama AMD <span class="metric-val" id="m-amd">—</span></div>
   <div class="metric-item"><span class="metric-dot" id="m-gpu-dot"></span>Ollama CUDA <span class="metric-val" id="m-gpu">—</span></div>
+  <div class="metric-item"><span class="metric-dot" id="m-litellm-dot"></span>LiteLLM Cloud <span class="metric-val" id="m-litellm">—</span></div>
   <div class="metric-item" style="margin-left:auto;color:#2a2a4a">Live · 10s</div>
 </div>
 
@@ -321,12 +322,15 @@
       document.getElementById('m-cpu').textContent  = mx.cpu_temp||'N/A';
       document.getElementById('m-mem').textContent  = mx.mem||'—';
       document.getElementById('m-disk').textContent = mx.disk||'—';
-      const amdUp = mx.ollama_amd==='up';
-      const gpuUp = mx.ollama_gpu==='up';
-      document.getElementById('m-amd').textContent  = mx.ollama_amd||'—';
-      document.getElementById('m-gpu').textContent  = mx.ollama_gpu||'—';
-      document.getElementById('m-amd-dot').className='metric-dot '+(amdUp?'up':'down');
-      document.getElementById('m-gpu-dot').className='metric-dot '+(gpuUp?'up':'down');
+      const amdUp     = mx.ollama_amd==='up';
+      const gpuUp     = mx.ollama_gpu==='up';
+      const litellmUp = mx.litellm==='up';
+      document.getElementById('m-amd').textContent     = mx.ollama_amd||'—';
+      document.getElementById('m-gpu').textContent     = mx.ollama_gpu||'—';
+      document.getElementById('m-litellm').textContent = mx.litellm||'—';
+      document.getElementById('m-amd-dot').className    ='metric-dot '+(amdUp?'up':'down');
+      document.getElementById('m-gpu-dot').className    ='metric-dot '+(gpuUp?'up':'down');
+      document.getElementById('m-litellm-dot').className='metric-dot '+(litellmUp?'up':'down');
     });
   }
 

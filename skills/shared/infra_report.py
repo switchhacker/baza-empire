@@ -12,7 +12,7 @@ import os, sys, json, subprocess, datetime, socket, urllib.request
 
 TELEGRAM_TOKEN = os.environ.get("SIMON_TELEGRAM_TOKEN", "8259565938:AAFCNLSrw096JALxvgmiBCkgByn0uDyGGMo")
 SERGE_CHAT_ID  = os.environ.get("SERGE_CHAT_ID", "8551331144")
-FRAMEWORK_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRAMEWORK_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 ARTIFACTS_DIR  = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts", "proj-baza-empire")
 REPORT_LOG     = os.path.join(FRAMEWORK_DIR, "logs", "infra_report.log")
 

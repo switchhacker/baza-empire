@@ -27,6 +27,9 @@ import json
 import time
 from typing import Optional
 
+# System prompt cache TTL — rebuild from DB every N seconds max
+_PROMPT_CACHE_TTL = 120  # 2 minutes
+
 import httpx
 from telegram import Update, Bot
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
@@ -38,7 +41,7 @@ from core.memory import (
     init_db, save_message, get_history, get_active_task, set_task, complete_task
 )
 from core.task_updater import AgentTaskManager
-from skills.shared.save_artifact import save_artifact as _save_artifact_fn
+from skills.shared.save_artifact import save_artifact as _save_artifact_fn, save_binary_artifact as _save_binary_artifact_fn
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,22 @@ class BaseAgent(ContextMixin):
         init_db()                     # Legacy memory/tasks tables
         self._message_counts: dict = {}   # chat_id → message count this session
         self.tasks = AgentTaskManager(self.AGENT_ID)   # local SQLite task manager
+        self._prompt_cache: Optional[str] = None
+        self._prompt_cache_ts: float = 0.0
+
+    def save_artifact_binary(self, filename: str, data: bytes, project_id: str = "shared") -> dict:
+        """
+        Upload a binary file (image, pdf, zip, etc.) to the dashboard artifacts.
+        Example:
+            with open(path, "rb") as f:
+                self.save_artifact_binary("banner.png", f.read(), project_id="proj-ahb123")
+        """
+        return _save_binary_artifact_fn(
+            filename=filename,
+            data=data,
+            project_id=project_id,
+            agent_id=self.AGENT_ID,
+        )
 
     def save_artifact(self, filename: str, content: str, project_id: str = "shared", task_id: str = "") -> dict:
         """
@@ -94,8 +113,13 @@ class BaseAgent(ContextMixin):
     def build_system_prompt(self, extra: str = "") -> str:
         """
         Full system prompt = base identity + live context injection + task state.
-        Optionally append extra instructions per-call.
+        Cached for _PROMPT_CACHE_TTL seconds to avoid hitting DB on every message.
+        Pass extra="" for cached version; non-empty extra forces a fresh build.
         """
+        now = time.time()
+        if not extra and self._prompt_cache and (now - self._prompt_cache_ts) < _PROMPT_CACHE_TTL:
+            return self._prompt_cache
+
         prompt = self.get_system_prompt()  # from ContextMixin
         # Always inject current task state so agent knows what to work on
         try:
@@ -113,23 +137,31 @@ class BaseAgent(ContextMixin):
         # Inject web search + scraping capability docs
         prompt += (
             "\n\n== WEB TOOLS ==\n"
-            "self.web_search(query, n=5) → list of {title,url,snippet} from DuckDuckGo\n"
-            "self.scrape_page(url, max_chars=4000) → {success,title,text} clean page text\n"
-            "Use web_search FIRST to find relevant URLs, then scrape_page to read them.\n"
+            "##SKILL:web_search{\"query\": \"...\", \"n\": 5}## → Ollama web search, returns title/url/snippet results\n"
+            "##SKILL:web_fetch{\"url\": \"...\", \"max_chars\": 8000}## → fetch full page content via Ollama\n"
+            "##SKILL:scrape_page{\"url\": \"...\", \"max_chars\": 4000}## → lightweight HTML scrape (no API key needed)\n"
+            "Workflow: use web_search to find URLs, then web_fetch or scrape_page to read them.\n"
             "Always cite URLs when using web data.\n"
             "== END WEB TOOLS =="
         )
 
         # Inject artifact creation capability docs
         prompt += (
-            "\n\n== CREATING FILES & ARTIFACTS ==\n"
-            "You can save files of any type to the project dashboard so Serge can view/download them.\n"
-            "Call: ##SKILL:artifact_save{\"filename\":\"name.ext\",\"content\":\"...\",\"project_id\":\"proj-id\"}##\n"
+            "\n\n== SAVING ARTIFACTS — MANDATORY ==\n"
+            "ANY output you produce that is a file, report, image, document, code, config, or data "
+            "MUST be saved as an artifact immediately. Do not just describe it in chat.\n"
+            "Save with: ##SKILL:artifact_save{\"filename\":\"name.ext\",\"content\":\"...\",\"project_id\":\"proj-id\"}##\n"
             "Supported: .html .json .py .md .sh .yaml .csv .txt .js .ts .css .sql .log .svg .conf .toml\n"
+            "Project IDs: proj-ahb123 (All Home Building Co), proj-baza-empire (mining/agents), shared (general)\n"
             "Examples:\n"
-            "  ##SKILL:artifact_save{\"filename\":\"summary.md\",\"content\":\"# Summary\\n...\",\"project_id\":\"proj-ahb123\"}##\n"
+            "  ##SKILL:artifact_save{\"filename\":\"proposal.md\",\"content\":\"# Proposal\\n...\",\"project_id\":\"proj-ahb123\"}##\n"
             "  ##SKILL:artifact_save{\"filename\":\"config.json\",\"content\":\"{}\",\"project_id\":\"proj-baza-empire\"}##\n"
-            "ALWAYS save deliverables as real files — do not just describe them in chat.\n"
+            "Rules:\n"
+            "  - If you write code → save it as .py/.js/.sh/.yaml\n"
+            "  - If you write a report/plan/analysis → save it as .md\n"
+            "  - If you produce structured data → save it as .json or .csv\n"
+            "  - If you produce HTML → save it as .html\n"
+            "  - Save FIRST, then send a brief summary in chat.\n"
             "== END ARTIFACTS =="
         )
 
@@ -147,11 +179,16 @@ class BaseAgent(ContextMixin):
 
         if extra:
             prompt += f"\n\n{extra}"
+        else:
+            # Only cache the no-extra version
+            self._prompt_cache = prompt
+            self._prompt_cache_ts = time.time()
         return prompt
 
     def web_search(self, query: str, n: int = 5) -> list:
         """
-        Search the web via DuckDuckGo. Returns list of {title, url, snippet}.
+        Search the web via Ollama API (falls back to DuckDuckGo if no API key).
+        Returns list of {title, url, snippet}.
         Example: results = self.web_search("PA HIC license renewal 2025")
         """
         result = self.skills.run("web_search", {"query": query, "n": n, "output": "json"})
@@ -163,6 +200,21 @@ class BaseAgent(ContextMixin):
             except Exception:
                 pass
         return []
+
+    def web_fetch(self, url: str, max_chars: int = 8000) -> dict:
+        """
+        Fetch full page content via Ollama's web fetch API.
+        Returns {success, title, content, links, url}.
+        Example: page = self.web_fetch("https://www.phila.gov/permits/")
+        """
+        result = self.skills.run("web_fetch", {"url": url, "max_chars": max_chars, "output": "json"})
+        if result.get("success"):
+            try:
+                import json as _json
+                return _json.loads(result.get("output", "{}"))
+            except Exception:
+                pass
+        return {"success": False, "error": result.get("output", "skill error")}
 
     def scrape_page(self, url: str, max_chars: int = 4000) -> dict:
         """
@@ -303,9 +355,14 @@ class BaseAgent(ContextMixin):
         save_message(chat_id, self.AGENT_ID, "user", text)
         self.journal("message_received", f"User: {text[:200]}", chat_id=chat_id)
 
-        # Build conversation history for LLM
+        # Build conversation history for LLM — trim long messages to keep context tight
         history = get_history(chat_id, self.AGENT_ID, limit=MAX_HISTORY)
-        messages = [{"role": h["role"], "content": h["content"]} for h in history]
+        messages = []
+        for h in history:
+            content = h["content"]
+            if len(content) > 500:
+                content = content[:497] + "..."
+            messages.append({"role": h["role"], "content": content})
 
         # Build full system prompt with live context
         system = self.build_system_prompt()
@@ -354,6 +411,9 @@ class BaseAgent(ContextMixin):
             response += f"\n\n⚠️ Skill errors: " + \
                        ", ".join(f"{r.get('skill','?')}: {r.get('error','unknown')}" for r in failed_skills)
 
+        # Auto-save artifact if response contains substantial generated content
+        self._auto_save_artifact(chat_id, text, response, skill_results)
+
         # Save response to DB
         save_message(chat_id, self.AGENT_ID, "assistant", response)
         self.journal(
@@ -373,6 +433,66 @@ class BaseAgent(ContextMixin):
 
         # Send response (split if too long for Telegram)
         await self._send_response(context.bot, chat_id, response)
+
+    # ── Auto Artifact Save ────────────────────────────────────────────────────
+
+    _ARTIFACT_EXT_MAP = {
+        "python": ".py", "py": ".py",
+        "javascript": ".js", "js": ".js", "typescript": ".ts", "ts": ".ts",
+        "html": ".html", "css": ".css",
+        "json": ".json", "yaml": ".yml", "yml": ".yml",
+        "bash": ".sh", "sh": ".sh", "shell": ".sh",
+        "sql": ".sql", "svg": ".svg",
+    }
+
+    def _auto_save_artifact(self, chat_id: int, user_msg: str, response: str, skill_results: list):
+        """
+        Automatically save the agent's response as an artifact if it contains
+        substantial generated content. Skips if an explicit artifact_save skill
+        already ran. Called after every handle_message cycle.
+        """
+        # Skip if the agent already saved via an explicit skill call
+        if any(r.get("skill") == "artifact_save" and r.get("success") for r in skill_results):
+            return
+
+        # Detect fenced code blocks: ```lang\n...\n```
+        code_blocks = re.findall(r'```(\w*)\n([\s\S]+?)```', response)
+        has_substantial_code = any(
+            len(code.strip().splitlines()) >= 5
+            for _, code in code_blocks
+        )
+
+        # Detect long structured documents (headers + length)
+        has_structured_doc = (
+            len(response) > 1000
+            and bool(re.search(r'^#+\s', response, re.MULTILINE))
+        )
+
+        if not has_substantial_code and not has_structured_doc:
+            return
+
+        # Determine extension from first code block language (fallback .md)
+        ext = ".md"
+        if code_blocks:
+            lang = code_blocks[0][0].lower()
+            ext = self._ARTIFACT_EXT_MAP.get(lang, ".md")
+
+        # Auto-detect project from content
+        from skills.shared.save_artifact import detect_project
+        project_id = detect_project(response + " " + user_msg)
+
+        ts = int(time.time())
+        safe_user = re.sub(r'[^\w]', '_', user_msg[:30]).strip('_')
+        filename = f"{self.AGENT_ID}_{ts}_{safe_user}{ext}"
+
+        try:
+            result = self.save_artifact(filename, response, project_id=project_id)
+            if result.get("success"):
+                logger.info(f"[{self.AGENT_ID}] Auto-saved artifact: {filename} → {project_id}")
+            else:
+                logger.debug(f"[{self.AGENT_ID}] Auto-save skipped: {result.get('error','')}")
+        except Exception as e:
+            logger.debug(f"[{self.AGENT_ID}] Auto-save failed: {e}")
 
     # ── Auto Memory ───────────────────────────────────────────────────────────
 

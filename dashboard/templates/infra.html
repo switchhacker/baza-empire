@@ -134,7 +134,10 @@
   <!-- Services -->
   <div class="section-head">⚙️ Services</div>
   <div class="services-grid">
-    <div class="svc-card"><div><div class="svc-name">Ollama</div><div class="svc-detail">localhost:11434</div></div><span class="svc-badge" id="svc-ollama">—</span></div>
+    <div class="svc-card"><div><div class="svc-name">Ollama AMD</div><div class="svc-detail">localhost:11434 — RX 6700 XT</div></div><span class="svc-badge" id="svc-ollama">—</span></div>
+    <div class="svc-card"><div><div class="svc-name">Ollama NVIDIA</div><div class="svc-detail">localhost:11435 — RTX 3070</div></div><span class="svc-badge" id="svc-ollama-nv">—</span></div>
+    <div class="svc-card"><div><div class="svc-name">Ollama Web Search</div><div class="svc-detail">ollama.com/api/web_search · Pro</div></div><span class="svc-badge badge-ok">✅ active</span></div>
+    <div class="svc-card"><div><div class="svc-name">LiteLLM Proxy</div><div class="svc-detail">localhost:4000 · $50/30d budget</div></div><span class="svc-badge" id="svc-litellm">—</span></div>
     <div class="svc-card"><div><div class="svc-name">Dashboard</div><div class="svc-detail">localhost:8888</div></div><span class="svc-badge" id="svc-dashboard">—</span></div>
     <div class="svc-card"><div><div class="svc-name">SD WebUI</div><div class="svc-detail">localhost:7860</div></div><span class="svc-badge" id="svc-sdwebui">—</span></div>
     <div class="svc-card"><div><div class="svc-name">Mosquitto</div><div class="svc-detail">MQTT broker</div></div><span class="svc-badge" id="svc-mosquitto">—</span></div>
@@ -198,6 +201,38 @@
       <div class="timeline-dot future"></div>
       <div class="timeline-date">Q3 2026</div>
       <div><div class="timeline-text">Baza Empire Scale-Out</div><div class="timeline-sub">Expand agent fleet, add client-facing products, grow mining operation</div></div>
+    </div>
+  </div>
+
+  <!-- AI Stack -->
+  <div class="section-head">🤖 AI Stack</div>
+  <div class="infra-grid" style="margin-bottom:32px">
+    <div class="infra-card">
+      <div class="infra-card-title">🧠 Local LLMs (Ollama)</div>
+      <div class="infra-row"><span class="infra-label">AMD GPU</span><span class="infra-value">localhost:11434 — Vulkan / RX 6700 XT</span></div>
+      <div class="infra-row"><span class="infra-label">NVIDIA GPU</span><span class="infra-value">localhost:11435 — CUDA / RTX 3070</span></div>
+      <div class="infra-row"><span class="infra-label">Primary model</span><span class="infra-value">qwen2.5:14b</span></div>
+      <div class="infra-row"><span class="infra-label">Simon model</span><span class="infra-value">mistral-small:22b</span></div>
+      <div class="infra-row"><span class="infra-label">GPU pool</span><span class="infra-value">asyncio lock · 120s timeout</span></div>
+    </div>
+    <div class="infra-card">
+      <div class="infra-card-title">🌐 Ollama Web Search API</div>
+      <div class="infra-row"><span class="infra-label">Plan</span><span class="infra-value badge-ok">Pro</span></div>
+      <div class="infra-row"><span class="infra-label">web_search</span><span class="infra-value">ollama.com/api/web_search</span></div>
+      <div class="infra-row"><span class="infra-label">web_fetch</span><span class="infra-value">ollama.com/api/web_fetch</span></div>
+      <div class="infra-row"><span class="infra-label">Skill</span><span class="infra-value">skills/shared/web_search.py</span></div>
+      <div class="infra-row"><span class="infra-label">Skill</span><span class="infra-value">skills/shared/web_fetch.py</span></div>
+      <div class="infra-row"><span class="infra-label">Fallback</span><span class="infra-value">DuckDuckGo (no key)</span></div>
+      <div class="infra-row"><span class="infra-label">Agents</span><span class="infra-value">All 8 — Scout auto-triggers</span></div>
+    </div>
+    <div class="infra-card">
+      <div class="infra-card-title">☁️ Cloud Models (LiteLLM)</div>
+      <div class="infra-row"><span class="infra-label">Proxy</span><span class="infra-value">localhost:4000</span></div>
+      <div class="infra-row"><span class="infra-label">Budget</span><span class="infra-value">$50 / 30 days</span></div>
+      <div class="infra-row"><span class="infra-label">OpenAI</span><span class="infra-value">gpt-4o, o1</span></div>
+      <div class="infra-row"><span class="infra-label">Anthropic</span><span class="infra-value">claude-3-5-sonnet</span></div>
+      <div class="infra-row"><span class="infra-label">Google</span><span class="infra-value">gemini-2-flash</span></div>
+      <div class="infra-row"><span class="infra-label">xAI / Mistral / Groq</span><span class="infra-value">grok-2 · mistral-large</span></div>
     </div>
   </div>
 

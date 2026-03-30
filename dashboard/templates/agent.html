@@ -139,8 +139,12 @@
 
         <label>Model</label>
         <select id="model-select">
-          {% for m in available_models %}
-          <option value="{{ m }}" {% if m == agent.model %}selected{% endif %}>{{ m }}</option>
+          {% for group, models in available_models.items() %}
+          <optgroup label="{{ group }}">
+            {% for m in models %}
+            <option value="{{ m }}" {% if m == agent.model %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </optgroup>
           {% endfor %}
         </select>
 

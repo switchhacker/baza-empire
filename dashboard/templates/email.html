@@ -29,8 +29,11 @@
     .filter-bar{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
     .filter-btn{padding:7px 14px;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:20px;font-size:12px;color:#666;cursor:pointer;transition:all .2s}
     .filter-btn:hover,.filter-btn.active{background:#1a0a2a;border-color:#e94560;color:#e94560}
-    .refresh-btn{margin-left:auto;background:#1a1a2e;border:1px solid #2a2a4a;color:#888;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:12px}
+    .refresh-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#888;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:12px}
     .refresh-btn:hover{border-color:#e94560;color:#e94560}
+    .fetch-btn{margin-left:auto;background:linear-gradient(135deg,#1a0a2e,#2a0a4e);border:1px solid #7c3aed;color:#c4b5fd;padding:9px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;transition:all .2s}
+    .fetch-btn:hover{background:linear-gradient(135deg,#2a1a4e,#3a1a6e);border-color:#a78bfa;color:#fff}
+    .fetch-btn:disabled{opacity:.5;cursor:not-allowed}
 
     .email-list{display:flex;flex-direction:column;gap:12px}
     .email-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:20px;transition:border-color .2s}
@@ -96,6 +99,7 @@
       <div class="page-title">📧 Email Queue</div>
       <div class="page-subtitle">4-stage pipeline: Fetch → Summarize → Approve → Send</div>
     </div>
+    <button class="fetch-btn" id="fetchBtn" onclick="fetchNew()">⬇️ Fetch New Emails</button>
   </div>
 
   <div class="stats-row">
@@ -112,7 +116,7 @@
     <button class="filter-btn" onclick="setFilter('approved',this)">✅ Approved</button>
     <button class="filter-btn" onclick="setFilter('sent',this)">📤 Sent</button>
     <button class="filter-btn" onclick="setFilter('ignored',this)">🚫 Ignored</button>
-    <button class="refresh-btn" onclick="loadQueue()">↻ Refresh</button>
+    <button class="refresh-btn" onclick="loadQueue()" style="margin-left:auto">↻ Refresh</button>
   </div>
 
   <div class="email-list" id="emailList">
@@ -134,10 +138,18 @@ function setFilter(f, btn){
 }
 
 function fetchNew(){
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching...';
   fetch('/api/email/fetch',{method:'POST'}).then(r=>r.json()).then(d=>{
-    if(d.success){ showToast('⬇️ Fetching new emails... refresh in 30s'); setTimeout(loadQueue, 8000); }
-    else showToast('Fetch failed: '+d.error);
-  });
+    if(d.success){
+      showToast('⬇️ Fetching new emails from Gmail...');
+      setTimeout(()=>{ loadQueue(); btn.disabled=false; btn.innerHTML='⬇️ Fetch New Emails'; }, 8000);
+    } else {
+      showToast('Fetch failed: '+(d.error||'unknown error'));
+      btn.disabled=false; btn.innerHTML='⬇️ Fetch New Emails';
+    }
+  }).catch(()=>{ btn.disabled=false; btn.innerHTML='⬇️ Fetch New Emails'; });
 }
 
 function loadQueue(){

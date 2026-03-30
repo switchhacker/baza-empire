@@ -113,15 +113,30 @@ filepath   = os.path.join(OUTPUT_DIR, filename)
 with open(filepath, "wb") as f:
     f.write(base64.b64decode(images[0]))
 
-# ── Also save to artifacts dashboard ────────────────────────────────────────
+# ── Register with artifacts dashboard via upload API ─────────────────────────
 try:
-    artifacts_dir = os.path.join(
-        os.path.dirname(__file__), "../../../../dashboard/artifacts/sam-generated"
+    import urllib.request
+    DASHBOARD_URL = os.environ.get("BAZA_DASHBOARD_URL", "http://localhost:8888")
+    boundary = "bazaartifactboundary"
+    with open(filepath, "rb") as img_f:
+        img_data = img_f.read()
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="project_id"\r\n\r\n'
+        f"shared\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: image/png\r\n\r\n"
+    ).encode("utf-8") + img_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    req = urllib.request.Request(
+        f"{DASHBOARD_URL}/api/artifacts/upload",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
     )
-    os.makedirs(artifacts_dir, exist_ok=True)
-    import shutil
-    shutil.copy2(filepath, os.path.join(artifacts_dir, filename))
-except:
+    with urllib.request.urlopen(req, timeout=15):
+        pass
+except Exception:
     pass
 
 # ── Result ───────────────────────────────────────────────────────────────────

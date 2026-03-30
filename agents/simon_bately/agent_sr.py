@@ -297,44 +297,68 @@ class SimonBately(BaseAgent):
     # ── System prompt ──────────────────────────────────────────────────────
 
     def build_system_prompt(self, extra: str = "") -> str:
-        extra_instructions = """
+        # Always inject real-time task board
+        task_board = self._get_tasks_summary()
+
+        extra_instructions = f"""
 You are Simon Bately — Co-CEO of AHBCO LLC and Business Operations lead of the Baza Empire. You report to Serge.
 
 == PERSONALITY ==
 Sharp, confident, no-nonsense executive. Direct answers only. No filler. No hallucinating.
 Keep replies under 8 sentences unless a full briefing with real injected data is requested.
 
-== YOUR TEAM ==
-- Claw Batto: Dev/DevOps
-- Phil Hass: Legal/Finance
-- Sam Axe: Creative/Design
-- Duke Harmon: Project Management
-- Rex Valor: Voicemail/Intake
-- Scout Reeves: Research
-- Nova Sterling: Client Chat
-
 == ACTIVE PROJECTS ==
-- ahb123.com: Launch April 1 2026.
-- Baza Empire: AI agents, mining, automation.
+🏠 ahb123.com: Launch April 1 2026. Claw=dev, Sam=design/copy, Phil=legal/contracts.
+⛏ Baza Empire: AI agents (8 running), crypto mining (AMD+NVIDIA), automation.
 
 == CRITICAL RULES ==
 1. NEVER invent data. If live data is injected use it. If not, say "data unavailable."
 2. NEVER output markdown: no ### headers, no ** bold, no - bullet lists.
 3. Use plain text with emoji and ━━━ dividers only.
-4. When Serge says "get the team buzzing" etc — respond as an exec kicking off the day. Use real task data if provided.
+4. When Serge says "get the team buzzing" etc — respond as an exec kicking off the day using real task data below.
 5. Only run full briefing format when EXPLICITLY asked AND live data is injected.
 
-== WEB RESEARCH TOOLS ==
-You have direct access to:
-  self.web_search(query, n=5)   — DuckDuckGo search, returns list of {title,url,snippet}
-  self.scrape_page(url)         — fetch and read any webpage as clean text
+== LIVE TASK BOARD (always current) ==
+{task_board}
+== END TASK BOARD ==
 
-When asked to research something:
-1. Call self.web_search() with a focused query
-2. Pick the best 1-2 URLs and call self.scrape_page()
-3. Summarize findings in plain text
-4. Save a .md report with self.save_artifact()
-Always cite your sources. Never make up URLs.
+== YOUR TEAM — WHO DOES WHAT ==
+CLAW (claw_batto) → code, Linux, DevOps, server, systemd, databases, Ollama, SSL, Docker
+PHIL (phil_hass)  → legal, contracts, tax, compliance, PA HIC, LLC, invoices, AND all document generation: Word(.docx), Excel(.xlsx), PDF — Phil is the Document Officer
+SAM (sam_axe)     → website copy, SEO, ads, branding, visuals, image gen (Stable Diffusion), analytics, social media
+DUKE (duke_harmon)→ project status, task tracking, deadline management, blocker escalation
+SCOUT (scout_reeves)→ research, competitor intel, PA regulations, crypto pool comparison, market rates
+REX (rex_valor)   → inbound leads, voicemail triage, lead scoring
+NOVA (nova_sterling)→ client chat on ahb123.com, consultation booking
+
+== DISPATCH GUIDE — SKILL REFERENCE ==
+For DOCUMENTS (contract/proposal/invoice/form/checklist):
+  → DISPATCH:phil_hass:Generate [document type] for [purpose]. Use generate_docx + generate_pdf skills. Save to [project_id]. Include: [key sections/terms].
+  → Phil uses: generate_docx, generate_xlsx, generate_pdf, artifact_save
+
+For IMAGES/VISUALS:
+  → DISPATCH:sam_axe:Generate image: [detailed prompt]. Style: [style]. Size: [WxH]. Save to proj-ahb123.
+  → Sam uses: generate_image (Stable Diffusion at localhost:7860)
+
+For RESEARCH:
+  → DISPATCH:scout_reeves:Research [exact topic]. Find: [specific questions]. Save intel report to artifacts.
+  → Scout uses: web_search, scrape_page, news, artifact_save
+
+For CODE/INFRA:
+  → DISPATCH:claw_batto:Fix/build [exact task]. File: [path]. Expected output: [result].
+  → Claw uses: system_health, mining_status, artifact_save, create_skill
+
+For PROJECT STATUS:
+  → DISPATCH:duke_harmon:Pull full status for [project]. Flag blockers. Save report to artifacts.
+  → Duke reads live SQLite DB — never invents data
+
+For LEAD/CLIENT:
+  → DISPATCH:rex_valor or nova_sterling:[specific instruction]
+
+== WEB RESEARCH (Simon direct) ==
+  self.web_search(query, n=5)  — DuckDuckGo
+  self.scrape_page(url)        — read any webpage
+  self.save_artifact(filename, content, project_id)  — save to dashboard
 
 == COMMANDS SIMON HANDLES DIRECTLY ==
   approve / send / yes      → send draft email reply
@@ -342,6 +366,7 @@ Always cite your sources. Never make up URLs.
   pending                   → list email queue
   unblock                   → ping Phil and Nova about current blockers
   ping <agent> <message>    → send direct message to any agent
+  tasks                     → show current task board
 """
         return super().build_system_prompt(extra_instructions)
 
@@ -350,7 +375,47 @@ Always cite your sources. Never make up URLs.
         return any(kw in tl for kw in BRIEFING_KEYWORDS)
 
     def _fetch_live_data(self) -> str:
+        import datetime as _dt, sqlite3 as _sqlite3
         sections = []
+
+        # Real timestamp — always first so LLM uses it
+        now = _dt.datetime.now()
+        sections.append(
+            f"CURRENT DATE & TIME: {now.strftime('%A, %B %d, %Y at %I:%M %p')} (Philadelphia / Eastern)"
+        )
+
+        # Active projects from task DB
+        try:
+            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "dashboard", "baza_projects.db")
+            conn = _sqlite3.connect(db_path)
+            conn.row_factory = _sqlite3.Row
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT p.name, p.status, COUNT(t.id) as task_count,
+                       SUM(CASE WHEN t.status='pending' THEN 1 ELSE 0 END) as pending,
+                       SUM(CASE WHEN t.status='in_progress' THEN 1 ELSE 0 END) as in_progress
+                FROM projects p
+                LEFT JOIN tasks t ON t.project_id = p.id
+                WHERE p.status NOT IN ('completed','archived')
+                GROUP BY p.id
+                ORDER BY p.updated_at DESC
+                LIMIT 8
+            """)
+            rows = cur.fetchall()
+            conn.close()
+            if rows:
+                proj_lines = ["ACTIVE PROJECTS:"]
+                for row in rows:
+                    proj_lines.append(
+                        f"  • {row['name']} [{row['status']}] — "
+                        f"{row['pending'] or 0} pending, {row['in_progress'] or 0} in progress"
+                    )
+                sections.append("\n".join(proj_lines))
+            else:
+                sections.append("ACTIVE PROJECTS: none found")
+        except Exception as e:
+            sections.append(f"ACTIVE PROJECTS: unavailable ({e})")
+
         r = self.skills.run("crypto_prices", {"coins": ["bitcoin", "ethereum", "monero", "ravencoin", "litecoin"]})
         sections.append(r["output"] if r.get("success") and r.get("output") else "CRYPTO PRICES: data unavailable")
         r = self.skills.run("weather", {"location": "Philadelphia, PA"})
@@ -494,43 +559,11 @@ Always cite your sources. Never make up URLs.
             await self._send_response(context.bot, chat_id, reply)
             return
 
-        # ── Direct execution: PA HIC license ─────────────────────────────
-        tl_cmd = text.lower().strip()
-        if any(kw in tl_cmd for kw in ["pa hic", "pa home improvement", "hic license", "home improvement license", "hic renewal"]):
-            loop = asyncio.get_event_loop()
-            doc  = self._build_pa_hic_doc()
-            save_result = await loop.run_in_executor(
-                None, self.save_artifact,
-                "pa_hic_renewal_checklist.md", doc, "proj-ahb123"
-            )
-            task_id = self.tasks.add(
-                project_id="proj-ahb123",
-                title="Renew PA Home Improvement Contractor (HIC) License",
-                description="Steps: tax clearance, good standing cert, HIC-11 form, insurance cert, submit to OAG. Checklist saved to artifacts.",
-                priority="high",
-            )
-            saved_ok = save_result.get("success", False)
-            confirm = (
-                "PA HIC Renewal — EXECUTED\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                "File saved to Artifacts tab\n"
-                "  pa_hic_renewal_checklist.md\n"
-                "  Project: ahb123.com\n"
-                + ("  Status: saved OK\n" if saved_ok else "  Status: save failed - check dashboard connection\n") +
-                "\nTask created on project board\n"
-                "  ID: " + task_id[:8] + "\n"
-                "  Title: Renew PA HIC License\n"
-                "  Priority: HIGH\n"
-                "\nKey next steps:\n"
-                "  1. Request PA Tax Clearance NOW (3-10 days)\n"
-                "  2. Pull Good Standing cert from PA DOS (same day)\n"
-                "  3. Download HIC-11 form from OAG site\n"
-                "  4. Get insurance cert from broker\n"
-                "  5. Submit + $50 fee, keep confirmation\n"
-                "\nFull checklist with all links is in Artifacts tab."
-            )
-            save_message(chat_id, self.AGENT_ID, "assistant", confirm)
-            await self._send_response(context.bot, chat_id, confirm)
+        # ── tasks command — show board directly ──────────────────────────────
+        if tl_cmd in ("tasks", "task board", "show tasks", "what's on the board", "board"):
+            board = self._get_tasks_summary()
+            save_message(chat_id, self.AGENT_ID, "assistant", board)
+            await self._send_response(context.bot, chat_id, board)
             return
 
         # ── LLM path ─────────────────────────────────────────────────────
@@ -552,16 +585,14 @@ Always cite your sources. Never make up URLs.
                 system + "\n\n== LIVE DATA (use exact values) ==\n" + live_data + "\n== END LIVE DATA ==\n"
             )
             augmented_messages = messages + [{"role": "user", "content": (
-                f"{text}\n\n{fmt_note}\n[Use ONLY injected live data values.]"
+                f"{text}\n\n{fmt_note}\n"
+                "[Use ONLY injected live data values. "
+                "The CURRENT DATE & TIME line shows the EXACT real time — use it verbatim in your briefing header. "
+                "List all ACTIVE PROJECTS by name with their task counts.]"
             )}]
             response = await loop.run_in_executor(None, self.llm_chat, augmented_messages, augmented_system)
         else:
             system = self.build_system_prompt()
-            tl = text.lower()
-            work_keywords = ["ahb", "team", "project", "work", "task", "buzzing", "let's", "lets", "kick", "start", "launch"]
-            if any(kw in tl for kw in work_keywords):
-                task_context = await loop.run_in_executor(None, self._get_tasks_summary)
-                system += f"\n\n== REAL TASK DATA ==\n{task_context}\n== END TASK DATA ==\n"
             messages_with_user = messages + [{"role": "user", "content": f"{text}\n\n{fmt_note}"}]
             response = await loop.run_in_executor(None, self.llm_chat, messages_with_user, system)
 

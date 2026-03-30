@@ -101,6 +101,26 @@ The commander module routes the instruction to the target agent's Telegram chat.
 
 Flask app at `dashboard/app.py` (port 8888). Manages agents (start/stop/restart via systemd), tasks, artifacts at `dashboard/artifacts/[project_id]/[filename]`, cron jobs, infrastructure metrics, and email pipeline. Separate SQLite DB at `dashboard/baza_projects.db`.
 
+### Tool Server
+
+FastAPI service at `tools/server.py` exposing agent tools as `POST /tools/{agent}/{tool}`. Runs under `baza-tool-server.service`. Sam's imaging endpoints (Stable Diffusion) are mounted via `sam_imaging.py` in the same process.
+
+```bash
+cd tools && uvicorn server:app --port 8001
+```
+
+### LiteLLM Cloud Proxy
+
+`configs/litellm.yaml` defines a unified OpenAI-compatible API on `localhost:4000` routing to OpenAI, Anthropic, Google, xAI, Mistral, Groq, and local Ollama models. Agents that need cloud models call `http://localhost:4000/v1` with bearer `baza-litellm`. Budget cap: $50/30 days.
+
+```bash
+litellm --config configs/litellm.yaml --port 4000
+```
+
+### Email Pipeline
+
+`email-pipeline/` — Gmail integration. `fetch_emails.py` pulls unread mail, `summarize.py` creates summaries, `send_reply.py` sends replies. State tracked in `sync_state.json`. Auth credentials live in `email-pipeline/credentials.json` and `token.json` (OAuth2). Run `scripts/gmail_auth.py` to re-authorize.
+
 ## Key Files
 
 | File | Purpose |

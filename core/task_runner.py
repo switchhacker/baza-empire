@@ -274,7 +274,15 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
                 logger.info(f"  ✅ COMPLETED: {task_title[:50]}")
                 # Save full deliverable as artifact
                 _save_artifact(agent_id, task, result["output"])
-                results.append({"task": task_title, "status": "completed", "output": notes})
+                # Process any DISPATCH lines in agent output — forward to target agents
+                dispatched = process_dispatch_lines(result["output"], agent_id)
+                results.append({
+                    "task": task_title,
+                    "status": "completed",
+                    "output": notes,
+                    "project_id": task.get("project_id", ""),
+                    "dispatched": dispatched,
+                })
 
             elif result["blocked"]:
                 update_task(task_id, {
@@ -298,6 +306,52 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
     return results
 
 
+def notify_agent(agent_id: str, message: str):
+    """Send a Telegram message via an agent's bot to Serge's chat."""
+    token_env_map = {
+        "phil_hass":     "TELEGRAM_PHIL_HASS",
+        "claw_batto":    "TELEGRAM_CLAW_BATTO",
+        "sam_axe":       "TELEGRAM_SAM_AXE",
+        "nova_sterling": "TELEGRAM_NOVA_STERLING",
+        "rex_valor":     "TELEGRAM_REX_VALOR",
+        "duke_harmon":   "TELEGRAM_DUKE_HARMON",
+        "scout_reeves":  "TELEGRAM_SCOUT_REEVES",
+    }
+    token = os.getenv(token_env_map.get(agent_id, ""))
+    if not token:
+        logger.warning(f"No token for {agent_id} — cannot ping")
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": SERGE_CHAT_ID, "text": message},
+            timeout=10
+        )
+        logger.info(f"  📤 Pinged {agent_id}")
+    except Exception as e:
+        logger.warning(f"  Ping {agent_id} failed: {e}")
+
+
+def process_dispatch_lines(output: str, source_agent: str):
+    """
+    Parse DISPATCH:agent_id:instruction lines from task output.
+    Sends each dispatch as a Telegram message via that agent's bot.
+    """
+    dispatched = []
+    for line in output.split("\n"):
+        line = line.strip()
+        if line.upper().startswith("DISPATCH:"):
+            parts = line.split(":", 2)
+            if len(parts) == 3:
+                target = parts[1].strip().lower()
+                instruction = parts[2].strip()
+                msg = f"📌 DISPATCH from {source_agent}:\n{instruction}"
+                notify_agent(target, msg)
+                dispatched.append(target)
+                logger.info(f"  DISPATCH → {target}: {instruction[:60]}")
+    return dispatched
+
+
 def build_summary_message(all_results: dict) -> str:
     """Build Telegram notification with what got done."""
     stats = get_project_stats()
@@ -317,6 +371,8 @@ def build_summary_message(all_results: dict) -> str:
         "scout_reeves": "Scout", "nova_sterling": "Nova",
     }
 
+    artifacts_base = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts")
+
     for agent_id, results in all_results.items():
         if not results:
             continue
@@ -325,19 +381,31 @@ def build_summary_message(all_results: dict) -> str:
         blocked     = [r for r in results if r.get("status") == "blocked"]
         in_progress = [r for r in results if r.get("status") == "in_progress"]
 
-        if completed or blocked:
+        if completed or blocked or in_progress:
             lines.append(f"👤 {name}:")
             for r in completed:
                 lines.append(f"  ✅ {r['task'][:55]}")
+                # List any artifacts saved for this task
+                proj_id = r.get("project_id", "")
+                if proj_id:
+                    art_dir = os.path.join(artifacts_base, proj_id)
+                    if os.path.isdir(art_dir):
+                        recent = sorted(
+                            [f for f in os.listdir(art_dir) if agent_id[:4] in f],
+                            key=lambda f: os.path.getmtime(os.path.join(art_dir, f)),
+                            reverse=True
+                        )[:2]
+                        for af in recent:
+                            lines.append(f"     📎 {af}")
             for r in blocked:
-                lines.append(f"  🔴 {r['task'][:40]} — {r.get('reason','')[:30]}")
+                lines.append(f"  🔴 {r['task'][:40]} — {r.get('reason','')[:40]}")
             for r in in_progress:
                 lines.append(f"  🟡 {r['task'][:55]}")
             lines.append("")
 
     if stats["blocked"] > 0:
         lines.append(f"⚠️ {stats['blocked']} task(s) blocked — check dashboard")
-
+    lines.append(f"📋 Dashboard: http://localhost:8888")
     lines.append("━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 

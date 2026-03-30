@@ -25,13 +25,14 @@ Usage:
   claw --model qwen2.5:14b          Use different model
 """
 
-import os, sys, json, re, subprocess, difflib, shutil, hashlib
-import urllib.request, urllib.error, readline, signal, textwrap
+import os, sys, json, re, subprocess, difflib, shutil, hashlib, ast
+import urllib.request, urllib.error, readline, signal, textwrap, tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
 # ── Config ────────────────────────────────────────────────────────────────────
+CLAW_VERSION  = "2.0.0"
 OLLAMA_HOST   = os.environ.get("OLLAMA_HOST",   "http://localhost:11434")
 CLAW_MODEL    = os.environ.get("CLAW_MODEL",    "mistral-small:22b")
 CONTEXT_LIMIT = int(os.environ.get("CLAW_CTX",  "8192"))
@@ -100,21 +101,31 @@ PERSONALITY: Terse, technical, zero filler. Senior engineer energy.
 Concrete answers. If not sure, say so and tell Serge how to verify.
 """
 
-# ── ANSI Colors ───────────────────────────────────────────────────────────────
+# ── ANSI Colors — dark navy + yellow accent theme ─────────────────────────────
 IS_TTY = sys.stdout.isatty()
 
 def _c(code: str, text: str) -> str:
     return f"\033[{code}m{text}\033[0m" if IS_TTY else text
 
-def bold(t):    return _c("1", t)
-def dim(t):     return _c("2", t)
-def red(t):     return _c("31", t)
-def green(t):   return _c("32", t)
-def yellow(t):  return _c("33", t)
-def blue(t):    return _c("34", t)
-def magenta(t): return _c("35", t)
-def cyan(t):    return _c("36", t)
-def white(t):   return _c("97", t)
+def _c2(fg: str, bg: str, text: str) -> str:
+    return f"\033[{fg};{bg}m{text}\033[0m" if IS_TTY else text
+
+def bold(t):       return _c("1", t)
+def dim(t):        return _c("2", t)
+def italic(t):     return _c("3", t)
+def red(t):        return _c("31", t)
+def green(t):      return _c("32", t)
+def yellow(t):     return _c("33", t)
+def blue(t):       return _c("34", t)
+def magenta(t):    return _c("35", t)
+def cyan(t):       return _c("38;5;44", t)   # aqua / bright teal
+def white(t):      return _c("97", t)
+# Welcome-box only colors (not used in UI chrome)
+def crimson(t):    return _c("38;5;124", t)    # muted dark red — logo/box
+def scarlet(t):    return _c("38;5;160", t)    # medium red — v2 tag
+def deep_blue(t):  return _c("38;5;18", t)     # deep navy — box text
+def steel(t):      return _c("38;5;67", t)     # steel blue — box labels
+def accent(t):     return bold(cyan(t))
 
 def divider(char="─", width=70, color=cyan):
     return color(char * width)
@@ -497,6 +508,7 @@ class Session:
         self.start_time = datetime.now()
         self.name = ""
         self.pending_proposal = None
+        self.auto_approve = False  # set True when user picks "Always run"
 
     def add(self, role: str, content: str):
         self.messages.append({"role": role, "content": content})
@@ -540,6 +552,266 @@ class Session:
         # Re-load files
         for fpath in data.get("files", []):
             self.ctx.load_file(fpath)
+
+# ── Action dialogue box ────────────────────────────────────────────────────────
+def ask_action(title: str, items: list, auto: bool = False) -> str:
+    """
+    Show a styled proposal dialogue box and return the user's choice.
+    Returns: 'y' (yes, run once) | 'a' (always, auto future) | 'n' (no/skip)
+    If auto=True, skips prompt and returns 'a'.
+    """
+    if auto:
+        return 'a'
+
+    BOX_W = 64
+
+    def brow(content: str = "") -> str:
+        bare = len(_bare(content))
+        pad  = max(0, BOX_W - bare)
+        return cyan("  │") + content + " " * pad + cyan("│")
+
+    print()
+    print(cyan("  ╭" + "─" * BOX_W + "╮"))
+    print(brow(f"  {bold(white('◆'))}  {bold(cyan(title))}"))
+    print(brow())
+
+    for item in items:
+        bare_item = _bare(item)
+        # Main line
+        print(brow(f"  {item}"))
+        # Truncated target path on next line if it's long
+        if len(bare_item) > BOX_W - 4:
+            print(brow(f"    {dim(bare_item[-(BOX_W-8):])}"))
+
+    print(brow())
+
+    # Options line
+    yes_str   = green("  [Y]") + white(" Yes, run")
+    always_str = yellow("  [A]") + white(" Yes, always run")
+    no_str    = red("  [N]") + white(" No")
+    opts_bare = "  [Y] Yes, run  [A] Yes, always run  [N] No"
+    opts_pad  = max(0, BOX_W - len(opts_bare))
+    print(cyan("  │") + yes_str + always_str + no_str + " " * opts_pad + cyan("│"))
+    print(cyan("  ╰" + "─" * BOX_W + "╯"))
+
+    while True:
+        try:
+            ans = input(f"\n  {cyan('›')} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 'n'
+        if ans in ('y', 'yes', 'ok', 'go', 'proceed', 'run', ''):
+            return 'y'
+        if ans in ('a', 'always', 'auto', 'aa'):
+            return 'a'
+        if ans in ('n', 'no', 'cancel', 'skip', 'abort'):
+            return 'n'
+        print(f"  {dim('Type Y, A, or N')}")
+
+
+def show_proposal_box(proposal: 'Proposal', session: 'Session') -> str:
+    """
+    Display a proposal in the ask_action box.
+    Executes immediately — returns 'y', 'a', or 'n'.
+    """
+    items = []
+    for s in proposal.steps:
+        icon = cyan("✏") if s.kind == "WRITE" else yellow("⚡") if s.kind == "RUN" else cyan("◆")
+        kind_label = dim(f"[{s.kind}]")
+        target_short = s.target if len(s.target) <= 52 else "…" + s.target[-50:]
+        items.append(f"{icon} {kind_label} {white(s.desc)}")
+        items.append(f"     {dim('→')} {dim(target_short)}")
+
+    return ask_action(f"Claw suggests {len(proposal.steps)} action(s)", items,
+                      auto=session.auto_approve)
+
+
+# ── Proposal / plan execution system ──────────────────────────────────────────
+from typing import NamedTuple
+
+class ProposalStep(NamedTuple):
+    num:     int
+    desc:    str
+    kind:    str   # WRITE | RUN | PIP | APT | MKDIR | SYMLINK
+    target:  str   # file path or shell command
+    content: str   # file content for WRITE steps
+
+class Proposal(NamedTuple):
+    title: str
+    steps: list    # list[ProposalStep]
+
+def is_approval(text: str) -> bool:
+    return text.strip().lower() in (
+        "ok", "go", "yes", "y", "proceed", "run", "do it", "auto", "sure", "yep"
+    )
+
+def parse_plan_block(text: str) -> Optional['Proposal']:
+    """Parse <<<PLAN: title>>> … <<<END_PLAN>>> from LLM response."""
+    m = re.search(r'<<<PLAN:\s*([^\n>]+)>>>(.*?)<<<END_PLAN>>>',
+                  text, re.DOTALL | re.IGNORECASE)
+    if not m:
+        return None
+    title = m.group(1).strip()
+    body  = m.group(2).strip()
+    steps: list[ProposalStep] = []
+    pat = re.compile(
+        r'STEP\s+(\d+):\s+(.+?)\s+→\s+TYPE:\s+(\w+)\s*\n\s*(.+?)(?=STEP\s+\d+:|$)',
+        re.DOTALL | re.IGNORECASE
+    )
+    for sm in pat.finditer(body):
+        num    = int(sm.group(1))
+        desc   = sm.group(2).strip()
+        kind   = sm.group(3).upper()
+        target = sm.group(4).strip().splitlines()[0].strip()
+        steps.append(ProposalStep(num, desc, kind, target, ""))
+    return Proposal(title, steps) if steps else None
+
+def parse_write_targets_from_response(text: str) -> list:
+    """Find <<<WRITE: path>>> code-block pairs."""
+    pat = re.compile(r'<<<WRITE:\s*([^\n>]+)>>>\s*```(?:\w+)?\n(.*?)```', re.DOTALL)
+    return [{"path": m.group(1).strip(), "content": m.group(2).strip()}
+            for m in pat.finditer(text)]
+
+def parse_run_targets_from_response(text: str) -> list:
+    """Find <<<RUN: desc>>> code-block pairs."""
+    pat = re.compile(r'<<<RUN:\s*([^\n>]+)>>>\s*```(?:\w+)?\n(.*?)```', re.DOTALL)
+    return [{"desc": m.group(1).strip(),
+             "cmd":  m.group(2).strip().splitlines()[0]}
+            for m in pat.finditer(text)]
+
+def run_proposal(proposal: 'Proposal', session: 'Session', auto: bool = False):
+    """Execute a structured plan step-by-step with per-step dialogues."""
+    if auto:
+        session.auto_approve = True
+
+    print(f"\n  {bold(cyan('◆'))} {bold(white(proposal.title))}")
+    print(cyan("  " + "─" * 50))
+
+    for s in proposal.steps:
+        step(s.num, s.desc)
+
+        if s.kind == "WRITE":
+            if not s.content:
+                warn(f"No content for WRITE step: {s.target}"); continue
+            # Show a mini dialogue for each write
+            ans = ask_action(
+                f"Write file",
+                [f"{cyan('✏')} {dim('[WRITE]')} {white(Path(s.target).name)}",
+                 f"     {dim('→')} {dim(s.target)}"],
+                auto=session.auto_approve
+            )
+            if ans == 'n':
+                info("Skipped."); continue
+            if ans == 'a':
+                session.auto_approve = True
+            session.ctx.stage(s.target, s.content)
+            if session.ctx.apply(s.target):
+                ok(f"Written: {s.target}")
+
+        elif s.kind == "RUN":
+            ans = ask_action(
+                f"Run command",
+                [f"{yellow('⚡')} {dim('[RUN]')}  {white(s.target[:60])}"],
+                auto=session.auto_approve
+            )
+            if ans == 'n':
+                info("Skipped."); continue
+            if ans == 'a':
+                session.auto_approve = True
+            run_shell(s.target, cwd=session.cwd)
+
+        elif s.kind == "PIP":
+            venv_pip = os.path.join(FRAMEWORK_DIR, "venv", "bin", "pip")
+            pip_bin  = venv_pip if os.path.exists(venv_pip) else "pip3"
+            ans = ask_action("Install package",
+                             [f"{cyan('◆')} {dim('[PIP]')} {white(s.target)}"],
+                             auto=session.auto_approve)
+            if ans == 'n': info("Skipped."); continue
+            if ans == 'a': session.auto_approve = True
+            run_shell(f"{pip_bin} install {s.target}", cwd=session.cwd)
+
+        elif s.kind == "APT":
+            ans = ask_action("Install apt package",
+                             [f"{cyan('◆')} {dim('[APT]')} {white(s.target)}"],
+                             auto=session.auto_approve)
+            if ans == 'n': info("Skipped."); continue
+            if ans == 'a': session.auto_approve = True
+            run_shell(f"sudo apt install -y {s.target}", cwd=session.cwd)
+
+        elif s.kind == "MKDIR":
+            Path(s.target).mkdir(parents=True, exist_ok=True)
+            ok(f"Created: {s.target}")
+
+        elif s.kind == "SYMLINK":
+            pts = s.target.split(None, 1)
+            if len(pts) == 2:
+                run_shell(f"ln -sf {pts[0]} {pts[1]}", cwd=session.cwd)
+
+    print(f"\n  {green('✓ Done.')}\n")
+
+def run_doctor():
+    """Health check: Ollama, services, GPU."""
+    print(f"\n  {bold(yellow('  ◆ Claw Doctor — System Health Check'))}")
+    print(yellow("  " + "─" * 48))
+    for host, label in [(OLLAMA_HOST, "Ollama AMD/primary"),
+                        ("http://localhost:11435", "Ollama NVIDIA")]:
+        try:
+            urllib.request.urlopen(f"{host}/api/tags", timeout=3)
+            print(f"  {green('●')} {label:<24} {green('online')}  {dim(host)}")
+        except Exception:
+            print(f"  {red('●')} {label:<24} {red('offline')} {dim(host)}")
+    print(yellow("  " + "─" * 48))
+    for svc, label in [("baza-dashboard",    "Dashboard"),
+                       ("baza-agents",        "Agents"),
+                       ("baza-task-runner",   "Task runner"),
+                       ("baza-tool-server",   "Tool server"),
+                       ("postgresql",         "PostgreSQL"),
+                       ("redis",              "Redis")]:
+        _, stat = run_shell(f"systemctl is-active {svc} 2>/dev/null", capture=True)
+        st  = stat.strip()
+        col = green if st == "active" else yellow if st == "activating" else red
+        print(f"  {col('●')} {label:<24} {dim(st)}")
+    print(yellow("  " + "─" * 48))
+    run_shell("nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu "
+              "--format=csv,noheader 2>/dev/null || echo 'nvidia-smi unavailable'")
+    models = ollama_models()
+    if models:
+        print(f"\n  {bold(yellow('Ollama models:'))}")
+        for m in models:
+            marker = f"  {yellow('◆')}" if m == CLAW_MODEL else "   "
+            print(f"{marker} {m}")
+    print()
+
+def watch_mode(filepath: str, session: 'Session', prompt: str = ""):
+    """Watch a file and auto-review on every save (1-second poll)."""
+    import time as _time
+    p = Path(filepath).expanduser()
+    if not p.exists():
+        error(f"File not found: {filepath}"); return
+    session.ctx.load_file(str(p))
+    review_prompt = prompt or "Review this file for bugs, issues, and improvements."
+    info(f"Watching: {p}  (Ctrl+C to stop)")
+    last_mtime = p.stat().st_mtime
+    try:
+        while True:
+            _time.sleep(1)
+            try:
+                mtime = p.stat().st_mtime
+            except FileNotFoundError:
+                warn("File deleted — stopping watch."); break
+            if mtime != last_mtime:
+                last_mtime = mtime
+                print(f"\n  {yellow('◆ Changed:')} {p.name}")
+                content = p.read_text(errors="ignore")[:MAX_FILE_KB * 1024]
+                session.ctx.files[str(p.resolve())] = content
+                msgs = [{"role": "user", "content":
+                    f"{review_prompt}\n\nFile: {p}\n\n```\n{content[:5000]}\n```"}]
+                resp = ollama_chat(msgs)
+                if resp:
+                    session.last_response = resp
+    except KeyboardInterrupt:
+        print(f"\n{dim('  Watch stopped.')}")
+
 
 # ── Slash commands ─────────────────────────────────────────────────────────────
 def handle_slash(cmd: str, session: Session) -> bool:
@@ -603,11 +875,28 @@ def handle_slash(cmd: str, session: Session) -> bool:
         print(f"  {dim('Model:')} {CLAW_MODEL}")
 
     elif name == "/clear":
+        had_files   = len(session.ctx.files)
+        had_msgs    = len(session.messages)
+        had_pending = len(session.ctx.pending)
+
         session.ctx.files.clear()
         session.ctx.pending.clear()
         session.messages.clear()
-        session.last_code = ""
-        ok("Context cleared")
+        session.last_code        = ""
+        session.last_response    = ""
+        session.pending_proposal = None
+
+        print(f"\n  {bold(yellow('━' * 46))}")
+        print(f"  {bold(yellow('  ⟳  Session Reset'))}")
+        print(f"  {yellow('━' * 46)}")
+        if had_files:
+            print(f"  {dim('·')} {dim(str(had_files) + ' file(s) unloaded')}")
+        if had_msgs:
+            print(f"  {dim('·')} {dim(str(had_msgs) + ' message(s) cleared')}")
+        if had_pending:
+            print(f"  {dim('·')} {red(str(had_pending) + ' staged file(s) discarded')}")
+        print(f"  {steel('Ready.')}  {dim('Load a file with')} {yellow('/file')} {dim('or ask anything.')}")
+        print(f"  {yellow('━' * 46)}\n")
 
     elif name == "/cd":
         if arg and os.path.isdir(os.path.expanduser(arg)):
@@ -1312,90 +1601,499 @@ def handle_slash(cmd: str, session: Session) -> bool:
                 pass
             print()
 
+    elif name == "/init":
+        # Scan project, generate CLAW.md with project context for Claw
+        target = Path(arg).expanduser() if arg else Path(session.cwd)
+        if not target.is_dir():
+            error(f"Not a directory: {target}"); return True
+
+        claw_md = target / "CLAW.md"
+        if claw_md.exists() and not confirm_action("CLAW.md already exists. Regenerate?"):
+            return True
+
+        info(f"Scanning project: {target}")
+
+        # Detect project signals
+        markers = ["requirements.txt", "setup.py", "pyproject.toml", "Pipfile",
+                   "package.json", "Cargo.toml", "go.mod",
+                   "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+                   "Makefile", ".env.example", "README.md", "CLAUDE.md", "CLAW.md"]
+        found_markers = [m for m in markers if (target / m).exists()]
+
+        # Read key files for context
+        ctx_parts: list[str] = []
+        for fname in ["README.md", "requirements.txt", "pyproject.toml",
+                      "package.json", "Makefile"]:
+            p = target / fname
+            if p.exists():
+                snippet = p.read_text(errors="ignore")[:2500]
+                ctx_parts.append(f"=== {fname} ===\n{snippet}")
+
+        # Get shallow directory tree
+        rc, tree_out = run_shell(
+            f"find '{target}' -maxdepth 2 "
+            f"-not -path '*/venv/*' -not -path '*/__pycache__/*' "
+            f"-not -path '*/.git/*' -not -path '*/node_modules/*' "
+            f"-not -path '*/.mypy_cache/*' | sort | head -70",
+            capture=True
+        )
+
+        file_ctx = "\n\n".join(ctx_parts)
+
+        info("Analysing project with AI — generating CLAW.md...")
+        msgs = [{"role": "user", "content":
+            f"Analyse this project and write a CLAW.md file.\n"
+            f"CLAW.md is loaded by Claw Batto (an AI coding CLI) as project context "
+            f"at the start of every session. Make it dense and practical.\n\n"
+            f"Project root: {target}\n"
+            f"Project markers found: {', '.join(found_markers) or 'none'}\n\n"
+            f"Directory tree:\n{tree_out[:2500]}\n\n"
+            f"Key file contents:\n{file_ctx[:3000]}\n\n"
+            f"Generate CLAW.md with exactly these sections (no extras):\n\n"
+            f"# Project\n"
+            f"One-line summary. Stack in bullet points.\n\n"
+            f"# Architecture\n"
+            f"Key files/dirs with one-line purpose each.\n\n"
+            f"# Run & Test\n"
+            f"Exact commands to run dev, run tests, build.\n\n"
+            f"# Conventions\n"
+            f"Code style rules, patterns Claw must follow.\n\n"
+            f"# Claw Notes\n"
+            f"Anything a senior dev joining this project needs to know immediately.\n\n"
+            f"Be terse. No filler. Senior engineer tone."}]
+
+        claw_content = ollama_chat(msgs, stream=True)
+        if not claw_content:
+            error("LLM returned empty — check Ollama"); return True
+
+        claw_content = claw_content.strip()
+        dest_str = str(claw_md)
+        session.ctx.stage(dest_str, claw_content)
+
+        print()
+        print(f"  {bold(yellow('━' * 46))}")
+        print(f"  {bold(yellow('  ✦  CLAW.md staged'))}  {dim(dest_str)}")
+        print(f"  {yellow('━' * 46)}")
+        print(f"  {steel('/diff')}   {dim('review changes')}")
+        print(f"  {steel('/apply')}  {dim('write to disk')}")
+        print(f"  {yellow('━' * 46)}\n")
+
+        # Auto-load CLAW.md into context once written
+        if claw_md.exists():
+            session.ctx.load_file(dest_str)
+
+    # ── v2 power commands ───────────────────────────────────────────────────────
+
+    elif name == "/outline":
+        # Show code structure (classes + functions) for loaded Python files
+        target_files = {}
+        if arg:
+            for p, c in session.ctx.files.items():
+                if arg in p:
+                    target_files[p] = c
+            if not target_files:
+                error(f"No loaded file matches: {arg}"); return True
+        elif session.ctx.files:
+            target_files = {p: c for p, c in session.ctx.files.items() if p.endswith(".py")}
+        if not target_files:
+            warn("No Python files loaded. Use /file or /dir first."); return True
+        print(yellow(f"\n  Code outline — {len(target_files)} file(s)\n"))
+        for fpath, content in target_files.items():
+            print(f"  {bold(yellow(Path(fpath).name))}  {dim(fpath)}")
+            try:
+                tree = ast.parse(content)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ClassDef):
+                        methods = [n for n in node.body
+                                   if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+                        print(f"    {magenta('class')} {bold(node.name)}  "
+                              f"{dim(f'L{node.lineno}')}  {steel(f'({len(methods)} methods)')}")
+                        for m in methods:
+                            a = ", ".join(a.arg for a in m.args.args)[:35]
+                            print(f"      {yellow('↳')} {m.name}({a})  {dim(f'L{m.lineno}')}")
+                for node in tree.body:
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        a = ", ".join(x.arg for x in node.args.args)[:40]
+                        print(f"    {steel('def')} {white(node.name)}({a})  {dim(f'L{node.lineno}')}")
+            except SyntaxError as e:
+                warn(f"  Parse error: {e}")
+            print()
+
+    elif name == "/tokens":
+        # Estimate context token usage
+        ctx_text  = session.ctx.get_context()
+        msg_text  = " ".join(m["content"] for m in session.messages)
+        all_text  = CLAW_SYSTEM + ctx_text + msg_text
+        est       = len(all_text) // 4
+        limit     = CONTEXT_LIMIT
+        pct       = min(100, int(est / max(limit, 1) * 100))
+        bar_len   = 32
+        filled    = int(bar_len * pct / 100)
+        bar       = "█" * filled + "░" * (bar_len - filled)
+        bar_color = green if pct < 55 else yellow if pct < 80 else red
+        print(f"\n  {bold(yellow('Context usage'))}")
+        print(f"  {bar_color(bar)}  {bold(str(pct))}%")
+        print(f"  {steel('Est. tokens')}  {white(f'{est:,}')} / {dim(f'{limit:,}')}")
+        print(f"  {steel('Messages')}     {white(str(len(session.messages)))}")
+        print(f"  {steel('Files')}        {white(str(len(session.ctx.files)))}")
+        print(f"  {steel('Staged')}       {white(str(len(session.ctx.pending)))}")
+        print()
+
+    elif name in ("/fmt", "/format"):
+        # Format Python files with black
+        target = arg if arg else None
+        venv_black = os.path.join(FRAMEWORK_DIR, "venv", "bin", "black")
+        black_bin  = venv_black if os.path.exists(venv_black) else "black"
+        if target:
+            p = Path(target).expanduser()
+            if not p.exists():
+                error(f"File not found: {target}"); return True
+            run_shell(f"{black_bin} '{p}' --line-length 100 2>&1", cwd=session.cwd)
+            if str(p.resolve()) in session.ctx.files:
+                session.ctx.load_file(str(p))
+        elif session.ctx.pending:
+            info("Formatting staged Python files with black...")
+            for staged_p, content in list(session.ctx.pending.items()):
+                if not staged_p.endswith(".py"): continue
+                with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as tf:
+                    tf.write(content); tfname = tf.name
+                rc, _ = run_shell(f"{black_bin} '{tfname}' --line-length 100 -q 2>&1",
+                                  cwd=session.cwd)
+                if rc == 0:
+                    session.ctx.pending[staged_p] = Path(tfname).read_text()
+                    ok(f"Formatted: {Path(staged_p).name}")
+                else:
+                    warn(f"black failed on {Path(staged_p).name}")
+                os.unlink(tfname)
+        else:
+            warn("Usage: /fmt <file.py>  or run with staged files pending")
+
+    elif name == "/lint":
+        # Run flake8 linter
+        target = arg if arg else "."
+        venv_fl = os.path.join(FRAMEWORK_DIR, "venv", "bin", "flake8")
+        flake   = venv_fl if os.path.exists(venv_fl) else "flake8"
+        run_shell(f"{flake} {target} --max-line-length=100 "
+                  f"--exclude=venv,.git,__pycache__ 2>&1 | head -50", cwd=session.cwd)
+
+    elif name in ("/palette", "/pal"):
+        # Fuzzy command palette search
+        if not arg:
+            # Show all commands grouped
+            groups = {
+                "File context":   ["/file","/dir","/cat","/write","/diff","/apply","/search","/grep"],
+                "File ops":       ["/mkdir","/cp","/mv","/rm","/touch","/rename","/find","/tree"],
+                "Code tools":     ["/outline","/tokens","/fmt","/lint","/fix","/review","/test"],
+                "AI features":    ["/composer","/explain","/summarize","/commit"],
+                "Shell & system": ["/run","/cd","/ls","/ps","/kill","/port","/infra","/disk","/mem"],
+                "Services":       ["/svc","/restart","/reload","/logs","/deploy"],
+                "Baza Empire":    ["/agent","/skill","/tasks","/memory","/db"],
+                "Session":        ["/context","/clear","/save","/load","/model","/models","/doctor"],
+            }
+            print(yellow(f"\n  {'─'*55}"))
+            print(bold(yellow(f"  Command Palette — Claw Batto v{CLAW_VERSION}")))
+            print(yellow(f"  {'─'*55}"))
+            for grp, cmds in groups.items():
+                print(f"\n  {bold(steel(grp))}")
+                row = "  " + "  ".join(yellow(c) for c in cmds)
+                print(row)
+            print(yellow(f"\n  {'─'*55}"))
+            print(dim("  /palette <query>  to fuzzy search"))
+        else:
+            q = arg.lower()
+            hits = [c for c in _SLASH_COMMANDS if q in c.lower()]
+            if hits:
+                print(yellow(f"\n  Matches for '{q}':\n"))
+                for c in hits:
+                    print(f"    {yellow(c)}")
+                print()
+            else:
+                info("No matching commands")
+
+    elif name == "/btw":
+        # Inject a background note/context into the session without triggering a response
+        # Usage: /btw this file uses the legacy API, not the new one
+        if not arg:
+            warn("Usage: /btw <note>  — adds a silent context note to the session")
+            return True
+        note = f"[Background note from Serge: {arg}]"
+        session.add("user", note)
+        # Add a minimal ack so the message pair stays valid
+        session.add("assistant", f"[Got it — noted: {arg[:80]}]")
+        print(f"  {steel('Noted:')} {dim(arg)}")
+
+    elif name == "/status":
+        # Dashboard-style status overview
+        print(yellow(f"\n  {'─'*55}"))
+        print(bold(yellow(f"  Claw Batto v{CLAW_VERSION}  ·  Status Dashboard")))
+        print(yellow(f"  {'─'*55}"))
+        print(f"  {steel('Model')}    {bold(white(CLAW_MODEL))}")
+        print(f"  {steel('Ollama')}   {green('online') if ollama_available() else red('offline')}  {dim(OLLAMA_HOST)}")
+        print(f"  {steel('CWD')}      {dim(session.cwd)}")
+        print(f"  {steel('Files')}    {white(str(len(session.ctx.files)))} loaded"
+              + (f"  {yellow(str(len(session.ctx.pending)) + ' staged')}" if session.ctx.pending else ""))
+        print(f"  {steel('Context')}  {white(str(len(session.messages)))} messages")
+        if session.name:
+            print(f"  {steel('Session')}  {white(session.name)}")
+        # Quick service check
+        print(f"\n  {bold(steel('Services'))}")
+        for svc, label in [("baza-dashboard", "dashboard"),
+                           ("baza-agent-simon-bately", "simon"),
+                           ("baza-agent-claw-batto", "claw"),
+                           ("ollama", "ollama")]:
+            rc, stat = run_shell(f"systemctl is-active {svc} 2>/dev/null",
+                                 capture=True)
+            st = stat.strip()
+            color = green if st == "active" else yellow if st == "activating" else red
+            print(f"    {color('●')} {label:<20} {dim(st)}")
+        print(yellow(f"  {'─'*55}\n"))
+
     elif name in ("/help", "/?"):
-        print(cyan("""
-  ╔══════════════════════════════════════════════════════════════╗
-  ║            CLAW CLI — Command Reference                     ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  FILE CONTEXT                                               ║
-  ║  /file <path>         Load file into context               ║
-  ║  /dir [path]          Load entire directory                ║
-  ║  /cat <file>          Display file with syntax highlight   ║
-  ║  /write <path>        Stage last code to file              ║
-  ║  /diff [path]         Show staged changes                  ║
-  ║  /apply [path]        Write staged changes to disk         ║
-  ║  /search <pat>        Search loaded files                  ║
-  ║  /grep <pat> [path]   Grep filesystem                      ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  FILE OPS                                                   ║
-  ║  /mkdir /cp /mv /rm   Create/copy/move/delete              ║
-  ║  /touch /rename       Create/rename files                  ║
-  ║  /find /tree          Find by name / show tree             ║
-  ║  /zip /unzip          Archive/extract                      ║
-  ║  /backup [path]       Timestamped backup copy              ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  SHELL & SYSTEM                                             ║
-  ║  /run <cmd>           Run any shell command                ║
-  ║  /cd /ls /env         Navigation + environment             ║
-  ║  /ps /kill /port      Process management + ports           ║
-  ║  /disk /mem /net      System resource stats                ║
-  ║  /ping [host]         Ping host                            ║
-  ║  /cron list|add|rm    Manage cron jobs                     ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  DEPLOY & PACKAGES                                          ║
-  ║  /deploy [path]       Smart deploy (docker/pip/npm/etc)    ║
-  ║  /restart [svc]       Restart service(s)                   ║
-  ║  /reload [agent]      Reload baza agent services           ║
-  ║  /logs [svc]          Stream service logs live             ║
-  ║  /pip <cmd>           Run pip in venv                      ║
-  ║  /apt <cmd>           Run apt (with sudo)                  ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  GIT                                                        ║
-  ║  /git [cmd]           Run any git command                  ║
-  ║  /commit [msg]        AI-assisted commit (gen msg if empty)║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  REMOTE & TRANSFER                                          ║
-  ║  /ssh /scp /rsync     Remote access + sync                 ║
-  ║  /curl /wget          HTTP + download                      ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  SERVICES                                                   ║
-  ║  /svc <act> <svc>     Manage systemd service               ║
-  ║  /infra               Quick infra status                   ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  BAZA EMPIRE                                                ║
-  ║  /agent <id> <task>   Dispatch task to another agent       ║
-  ║  /skill list          List all available skills            ║
-  ║  /skill run <n> [a]   Run a skill with JSON args           ║
-  ║  /skill create <n>    Create new skill file                ║
-  ║  /tasks [status]      View project tasks from DB           ║
-  ║  /memory [key] [val]  View/set Claw persistent memory      ║
-  ║  /db <sql>            Run SQLite query on baza_projects.db ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  AI FEATURES                                                ║
-  ║  /composer <task>     Step-by-step guided build            ║
-  ║  /fix <error>         Fix an error or bug                  ║
-  ║  /explain             Explain last response                ║
-  ║  /review [file|dir]   AI code review with findings         ║
-  ║  /test [path]         Run pytest                           ║
-  ║  /summarize           Summarize session + save to memory   ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║  SESSION                                                    ║
-  ║  /context             Show loaded files + stats            ║
-  ║  /clear               Clear all context                    ║
-  ║  /save /load <n>      Save/load session                    ║
-  ║  /sessions            List saved sessions                  ║
-  ║  /model [name]        Show/set Ollama model                ║
-  ║  /models              List available models                ║
-  ║  /doctor              Health check all services + models   ║
-  ║  /watch <file> [p]    Auto-review file on every save       ║
-  ╚══════════════════════════════════════════════════════════════╝
-  Type naturally to chat. exit/quit to exit.
-"""))
+        W = 64
+        def _row(left: str, right: str) -> str:
+            bare_l = re.sub(r'\033\[[0-9;]*m', '', left)
+            pad = max(0, 22 - len(bare_l))
+            return (yellow("  ║  ") + yellow(left) + " " * pad
+                    + dim(right) + yellow("  ║"))
+        def _head(title: str) -> str:
+            return (yellow("  ╠" + "═" * (W - 2) + "╣\n")
+                    + yellow("  ║  ") + bold(accent(f"  {title}"))
+                    + " " * max(0, W - 6 - len(title))
+                    + yellow("  ║"))
+        lines = [
+            yellow("  ╔" + "═" * (W - 2) + "╗"),
+            yellow("  ║") + bold(accent(f"  Claw Batto v{CLAW_VERSION}  —  Command Reference".center(W - 2))) + yellow("║"),
+            _head("FILE CONTEXT"),
+            _row("/init [path]",        "scan project → generate CLAW.md"),
+            _row("/file <path>",        "load file into context"),
+            _row("/dir [path]",         "load whole directory"),
+            _row("/cat <file>",         "display with syntax highlight"),
+            _row("/outline [file]",     "show classes + functions"),
+            _row("/write <path>",       "stage last code to file"),
+            _row("/diff [path]",        "show staged changes"),
+            _row("/apply [path]",       "write staged → disk"),
+            _row("/search <pat>",       "search loaded files"),
+            _row("/grep <pat> [path]",  "grep filesystem"),
+            _head("CODE TOOLS  ★v2"),
+            _row("/outline [file]",     "AST class/function structure"),
+            _row("/tokens",             "context usage bar + estimates"),
+            _row("/fmt [file]",         "format with black (staged ok)"),
+            _row("/lint [path]",        "run flake8 linter"),
+            _row("/palette [query]",    "command palette / fuzzy search"),
+            _row("/status",             "full dashboard: model+services"),
+            _head("FILE OPS"),
+            _row("/mkdir /cp /mv /rm",  "create/copy/move/delete"),
+            _row("/touch /rename",      "create/rename"),
+            _row("/find /tree",         "find by name / show tree"),
+            _row("/zip /unzip",         "archive/extract"),
+            _row("/backup [path]",      "timestamped backup"),
+            _head("SHELL & SYSTEM"),
+            _row("/run <cmd>",          "run any shell command"),
+            _row("/cd /ls /env",        "navigation + environment"),
+            _row("/ps /kill /port",     "processes + ports"),
+            _row("/disk /mem /net",     "resource stats"),
+            _row("/ping /cron",         "ping + cron management"),
+            _head("DEPLOY & SERVICES"),
+            _row("/deploy [path]",      "smart deploy docker/pip/npm"),
+            _row("/restart [svc]",      "restart service(s)"),
+            _row("/reload [agent]",     "reload baza agent services"),
+            _row("/logs [svc]",         "stream service logs live"),
+            _row("/svc <act> <svc>",    "manage systemd service"),
+            _row("/infra",              "quick infra status"),
+            _row("/pip /apt",           "package management"),
+            _head("GIT"),
+            _row("/git [cmd]",          "any git command"),
+            _row("/commit [msg]",       "AI-assisted commit"),
+            _head("REMOTE"),
+            _row("/ssh /scp /rsync",    "remote access + sync"),
+            _row("/curl /wget",         "HTTP + download"),
+            _head("BAZA EMPIRE"),
+            _row("/agent <id> <task>",  "dispatch to another agent"),
+            _row("/skill list|run|create", "manage skills"),
+            _row("/tasks [status]",     "view project tasks"),
+            _row("/memory [key] [val]", "persistent memory"),
+            _row("/db <sql>",           "SQLite query baza_projects.db"),
+            _head("AI FEATURES"),
+            _row("/composer <task>",    "step-by-step guided build"),
+            _row("/fix <error>",        "fix an error or bug"),
+            _row("/explain",            "explain last response"),
+            _row("/review [file|dir]",  "AI code review"),
+            _row("/test [path]",        "run pytest"),
+            _row("/summarize",          "summarize + save to memory"),
+            _head("SESSION"),
+            _row("/context",            "show loaded files + stats"),
+            _row("/clear",              "full session reset with summary"),
+            _row("/btw <note>",         "inject silent context note"),
+            _row("/save /load <n>",     "save/load session"),
+            _row("/sessions",           "list saved sessions"),
+            _row("/model [name]",       "show/set model"),
+            _row("/models",             "list Ollama models"),
+            _row("/doctor",             "health check services"),
+            _row("/watch <file>",       "auto-review on file save"),
+            yellow("  ╚" + "═" * (W - 2) + "╝"),
+            dim("  Type naturally to chat.  exit/quit to exit."),
+        ]
+        print("\n" + "\n".join(lines) + "\n")
 
     else:
         return False
 
     return True
+
+# ── Tab completion ─────────────────────────────────────────────────────────────
+_SLASH_COMMANDS = [
+    "/file", "/f", "/dir", "/d", "/cat", "/write", "/diff", "/apply", "/a",
+    "/search", "/grep", "/context", "/clear", "/cd", "/ls", "/run", "/r",
+    "/mkdir", "/md", "/cp", "/copy", "/mv", "/move", "/rm", "/del",
+    "/touch", "/new", "/rename", "/rn", "/find", "/tree", "/zip", "/unzip",
+    "/env", "/pip", "/apt", "/ps", "/top", "/kill", "/port", "/curl", "/wget",
+    "/ssh", "/scp", "/rsync", "/chmod", "/chown", "/symlink", "/tar",
+    "/svc", "/git", "/commit", "/review", "/test", "/infra",
+    "/deploy", "/restart", "/reload", "/logs", "/backup", "/disk", "/mem",
+    "/net", "/ping", "/cron",
+    "/agent", "/skill", "/tasks", "/memory", "/db",
+    "/composer", "/fix", "/explain", "/summarize",
+    "/model", "/models", "/doctor", "/watch",
+    "/save", "/load", "/sessions",
+    "/stop", "/s", "/continue", "/c",
+    # v2 power commands
+    "/init",
+    "/outline", "/tokens", "/fmt", "/format", "/lint",
+    "/palette", "/pal", "/status",
+    "/btw",
+    "/help", "/?",
+    "exit", "quit",
+]
+
+_AGENT_IDS = [
+    "simon_bately", "simon", "claw_batto", "claw",
+    "phil_hass", "phil", "sam_axe", "sam",
+    "rex_valor", "rex", "duke_harmon", "duke",
+    "scout_reeves", "scout", "nova_sterling", "nova",
+]
+
+
+def setup_completion(session: 'Session'):
+    """Install readline tab-completion: slash commands, file paths, agent names."""
+    import glob as _glob
+
+    def completer(text: str, state: int):
+        try:
+            line = readline.get_line_buffer()
+            stripped = line.lstrip()
+
+            # After /agent, complete agent names
+            if stripped.startswith("/agent "):
+                prefix = stripped[len("/agent "):]
+                options = [a for a in _AGENT_IDS if a.startswith(prefix)]
+                return (options[state] + " ") if state < len(options) else None
+
+            # After /model, complete Ollama model names
+            if stripped.startswith("/model "):
+                prefix = stripped[len("/model "):]
+                models = ollama_models()
+                options = [m for m in models if m.startswith(prefix)]
+                return (options[state] + " ") if state < len(options) else None
+
+            # Slash command completion at start of line
+            if stripped.startswith("/") and " " not in stripped:
+                options = [c for c in _SLASH_COMMANDS if c.startswith(stripped)]
+                return (options[state] + " ") if state < len(options) else None
+
+            # File/path completion for commands that take a path argument
+            path_cmds = (
+                "/file ", "/f ", "/dir ", "/d ", "/cat ", "/write ", "/cd ",
+                "/ls ", "/run ", "/review ", "/watch ", "/grep ", "/find ",
+                "/cp ", "/mv ", "/rm ", "/backup ", "/scp ", "/rsync ",
+                "/chmod ", "/chown ", "/zip ", "/unzip ", "/tar ",
+                "/load ", "/logs ",
+            )
+            for cmd in path_cmds:
+                if stripped.startswith(cmd):
+                    # Get the partial path being typed
+                    rest = stripped[len(cmd):]
+                    # If multi-word, take the last token
+                    parts = rest.split()
+                    path_prefix = parts[-1] if parts else rest
+                    matches = _glob.glob(os.path.expanduser(path_prefix) + "*")
+                    # Append / for directories
+                    options = []
+                    for m in sorted(matches):
+                        options.append(m + "/" if os.path.isdir(m) else m)
+                    return options[state] if state < len(options) else None
+
+            # Default: slash command completion if text starts with /
+            if text.startswith("/"):
+                options = [c for c in _SLASH_COMMANDS if c.startswith(text)]
+                return (options[state] + " ") if state < len(options) else None
+
+            return None
+        except Exception:
+            return None
+
+    readline.set_completer(completer)
+    readline.set_completer_delims(" \t\n")
+    readline.parse_and_bind("tab: complete")
+
+
+# ── Welcome screen ─────────────────────────────────────────────────────────────
+def _bare(s: str) -> str:
+    """Strip ANSI codes to get printable length."""
+    return re.sub(r'\033\[[0-9;]*m', '', s)
+
+def print_welcome(session: 'Session'):
+    """Classic single-box welcome — dark red logo, v2 tag, deep blue + bright yellow text."""
+    BOX_INNER = 59   # ═ chars between ╔ and ╗
+
+    logo_lines = [
+        " ██████╗██╗      █████╗ ██╗    ██╗",
+        "██╔════╝██║     ██╔══██╗██║    ██║",
+        "██║     ██║     ███████║██║ █╗ ██║",
+        "██║     ██║     ██╔══██║██║███╗██║",
+        "╚██████╗███████╗██║  ██║╚███╔███╔╝",
+        " ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝",
+    ]
+
+    def box_row(content_colored: str) -> str:
+        """Pad a colored string to BOX_INNER width and wrap in ║ ║."""
+        bare_len = len(_bare(content_colored))
+        pad      = max(0, BOX_INNER - bare_len)
+        return crimson("  ║") + content_colored + " " * pad + crimson("║")
+
+    rows = [
+        crimson("  ╔" + "═" * BOX_INNER + "╗"),
+        box_row(""),
+    ]
+
+    # Logo lines — crimson, last one gets the ⚡v2 tag in scarlet
+    for i, line in enumerate(logo_lines):
+        indent = "   "
+        if i == len(logo_lines) - 1:
+            tag      = scarlet(" v2")
+            tag_bare = " v2"
+            content  = indent + crimson(line) + bold(tag)
+        else:
+            content = indent + crimson(line)
+        rows.append(box_row(content))
+
+    # Spacer + tagline
+    rows.append(box_row(""))
+    tagline = (cyan("   Baza Empire Dev Agent  |  ")
+               + accent("/help")
+               + cyan(" for commands"))
+    rows.append(box_row(tagline))
+    rows.append(crimson("  ╚" + "═" * BOX_INNER + "╝"))
+
+    for r in rows:
+        print(r)
+
+    # Status line below box
+    print(f"  {dim('model')} {bold(white(CLAW_MODEL))}   "
+          f"{dim('cwd')} {dim(session.cwd)}")
+    if not ollama_available():
+        warn(f"Ollama not responding at {OLLAMA_HOST}")
+    print()
+
 
 # ── REPL ───────────────────────────────────────────────────────────────────────
 def repl(initial_task: str = "", initial_file: str = "",
@@ -1424,23 +2122,28 @@ def repl(initial_task: str = "", initial_file: str = "",
     signal.signal(signal.SIGINT, sigint_handler)
 
     if IS_TTY:
-        print(cyan("""
-  ╔═══════════════════════════════════════════════════════════╗
-  ║                                                           ║
-  ║   ██████╗██╗      █████╗ ██╗    ██╗                      ║
-  ║  ██╔════╝██║     ██╔══██╗██║    ██║                      ║
-  ║  ██║     ██║     ███████║██║ █╗ ██║                      ║
-  ║  ██║     ██║     ██╔══██║██║███╗██║                      ║
-  ║  ╚██████╗███████╗██║  ██║╚███╔███╔╝                      ║
-  ║   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝                      ║
-  ║                                                           ║
-  ║   Baza Empire Dev Agent  |  /help for commands           ║
-  ╚═══════════════════════════════════════════════════════════╝"""))
-        info(f"Model: {bold(CLAW_MODEL)}  |  Ollama: {OLLAMA_HOST}")
-        info(f"CWD: {session.cwd}")
-        if not ollama_available():
-            warn(f"Ollama not responding at {OLLAMA_HOST}")
-        print()
+        print_welcome(session)
+
+    # ── Auto-init CLAW.md if missing ─────────────────────────────────────────
+    if IS_TTY and not doctor:
+        claw_md = Path(session.cwd) / "CLAW.md"
+        if not claw_md.exists():
+            print(cyan("  ┌" + "─" * 54 + "┐"))
+            print(cyan("  │") + f"  {bold(white('◆'))}  No {bold(cyan('CLAW.md'))} found in this directory."
+                  + " " * 12 + cyan("│"))
+            print(cyan("  │") + "     Generate project context file now?         " + cyan("│"))
+            print(cyan("  │") + f"  {green('[Y]')} {white('Yes')}   {red('[N]')} {white('Skip')}"
+                  + " " * 31 + cyan("│"))
+            print(cyan("  └" + "─" * 54 + "┘"))
+            try:
+                ans = input(f"\n  {cyan('›')} ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                ans = 'n'
+            if ans in ('y', 'yes', 'ok', ''):
+                handle_slash("/init", session)
+            else:
+                info("Skipped. Run /init anytime to generate CLAW.md.")
+            print()
 
     # Doctor mode
     if doctor:
@@ -1471,40 +2174,45 @@ def repl(initial_task: str = "", initial_file: str = "",
                 session.last_code = blocks[-1]["content"]
                 info(f"Code captured ({len(session.last_code)} chars) — /write <path> to stage")
             writes = extract_write_targets(resp)
-            for w in writes:
-                wpath = w["path"]; c = input(f"\n  Stage {wpath}? [Y/n] ").strip().lower()
-                if c != 'n': session.ctx.stage(w["path"], w["content"])
+            if writes:
+                steps = [ProposalStep(i+1, f"Write {Path(w['path']).name}",
+                                      "WRITE", w["path"], w.get("content",""))
+                         for i, w in enumerate(writes)]
+                prop = Proposal("Suggested files", steps)
+                ans  = show_proposal_box(prop, session)
+                if ans in ('y', 'a'):
+                    run_proposal(prop, session, auto=(ans == 'a'))
         return
 
     # Interactive loop
     while True:
         try:
-            prompt = f"\n{cyan('you')} {dim('›')} " if IS_TTY else "you › "
+            files_n = len(session.ctx.files)
+            msgs_n  = len(session.messages)
+            staged_n = len(session.ctx.pending)
+            parts_p  = []
+            if files_n:  parts_p.append(f"{files_n}f")
+            if msgs_n:   parts_p.append(f"{msgs_n}m")
+            if staged_n: parts_p.append(accent(f"{staged_n}★"))
+            ctx_str  = steel("[" + "·".join(parts_p) + "]") if parts_p else ""
+            prompt   = f"\n{cyan('you')}{(' ' + ctx_str) if ctx_str else ''} {dim('›')} " if IS_TTY else "you › "
             user_input = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
-            print(f"\n{dim('  Claw out. 👋')}")
+            print(f"\n{dim('  Claw Batto v2 out. 👋')}")
             break
 
         if not user_input: continue
         if user_input.lower() in ("exit","quit","q","bye"):
-            print(dim("  Claw out. 👋"))
+            print(dim("  Claw Batto v2 out. 👋"))
             break
 
         if user_input.startswith("/"):
             handle_slash(user_input, session)
             continue
 
-        # ── Check if user is approving a pending proposal ──────────────
-        if session.pending_proposal and is_approval(user_input):
-            run_proposal(session.pending_proposal, session,
-                         auto=(user_input.strip().lower() == "auto"))
+        # ── Dismiss stale pending proposal if user typed something else ───
+        if session.pending_proposal:
             session.pending_proposal = None
-            continue
-
-        if session.pending_proposal and user_input.strip().lower() in ("cancel","abort","no","n"):
-            warn("Plan cancelled.")
-            session.pending_proposal = None
-            continue
 
         # ── Normal chat / command flow ────────────────────────────────────
         msg = session.build_user_msg(user_input)
@@ -1517,57 +2225,54 @@ def repl(initial_task: str = "", initial_file: str = "",
 
         # ── Check for structured PLAN blocks ─────────────────────────────
         proposal = parse_plan_block(resp)
+        if not proposal:
+            # Build proposal from inline WRITE/RUN markers
+            write_targets = parse_write_targets_from_response(resp)
+            run_targets   = parse_run_targets_from_response(resp)
+            if write_targets or run_targets:
+                steps = []
+                for i, w in enumerate(write_targets, 1):
+                    steps.append(ProposalStep(i, f"Write {Path(w['path']).name}",
+                                              "WRITE", w["path"], w.get("content", "")))
+                off = len(write_targets)
+                for i, r in enumerate(run_targets, off + 1):
+                    steps.append(ProposalStep(i, r["desc"], "RUN", r["cmd"], ""))
+                if steps:
+                    proposal = Proposal("Suggested changes", steps)
+
         if proposal:
-            session.pending_proposal = proposal
-            print()
-            print(f"  {yellow('↑ Plan ready.')} Say {bold('ok / go / yes / proceed')} to execute, {bold('auto')} for hands-free, or {bold('cancel')}.")
+            # Show dialogue box immediately — no waiting for "ok"
+            ans = show_proposal_box(proposal, session)
+            if ans == 'a':
+                session.auto_approve = True
+                run_proposal(proposal, session, auto=True)
+            elif ans == 'y':
+                run_proposal(proposal, session, auto=False)
+            else:
+                info("Skipped. Changes not applied.")
             continue
 
-        # ── Check for inline WRITE / RUN proposals ────────────────────────
-        write_targets = parse_write_targets_from_response(resp)
-        run_targets   = parse_run_targets_from_response(resp)
-
-        if write_targets or run_targets:
-            inline_steps = []
-            for i, w in enumerate(write_targets, 1):
-                content_for_w = w.get("content", "")
-                inline_steps.append(ProposalStep(i, f"Write {w['path']}", "WRITE",
-                                                  w["path"], content_for_w))
-            off = len(write_targets)
-            for i, r in enumerate(run_targets, off + 1):
-                inline_steps.append(ProposalStep(i, r["desc"], "RUN", r["cmd"], ""))
-            if inline_steps:
-                inline_prop = Proposal("Suggested changes", inline_steps)
-                session.pending_proposal = inline_prop
-                print()
-                print(cyan("  ┌─────────────────────────────────────────────────────────────"))
-                print(cyan(f"  │  📋 Claw suggests {len(inline_steps)} action(s):"))
-                for s in inline_steps:
-                    icon = "✏️ " if s.kind == "WRITE" else "⚡"
-                    print(cyan(f"  │  {s.num}. ") + white(f"{icon} {s.desc}"))
-                    print(dim(f"  │      → {s.target[:70]}"))
-                print(cyan("  └─────────────────────────────────────────────────────────────"))
-                print(f"  {yellow('Say')} {bold('ok/go/yes')} {yellow('to execute, or')} {bold('auto')} {yellow('for hands-free.')}")
-                continue
-
-        # ── Fallback: legacy code capture ─────────────────────────────────
+        # ── Fallback: capture code blocks ─────────────────────────────────
         blocks = extract_code_blocks(resp)
         if blocks:
             session.last_code = blocks[-1]["content"]
-            info(f"Code captured ({len(session.last_code)} chars) — /write <path> to save, or say ok if Claw suggested a path")
-
-        # Legacy staged writes (fallback for old-style responses)
-        old_writes = extract_write_targets(resp)
-        for w in old_writes:
-            wpath = w["path"]
-            wc    = input(f"\n  Stage {wpath}? [Y/n] ").strip().lower()
-            if wc != "n":
-                session.ctx.stage(w["path"], w["content"])
+            # Show a mini write dialogue if there's captured code
+            ans = ask_action(
+                "Code captured — write to file?",
+                [f"  {cyan('◆')} {dim(str(len(session.last_code)))} chars  ·  "
+                 f"{white('/write <path>')} to stage, {white('/diff')} to preview"],
+                auto=False
+            )
+            if ans in ('y', 'a'):
+                path_inp = input(f"  {cyan('File path:')} ").strip()
+                if path_inp:
+                    session.ctx.stage(path_inp, session.last_code)
+                    info(f"Staged. Run /diff to review then /apply to write.")
 
 # ── Entry ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="Claw Batto — Baza Dev CLI Agent")
+    ap = argparse.ArgumentParser(description=f"Claw Batto v{CLAW_VERSION} — Baza Dev CLI Agent")
     ap.add_argument("task",            nargs="?",  default="",  help="One-shot task")
     ap.add_argument("-f","--file",     default="", help="Load file into context")
     ap.add_argument("-d","--dir",      default="", help="Load directory into context")
@@ -1583,7 +2288,7 @@ if __name__ == "__main__":
     # claw --doctor  (shortcut: no REPL needed)
     if args.doctor:
         repl(doctor=True)
-        return
+        sys.exit(0)
 
     repl(initial_task=args.task, initial_file=args.file,
          initial_dir=args.dir, composer=args.composer,

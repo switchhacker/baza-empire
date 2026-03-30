@@ -49,8 +49,8 @@ def save_artifact(
     # Preserve original extension
     file_ext = Path(file_name).suffix.lower() or ".txt"
 
-    # Save locally
-    dest_dir = ARTIFACTS_DIR / agent_id / project_id
+    # Save locally — project_id flat dir (matches dashboard scanner)
+    dest_dir = ARTIFACTS_DIR / project_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / file_name
 
