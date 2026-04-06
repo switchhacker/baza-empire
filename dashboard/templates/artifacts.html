@@ -167,6 +167,11 @@
     .toast.ok{background:#061a10;border:1px solid #00d084;color:#00d084}
     .toast.err{background:#1a0606;border:1px solid #ff6666;color:#ff6666}
     @keyframes su{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .agent-pill{display:flex;align-items:center;gap:6px;padding:6px 12px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:20px;cursor:pointer;transition:all .2s;font-size:11px;font-weight:600;color:#888}
+    .agent-pill:hover{border-color:#7c3aed;color:#c4b5fd;background:#1a1040}
+    .agent-pill.primary{border-color:#e94560;color:#e94560}
+    .agent-pill.primary:hover{background:#2a0a12;color:#ff6b8a}
+    .agent-pill .agent-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
   </style>
 </head>
 <body>
@@ -174,11 +179,14 @@
 <nav class="nav">
   <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
   <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/ahb123">AHB123</a>
   <a class="nav-link" href="/crons">Cron Hub</a>
   <a class="nav-link active" href="/artifacts">Artifacts</a>
   <a class="nav-link" href="/email">Email</a>
-  <a class="nav-link" href="/settings">Settings</a>
   <a class="nav-link" href="/infra">Infra Map</a>
+  <a class="nav-link" href="/explore">Explore</a>
+  <a class="nav-link" href="/cloud">Cloud</a>
+  <a class="nav-link" href="/settings">Settings</a>
 </nav>
 
 <div class="container">
@@ -206,6 +214,8 @@
     <div class="stat"><div class="stat-val" id="st-total" style="color:#fff">—</div><div class="stat-lbl">Total Files</div></div>
     <div class="stat"><div class="stat-val" id="st-size" style="color:#7c3aed">—</div><div class="stat-lbl">Total Size</div></div>
     <div class="stat"><div class="stat-val" id="st-images" style="color:#ff69b4">—</div><div class="stat-lbl">Images</div></div>
+    <div class="stat"><div class="stat-val" id="st-audio" style="color:#f59e0b">—</div><div class="stat-lbl">Audio</div></div>
+    <div class="stat"><div class="stat-val" id="st-video" style="color:#a855f7">—</div><div class="stat-lbl">Video</div></div>
     <div class="stat"><div class="stat-val" id="st-code" style="color:#4da6ff">—</div><div class="stat-lbl">Code</div></div>
     <div class="stat"><div class="stat-val" id="st-docs" style="color:#00d084">—</div><div class="stat-lbl">Docs</div></div>
     <div class="stat"><div class="stat-val" id="st-other" style="color:#888">—</div><div class="stat-lbl">Other</div></div>
@@ -233,6 +243,8 @@
     <div class="filter-pills">
       <span class="pill active" onclick="setTypeFilter('all',this)">All</span>
       <span class="pill" onclick="setTypeFilter('image',this)">🖼 Images</span>
+      <span class="pill" onclick="setTypeFilter('audio',this)">🔊 Audio</span>
+      <span class="pill" onclick="setTypeFilter('video',this)">🎬 Video</span>
       <span class="pill" onclick="setTypeFilter('code',this)">💻 Code</span>
       <span class="pill" onclick="setTypeFilter('document',this)">📄 Docs</span>
       <span class="pill" onclick="setTypeFilter('archive',this)">📦 Archives</span>
@@ -378,6 +390,19 @@
       </div>
     </div>
     <div class="modal-body preview-content" id="previewBody"></div>
+    <div id="agentActionBar" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid #1a1a2e">
+      <div style="font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Send to Agent</div>
+      <div id="agentButtons" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <div id="agentPromptArea" style="display:none;margin-top:10px">
+        <div style="display:flex;gap:8px;align-items:flex-start">
+          <div style="flex:1">
+            <input type="text" id="agentPromptInput" placeholder="What should the agent do with this file?" style="width:100%;background:#0a0a18;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;color:#ccc;font-size:12px">
+          </div>
+          <button class="btn btn-primary btn-sm" id="agentSendBtn" onclick="sendToAgent()">Send</button>
+        </div>
+        <div id="agentSendStatus" style="font-size:11px;color:#444;margin-top:6px"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -556,12 +581,17 @@ function updateStats() {
   const total = allFiles.length;
   const totalSize = allFiles.reduce((s,f)=>s+(f.size||0),0);
   const images = allFiles.filter(f=>f.file_type==='image').length;
+  const audio  = allFiles.filter(f=>f.file_type==='audio').length;
+  const video  = allFiles.filter(f=>f.file_type==='video').length;
   const code   = allFiles.filter(f=>f.file_type==='code').length;
   const docs   = allFiles.filter(f=>f.file_type==='document').length;
-  const other  = total - images - code - docs;
+  const archives = allFiles.filter(f=>f.file_type==='archive').length;
+  const other  = total - images - audio - video - code - docs - archives;
   document.getElementById('st-total').textContent  = total;
   document.getElementById('st-size').textContent   = fmtSize(totalSize);
   document.getElementById('st-images').textContent = images;
+  document.getElementById('st-audio').textContent  = audio;
+  document.getElementById('st-video').textContent  = video;
   document.getElementById('st-code').textContent   = code;
   document.getElementById('st-docs').textContent   = docs;
   document.getElementById('st-other').textContent  = other;
@@ -777,6 +807,7 @@ function previewFile(proj, name, ext, size) {
   const body = document.getElementById('previewBody');
   body.innerHTML = '<div style="padding:40px;text-align:center;color:#444">Loading…</div>';
   document.getElementById('previewModal').classList.add('open');
+  showAgentBar(proj, name, ext);
 
   if(IMAGE_EXT.has(ext)) {
     body.innerHTML = `<img class="preview-img" src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}">`;
@@ -937,9 +968,9 @@ function saveNewText() {
 }
 
 // ── Modals ────────────────────────────────────────────────────────────────────
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); document.getElementById('agentActionBar').style.display = 'none'; }
 document.querySelectorAll('.modal-overlay').forEach(m=>{
-  m.addEventListener('click', e=>{ if(e.target===m) m.classList.remove('open'); });
+  m.addEventListener('click', e=>{ if(e.target===m) { m.classList.remove('open'); document.getElementById('agentActionBar').style.display = 'none'; } });
 });
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -961,6 +992,109 @@ window.addEventListener('drop', e=>{
   document.getElementById('uploadBtn').disabled=false;
   document.getElementById('uploadModal').classList.add('open');
 });
+
+// ── Agent Action Bar ─────────────────────────────────────────────────────────
+const AGENTS = {
+  sam_axe:      {name:'Sam Axe', color:'#e94560', role:'Creative & Imaging'},
+  claw_batto:   {name:'Claw Batto', color:'#4da6ff', role:'Dev & Code'},
+  phil_hass:    {name:'Phil Hass', color:'#00d084', role:'Legal & Finance'},
+  rex_valor:    {name:'Rex Valor', color:'#f59e0b', role:'Voice & Sales'},
+  simon_bately: {name:'Simon Bately', color:'#7c3aed', role:'Coordinator'},
+  scout_reeves: {name:'Scout Reeves', color:'#06b6d4', role:'Research'},
+  nova_sterling:{name:'Nova Sterling', color:'#ec4899', role:'Client Chat'},
+  duke_harmon:  {name:'Duke Harmon', color:'#84cc16', role:'Project Mgmt'},
+};
+
+let _sendAgentId = '';
+let _sendProject = '';
+let _sendFilename = '';
+
+function getAgentsForType(ext) {
+  const IMG = new Set(['.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp']);
+  const AUD = new Set(['.mp3','.wav','.ogg','.flac','.m4a']);
+  const CODE = new Set(['.py','.js','.ts','.html','.css','.json','.yaml','.sh','.jsx','.tsx','.sql']);
+  const DOC = new Set(['.md','.txt','.pdf','.docx','.xlsx','.csv']);
+
+  let primary = [];
+  if (IMG.has(ext)) primary.push('sam_axe');
+  else if (AUD.has(ext)) primary.push('rex_valor');
+  else if (CODE.has(ext)) primary.push('claw_batto');
+  else if (DOC.has(ext)) primary.push('phil_hass');
+
+  const others = Object.keys(AGENTS).filter(a => !primary.includes(a));
+  return { primary, others };
+}
+
+function showAgentBar(proj, name, ext) {
+  _sendProject = proj;
+  _sendFilename = name;
+  const bar = document.getElementById('agentActionBar');
+  const btns = document.getElementById('agentButtons');
+  const { primary, others } = getAgentsForType(ext);
+
+  let html = '';
+  primary.forEach(id => {
+    const a = AGENTS[id];
+    html += `<div class="agent-pill primary" onclick="selectAgent('${id}')"><span class="agent-dot" style="background:${a.color}"></span>${a.name}</div>`;
+  });
+  others.forEach(id => {
+    const a = AGENTS[id];
+    html += `<div class="agent-pill" onclick="selectAgent('${id}')"><span class="agent-dot" style="background:${a.color}"></span>${a.name}</div>`;
+  });
+
+  btns.innerHTML = html;
+  bar.style.display = 'block';
+  document.getElementById('agentPromptArea').style.display = 'none';
+}
+
+function selectAgent(agentId) {
+  _sendAgentId = agentId;
+  const a = AGENTS[agentId];
+  document.getElementById('agentPromptArea').style.display = 'block';
+  document.getElementById('agentPromptInput').placeholder = `What should ${a.name} do with ${_sendFilename}?`;
+  document.getElementById('agentPromptInput').focus();
+  document.getElementById('agentSendStatus').textContent = '';
+  document.querySelectorAll('.agent-pill').forEach(p => p.style.background = '');
+  event.currentTarget.style.background = '#1a1040';
+}
+
+function sendToAgent() {
+  const prompt = document.getElementById('agentPromptInput').value.trim();
+  if (!prompt) { document.getElementById('agentSendStatus').textContent = 'Enter a prompt'; return; }
+  const status = document.getElementById('agentSendStatus');
+  const btn = document.getElementById('agentSendBtn');
+  btn.disabled = true;
+  status.textContent = `Sending to ${AGENTS[_sendAgentId].name}...`;
+  status.style.color = '#888';
+
+  fetch('/api/artifacts/send-to-agent', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      project_id: _sendProject,
+      filename: _sendFilename,
+      agent_id: _sendAgentId,
+      prompt: prompt
+    })
+  })
+  .then(r => r.json())
+  .then(data => {
+    btn.disabled = false;
+    if (data.success) {
+      status.textContent = `Sent to ${AGENTS[_sendAgentId].name}! Check Telegram.`;
+      status.style.color = '#00d084';
+      document.getElementById('agentPromptInput').value = '';
+    } else {
+      status.textContent = 'Error: ' + (data.error || 'Failed');
+      status.style.color = '#ff5555';
+    }
+  })
+  .catch(e => {
+    btn.disabled = false;
+    status.textContent = 'Error: ' + e.message;
+    status.style.color = '#ff5555';
+  });
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadArtifacts();

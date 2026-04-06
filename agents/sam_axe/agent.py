@@ -2,13 +2,15 @@
 Baza Empire — Sam Axe
 Imaging, Graphics, Media, Architectural & Engineering Visualization
 """
+import os
 import re
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 from telegram import Update, InputFile
 from telegram.constants import ChatAction
-from telegram.ext import ContextTypes
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from core.base_agent import BaseAgent
 from core.memory import save_message, get_history
 
@@ -94,6 +96,17 @@ For floor plans: top-down, clean lines, labeled rooms, metric or imperial as spe
 For elevations: front-facing, realistic lighting, show materials clearly.
 """
         return super().build_system_prompt(extra_instructions)
+
+    def _find_printable_file(self, text: str) -> str | None:
+        """Override base to also check Sam's session images."""
+        # Try session images first (Sam-specific)
+        # We need a chat_id but don't have it here — check all sessions
+        for chat_id, paths in self._session_images.items():
+            existing = [p for p in paths if Path(p).exists()]
+            if existing:
+                return existing[-1]
+        # Fall back to base class logic
+        return super()._find_printable_file(text)
 
     def _is_show_request(self, text: str) -> bool:
         """Serge wants to SEE already-generated images — do NOT regenerate."""
@@ -217,6 +230,14 @@ For elevations: front-facing, realistic lighting, show materials clearly.
             await self._send_response(context.bot, chat_id, reply)
             return
 
+        # ── Print request intercept — run skill directly, skip LLM ──
+        if self._is_print_request(text):
+            await context.bot.send_message(chat_id=chat_id, text="Sending to printer...")
+            reply = await self._handle_print_request(text, chat_id)
+            save_message(chat_id, self.AGENT_ID, "assistant", reply)
+            await self._send_response(context.bot, chat_id, reply)
+            return
+
         history = get_history(chat_id, self.AGENT_ID, limit=MAX_HISTORY)
         messages = [{"role": h["role"], "content": h["content"]} for h in history]
         loop = asyncio.get_event_loop()
@@ -331,10 +352,112 @@ For elevations: front-facing, realistic lighting, show materials clearly.
         self._auto_remember(chat_id, text, response)
         await self._send_response(context.bot, chat_id, response)
 
+    # ── Photo Handler — analyze uploaded images ───────────────────────────────
+
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """When user sends a photo, analyze it via cloud vision and return an editable description."""
+        chat_id = update.effective_chat.id
+        caption = update.message.caption or ""
+
+        logger.info(f"[sam_axe] Photo received from {chat_id}, caption: {caption[:60]}")
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+        # Download the photo (get highest resolution)
+        photo = update.message.photo[-1]  # largest size
+        tg_file = await photo.get_file()
+        # Save to artifacts under proj-ahb123 so it shows in the dashboard
+        import uuid, json as _json2, datetime as _dt
+        framework_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        artifacts_dir = os.path.join(framework_dir, "dashboard", "artifacts", "proj-ahb123")
+        os.makedirs(artifacts_dir, exist_ok=True)
+        filename = f"sam_axe_{_dt.datetime.now().strftime('%Y%m%d_%H%M')}_{uuid.uuid4().hex[:6]}.jpg"
+        local_path = os.path.join(artifacts_dir, filename)
+        await tg_file.download_to_drive(local_path)
+        # Write .meta sidecar for artifact scanner
+        try:
+            with open(local_path + ".meta", "w") as mf:
+                _json2.dump({"agent_id": "sam_axe", "task_id": "", "created_at": _dt.datetime.now().isoformat()}, mf)
+        except Exception:
+            pass
+        logger.info(f"[sam_axe] Photo saved to artifacts: {local_path}")
+
+        save_message(chat_id, self.AGENT_ID, "user", f"[Photo uploaded: {filename}] {caption}")
+        self.journal("photo_received", f"Photo: {filename}, caption: {caption[:200]}", chat_id=chat_id)
+
+        # Analyze via cloud vision
+        await context.bot.send_message(chat_id=chat_id, text="Analyzing image... one moment.")
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+        loop = asyncio.get_event_loop()
+        mode = "describe_for_agents" if not caption else "analyze"
+        prompt = caption if caption else "Describe this image in detail for an architect. Note room type, dimensions, materials, condition, and any work needed."
+
+        result = await loop.run_in_executor(
+            None, self.skills.run, "analyze_image",
+            {"image_path": local_path, "prompt": prompt, "mode": mode}, chat_id
+        )
+
+        if result.get("success"):
+            output = result.get("output", "")
+            # Try to extract just the analysis text
+            import json as _json
+            try:
+                parsed = _json.loads(output.split("\n")[-1])
+                description = parsed.get("analysis", output)
+            except Exception:
+                # The output may have the text before the JSON
+                description = output.split("\n---\n")[-1] if "\n---\n" in output else output
+                # Strip the JSON at the end if present
+                if '{"success"' in description:
+                    description = description[:description.index('{"success"')].strip()
+
+            response = (
+                f"Here is my analysis of the image:\n\n"
+                f"{description}\n\n"
+                f"Copy this description, edit as needed, and send it back to me. "
+                f"I will generate a new image based on your edited description."
+            )
+            # Remember the analysis for context
+            self.remember("last_image_analysis", description[:500], "images")
+            self.remember("last_analyzed_photo", local_path, "images")
+        else:
+            error = result.get("error", result.get("output", "Unknown error"))
+            response = (
+                f"Could not analyze the image: {error}\n\n"
+                f"The image was saved at: {local_path}\n"
+                f"You can describe what you want and I will generate it."
+            )
+
+        save_message(chat_id, self.AGENT_ID, "assistant", response)
+        await self._send_response(context.bot, chat_id, response)
+
+    # ── Override run() to add photo handler ──────────────────────────────────
+
+    async def run(self):
+        token = os.environ.get(self.TOKEN_ENV)
+        if not token:
+            raise ValueError(f"[{self.AGENT_ID}] Missing token: {self.TOKEN_ENV}")
+
+        app = Application.builder().token(token).build()
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
+
+        logger.info(f"[{self.AGENT_ID}] Starting Telegram bot (with photo handler)...")
+
+        async with app:
+            await app.initialize()
+            await app.start()
+            asyncio.ensure_future(self._heartbeat_loop())
+            asyncio.ensure_future(self._artifact_context_loop())
+            await app.updater.start_polling(drop_pending_updates=True)
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await app.updater.stop()
+                await app.stop()
+
     def _auto_remember(self, chat_id: int, user_msg: str, agent_reply: str):
         super()._auto_remember(chat_id, user_msg, agent_reply)
-        # Note: image paths are recorded via _record_generated() using the
-        # real path from skill JSON output — never extracted from LLM text.
         style_match = re.search(
             r'(?:style|look|aesthetic)[:\s]+([^\.\,\n]+)',
             user_msg, re.IGNORECASE

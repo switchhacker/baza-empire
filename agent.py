@@ -208,6 +208,114 @@ async def handle_reset(
     await update.message.reply_text("Context cleared. Ready.")
 
 
+def _is_print_request(text: str) -> bool:
+    t = text.lower().strip()
+    phrases = ["print this", "print that", "print it", "print the",
+               "print a test", "print test", "send to printer",
+               "print page", "printer status", "print status",
+               "print queue", "cancel print", "print last",
+               "print image", "print photo", "print file",
+               "print invoice", "print contract", "print report",
+               "print document", "print pdf"]
+    return any(p in t for p in phrases) or t == "print"
+
+
+async def handle_print(update: Update, context: ContextTypes.DEFAULT_TYPE, agent: dict):
+    """Intercept print requests — run skill directly, skip LLM."""
+    import json as _json, subprocess, time as _time
+    text = (update.message.text or "").lower().strip()
+    agent_id = agent["id"]
+    skill_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills", "shared", "print_document.py")
+    venv_python = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv", "bin", "python3")
+
+    def _run_skill(args):
+        env = os.environ.copy()
+        env["SKILL_ARGS"] = _json.dumps(args)
+        env["AGENT_ID"] = agent_id
+        r = subprocess.run([venv_python, skill_path], capture_output=True, text=True, timeout=30, env=env)
+        return r.stdout.strip(), r.returncode == 0
+
+    await update.message.reply_text("Sending to printer...")
+
+    if "status" in text or "queue" in text:
+        out, ok = _run_skill({"action": "status"})
+        try:
+            parsed = _json.loads(out.split("\n")[-1])
+            reply = f"Printer: {parsed.get('printer', '—')}\nStatus: {parsed.get('status', '—')}\nJobs: {parsed.get('pending_jobs', 0)}"
+        except Exception:
+            reply = out or "Could not check printer"
+    elif "cancel" in text:
+        out, ok = _run_skill({"action": "cancel"})
+        reply = "Print jobs cancelled." if ok else f"Cancel failed: {out}"
+    elif "test" in text:
+        out, ok = _run_skill({"text": f"BAZA EMPIRE — PRINT TEST\n\nHP Smart Tank 5101 online.\nPrinted by: {agent['name']}", "title": "Baza Empire Test Page"})
+        reply = "Test page sent to printer." if ok else f"Print failed: {out}"
+    else:
+        # Try to find a file to print — search artifacts
+        import glob as _glob
+        file_to_print = None
+        artifacts_base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "artifacts")
+
+        # Extract target noun from message
+        t = text
+        for prefix in ["print the ", "print my ", "print this ", "print that ",
+                        "print last ", "print a ", "print "]:
+            if t.startswith(prefix):
+                target = t[len(prefix):].strip().rstrip(".")
+                if target and target not in ("this", "that", "it", "page", "file", "document"):
+                    matches = _glob.glob(os.path.join(artifacts_base, "**", f"*{target}*"), recursive=True)
+                    matches = [m for m in matches if not m.endswith(".meta") and os.path.isfile(m)]
+                    if matches:
+                        file_to_print = max(matches, key=os.path.getmtime)
+                break
+
+        # "print last image/photo" — find most recent image
+        if not file_to_print and any(w in t for w in ["image", "photo", "picture", "last"]):
+            imgs = []
+            for ext in ["*.png", "*.jpg", "*.jpeg"]:
+                imgs.extend(_glob.glob(os.path.join(artifacts_base, "**", ext), recursive=True))
+            imgs = [i for i in imgs if not i.endswith(".meta")]
+            if imgs:
+                file_to_print = max(imgs, key=os.path.getmtime)
+
+        if file_to_print:
+            out, ok = _run_skill({"file_path": file_to_print})
+            reply = f"Sent to printer: {os.path.basename(file_to_print)}" if ok else f"Print failed: {out}"
+        else:
+            reply = "Nothing to print. Send a photo, specify a filename, or say 'print test page'."
+
+    save_message(update.message.chat_id, agent_id, "user", update.message.text)
+    save_message(update.message.chat_id, agent_id, "assistant", reply)
+    await update.message.reply_text(reply)
+
+
+def start_heartbeat_thread(agent: dict):
+    """Start a daemon thread that emits Redis heartbeat every 60s."""
+    import threading, time as _time
+    def _loop():
+        try:
+            import redis, json as _json
+            r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+        except Exception as e:
+            log.warning(f"Heartbeat init failed (no redis?): {e}")
+            return
+        while True:
+            try:
+                payload = _json.dumps({
+                    "agent_id": agent["id"],
+                    "model": agent["model"],
+                    "status": "idle",
+                    "ts": int(_time.time()),
+                })
+                r.setex(f"baza:heartbeat:{agent['id']}", 120, payload)
+            except Exception:
+                pass
+            _time.sleep(60)
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    log.info(f"Heartbeat thread started for {agent['name']}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--agent", required=True)
@@ -230,10 +338,19 @@ def main():
     app = Application.builder().token(agent["token"]).build()
     app.add_handler(CommandHandler("start", lambda u, c: handle_start(u, c, agent)))
     app.add_handler(CommandHandler("reset", lambda u, c: handle_reset(u, c, agent)))
+
+    # Print intercept — must be before general message handler
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.Regex(r'(?i)print|printer'),
+        lambda u, c: handle_print(u, c, agent) if _is_print_request(u.message.text or "") else handle_message(u, c, agent)
+    ))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         lambda u, c: handle_message(u, c, agent)
     ))
+
+    # Heartbeat via daemon thread — fires every 60 seconds
+    start_heartbeat_thread(agent)
 
     log.info(f"{agent['name']} is listening...")
     app.run_polling(drop_pending_updates=True)

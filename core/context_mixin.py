@@ -27,6 +27,8 @@ Usage in an agent:
             return response
 """
 
+import json
+
 from core.context_db import (
     build_agent_context, identity_get,
     memory_set, memory_get, memory_get_all,
@@ -53,8 +55,19 @@ class ContextMixin:
         self._identity = identity_get(self.agent_id)
 
     def context(self) -> str:
-        """Build full context string for this agent."""
-        return build_agent_context(self.agent_id)
+        """Build full context string for this agent, including recent events."""
+        ctx = build_agent_context(self.agent_id)
+        # Append recent cross-agent events from the event bus
+        try:
+            from core.event_bus import get_recent_events_sync
+            recent_events = get_recent_events_sync(self.agent_id, limit=10)
+            if recent_events:
+                ctx += "\n\n## Recent Agent Events\n"
+                for e in recent_events[:5]:
+                    ctx += f"- [{e.source}] {e.type}: {json.dumps(e.data)[:200]}\n"
+        except Exception:
+            pass
+        return ctx
 
     def get_system_prompt(self) -> str:
         """

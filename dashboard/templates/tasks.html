@@ -114,6 +114,31 @@
     .detail-close:hover{border-color:#e94560;color:#e94560}
 
     .footer{text-align:center;padding:28px;color:#222;font-size:12px;margin-top:40px}
+
+    /* Kanban */
+    .kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;min-height:300px}
+    .kanban-col{background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:12px;min-height:200px}
+    .kanban-col-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid #1a1a2e;display:flex;justify-content:space-between;align-items:center}
+    .kanban-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s}
+    .kanban-card:hover{border-color:#7c3aed}
+    .kanban-card-title{font-size:12px;font-weight:600;color:#ddd;margin-bottom:4px}
+    .kanban-card-meta{font-size:10px;color:#555;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .kanban-count{font-size:10px;background:#1a1a2e;border-radius:10px;padding:1px 7px;color:#666}
+
+    /* View toggle */
+    .view-toggle{display:flex;gap:0;border:1px solid #2a2a4a;border-radius:6px;overflow:hidden}
+    .view-btn{padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;background:#0e0e1e;color:#666;border:none;transition:.2s}
+    .view-btn.active{background:#e94560;color:#fff}
+
+    /* Duke feed */
+    .duke-feed{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px;margin-bottom:18px}
+    .duke-feed-title{font-size:11px;font-weight:700;color:#e94560;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .duke-entry{font-size:11px;color:#888;padding:4px 0;border-bottom:1px solid #0a0a18;display:flex;gap:8px}
+    .duke-entry:last-child{border-bottom:none}
+    .duke-time{color:#444;min-width:60px}
+
+    @media(max-width:900px){.kanban{grid-template-columns:1fr 1fr}.kanban-col{min-height:auto}}
+    @media(max-width:600px){.kanban{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -121,6 +146,7 @@
 <nav class="nav">
   <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
   <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/ahb123">AHB123</a>
   <a class="nav-link" href="/crons">Crons</a>
   <a class="nav-link active" href="/tasks">Tasks</a>
   <a class="nav-link" href="/skills">Skills</a>
@@ -128,6 +154,8 @@
   <a class="nav-link" href="/memory">Memory</a>
   <a class="nav-link" href="/artifacts">Artifacts</a>
   <a class="nav-link" href="/infra">Infra</a>
+  <a class="nav-link" href="/explore">Explore</a>
+  <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/settings">Settings</a>
   <div class="nav-right">
     <span class="nav-status" id="nav-clock">—</span>
@@ -140,10 +168,20 @@
       <div class="page-title">📋 Task Manager</div>
       <div class="page-sub">Track every task across all projects and agents</div>
     </div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="view-toggle">
+        <button class="view-btn active" id="btn-table" onclick="setView('table')">Table</button>
+        <button class="view-btn" id="btn-kanban" onclick="setView('kanban')">Kanban</button>
+      </div>
       <button class="btn btn-secondary" onclick="loadTasks()">↻ Refresh</button>
       <button class="btn btn-primary" onclick="openNewTask()">+ New Task</button>
     </div>
+  </div>
+
+  <!-- Duke's Activity Feed -->
+  <div class="duke-feed" id="dukeFeed">
+    <div class="duke-feed-title">📋 Duke Harmon — Task Manager Activity</div>
+    <div id="dukeFeedBody"><div class="duke-entry"><span class="duke-time">—</span>Loading activity...</div></div>
   </div>
 
   <!-- Stats -->
@@ -181,23 +219,30 @@
     <button class="btn btn-secondary btn-sm" onclick="clearFilters()">✕ Clear</button>
   </div>
 
-  <!-- Tasks Table -->
-  <table class="tasks-table" id="tasks-table">
-    <thead>
-      <tr>
-        <th style="width:40px"></th>
-        <th>Task</th>
-        <th>Status</th>
-        <th>Agent</th>
-        <th>Project</th>
-        <th>Due</th>
-        <th style="width:100px">Actions</th>
-      </tr>
-    </thead>
-    <tbody id="tasks-tbody">
-      <tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading tasks...</td></tr>
-    </tbody>
-  </table>
+  <!-- Tasks Table View -->
+  <div id="tableView">
+    <table class="tasks-table" id="tasks-table">
+      <thead>
+        <tr>
+          <th style="width:40px"></th>
+          <th>Task</th>
+          <th>Status</th>
+          <th>Agent</th>
+          <th>Project</th>
+          <th>Due</th>
+          <th style="width:100px">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tasks-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading tasks...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Kanban View -->
+  <div id="kanbanView" style="display:none">
+    <div class="kanban" id="kanbanBoard"></div>
+  </div>
 
 </div>
 
@@ -285,16 +330,28 @@
 <script>
 let allTasks = [];
 let projects = [];
+let currentView = 'table';
 
 function updateClock(){
   document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
 }
 setInterval(updateClock,1000); updateClock();
 
+// ── View Toggle ──
+function setView(v){
+  currentView = v;
+  document.getElementById('btn-table').classList.toggle('active', v==='table');
+  document.getElementById('btn-kanban').classList.toggle('active', v==='kanban');
+  document.getElementById('tableView').style.display = v==='table' ? '' : 'none';
+  document.getElementById('kanbanView').style.display = v==='kanban' ? '' : 'none';
+  if(v==='kanban') renderKanban(getFiltered());
+}
+
+// ── Data Loading ──
 async function loadTasks(){
   try{
     const [tasksRes, statsRes, projRes] = await Promise.all([
-      fetch('/api/tasks'),
+      fetch('/api/tasks?limit=200'),
       fetch('/api/tasks/stats'),
       fetch('/api/projects')
     ]);
@@ -304,10 +361,11 @@ async function loadTasks(){
     renderStats(stats);
     populateProjectFilter();
     populateAgentFilter();
-    renderTasks(allTasks);
+    const filtered = getFiltered();
+    renderTasks(filtered);
+    if(currentView==='kanban') renderKanban(filtered);
   }catch(e){
     console.error(e);
-    document.getElementById('tasks-tbody').innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:#ff5555">Error loading tasks: '+e.message+'</td></tr>';
   }
 }
 
@@ -324,65 +382,96 @@ function populateProjectFilter(){
   const taskSel = document.getElementById('task-project');
   const existing = new Set([...sel.options].map(o=>o.value).filter(Boolean));
   projects.forEach(p=>{
-    if(!existing.has(String(p.id))){
-      sel.add(new Option(p.name, p.id));
-    }
-    const opt = new Option(p.name, p.id);
-    taskSel.add(opt);
+    if(!existing.has(String(p.id))) sel.add(new Option(p.name, p.id));
   });
+  // Reset task-project options
+  taskSel.innerHTML = '<option value="">No Project</option>';
+  projects.forEach(p => taskSel.add(new Option(p.name, p.id)));
 }
 
 function populateAgentFilter(){
-  const agentIds = [...new Set(allTasks.map(t=>t.agent_id).filter(Boolean))];
+  const agentIds = [...new Set(allTasks.map(t=>t.assigned_to).filter(Boolean))];
   const sel = document.getElementById('filter-agent');
   sel.innerHTML = '<option value="">All Agents</option>';
   agentIds.forEach(a=>sel.add(new Option(a.replace(/_/g,' '), a)));
 }
 
+// ── Rendering ──
 function renderTasks(tasks){
   const tbody = document.getElementById('tasks-tbody');
   if(!tasks.length){
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📋</div><h3>No tasks found</h3><p>Create your first task to get started</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📋</div><h3>No tasks found</h3><p>Create your first task or let Duke create from roadmap</p></div></td></tr>';
     return;
   }
-  tbody.innerHTML = tasks.map(t=>`
-    <tr id="task-row-${t.id}">
+  tbody.innerHTML = tasks.map(t=>{
+    const agent = t.assigned_to || '';
+    return `<tr>
+      <td><span class="priority-dot p-${t.priority||'medium'}"></span></td>
       <td>
-        <span class="priority-dot p-${t.priority||'medium'}" title="Priority: ${t.priority||'medium'}"></span>
-      </td>
-      <td>
-        <div class="task-title" onclick="openDetail(${t.id})">${escHtml(t.title)}</div>
+        <div class="task-title" onclick="openDetail('${t.id}')">${escHtml(t.title)}</div>
         ${t.description ? `<div class="task-desc">${escHtml(t.description)}</div>` : ''}
       </td>
-      <td><span class="badge badge-${t.status}">${t.status}</span></td>
-      <td>${t.agent_id ? `<span class="agent-chip">${t.agent_id}</span>` : '<span style="color:#333">—</span>'}</td>
+      <td><span class="badge badge-${t.status}">${(t.status||'').replace(/_/g,' ')}</span></td>
+      <td>${agent ? `<span class="agent-chip">${agent.replace(/_/g,' ')}</span>` : '<span style="color:#333">—</span>'}</td>
       <td>${t.project_name ? `<span class="project-chip">${escHtml(t.project_name)}</span>` : '<span style="color:#333">—</span>'}</td>
       <td style="font-size:12px;color:${isDueSoon(t.due_date)?'#ff9900':'#555'}">${formatDate(t.due_date)}</td>
-      <td>
-        <div class="row-actions">
-          <button class="btn-icon" onclick="openEdit(${t.id})" title="Edit">✏</button>
-          <button class="btn-icon del" onclick="deleteTask(${t.id})" title="Delete">✕</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
+      <td><div class="row-actions">
+        <button class="btn-icon" onclick="openEdit('${t.id}')" title="Edit">✏</button>
+        <button class="btn-icon del" onclick="deleteTask('${t.id}')" title="Delete">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
 }
 
-function filterTasks(){
+function renderKanban(tasks){
+  const cols = [
+    {key:'pending', label:'Pending', color:'#f59e0b'},
+    {key:'in_progress', label:'In Progress', color:'#4da6ff'},
+    {key:'blocked', label:'Blocked', color:'#ff5555'},
+    {key:'completed', label:'Completed', color:'#00d084'}
+  ];
+  const board = document.getElementById('kanbanBoard');
+  board.innerHTML = cols.map(col => {
+    const colTasks = tasks.filter(t=>t.status===col.key);
+    return `<div class="kanban-col">
+      <div class="kanban-col-title" style="color:${col.color}">
+        ${col.label} <span class="kanban-count">${colTasks.length}</span>
+      </div>
+      ${colTasks.length ? colTasks.map(t => {
+        const agent = (t.assigned_to||'').replace(/_/g,' ');
+        return `<div class="kanban-card" onclick="openDetail('${t.id}')">
+          <div class="kanban-card-title"><span class="priority-dot p-${t.priority||'medium'}"></span>${escHtml(t.title)}</div>
+          <div class="kanban-card-meta">
+            ${agent ? `<span class="agent-chip">${agent}</span>` : ''}
+            ${t.due_date ? `<span style="color:${isDueSoon(t.due_date)?'#ff9900':'#555'}">${formatDate(t.due_date)}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('') : '<div style="color:#333;font-size:11px;text-align:center;padding:20px">No tasks</div>'}
+    </div>`;
+  }).join('');
+}
+
+// ── Filtering ──
+function getFiltered(){
   const q = document.getElementById('search-input').value.toLowerCase();
   const status = document.getElementById('filter-status').value;
   const agent = document.getElementById('filter-agent').value;
   const project = document.getElementById('filter-project').value;
   const priority = document.getElementById('filter-priority').value;
-  const filtered = allTasks.filter(t=>{
+  return allTasks.filter(t=>{
     if(q && !t.title.toLowerCase().includes(q) && !(t.description||'').toLowerCase().includes(q)) return false;
     if(status && t.status !== status) return false;
-    if(agent && t.agent_id !== agent) return false;
+    if(agent && t.assigned_to !== agent) return false;
     if(project && String(t.project_id) !== String(project)) return false;
     if(priority && t.priority !== priority) return false;
     return true;
   });
+}
+
+function filterTasks(){
+  const filtered = getFiltered();
   renderTasks(filtered);
+  if(currentView==='kanban') renderKanban(filtered);
 }
 
 function clearFilters(){
@@ -391,9 +480,12 @@ function clearFilters(){
   document.getElementById('filter-agent').value = '';
   document.getElementById('filter-project').value = '';
   document.getElementById('filter-priority').value = '';
-  renderTasks(allTasks);
+  const filtered = getFiltered();
+  renderTasks(filtered);
+  if(currentView==='kanban') renderKanban(filtered);
 }
 
+// ── CRUD ──
 function openNewTask(){
   document.getElementById('modal-title').textContent = '+ New Task';
   document.getElementById('modal-sub').textContent = 'Create a new task and assign it to an agent';
@@ -413,13 +505,13 @@ function openEdit(id){
   const t = allTasks.find(x=>x.id===id);
   if(!t) return;
   document.getElementById('modal-title').textContent = '✏ Edit Task';
-  document.getElementById('modal-sub').textContent = 'Update task #'+id;
+  document.getElementById('modal-sub').textContent = 'Update task';
   document.getElementById('edit-task-id').value = id;
   document.getElementById('task-title').value = t.title||'';
   document.getElementById('task-description').value = t.description||'';
   document.getElementById('task-status').value = t.status||'pending';
   document.getElementById('task-priority').value = t.priority||'medium';
-  document.getElementById('task-agent').value = t.agent_id||'';
+  document.getElementById('task-agent').value = t.assigned_to||'';
   document.getElementById('task-project').value = t.project_id||'';
   document.getElementById('task-due').value = t.due_date||'';
   document.getElementById('task-notes').value = t.notes||'';
@@ -433,26 +525,21 @@ async function saveTask(){
     description: document.getElementById('task-description').value.trim(),
     status: document.getElementById('task-status').value,
     priority: document.getElementById('task-priority').value,
-    agent_id: document.getElementById('task-agent').value||null,
+    assigned_to: document.getElementById('task-agent').value||null,
     project_id: document.getElementById('task-project').value||null,
     due_date: document.getElementById('task-due').value||null,
     notes: document.getElementById('task-notes').value.trim()
   };
   if(!data.title){ alert('Title is required'); return; }
-  try{
-    const url = id ? `/api/tasks/${id}` : '/api/tasks';
-    const method = id ? 'PATCH' : 'POST';
-    const res = await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    if(!res.ok) throw new Error(await res.text());
-    closeModal();
-    loadTasks();
-  }catch(e){
-    alert('Error saving task: '+e.message);
-  }
+  const url = id ? `/api/tasks/${id}` : '/api/tasks';
+  const method = id ? 'PATCH' : 'POST';
+  await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  closeModal();
+  loadTasks();
 }
 
 async function deleteTask(id){
-  if(!confirm('Delete task #'+id+'?')) return;
+  if(!confirm('Delete this task?')) return;
   await fetch('/api/tasks/'+id,{method:'DELETE'});
   loadTasks();
 }
@@ -460,36 +547,36 @@ async function deleteTask(id){
 function openDetail(id){
   const t = allTasks.find(x=>x.id===id);
   if(!t) return;
+  const agent = t.assigned_to || '';
+  const notes = (t.notes||'').split('\n').map(n => {
+    if(n.includes('[Duke]')) return `<div style="color:#e94560;font-size:11px;padding:2px 0">📋 ${escHtml(n)}</div>`;
+    return `<div style="font-size:12px;color:#666;padding:1px 0">${escHtml(n)}</div>`;
+  }).join('');
   document.getElementById('detail-content').innerHTML = `
     <h2 style="font-size:18px;font-weight:700;color:#fff;margin-bottom:4px;padding-right:40px">${escHtml(t.title)}</h2>
     <div style="margin-bottom:20px;display:flex;gap:8px;flex-wrap:wrap">
-      <span class="badge badge-${t.status}">${t.status}</span>
-      ${t.priority?`<span class="badge" style="background:#1a1a1a;color:#888;border:1px solid #333">P: ${t.priority}</span>`:''}
+      <span class="badge badge-${t.status}">${(t.status||'').replace(/_/g,' ')}</span>
+      ${t.priority?`<span class="badge" style="background:#1a1a1a;color:#888;border:1px solid #333">${t.priority}</span>`:''}
     </div>
-    ${t.description?`<div style="font-size:13px;color:#aaa;margin-bottom:20px;line-height:1.6">${escHtml(t.description)}</div>`:''}
+    ${t.description?`<div style="font-size:13px;color:#aaa;margin-bottom:20px;line-height:1.6;white-space:pre-wrap">${escHtml(t.description)}</div>`:''}
     <div style="font-size:12px;color:#444;border-top:1px solid #1a1a2e;padding-top:14px;display:grid;gap:8px">
-      ${t.agent_id?`<div>Agent: <span class="agent-chip">${t.agent_id}</span></div>`:''}
+      ${agent?`<div>Agent: <span class="agent-chip">${agent.replace(/_/g,' ')}</span></div>`:''}
       ${t.project_name?`<div>Project: <span class="project-chip">${escHtml(t.project_name)}</span></div>`:''}
       ${t.due_date?`<div>Due: <span style="color:${isDueSoon(t.due_date)?'#ff9900':'#888'}">${formatDate(t.due_date)}</span></div>`:''}
       ${t.created_at?`<div>Created: <span style="color:#888">${new Date(t.created_at).toLocaleString()}</span></div>`:''}
       ${t.updated_at?`<div>Updated: <span style="color:#888">${new Date(t.updated_at).toLocaleString()}</span></div>`:''}
     </div>
-    ${t.notes?`<div style="margin-top:16px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:14px;font-size:12px;color:#666;line-height:1.6">${escHtml(t.notes)}</div>`:''}
+    ${t.notes?`<div style="margin-top:16px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:14px;line-height:1.6">${notes}</div>`:''}
     <div style="margin-top:24px;display:flex;gap:8px">
-      <button class="btn btn-secondary btn-sm" onclick="openEdit(${t.id})">✏ Edit</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteTask(${t.id})">✕ Delete</button>
+      <button class="btn btn-secondary btn-sm" onclick="openEdit('${t.id}')">✏ Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteTask('${t.id}')">✕ Delete</button>
     </div>
   `;
   document.getElementById('detail-panel').classList.add('open');
 }
 
-function closeDetail(){
-  document.getElementById('detail-panel').classList.remove('open');
-}
-
-function closeModal(){
-  document.getElementById('taskModal').classList.remove('open');
-}
+function closeDetail(){ document.getElementById('detail-panel').classList.remove('open'); }
+function closeModal(){ document.getElementById('taskModal').classList.remove('open'); }
 
 function formatDate(d){
   if(!d) return '—';
@@ -506,7 +593,44 @@ function escHtml(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-loadTasks();
+// ── Duke's Activity Feed ──
+function loadDukeFeed(){
+  // Extract Duke's notes from tasks
+  const entries = [];
+  allTasks.forEach(t => {
+    if(!t.notes) return;
+    t.notes.split('\n').forEach(line => {
+      if(line.includes('[Duke]')){
+        entries.push({
+          text: line.replace('[Duke]','').trim(),
+          task: t.title,
+          time: t.updated_at
+        });
+      }
+    });
+  });
+  // Also check roadmap for Duke-created tasks
+  allTasks.forEach(t => {
+    if(t.title && t.title.startsWith('Roadmap:')){
+      entries.push({text: `Created from roadmap: ${t.title.replace('Roadmap:','').trim()}`, task: t.title, time: t.created_at});
+    }
+  });
+
+  entries.sort((a,b) => (b.time||'').localeCompare(a.time||''));
+  const el = document.getElementById('dukeFeedBody');
+  if(!entries.length){
+    el.innerHTML = '<div class="duke-entry"><span style="color:#555">No activity yet. Duke will manage tasks on his next 4-hour cycle.</span></div>';
+    return;
+  }
+  el.innerHTML = entries.slice(0,8).map(e => {
+    const time = e.time ? new Date(e.time).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div class="duke-entry"><span class="duke-time">${time}</span><span>${escHtml(e.text)}</span></div>`;
+  }).join('');
+}
+
+// ── Init + Auto-refresh ──
+loadTasks().then(() => loadDukeFeed());
+setInterval(() => { loadTasks().then(() => loadDukeFeed()); }, 30000);
 </script>
 </body>
 </html>

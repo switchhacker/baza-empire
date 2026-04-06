@@ -3,290 +3,858 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Baza Empire — Infra Map</title>
+  <title>Baza Empire — Infrastructure Map</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
     a{color:inherit;text-decoration:none}
+
+    /* NAV */
     .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:100}
     .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
     .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
-    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s}
     .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
-    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
-    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
-    .page-title{font-size:22px;font-weight:800;color:#fff}
-    .page-subtitle{font-size:13px;color:#444;margin-top:4px}
-    .refresh-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#888;padding:9px 16px;border-radius:7px;cursor:pointer;font-size:13px}
+
+    /* LAYOUT */
+    .container{max-width:1440px;margin:0 auto;padding:28px 32px 60px}
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
+    .page-title{font-size:24px;font-weight:800;color:#fff}
+    .page-subtitle{font-size:13px;color:#555;margin-top:4px}
+    .header-right{display:flex;align-items:center;gap:12px}
+    .refresh-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#888;padding:9px 16px;border-radius:7px;cursor:pointer;font-size:13px;transition:all .2s}
     .refresh-btn:hover{border-color:#e94560;color:#e94560}
+    .last-updated{font-size:11px;color:#444}
 
-    .infra-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px;margin-bottom:32px}
-    .infra-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:22px}
-    .infra-card-title{font-size:13px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:2px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-    .infra-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #0d0d1e;font-size:13px}
-    .infra-row:last-child{border-bottom:none}
-    .infra-label{color:#666}
-    .infra-value{color:#ccc;font-family:monospace;font-size:12px;text-align:right;max-width:60%}
-    .badge-ok{color:#00d084;font-weight:700}
-    .badge-warn{color:#ffaa00;font-weight:700}
-    .badge-err{color:#ff5555;font-weight:700}
+    /* SECTION */
+    .section-head{font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:2.5px;margin:36px 0 16px;padding-bottom:8px;border-bottom:1px solid #151528}
 
-    .team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:32px}
-    .team-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center}
-    .team-avatar{font-size:32px;margin-bottom:8px}
-    .team-name{font-size:14px;font-weight:700;color:#fff;margin-bottom:2px}
-    .team-role{font-size:11px;color:#555;margin-bottom:10px}
-    .team-status{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;display:inline-block}
-    .s-online{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
-    .s-offline{background:#2a0a0a;color:#ff5555;border:1px solid #ff5555}
-    .s-unknown{background:#1a1a1a;color:#666;border:1px solid #333}
+    /* STATS ROW */
+    .stats-row{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:8px}
+    @media(max-width:1100px){.stats-row{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:640px){.stats-row{grid-template-columns:repeat(2,1fr)}}
+    .stat-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:18px 16px}
+    .stat-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px}
+    .stat-value{font-size:20px;font-weight:800;color:#fff;font-family:'Segoe UI',system-ui,sans-serif}
+    .stat-sub{font-size:11px;color:#444;margin-top:4px;font-family:monospace}
 
-    .services-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:32px}
-    .svc-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between}
-    .svc-name{font-size:13px;color:#ccc;font-weight:600}
-    .svc-detail{font-size:11px;color:#444;margin-top:2px;font-family:monospace}
-    .svc-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px}
+    /* PROGRESS BAR */
+    .bar-track{background:#151528;border-radius:4px;height:6px;margin-top:8px;overflow:hidden}
+    .bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+    .bar-green{background:linear-gradient(90deg,#00d084,#00b070)}
+    .bar-yellow{background:linear-gradient(90deg,#ffaa00,#ff8800)}
+    .bar-red{background:linear-gradient(90deg,#ff5555,#cc3333)}
+    .bar-accent{background:linear-gradient(90deg,#e94560,#7c3aed)}
 
-    .timeline{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:22px;margin-bottom:32px}
-    .timeline-title{font-size:13px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:2px;margin-bottom:16px}
-    .timeline-item{display:flex;gap:16px;padding:12px 0;border-bottom:1px solid #0d0d1e;align-items:flex-start}
-    .timeline-item:last-child{border-bottom:none}
-    .timeline-dot{width:10px;height:10px;border-radius:50%;background:#7c3aed;margin-top:4px;flex-shrink:0}
-    .timeline-dot.done{background:#00d084}
-    .timeline-dot.active{background:#ffaa00}
-    .timeline-dot.future{background:#333}
-    .timeline-date{font-size:12px;color:#444;font-family:monospace;width:100px;flex-shrink:0}
-    .timeline-text{font-size:13px;color:#ccc}
-    .timeline-sub{font-size:11px;color:#444;margin-top:2px}
+    /* CARDS GRID */
+    .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+    .cards-grid-3{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:22px;transition:border-color .2s}
+    .card:hover{border-color:#2a2a4a}
+    .card-title{font-size:14px;font-weight:700;color:#ccc;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+    .card-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #111125;font-size:13px}
+    .card-row:last-child{border-bottom:none}
+    .card-label{color:#666}
+    .card-val{color:#ccc;font-family:monospace;font-size:12px;text-align:right;max-width:60%}
 
-    .last-updated{font-size:11px;color:#333;text-align:center;padding:8px;margin-bottom:28px}
-    .section-head{font-size:13px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:2px;margin-bottom:16px;margin-top:32px}
+    /* BADGES */
+    .badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.8px;display:inline-block}
+    .badge-nvidia{background:#1a2e1a;color:#76b900;border:1px solid #76b900}
+    .badge-amd{background:#2e1a1a;color:#ed1c24;border:1px solid #ed1c24}
+    .badge-up{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
+    .badge-down{background:#2a0a0a;color:#ff5555;border:1px solid #ff5555}
+    .badge-active{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
+    .badge-inactive{background:#1a1a1a;color:#666;border:1px solid #333}
+    .badge-accent{background:#2a1a2e;color:#e94560;border:1px solid #e94560}
+
+    /* GPU CARDS */
+    .gpu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
+    .gpu-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:22px;position:relative;overflow:hidden}
+    .gpu-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;opacity:.7}
+    .gpu-nvidia::before{background:linear-gradient(90deg,#76b900,#4a8000)}
+    .gpu-amd::before{background:linear-gradient(90deg,#ed1c24,#aa1518)}
+    .gpu-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+    .gpu-name{font-size:16px;font-weight:700;color:#fff}
+    .gpu-stat-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    .gpu-stat{background:#0a0a18;border-radius:8px;padding:12px}
+    .gpu-stat-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+    .gpu-stat-val{font-size:18px;font-weight:700;color:#fff}
+
+    /* STORAGE TABLE */
+    .tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .tbl th{text-align:left;font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1.5px;padding:10px 12px;border-bottom:1px solid #1a1a2e}
+    .tbl td{padding:10px 12px;border-bottom:1px solid #111125;color:#ccc}
+    .tbl tr:last-child td{border-bottom:none}
+    .tbl .mono{font-family:monospace;font-size:12px}
+    .tbl-footer{padding:12px;font-size:13px;font-weight:700;color:#e94560;text-align:right;border-top:1px solid #1a1a2e}
+    .disk-bar-wrap{display:flex;align-items:center;gap:10px;min-width:180px}
+    .disk-bar-track{flex:1;background:#151528;border-radius:3px;height:8px;overflow:hidden}
+    .disk-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#e94560,#7c3aed)}
+
+    /* SERVICES GRID */
+    .svc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+    .svc-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s;cursor:default}
+    .svc-card:hover{border-color:#2a2a4a}
+    .svc-info{display:flex;flex-direction:column;gap:2px}
+    .svc-name{font-size:13px;font-weight:700;color:#ddd}
+    .svc-detail{font-size:11px;color:#444;font-family:monospace}
+    .svc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+    .svc-dot-up{background:#00d084;box-shadow:0 0 6px rgba(0,208,132,.5)}
+    .svc-dot-down{background:#ff5555;box-shadow:0 0 6px rgba(255,85,85,.5)}
+
+    /* AGENTS */
+    .agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+    .agent-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:border-color .2s,transform .15s}
+    .agent-card:hover{border-color:#e94560;transform:translateY(-2px)}
+    .agent-icon{font-size:28px;margin-bottom:8px}
+    .agent-name{font-size:14px;font-weight:700;color:#fff;margin-bottom:2px}
+    .agent-role{font-size:11px;color:#555;margin-bottom:10px}
+    .agent-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+    .agent-dot-active{background:#00d084;box-shadow:0 0 5px #00d084}
+    .agent-dot-inactive{background:#555}
+    .agent-status-text{font-size:11px;color:#666}
+
+    /* TAILSCALE PEERS */
+    .peer-online{color:#00d084}
+    .peer-offline{color:#ff5555}
+    .peer-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+    .peer-dot-on{background:#00d084;box-shadow:0 0 5px #00d084}
+    .peer-dot-off{background:#ff5555}
+
+    /* LINKS */
+    .link-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+    .link-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:18px;display:flex;align-items:center;gap:14px;transition:border-color .2s}
+    .link-card:hover{border-color:#e94560}
+    .link-icon{font-size:24px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:#151528;border-radius:10px;flex-shrink:0}
+    .link-info{flex:1}
+    .link-title{font-size:14px;font-weight:700;color:#fff;margin-bottom:2px}
+    .link-url{font-size:12px;color:#e94560;font-family:monospace;word-break:break-all}
+
+    /* API SECTION */
+    .api-count{font-size:56px;font-weight:900;color:#e94560;line-height:1}
+    .api-label{font-size:13px;color:#555;margin-top:4px}
+    .api-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:18px}
+    .api-cat{background:#0a0a18;border-radius:8px;padding:14px}
+    .api-cat-name{font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .api-cat-items{font-size:12px;color:#555;line-height:1.8}
+
+    /* DB STATS */
+    .db-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+    .db-stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center}
+    .db-stat-val{font-size:24px;font-weight:800;color:#fff}
+    .db-stat-name{font-size:11px;color:#555;margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+
+    /* ARCHITECTURE */
+    .arch-box{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:28px;overflow-x:auto}
+    .arch-diagram{font-family:'Courier New',monospace;font-size:13px;line-height:1.7;color:#888;white-space:pre;min-width:700px}
+    .arch-diagram .hl{color:#e94560;font-weight:700}
+    .arch-diagram .hl2{color:#7c3aed;font-weight:700}
+    .arch-diagram .hl3{color:#00d084;font-weight:700}
+    .arch-diagram .hl4{color:#ffaa00;font-weight:700}
+
+    /* ROADMAP */
+    .roadmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+    .roadmap-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:20px;border-left:3px solid #1a1a2e;transition:border-color .2s}
+    .roadmap-card:hover{border-left-color:#e94560}
+    .roadmap-title{font-size:14px;font-weight:700;color:#ddd;margin-bottom:6px}
+    .roadmap-desc{font-size:12px;color:#555;line-height:1.5}
+    .roadmap-tag{display:inline-block;font-size:10px;color:#e94560;background:#1e0e18;border:1px solid #3a1a2a;padding:2px 8px;border-radius:12px;margin-top:10px;text-transform:uppercase;letter-spacing:.5px}
   </style>
 </head>
 <body>
 
+<!-- NAV -->
 <nav class="nav">
-  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <div class="nav-brand"><span>&#9889;</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Dashboard</a>
   <a class="nav-link" href="/">Agents</a>
-  <a class="nav-link" href="/crons">Cron Jobs</a>
+  <a class="nav-link" href="/tasks">Tasks</a>
+  <a class="nav-link" href="/ahb123">AHB123</a>
+  <a class="nav-link active" href="/infra">Infra</a>
   <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/settings">Settings</a>
-  <a class="nav-link active" href="/infra">Infra Map</a>
 </nav>
 
 <div class="container">
+
+  <!-- PAGE HEADER -->
   <div class="page-header">
     <div>
-      <div class="page-title">🗺️ Baza Empire Infrastructure Map</div>
-      <div class="page-subtitle">Live single source of truth — hardware, services, agents, projects</div>
+      <div class="page-title">Infrastructure Map</div>
+      <div class="page-subtitle">Live system overview &mdash; auto-refreshes every 30 seconds</div>
     </div>
-    <button class="refresh-btn" onclick="location.reload()">↻ Refresh</button>
-  </div>
-
-  <div class="last-updated" id="lastUpdated">Loading live data...</div>
-
-  <!-- Hardware -->
-  <div class="section-head">🖥️ Hardware Fleet</div>
-  <div class="infra-grid">
-    <div class="infra-card">
-      <div class="infra-card-title">🖥️ Main Rig — baza</div>
-      <div class="infra-row"><span class="infra-label">CPU</span><span class="infra-value">Ryzen 7 5700G (8c/16t)</span></div>
-      <div class="infra-row"><span class="infra-label">RAM</span><span class="infra-value">64 GB DDR4</span></div>
-      <div class="infra-row"><span class="infra-label">GPU 1</span><span class="infra-value">RTX 3070 (8GB)</span></div>
-      <div class="infra-row"><span class="infra-label">GPU 2</span><span class="infra-value">RX 6700 XT (12GB)</span></div>
-      <div class="infra-row"><span class="infra-label">OS</span><span class="infra-value">Ubuntu 24.04 LTS</span></div>
-      <div class="infra-row"><span class="infra-label">Tailscale</span><span class="infra-value">100.127.118.103</span></div>
-      <div class="infra-row"><span class="infra-label">CPU Temp</span><span class="infra-value" id="cpu-temp">—</span></div>
-      <div class="infra-row"><span class="infra-label">Memory</span><span class="infra-value" id="mem-usage">—</span></div>
-      <div class="infra-row"><span class="infra-label">Disk /</span><span class="infra-value" id="disk-usage">—</span></div>
-      <div class="infra-row"><span class="infra-label">Uptime</span><span class="infra-value" id="uptime">—</span></div>
-    </div>
-    <div class="infra-card">
-      <div class="infra-card-title">💻 NUC — Intel i7-10710U</div>
-      <div class="infra-row"><span class="infra-label">CPU</span><span class="infra-value">i7-10710U (6c/12t)</span></div>
-      <div class="infra-row"><span class="infra-label">RAM</span><span class="infra-value">64 GB DDR4</span></div>
-      <div class="infra-row"><span class="infra-label">Role</span><span class="infra-value">CPU Mining (XMRig)</span></div>
-      <div class="infra-row"><span class="infra-label">Pool</span><span class="infra-value">supportxmr.com</span></div>
-      <div class="infra-row"><span class="infra-label">Rig ID</span><span class="infra-value">baza-nuc</span></div>
-      <div class="infra-row"><span class="infra-label">NUC Mining</span><span class="infra-value badge-ok" id="nuc-mining">—</span></div>
-    </div>
-    <div class="infra-card">
-      <div class="infra-card-title">💾 Storage — ZFS RAIDZ2</div>
-      <div class="infra-row"><span class="infra-label">Config</span><span class="infra-value">5× drives RAIDZ2</span></div>
-      <div class="infra-row"><span class="infra-label">Usable</span><span class="infra-value">42.9 TB</span></div>
-      <div class="infra-row"><span class="infra-label">Datasets</span><span class="infra-value">nextcloud / media / backups / agents</span></div>
+    <div class="header-right">
+      <span class="last-updated" id="lastUpdated">Loading...</span>
+      <button class="refresh-btn" onclick="loadAll()">Refresh</button>
     </div>
   </div>
 
-  <!-- Team -->
-  <div class="section-head">👥 Agent Team</div>
-  <div class="team-grid" id="teamGrid">
-    <div class="team-card"><div class="team-avatar">👔</div><div class="team-name">Simon Bately</div><div class="team-role">Co-CEO / BizOps</div><span class="team-status" id="ts-simon_bately">—</span></div>
-    <div class="team-card"><div class="team-avatar">🛠️</div><div class="team-name">Claw Batto</div><div class="team-role">Dev / DevOps</div><span class="team-status" id="ts-claw_batto">—</span></div>
-    <div class="team-card"><div class="team-avatar">⚖️</div><div class="team-name">Phil Hass</div><div class="team-role">Legal / Finance</div><span class="team-status" id="ts-phil_hass">—</span></div>
-    <div class="team-card"><div class="team-avatar">🎨</div><div class="team-name">Sam Axe</div><div class="team-role">Design / Marketing</div><span class="team-status" id="ts-sam_axe">—</span></div>
-    <div class="team-card"><div class="team-avatar">📋</div><div class="team-name">Duke Harmon</div><div class="team-role">Project Manager</div><span class="team-status" id="ts-duke_harmon">—</span></div>
-    <div class="team-card"><div class="team-avatar">📞</div><div class="team-name">Rex Valor</div><div class="team-role">Voicemail / Intake</div><span class="team-status" id="ts-rex_valor">—</span></div>
-    <div class="team-card"><div class="team-avatar">🔍</div><div class="team-name">Scout Reeves</div><div class="team-role">Research</div><span class="team-status" id="ts-scout_reeves">—</span></div>
-    <div class="team-card"><div class="team-avatar">💬</div><div class="team-name">Nova Sterling</div><div class="team-role">Client Chat</div><span class="team-status" id="ts-nova_sterling">—</span></div>
-  </div>
-
-  <!-- Services -->
-  <div class="section-head">⚙️ Services</div>
-  <div class="services-grid">
-    <div class="svc-card"><div><div class="svc-name">Ollama AMD</div><div class="svc-detail">localhost:11434 — RX 6700 XT</div></div><span class="svc-badge" id="svc-ollama">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Ollama NVIDIA</div><div class="svc-detail">localhost:11435 — RTX 3070</div></div><span class="svc-badge" id="svc-ollama-nv">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Ollama Web Search</div><div class="svc-detail">ollama.com/api/web_search · Pro</div></div><span class="svc-badge badge-ok">✅ active</span></div>
-    <div class="svc-card"><div><div class="svc-name">LiteLLM Proxy</div><div class="svc-detail">localhost:4000 · $50/30d budget</div></div><span class="svc-badge" id="svc-litellm">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Dashboard</div><div class="svc-detail">localhost:8888</div></div><span class="svc-badge" id="svc-dashboard">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">SD WebUI</div><div class="svc-detail">localhost:7860</div></div><span class="svc-badge" id="svc-sdwebui">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Mosquitto</div><div class="svc-detail">MQTT broker</div></div><span class="svc-badge" id="svc-mosquitto">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">PostgreSQL</div><div class="svc-detail">Port 5432</div></div><span class="svc-badge" id="svc-postgresql">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Nextcloud</div><div class="svc-detail">Port 8080</div></div><span class="svc-badge" id="svc-nextcloud">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Docker</div><div class="svc-detail">Container runtime</div></div><span class="svc-badge" id="svc-docker">—</span></div>
-    <div class="svc-card"><div><div class="svc-name">Mining (GPU)</div><div class="svc-detail">baza-mining.service</div></div><span class="svc-badge" id="svc-mining">—</span></div>
-  </div>
-
-  <!-- Mining -->
-  <div class="section-head">⛏️ Mining</div>
-  <div class="infra-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
-    <div class="infra-card">
-      <div class="infra-card-title">CPU Mining — XMR</div>
-      <div class="infra-row"><span class="infra-label">Coin</span><span class="infra-value">Monero (XMR)</span></div>
-      <div class="infra-row"><span class="infra-label">Pool</span><span class="infra-value">supportxmr.com</span></div>
-      <div class="infra-row"><span class="infra-label">Est. Daily</span><span class="infra-value">~$0.42/day</span></div>
-      <div class="infra-row"><span class="infra-label">Service</span><span class="infra-value">baza-nuc-mining</span></div>
+  <!-- 1. SYSTEM OVERVIEW -->
+  <div class="section-head">System Overview</div>
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Hostname</div>
+      <div class="stat-value" id="s-hostname">--</div>
+      <div class="stat-sub" id="s-os">--</div>
     </div>
-    <div class="infra-card">
-      <div class="infra-card-title">GPU Mining — RVN</div>
-      <div class="infra-row"><span class="infra-label">Coin</span><span class="infra-value">Ravencoin (RVN)</span></div>
-      <div class="infra-row"><span class="infra-label">Pool</span><span class="infra-value">flypool.org</span></div>
-      <div class="infra-row"><span class="infra-label">Miners</span><span class="infra-value">T-Rex (RTX 3070) + TeamRed (RX 6700 XT)</span></div>
-      <div class="infra-row"><span class="infra-label">Est. Daily</span><span class="infra-value">~$2.80/day</span></div>
+    <div class="stat-card">
+      <div class="stat-label">CPU</div>
+      <div class="stat-value" id="s-cpu-cores">--</div>
+      <div class="stat-sub" id="s-cpu-model">--</div>
+      <div class="stat-sub">Temp: <span id="s-cpu-temp">--</span></div>
     </div>
-    <div class="infra-card">
-      <div class="infra-card-title">📊 Revenue Estimate</div>
-      <div class="infra-row"><span class="infra-label">CPU (XMR)</span><span class="infra-value">~$0.42/day</span></div>
-      <div class="infra-row"><span class="infra-label">GPU (RVN)</span><span class="infra-value">~$2.80/day</span></div>
-      <div class="infra-row"><span class="infra-label">Total Daily</span><span class="infra-value badge-ok">~$3.22/day</span></div>
-      <div class="infra-row"><span class="infra-label">Monthly Est.</span><span class="infra-value badge-ok">~$97/mo</span></div>
+    <div class="stat-card">
+      <div class="stat-label">Memory</div>
+      <div class="stat-value" id="s-mem-text">--</div>
+      <div class="bar-track"><div class="bar-fill bar-green" id="s-mem-bar" style="width:0%"></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Root Disk</div>
+      <div class="stat-value" id="s-disk-text">--</div>
+      <div class="bar-track"><div class="bar-fill bar-accent" id="s-disk-bar" style="width:0%"></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value" id="s-uptime">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Load Average</div>
+      <div class="stat-value" id="s-load">--</div>
     </div>
   </div>
 
-  <!-- Projects Timeline -->
-  <div class="section-head">🚀 Projects & Roadmap</div>
-  <div class="timeline">
-    <div class="timeline-title">Q2 2026 Roadmap</div>
-    <div class="timeline-item">
-      <div class="timeline-dot active"></div>
-      <div class="timeline-date">Apr 1, 2026</div>
-      <div><div class="timeline-text">ahb123.com Website Launch</div><div class="timeline-sub">Claw: backend + auth · Sam: design · Phil: legal · Simon: content + CRM</div></div>
+  <!-- 2. GPU POOL -->
+  <div class="section-head">GPU Pool</div>
+  <div class="gpu-grid" id="gpuGrid">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- 3. STORAGE ARRAY -->
+  <div class="section-head">Storage Array</div>
+  <div class="card">
+    <table class="tbl">
+      <thead><tr><th>Device</th><th>Type</th><th>Size</th><th style="min-width:200px">Relative</th></tr></thead>
+      <tbody id="storageBody"></tbody>
+    </table>
+    <div class="tbl-footer" id="storageTotalRow">Total: --</div>
+  </div>
+
+  <!-- 4. NETWORK & TAILSCALE -->
+  <div class="section-head">Network &amp; Tailscale</div>
+  <div class="cards-grid">
+    <div class="card">
+      <div class="card-title">Baza Network</div>
+      <div class="card-row"><span class="card-label">Tailscale IP</span><span class="card-val" id="n-tsip">--</span></div>
+      <div class="card-row"><span class="card-label">Tailscale Host</span><span class="card-val" id="n-tshost">--</span></div>
+      <div class="card-row"><span class="card-label">Localhost</span><span class="card-val">127.0.0.1</span></div>
     </div>
-    <div class="timeline-item">
-      <div class="timeline-dot active"></div>
-      <div class="timeline-date">In Progress</div>
-      <div><div class="timeline-text">AHBCO LLC DBA Registration</div><div class="timeline-sub">Phil handling DBA filings: ahb123.com, ahb1234.com</div></div>
-    </div>
-    <div class="timeline-item">
-      <div class="timeline-dot future"></div>
-      <div class="timeline-date">Apr 15, 2026</div>
-      <div><div class="timeline-text">Lead Pipeline — Intake to Invoice</div><div class="timeline-sub">Simon: CRM workflow · Nova: client chat intake · Rex: voicemail integration</div></div>
-    </div>
-    <div class="timeline-item">
-      <div class="timeline-dot future"></div>
-      <div class="timeline-date">May 2026</div>
-      <div><div class="timeline-text">Node Fleet v2 — NB-IoT Micro Miners</div><div class="timeline-sub">Claw: firmware + fleet management · STM32U3 + ST87M01 battery-free nodes</div></div>
-    </div>
-    <div class="timeline-item">
-      <div class="timeline-dot future"></div>
-      <div class="timeline-date">Q3 2026</div>
-      <div><div class="timeline-text">Baza Empire Scale-Out</div><div class="timeline-sub">Expand agent fleet, add client-facing products, grow mining operation</div></div>
+    <div class="card" style="grid-column:span 1">
+      <div class="card-title">Tailscale Peers</div>
+      <table class="tbl" style="margin:0">
+        <thead><tr><th>Device</th><th>IP</th><th>OS</th><th>Status</th></tr></thead>
+        <tbody id="peersBody"></tbody>
+      </table>
     </div>
   </div>
 
-  <!-- AI Stack -->
-  <div class="section-head">🤖 AI Stack</div>
-  <div class="infra-grid" style="margin-bottom:32px">
-    <div class="infra-card">
-      <div class="infra-card-title">🧠 Local LLMs (Ollama)</div>
-      <div class="infra-row"><span class="infra-label">AMD GPU</span><span class="infra-value">localhost:11434 — Vulkan / RX 6700 XT</span></div>
-      <div class="infra-row"><span class="infra-label">NVIDIA GPU</span><span class="infra-value">localhost:11435 — CUDA / RTX 3070</span></div>
-      <div class="infra-row"><span class="infra-label">Primary model</span><span class="infra-value">qwen2.5:14b</span></div>
-      <div class="infra-row"><span class="infra-label">Simon model</span><span class="infra-value">mistral-small:22b</span></div>
-      <div class="infra-row"><span class="infra-label">GPU pool</span><span class="infra-value">asyncio lock · 120s timeout</span></div>
+  <!-- 5. SERVICES GRID -->
+  <div class="section-head">Services</div>
+  <div class="svc-grid" id="svcGrid">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- 6. AGENT FLEET -->
+  <div class="section-head">Agent Fleet</div>
+  <div class="agent-grid" id="agentGrid">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- 6.5 AGENT TOKEN USAGE -->
+  <div class="section-head">Agent Token Usage <select id="usageDays" onchange="loadUsage()" style="float:right;background:#16213e;border:1px solid #333;color:#fff;padding:4px 8px;border-radius:6px;font-size:11px"><option value="1">Today</option><option value="7" selected>7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option></select></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px" id="usageStats">
+    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#e94560" id="uTotalTokens">--</div><div style="font-size:11px;color:#666">Total Tokens</div></div>
+    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#00d2ff" id="uTotalCalls">--</div><div style="font-size:11px;color:#666">LLM Calls</div></div>
+    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#7c3aed" id="uTopAgent">--</div><div style="font-size:11px;color:#666">Most Active</div></div>
+    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#4caf50" id="uOllamaTokens">--</div><div style="font-size:11px;color:#666">Ollama (Local)</div></div>
+    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#ff9800" id="uLitellmTokens">--</div><div style="font-size:11px;color:#666">LiteLLM (Cloud)</div></div>
+  </div>
+  <div class="card" id="usageBarChart" style="min-height:60px">
+    <div style="font-size:12px;color:#666;margin-bottom:10px">Per-Agent Token Usage</div>
+    <div id="usageBars"></div>
+  </div>
+
+  <!-- 7. API ENDPOINTS -->
+  <div class="section-head">API Endpoints</div>
+  <div class="card">
+    <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:10px">
+      <div class="api-count" id="apiCount">--</div>
+      <div class="api-label">registered routes</div>
     </div>
-    <div class="infra-card">
-      <div class="infra-card-title">🌐 Ollama Web Search API</div>
-      <div class="infra-row"><span class="infra-label">Plan</span><span class="infra-value badge-ok">Pro</span></div>
-      <div class="infra-row"><span class="infra-label">web_search</span><span class="infra-value">ollama.com/api/web_search</span></div>
-      <div class="infra-row"><span class="infra-label">web_fetch</span><span class="infra-value">ollama.com/api/web_fetch</span></div>
-      <div class="infra-row"><span class="infra-label">Skill</span><span class="infra-value">skills/shared/web_search.py</span></div>
-      <div class="infra-row"><span class="infra-label">Skill</span><span class="infra-value">skills/shared/web_fetch.py</span></div>
-      <div class="infra-row"><span class="infra-label">Fallback</span><span class="infra-value">DuckDuckGo (no key)</span></div>
-      <div class="infra-row"><span class="infra-label">Agents</span><span class="infra-value">All 8 — Scout auto-triggers</span></div>
-    </div>
-    <div class="infra-card">
-      <div class="infra-card-title">☁️ Cloud Models (LiteLLM)</div>
-      <div class="infra-row"><span class="infra-label">Proxy</span><span class="infra-value">localhost:4000</span></div>
-      <div class="infra-row"><span class="infra-label">Budget</span><span class="infra-value">$50 / 30 days</span></div>
-      <div class="infra-row"><span class="infra-label">OpenAI</span><span class="infra-value">gpt-4o, o1</span></div>
-      <div class="infra-row"><span class="infra-label">Anthropic</span><span class="infra-value">claude-3-5-sonnet</span></div>
-      <div class="infra-row"><span class="infra-label">Google</span><span class="infra-value">gemini-2-flash</span></div>
-      <div class="infra-row"><span class="infra-label">xAI / Mistral / Groq</span><span class="infra-value">grok-2 · mistral-large</span></div>
+    <div class="api-cats">
+      <div class="api-cat">
+        <div class="api-cat-name">AHB Business</div>
+        <div class="api-cat-items">
+          /api/ahb/clients<br>
+          /api/ahb/projects<br>
+          /api/ahb/invoices<br>
+          /api/ahb/receipts<br>
+          /api/ahb/estimates<br>
+          /api/ahb/schedule
+        </div>
+      </div>
+      <div class="api-cat">
+        <div class="api-cat-name">Agent Management</div>
+        <div class="api-cat-items">
+          /api/agents<br>
+          /api/agents/start<br>
+          /api/agents/stop<br>
+          /api/status<br>
+          /api/agents/heartbeat<br>
+          /api/agents/memory
+        </div>
+      </div>
+      <div class="api-cat">
+        <div class="api-cat-name">System</div>
+        <div class="api-cat-items">
+          /api/infra/metrics<br>
+          /api/services<br>
+          /api/crons<br>
+          /api/email<br>
+          /api/artifacts<br>
+          /api/settings
+        </div>
+      </div>
+      <div class="api-cat">
+        <div class="api-cat-name">Tasks</div>
+        <div class="api-cat-items">
+          /api/tasks<br>
+          /api/tasks/create<br>
+          /api/tasks/update<br>
+          /api/tasks/complete<br>
+          /api/journal<br>
+          /api/dispatch
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Email Pipeline -->
-  <div class="section-head">📧 Email Pipeline</div>
-  <div class="infra-card" style="margin-bottom:32px">
-    <div class="infra-card-title">4-Stage Email Automation</div>
-    <div class="infra-row"><span class="infra-label">Stage 1 — Fetch</span><span class="infra-value">Gmail webhook → new emails → EmailQueue</span></div>
-    <div class="infra-row"><span class="infra-label">Stage 2 — Summarize</span><span class="infra-value">Ollama (mistral-small:22b) → summary + draft reply</span></div>
-    <div class="infra-row"><span class="infra-label">Stage 3 — Approve</span><span class="infra-value">Telegram notification → APPROVE / EDIT / IGNORE</span></div>
-    <div class="infra-row"><span class="infra-label">Stage 4 — Send</span><span class="infra-value">Gmail API → RFC 2822 MIME email</span></div>
-    <div class="infra-row"><span class="infra-label">Contact</span><span class="infra-value">contactahbco@gmail.com</span></div>
-    <div class="infra-row"><span class="infra-label">Telegram Chat ID</span><span class="infra-value">8551331144 (Serge)</span></div>
+  <!-- 8. DATABASE STATS -->
+  <div class="section-head">Database Stats</div>
+  <div class="db-grid" id="dbGrid">
+    <!-- filled by JS -->
   </div>
 
-</div>
+  <!-- 9. ARCHITECTURE DIAGRAM -->
+  <div class="section-head">Architecture Diagram</div>
+  <div class="arch-box">
+    <div class="arch-diagram"><span class="hl4">Telegram Users (Serge)</span>
+        |
+        v
++-------<span class="hl">-------</span>-------+      +---<span class="hl2">-----</span>---+      +-------<span class="hl3">-------</span>+
+|  <span class="hl">8 AI Agents</span>        | ---> | <span class="hl2">GPU Pool</span>  | ---> | <span class="hl3">Ollama AMD</span>   |
+|  Simon, Claw, Phil | <--- | asyncio   | ---> | <span class="hl3">Ollama NVIDIA</span> |
+|  Sam, Rex, Duke    |      | lock mgr  |      +---------------+
+|  Scout, Nova       |      +-----------+
++-------------------+              |
+        |                          v
+        v                  +-<span class="hl2">-----------</span>-+
++---<span class="hl">-----------</span>---+     | <span class="hl2">LiteLLM Proxy</span> |
+| <span class="hl">Skills Engine</span>  |     | cloud models  |
+| ##SKILL:name##  |     +---------------+
+| subprocess exec |
++-----------------+
+        |
+        v
++---<span class="hl3">-----------</span>---+     +---<span class="hl4">----------</span>-+
+| <span class="hl3">PostgreSQL DB</span>  | <-- | <span class="hl4">Task Runner</span>  |
+| memory, skills  |     | cron / auto   |
+| journal, facts  |     +---------------+
++-----------------+
+        |
+        v
++---<span class="hl">-----------</span>---+     +---<span class="hl2">----------</span>-+
+| <span class="hl">Flask Dashboard</span> | --> | <span class="hl2">Mobile App</span>   |
+| port 8888       |     | /mobile        |
++-----------------+     +---------------+
+        |
+        v
++---<span class="hl4">-----------</span>---+
+| <span class="hl4">Tool Server</span>   |
+| FastAPI :8000   |
+| SD WebUI :7860  |
++-----------------+</div>
+  </div>
+
+  <!-- 10. DASHBOARD LINKS -->
+  <div class="section-head">Dashboard Links <button onclick="showAddLinkModal()" style="float:right;background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px">+ Add Link</button></div>
+  <div class="link-grid" id="linkGrid"></div>
+
+  <!-- 11. FUTURE ROADMAP -->
+  <div class="section-head">Baza Roadmap <button onclick="showAddRoadmapModal()" style="float:right;background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px">+ Add Item</button></div>
+  <div class="roadmap-grid" id="roadmapGrid"></div>
+
+  <!-- Add Link Modal -->
+  <div id="addLinkModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center">
+    <div style="background:#1a1a2e;border:1px solid #333;border-radius:12px;padding:24px;width:400px;max-width:90%">
+      <h3 style="margin:0 0 16px;color:#e94560">Add Dashboard Link</h3>
+      <input id="linkTitle" placeholder="Title" style="width:100%;padding:8px;margin-bottom:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+      <input id="linkUrl" placeholder="URL (e.g. http://...)" style="width:100%;padding:8px;margin-bottom:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+      <input id="linkIcon" placeholder="Icon HTML (e.g. &#128279;)" value="&#128279;" style="width:100%;padding:8px;margin-bottom:12px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('addLinkModal').style.display='none'" style="padding:8px 16px;background:#333;border:none;color:#fff;border-radius:6px;cursor:pointer">Cancel</button>
+        <button onclick="saveLink()" style="padding:8px 16px;background:#e94560;border:none;color:#fff;border-radius:6px;cursor:pointer">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Roadmap Modal -->
+  <div id="addRoadmapModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center">
+    <div style="background:#1a1a2e;border:1px solid #333;border-radius:12px;padding:24px;width:450px;max-width:90%">
+      <h3 style="margin:0 0 16px;color:#e94560" id="roadmapModalTitle">Add Roadmap Item</h3>
+      <input type="hidden" id="roadmapEditId">
+      <input id="rmTitle" placeholder="Title" style="width:100%;padding:8px;margin-bottom:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+      <textarea id="rmDesc" placeholder="Description" rows="3" style="width:100%;padding:8px;margin-bottom:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px;resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="rmStatus" style="flex:1;padding:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+          <option value="planned">Planned</option>
+          <option value="in_progress">In Progress</option>
+          <option value="future">Future</option>
+          <option value="completed">Completed</option>
+        </select>
+        <select id="rmPriority" style="flex:1;padding:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="rmCategory" style="flex:1;padding:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+          <option value="business">Business</option>
+          <option value="infrastructure">Infrastructure</option>
+          <option value="development">Development</option>
+          <option value="ai_agents">AI / Agents</option>
+          <option value="general" selected>General</option>
+        </select>
+        <input id="rmTarget" type="date" placeholder="Target date" style="flex:1;padding:8px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px">
+      </div>
+      <textarea id="rmNotes" placeholder="Notes (optional)" rows="2" style="width:100%;padding:8px;margin-bottom:12px;background:#16213e;border:1px solid #333;color:#fff;border-radius:6px;resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('addRoadmapModal').style.display='none'" style="padding:8px 16px;background:#333;border:none;color:#fff;border-radius:6px;cursor:pointer">Cancel</button>
+        <button onclick="saveRoadmap()" style="padding:8px 16px;background:#e94560;border:none;color:#fff;border-radius:6px;cursor:pointer">Save</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
 
 <script>
-function loadLiveStatus(){
-  // Agent statuses
-  fetch('/api/status').then(r=>r.json()).then(data=>{
-    for(const [id, status] of Object.entries(data)){
-      const el = document.getElementById('ts-'+id);
-      if(el){
-        el.textContent = status;
-        el.className = 'team-status ' + (status==='online'?'s-online':status==='offline'?'s-offline':'s-unknown');
-      }
+const AGENTS_META = {
+  'simon-bately':  { icon: '\uD83D\uDC54', name: 'Simon Bately',  role: 'Co-CEO & Chief Operating Officer' },
+  'claw-batto':    { icon: '\uD83D\uDEE0\uFE0F', name: 'Claw Batto',    role: 'VP of Engineering & Infrastructure' },
+  'phil-hass':     { icon: '\u2696\uFE0F',  name: 'Phil Hass',     role: 'Director of Finance, Legal & Compliance' },
+  'sam-axe':       { icon: '\uD83C\uDFA8', name: 'Sam Axe',       role: 'VP of Creative & Marketing' },
+  'duke-harmon':   { icon: '\uD83D\uDCCB', name: 'Duke Harmon',   role: 'Director of Project Management' },
+  'rex-valor':     { icon: '\uD83D\uDCDE', name: 'Rex Valor',     role: 'Director of Inbound Sales & Lead Ops' },
+  'scout-reeves':  { icon: '\uD83D\uDD0D', name: 'Scout Reeves',  role: 'Director of Research & Market Intelligence' },
+  'nova-sterling': { icon: '\uD83D\uDCAC', name: 'Nova Sterling',  role: 'Director of Client Relations' }
+};
+
+const SVC_META = {
+  'ollama_amd':   { label: 'Ollama AMD',    detail: 'localhost:11434 - RX 6700 XT' },
+  'ollama_nvidia':{ label: 'Ollama NVIDIA',  detail: 'localhost:11435 - RTX 3070' },
+  'dashboard':    { label: 'Dashboard',      detail: 'localhost:8888' },
+  'sdwebui':      { label: 'SD WebUI',       detail: 'localhost:7860' },
+  'litellm':      { label: 'LiteLLM Proxy',  detail: 'localhost:4000' },
+  'tool_server':  { label: 'Tool Server',    detail: 'localhost:8000' },
+  'postgresql':   { label: 'PostgreSQL',     detail: 'localhost:5432' },
+  'redis':        { label: 'Redis',          detail: 'localhost:6379' },
+  'nginx':        { label: 'Nginx',          detail: 'Reverse proxy' },
+  'nextcloud':    { label: 'Nextcloud',      detail: 'localhost:8080' }
+};
+
+function parsePercent(str) {
+  const m = str.match(/\((\d+)%\)/);
+  return m ? parseInt(m[1]) : 0;
+}
+
+function barClass(pct) {
+  if (pct > 85) return 'bar-red';
+  if (pct > 65) return 'bar-yellow';
+  return 'bar-green';
+}
+
+function renderGPUs(gpus) {
+  const el = document.getElementById('gpuGrid');
+  if (!gpus || !gpus.length) { el.innerHTML = '<div class="card" style="color:#555">No GPU data available</div>'; return; }
+  el.innerHTML = gpus.map(g => {
+    const isNV = g.type === 'NVIDIA';
+    const cls = isNV ? 'gpu-nvidia' : 'gpu-amd';
+    const badgeCls = isNV ? 'badge-nvidia' : 'badge-amd';
+    const memPct = (g.memory_used && g.memory_total) ? Math.round(g.memory_used / g.memory_total * 100) : null;
+    const utilPct = g.utilization ? parseInt(g.utilization) : null;
+    return `
+      <div class="gpu-card ${cls}">
+        <div class="gpu-header">
+          <div class="gpu-name">${g.name}</div>
+          <span class="badge ${badgeCls}">${g.type}</span>
+        </div>
+        <div class="gpu-stat-row">
+          <div class="gpu-stat">
+            <div class="gpu-stat-label">Temperature</div>
+            <div class="gpu-stat-val">${g.temp ? g.temp + '\u00B0C' : 'N/A'}</div>
+          </div>
+          <div class="gpu-stat">
+            <div class="gpu-stat-label">Utilization</div>
+            <div class="gpu-stat-val">${utilPct !== null ? utilPct + '%' : 'N/A'}</div>
+            ${utilPct !== null ? `<div class="bar-track" style="margin-top:6px"><div class="bar-fill ${barClass(utilPct)}" style="width:${utilPct}%"></div></div>` : ''}
+          </div>
+          <div class="gpu-stat" style="grid-column:span 2">
+            <div class="gpu-stat-label">VRAM</div>
+            <div class="gpu-stat-val">${g.memory_used && g.memory_total ? Math.round(g.memory_used/1024*10)/10 + ' / ' + Math.round(g.memory_total/1024*10)/10 + ' GB' : 'N/A'}</div>
+            ${memPct !== null ? `<div class="bar-track" style="margin-top:6px"><div class="bar-fill ${barClass(memPct)}" style="width:${memPct}%"></div></div>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderStorage(storage, totalTB) {
+  const tbody = document.getElementById('storageBody');
+  const footer = document.getElementById('storageTotalRow');
+  if (!storage || !storage.length) { tbody.innerHTML = '<tr><td colspan="4" style="color:#555">No storage data</td></tr>'; return; }
+  const maxSize = Math.max(...storage.map(d => d.size_tb || 0));
+  tbody.innerHTML = storage.map(d => {
+    const pct = maxSize > 0 ? Math.round((d.size_tb || 0) / maxSize * 100) : 0;
+    return `<tr>
+      <td class="mono">${d.name}</td>
+      <td>${d.type || 'disk'}</td>
+      <td class="mono">${d.size_tb ? d.size_tb + ' TB' : '--'}</td>
+      <td><div class="disk-bar-wrap"><div class="disk-bar-track"><div class="disk-bar-fill" style="width:${pct}%"></div></div><span style="font-size:11px;color:#555;min-width:40px;text-align:right">${d.size_tb ? d.size_tb + 'T' : ''}</span></div></td>
+    </tr>`;
+  }).join('');
+  footer.textContent = 'Total Storage: ' + (totalTB ? totalTB + ' TB' : '--');
+}
+
+function renderPeers(peers) {
+  const tbody = document.getElementById('peersBody');
+  if (!peers || !peers.length) { tbody.innerHTML = '<tr><td colspan="4" style="color:#555">No peers</td></tr>'; return; }
+  tbody.innerHTML = peers.map(p => `<tr>
+    <td>${p.name}</td>
+    <td class="mono">${p.ip}</td>
+    <td>${p.os || '--'}</td>
+    <td><span class="peer-dot ${p.online ? 'peer-dot-on' : 'peer-dot-off'}"></span>${p.online ? 'Online' : 'Offline'}</td>
+  </tr>`).join('');
+}
+
+function renderServices(services) {
+  const el = document.getElementById('svcGrid');
+  const keys = Object.keys(SVC_META);
+  el.innerHTML = keys.map(k => {
+    const meta = SVC_META[k];
+    const raw = services ? services[k] : null;
+    const isUp = raw && (raw.includes('up') || raw.includes('active') || raw.includes('Up'));
+    return `<div class="svc-card">
+      <div class="svc-info"><div class="svc-name">${meta.label}</div><div class="svc-detail">${meta.detail}</div>${raw && !['up','active'].includes(raw) ? '<div class="svc-detail" style="color:#666;margin-top:2px">' + raw + '</div>' : ''}</div>
+      <div class="svc-dot ${isUp ? 'svc-dot-up' : (raw ? 'svc-dot-down' : 'svc-dot-down')}"></div>
+    </div>`;
+  }).join('');
+}
+
+function renderAgents(agents) {
+  const el = document.getElementById('agentGrid');
+  el.innerHTML = Object.keys(AGENTS_META).map(k => {
+    const meta = AGENTS_META[k];
+    const rawKey = k.replace(/-/g, '_');
+    const status = agents ? (agents[k] || agents[rawKey] || 'inactive') : 'inactive';
+    const isActive = status === 'active' || status === 'online';
+    return `<a class="agent-card" href="/">
+      <div class="agent-icon">${meta.icon}</div>
+      <div class="agent-name">${meta.name}</div>
+      <div class="agent-role">${meta.role}</div>
+      <div><span class="agent-dot ${isActive ? 'agent-dot-active' : 'agent-dot-inactive'}"></span><span class="agent-status-text">${status}</span></div>
+    </a>`;
+  }).join('');
+}
+
+function renderDBStats(dbStats) {
+  const el = document.getElementById('dbGrid');
+  if (!dbStats || !Object.keys(dbStats).length) { el.innerHTML = '<div class="card" style="color:#555">No database stats available</div>'; return; }
+  let total = 0;
+  const items = Object.entries(dbStats).map(([k, v]) => {
+    total += v;
+    const label = k.replace(/^ahb_/, '').replace(/_/g, ' ');
+    return `<div class="db-stat"><div class="db-stat-val">${v.toLocaleString()}</div><div class="db-stat-name">${label}</div></div>`;
+  });
+  items.push(`<div class="db-stat" style="border-color:#e94560"><div class="db-stat-val" style="color:#e94560">${total.toLocaleString()}</div><div class="db-stat-name">Total Records</div></div>`);
+  el.innerHTML = items.join('');
+}
+
+function loadAll() {
+  fetch('/api/infra/metrics').then(r => r.json()).then(d => {
+    // System overview
+    document.getElementById('s-hostname').textContent = d.hostname || '--';
+    document.getElementById('s-os').textContent = d.os || '--';
+    document.getElementById('s-cpu-cores').textContent = (d.cpu_cores || '--') + ' cores';
+    document.getElementById('s-cpu-model').textContent = d.cpu_model || '--';
+    document.getElementById('s-cpu-temp').textContent = d.cpu_temp || '--';
+    document.getElementById('s-uptime').textContent = d.uptime || '--';
+    document.getElementById('s-load').textContent = d.load || '--';
+
+    // Memory bar
+    document.getElementById('s-mem-text').textContent = d.mem_usage || '--';
+    if (d.mem_used && d.mem_total) {
+      const mUsed = parseFloat(d.mem_used);
+      const mTotal = parseFloat(d.mem_total);
+      const mPct = mTotal > 0 ? Math.round(mUsed / mTotal * 100) : 0;
+      const memBar = document.getElementById('s-mem-bar');
+      memBar.style.width = mPct + '%';
+      memBar.className = 'bar-fill ' + barClass(mPct);
     }
+
+    // Disk bar
+    document.getElementById('s-disk-text').textContent = d.disk_root || d.disk_usage || '--';
+    const diskPct = parsePercent(d.disk_root || d.disk_usage || '');
+    if (diskPct) {
+      const diskBar = document.getElementById('s-disk-bar');
+      diskBar.style.width = diskPct + '%';
+      diskBar.className = 'bar-fill ' + barClass(diskPct);
+    }
+
+    // GPUs
+    renderGPUs(d.gpus);
+
+    // Storage
+    renderStorage(d.storage, d.total_storage_tb);
+
+    // Tailscale
+    if (d.tailscale) {
+      document.getElementById('n-tsip').textContent = d.tailscale.self_ip || '--';
+      document.getElementById('n-tshost').textContent = d.tailscale.hostname || '--';
+      renderPeers(d.tailscale.peers);
+    }
+
+    // Services
+    renderServices(d.services);
+
+    // Agents
+    renderAgents(d.agents);
+
+    // API count
+    document.getElementById('apiCount').textContent = d.api_routes || '--';
+
+    // DB Stats
+    renderDBStats(d.db_stats);
+
+    // Load usage
+    loadUsage();
+
+    document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  }).catch(err => {
+    document.getElementById('lastUpdated').textContent = 'Metrics unavailable - showing static layout';
+    renderGPUs([]);
+    renderServices({});
+    renderAgents({});
+    renderDBStats({});
   });
 
-  // Live system metrics
-  fetch('/api/infra/metrics').then(r=>r.json()).then(d=>{
-    if(d.cpu_temp)   document.getElementById('cpu-temp').textContent   = d.cpu_temp;
-    if(d.mem_usage)  document.getElementById('mem-usage').textContent  = d.mem_usage;
-    if(d.disk_usage) document.getElementById('disk-usage').textContent = d.disk_usage;
-    if(d.uptime)     document.getElementById('uptime').textContent     = d.uptime;
-    if(d.nuc_mining) document.getElementById('nuc-mining').textContent = d.nuc_mining;
+  // Load dynamic links + roadmap
+  loadLinks();
+  loadRoadmap();
+}
 
-    const svcs = d.services || {};
-    for(const [name, status] of Object.entries(svcs)){
-      const el = document.getElementById('svc-'+name);
-      if(el){
-        el.textContent = status;
-        el.className = 'svc-badge ' + (status.includes('up')||status.includes('active')||status.includes('✅') ? 'badge-ok' : 'badge-err');
-      }
+// ── Agent Usage ──
+function fmtTokens(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toString();
+}
+
+function loadUsage() {
+  const days = document.getElementById('usageDays').value;
+  fetch('/api/usage?days='+days).then(r=>r.json()).then(d => {
+    document.getElementById('uTotalTokens').textContent = fmtTokens(d.total_tokens || 0);
+    document.getElementById('uTotalCalls').textContent = (d.total_calls || 0).toLocaleString();
+
+    const agents = d.by_agent || [];
+    document.getElementById('uTopAgent').textContent = agents.length ? agents[0].agent_id.replace(/_/g,' ') : 'None';
+
+    const ollama = (d.by_provider||[]).find(p=>p.provider==='ollama');
+    const litellm = (d.by_provider||[]).find(p=>p.provider==='litellm');
+    document.getElementById('uOllamaTokens').textContent = fmtTokens(ollama ? ollama.total_tokens : 0);
+    document.getElementById('uLitellmTokens').textContent = fmtTokens(litellm ? litellm.total_tokens : 0);
+
+    // Bar chart
+    const maxTokens = agents.length ? Math.max(...agents.map(a=>a.total_tokens)) : 1;
+    const bars = document.getElementById('usageBars');
+    if (!agents.length) {
+      bars.innerHTML = '<div style="color:#555;font-size:12px;padding:8px">No usage data yet. Agents will log tokens as they process messages.</div>';
+      return;
     }
-    document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+    bars.innerHTML = agents.map(a => {
+      const pct = Math.max(2, Math.round(a.total_tokens / maxTokens * 100));
+      const name = a.agent_id.replace(/_/g, ' ');
+      const meta = AGENTS_META[a.agent_id.replace(/_/g,'-')] || {};
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="width:120px;font-size:11px;color:#aaa;text-align:right;white-space:nowrap;overflow:hidden">${meta.icon||''} ${name}</div>
+        <div class="bar-track" style="flex:1;height:18px"><div class="bar-fill bar-green" style="width:${pct}%;height:100%;display:flex;align-items:center;padding-left:6px;font-size:10px;color:#fff;font-weight:600">${fmtTokens(a.total_tokens)}</div></div>
+        <div style="width:50px;font-size:10px;color:#666;text-align:right">${a.call_count} calls</div>
+      </div>`;
+    }).join('');
   }).catch(()=>{
-    document.getElementById('lastUpdated').textContent = 'Live metrics unavailable — showing static map';
+    document.getElementById('usageBars').innerHTML = '<div style="color:#555;font-size:12px">Usage tracking unavailable</div>';
   });
 }
 
-loadLiveStatus();
-setInterval(loadLiveStatus, 30000);
+// ── Dashboard Links ──
+function loadLinks() {
+  fetch('/api/dash-links').then(r=>r.json()).then(links => {
+    const el = document.getElementById('linkGrid');
+    if (!links.length) {
+      el.innerHTML = '<div style="color:#555;padding:12px">No links configured. Add one or agents will populate them.</div>';
+      return;
+    }
+    el.innerHTML = links.map(l => `<a class="link-card" href="${l.url}" target="_blank">
+      <div class="link-icon">${l.icon}</div>
+      <div class="link-info"><div class="link-title">${l.title}</div><div class="link-url">${l.url}</div></div>
+      <button onclick="event.preventDefault();event.stopPropagation();deleteLink('${l.id}')" style="background:none;border:none;color:#555;cursor:pointer;font-size:16px;padding:4px" title="Remove">&times;</button>
+    </a>`).join('');
+  });
+}
+
+function showAddLinkModal() {
+  document.getElementById('linkTitle').value = '';
+  document.getElementById('linkUrl').value = '';
+  document.getElementById('linkIcon').value = '&#128279;';
+  document.getElementById('addLinkModal').style.display = 'flex';
+}
+
+function saveLink() {
+  fetch('/api/dash-links', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+    title: document.getElementById('linkTitle').value,
+    url: document.getElementById('linkUrl').value,
+    icon: document.getElementById('linkIcon').value
+  })}).then(()=>{ document.getElementById('addLinkModal').style.display='none'; loadLinks(); });
+}
+
+function deleteLink(id) {
+  if(!confirm('Remove this link?')) return;
+  fetch('/api/dash-links/'+id, {method:'DELETE'}).then(()=>loadLinks());
+}
+
+// ── Roadmap ──
+const STATUS_COLORS = { in_progress:'#00d2ff', planned:'#e94560', future:'#555', completed:'#4caf50' };
+const STATUS_LABELS = { in_progress:'In Progress', planned:'Planned', future:'Future', completed:'Completed' };
+const PRIORITY_ICONS = { critical:'!!', high:'!', medium:'', low:'' };
+
+function loadRoadmap() {
+  fetch('/api/roadmap').then(r=>r.json()).then(items => {
+    const el = document.getElementById('roadmapGrid');
+    if (!items.length) {
+      el.innerHTML = '<div style="color:#555;padding:12px">No roadmap items. Add one or let agents populate them.</div>';
+      return;
+    }
+    el.innerHTML = items.map(i => {
+      const sc = STATUS_COLORS[i.status] || '#555';
+      const sl = STATUS_LABELS[i.status] || i.status;
+      const cat = i.category ? `<span style="font-size:9px;color:#666;text-transform:uppercase;margin-left:6px">${i.category}</span>` : '';
+      const pri = i.priority === 'high' || i.priority === 'critical' ? `<span style="color:#e94560;font-weight:bold;margin-left:4px">${PRIORITY_ICONS[i.priority]}</span>` : '';
+      const target = i.target_date ? `<div style="font-size:10px;color:#555;margin-top:4px">Target: ${i.target_date}</div>` : '';
+      const agent = i.assigned_agent ? `<div style="font-size:10px;color:#666;margin-top:2px">Agent: ${i.assigned_agent}</div>` : '';
+      return `<div class="roadmap-card" style="cursor:pointer" onclick="editRoadmap('${i.id}')">
+        <div class="roadmap-title">${i.title}${pri}${cat}</div>
+        <div class="roadmap-desc">${i.description}</div>
+        ${target}${agent}
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+          <div class="roadmap-tag" style="border-color:${sc};color:${sc};background:${sc}22">${sl}</div>
+          ${i.status !== 'in_progress' && i.status !== 'completed' ? `<button onclick="event.stopPropagation();startRoadmap('${i.id}')" style="font-size:9px;padding:2px 8px;background:#00d2ff22;border:1px solid #00d2ff;color:#00d2ff;border-radius:4px;cursor:pointer">Start</button>` : ''}
+          ${i.status === 'in_progress' ? `<button onclick="event.stopPropagation();completeRoadmap('${i.id}')" style="font-size:9px;padding:2px 8px;background:#4caf5022;border:1px solid #4caf50;color:#4caf50;border-radius:4px;cursor:pointer">Complete</button>` : ''}
+          <button onclick="event.stopPropagation();deleteRoadmap('${i.id}')" style="font-size:9px;padding:2px 8px;background:#55522;border:1px solid #555;color:#555;border-radius:4px;cursor:pointer">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function showAddRoadmapModal() {
+  document.getElementById('roadmapModalTitle').textContent = 'Add Roadmap Item';
+  document.getElementById('roadmapEditId').value = '';
+  document.getElementById('rmTitle').value = '';
+  document.getElementById('rmDesc').value = '';
+  document.getElementById('rmStatus').value = 'planned';
+  document.getElementById('rmPriority').value = 'medium';
+  document.getElementById('rmCategory').value = 'general';
+  document.getElementById('rmTarget').value = '';
+  document.getElementById('rmNotes').value = '';
+  document.getElementById('addRoadmapModal').style.display = 'flex';
+}
+
+function editRoadmap(id) {
+  fetch('/api/roadmap').then(r=>r.json()).then(items => {
+    const i = items.find(x=>x.id===id);
+    if (!i) return;
+    document.getElementById('roadmapModalTitle').textContent = 'Edit Roadmap Item';
+    document.getElementById('roadmapEditId').value = id;
+    document.getElementById('rmTitle').value = i.title;
+    document.getElementById('rmDesc').value = i.description;
+    document.getElementById('rmStatus').value = i.status;
+    document.getElementById('rmPriority').value = i.priority;
+    document.getElementById('rmCategory').value = i.category;
+    document.getElementById('rmTarget').value = i.target_date;
+    document.getElementById('rmNotes').value = i.notes;
+    document.getElementById('addRoadmapModal').style.display = 'flex';
+  });
+}
+
+function saveRoadmap() {
+  const editId = document.getElementById('roadmapEditId').value;
+  const body = {
+    title: document.getElementById('rmTitle').value,
+    description: document.getElementById('rmDesc').value,
+    status: document.getElementById('rmStatus').value,
+    priority: document.getElementById('rmPriority').value,
+    category: document.getElementById('rmCategory').value,
+    target_date: document.getElementById('rmTarget').value,
+    notes: document.getElementById('rmNotes').value
+  };
+  const url = editId ? '/api/roadmap/'+editId : '/api/roadmap';
+  const method = editId ? 'PUT' : 'POST';
+  fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+    .then(()=>{ document.getElementById('addRoadmapModal').style.display='none'; loadRoadmap(); });
+}
+
+function startRoadmap(id) {
+  fetch('/api/roadmap/'+id+'/start', {method:'POST', headers:{'Content-Type':'application/json'}})
+    .then(r=>r.json()).then(d => {
+      if(d.assigned_to) {
+        const name = d.assigned_to.replace(/_/g,' ');
+        const card = document.querySelector(`[onclick="editRoadmap('${id}')"]`);
+        if(card) {
+          const note = document.createElement('div');
+          note.style.cssText = 'font-size:10px;color:#4caf50;margin-top:4px;font-weight:600';
+          note.textContent = 'Task created — assigned to ' + name;
+          card.appendChild(note);
+          setTimeout(()=>note.remove(), 4000);
+        }
+      }
+      loadRoadmap();
+    });
+}
+
+function completeRoadmap(id) {
+  fetch('/api/roadmap/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({status:'completed'})}).then(()=>loadRoadmap());
+}
+
+function deleteRoadmap(id) {
+  if(!confirm('Delete this roadmap item?')) return;
+  fetch('/api/roadmap/'+id, {method:'DELETE'}).then(()=>loadRoadmap());
+}
+
+loadAll();
+setInterval(loadAll, 30000);
 </script>
+
 </body>
 </html>

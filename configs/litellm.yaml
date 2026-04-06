@@ -68,7 +68,17 @@ model_list:
       model: anthropic/claude-opus-4-6
       api_key: "os.environ/ANTHROPIC_API_KEY"
 
-  # ── Google ───────────────────────────────────────────────────────────────────
+  # ── Google Gemini ─────────────────────────────────────────────────────────────
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro-preview-06-05
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: gemini-2.5-flash
+    litellm_params:
+      model: gemini/gemini-2.5-flash-preview-05-20
+      api_key: "os.environ/GEMINI_API_KEY"
+
   - model_name: gemini-2-flash
     litellm_params:
       model: gemini/gemini-2.0-flash
@@ -156,4 +166,61 @@ model_list:
   - model_name: local/llava-vision
     litellm_params:
       model: ollama/llava:13b
+      api_base: http://localhost:11434
+
+  # ── New Local Models (pulled 2026-04-01) ─────────────────────────────────────
+  - model_name: local/gemma3-4b
+    litellm_params:
+      model: ollama/gemma3:4b
+      api_base: http://localhost:11435
+
+  - model_name: local/gemma3-12b
+    litellm_params:
+      model: ollama/gemma3:12b
+      api_base: http://localhost:11434
+
+  - model_name: local/gpt-oss-20b
+    litellm_params:
+      model: ollama/gpt-oss:20b
+      api_base: http://localhost:11434
+
+  - model_name: local/ministral3-3b
+    litellm_params:
+      model: ollama/ministral-3:3b
+      api_base: http://localhost:11435
+
+  - model_name: local/ministral3-8b
+    litellm_params:
+      model: ollama/ministral-3:8b
+      api_base: http://localhost:11434
+
+  # ── Ollama Cloud Models (run on Ollama cloud infra, streamed to baza) ────────
+  - model_name: cloud/qwen3.5
+    litellm_params:
+      model: ollama/qwen3.5:latest
+      api_base: http://localhost:11434
+
+  - model_name: cloud/gemini-3-flash
+    litellm_params:
+      model: ollama/gemini-3-flash-preview:latest
+      api_base: http://localhost:11434
+
+  - model_name: cloud/nemotron-3-super
+    litellm_params:
+      model: ollama/nemotron-3-super:latest
+      api_base: http://localhost:11434
+
+  - model_name: cloud/qwen3-coder-next
+    litellm_params:
+      model: ollama/qwen3-coder-next:latest
+      api_base: http://localhost:11434
+
+  - model_name: cloud/qwen3-vl
+    litellm_params:
+      model: ollama/qwen3-vl:latest
+      api_base: http://localhost:11434
+
+  - model_name: local/ministral3-14b
+    litellm_params:
+      model: ollama/ministral-3:14b
       api_base: http://localhost:11434

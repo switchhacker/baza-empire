@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Explore Lab</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;overflow:hidden}
+    a{color:inherit;text-decoration:none}
+
+    /* NAV */
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+
+    /* MAIN LAYOUT */
+    .explore-layout{display:flex;height:calc(100vh - 62px);overflow:hidden}
+
+    /* SIDEBAR */
+    .explore-sidebar{width:240px;min-width:240px;background:#0a0a16;border-right:1px solid #1a1a2e;display:flex;flex-direction:column;overflow-y:auto}
+    .sidebar-section{padding:14px 14px 8px;border-bottom:1px solid #1a1a2e}
+    .sidebar-section:last-child{border-bottom:none;flex:1}
+    .sidebar-label{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}
+
+    /* Source tabs */
+    .source-tabs{display:flex;gap:2px;margin-bottom:12px}
+    .source-tab{flex:1;padding:6px 0;text-align:center;font-size:11px;font-weight:700;color:#555;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:5px;cursor:pointer;transition:all .2s}
+    .source-tab:hover{color:#aaa}
+    .source-tab.active{background:#1a1040;color:#c4b5fd;border-color:#7c3aed}
+
+    .source-panel{display:none}
+    .source-panel.active{display:block}
+
+    /* Artifacts source */
+    .project-select{width:100%;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:12px;outline:none;margin-bottom:8px}
+    .project-select option{background:#0e0e1e;color:#e0e0e0}
+    .artifact-list{max-height:200px;overflow-y:auto}
+    .artifact-item{padding:6px 10px;font-size:11px;color:#666;cursor:pointer;border-radius:5px;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .artifact-item:hover{background:#1a1a2e;color:#c4b5fd}
+    .artifact-item.active{background:#1a1040;color:#c4b5fd;border-left:2px solid #7c3aed}
+
+    /* Upload source */
+    .drop-zone{border:2px dashed #1a1a2e;border-radius:8px;padding:24px 12px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:8px}
+    .drop-zone:hover,.drop-zone.dragover{border-color:#7c3aed;background:#120d22}
+    .drop-zone-text{font-size:11px;color:#555}
+    .drop-zone-text span{display:block;font-size:20px;margin-bottom:6px}
+    .upload-status{font-size:10px;color:#444;margin-top:4px}
+
+    /* URL source */
+    .url-input{width:100%;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:6px;padding:7px 10px;color:#e0e0e0;font-size:12px;outline:none;margin-bottom:8px;transition:border-color .2s}
+    .url-input:focus{border-color:#7c3aed}
+    .btn{padding:7px 13px;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s;letter-spacing:.5px}
+    .btn:hover{opacity:.85;transform:translateY(-1px)}
+    .btn:active{transform:translateY(0)}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;width:100%}
+    .btn-sm{padding:5px 11px;font-size:10px;border-radius:5px}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
+
+    /* Device picker */
+    .device-category{margin-bottom:8px}
+    .device-category-label{font-size:9px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;padding-left:2px}
+    .device-btn{display:flex;align-items:center;justify-content:space-between;width:100%;padding:6px 10px;font-size:11px;color:#666;background:transparent;border:1px solid transparent;border-radius:5px;cursor:pointer;transition:all .15s;text-align:left}
+    .device-btn:hover{background:#1a1a2e;color:#ccc}
+    .device-btn.active{background:#1a1040;color:#c4b5fd;border-color:#7c3aed}
+    .device-btn .device-dims{font-size:9px;color:#444;font-family:monospace}
+    .more-devices-btn{width:100%;padding:7px;text-align:center;font-size:10px;font-weight:700;color:#555;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:5px;cursor:pointer;margin-top:6px;transition:all .2s}
+    .more-devices-btn:hover{border-color:#7c3aed;color:#c4b5fd}
+
+    /* CENTER AREA */
+    .explore-center{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+    /* TOOLBAR */
+    .explore-toolbar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:#0d0d1e;border-bottom:1px solid #1a1a2e;flex-wrap:wrap;min-height:44px}
+    .toolbar-device-info{font-size:12px;font-weight:700;color:#e0e0e0}
+    .toolbar-device-dims{font-size:10px;color:#444;font-family:monospace;margin-left:6px}
+    .toolbar-sep{width:1px;height:20px;background:#1a1a2e}
+    .toolbar-btn{padding:5px 10px;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:5px;font-size:11px;color:#666;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:4px}
+    .toolbar-btn:hover{border-color:#7c3aed;color:#c4b5fd}
+    .toolbar-btn.active{background:#1a1040;color:#c4b5fd;border-color:#7c3aed}
+    .zoom-group{display:flex;align-items:center;gap:6px}
+    .zoom-label{font-size:10px;color:#555;font-family:monospace;min-width:32px;text-align:center}
+    .zoom-slider{-webkit-appearance:none;width:100px;height:4px;background:#1a1a2e;border-radius:2px;outline:none}
+    .zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#7c3aed;border-radius:50%;cursor:pointer}
+    .zoom-slider::-moz-range-thumb{width:12px;height:12px;background:#7c3aed;border-radius:50%;cursor:pointer;border:none}
+    .build-dropdown{position:relative}
+    .build-menu{display:none;position:absolute;top:100%;right:0;margin-top:4px;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:7px;overflow:hidden;min-width:120px;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+    .build-menu.open{display:block}
+    .build-menu-item{padding:8px 14px;font-size:11px;color:#888;cursor:pointer;transition:all .15s}
+    .build-menu-item:hover{background:#1a1a2e;color:#e0e0e0}
+    .toolbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+    /* DEVICE FRAME AREA */
+    .frame-area{flex:1;overflow:auto;display:flex;justify-content:center;padding:24px 16px;background:radial-gradient(ellipse at center,#0a0a18 0%,#07070f 70%);position:relative}
+    .frame-area.compare{gap:24px}
+    .device-frame{transform:scale(var(--zoom,0.6));transform-origin:top center;transition:transform .2s}
+    /* Allow interaction with iframe content */
+    .device-frame .device-screen iframe{pointer-events:auto}
+
+    /* Phone bezel — realistic titanium/aluminum look */
+    .device-frame.phone .device-bezel{background:linear-gradient(145deg,#2a2a3e,#1a1a2e,#222235);border-radius:48px;padding:10px;box-shadow:0 20px 60px rgba(0,0,0,.7),0 2px 8px rgba(0,0,0,.4),inset 0 0 0 1px #3a3a5a,inset 0 0 0 3px #1a1a2e;position:relative}
+    .device-frame.phone .device-screen{border-radius:38px;overflow:hidden;background:#000;position:relative}
+    .device-frame.phone .device-screen iframe{width:100%;height:100%;border:none;display:block}
+    /* Side buttons */
+    .device-frame.phone .device-bezel::before{content:'';position:absolute;right:-4px;top:120px;width:4px;height:50px;background:linear-gradient(180deg,#3a3a5a,#2a2a3e,#3a3a5a);border-radius:0 3px 3px 0}
+    .device-frame.phone .device-bezel::after{content:'';position:absolute;left:-4px;top:100px;width:4px;height:30px;background:linear-gradient(180deg,#3a3a5a,#2a2a3e,#3a3a5a);border-radius:3px 0 0 3px;box-shadow:0 50px 0 0 #2a2a3e,0 50px 0 0 linear-gradient(180deg,#3a3a5a,#2a2a3e)}
+    /* Status bar overlay */
+    .device-status-bar{position:absolute;top:0;left:0;right:0;height:50px;z-index:5;display:flex;align-items:flex-start;justify-content:space-between;padding:14px 28px 0;pointer-events:none;font-size:12px;font-weight:600;color:#fff;font-family:-apple-system,sans-serif}
+    .device-status-bar .status-time{font-size:14px;font-weight:700}
+    .device-status-bar .status-icons{display:flex;gap:4px;align-items:center;font-size:11px}
+    /* Home indicator */
+    .device-home-indicator{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:134px;height:5px;background:rgba(255,255,255,.25);border-radius:100px;z-index:10;pointer-events:none}
+
+    /* Dynamic island */
+    .device-notch-island{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:126px;height:36px;background:#000;border-radius:22px;z-index:10;box-shadow:0 0 0 1px rgba(255,255,255,.05)}
+    .device-notch-island::before{content:'';position:absolute;right:20px;top:50%;transform:translateY(-50%);width:10px;height:10px;background:radial-gradient(circle,#1a1a4a 40%,#0a0a2e 60%);border-radius:50%}
+    /* Punch hole */
+    .device-notch-punch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:#0a0a1a;border-radius:50%;z-index:10;box-shadow:inset 0 0 2px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.05)}
+    /* Home button chin */
+    .device-chin{height:54px;background:linear-gradient(180deg,#1a1a2e,#222235);display:flex;align-items:center;justify-content:center;border-radius:0 0 38px 38px}
+    .device-chin-btn{width:36px;height:36px;border-radius:50%;border:2px solid #3a3a5a;background:linear-gradient(145deg,#1a1a2e,#2a2a3e);box-shadow:inset 0 1px 2px rgba(0,0,0,.3)}
+
+    /* Tablet bezel */
+    .device-frame.tablet .device-bezel{background:linear-gradient(145deg,#2a2a3e,#1a1a2e);border-radius:20px;padding:14px;box-shadow:0 20px 60px rgba(0,0,0,.6),inset 0 0 0 1px #3a3a5a,inset 0 0 0 3px #1a1a2e}
+    .device-frame.tablet .device-screen{border-radius:8px;overflow:hidden;background:#000}
+    .device-frame.tablet .device-screen iframe{width:100%;height:100%;border:none;display:block}
+
+    /* Desktop bezel — monitor stand */
+    .device-frame.desktop .device-bezel{background:linear-gradient(145deg,#252535,#1a1a2e);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.6),inset 0 0 0 1px #3a3a5a;overflow:hidden}
+    .device-frame.desktop .title-bar{height:32px;background:linear-gradient(180deg,#1e1e2e,#161625);display:flex;align-items:center;padding:0 12px;gap:7px;border-bottom:1px solid #2a2a4a}
+    .title-dot{width:11px;height:11px;border-radius:50%}
+    .title-dot.red{background:#ff5f56;box-shadow:inset 0 -1px 2px rgba(0,0,0,.2)}
+    .title-dot.yellow{background:#ffbd2e;box-shadow:inset 0 -1px 2px rgba(0,0,0,.2)}
+    .title-dot.green{background:#27c93f;box-shadow:inset 0 -1px 2px rgba(0,0,0,.2)}
+    .device-frame.desktop .device-screen{overflow:hidden;background:#000}
+    .device-frame.desktop .device-screen iframe{width:100%;height:100%;border:none;display:block}
+    /* Monitor stand */
+    .device-frame.desktop::after{content:'';display:block;width:80px;height:40px;background:linear-gradient(180deg,#2a2a3e,#1a1a2e);margin:0 auto;border-radius:0 0 10px 10px;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+
+    /* Embedded bezel */
+    .device-frame.embedded .device-bezel{background:linear-gradient(145deg,#1e2e1e,#1a2a1a);border-radius:6px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.5),inset 0 0 0 2px #2a3a2a}
+    .device-frame.embedded .device-label{font-size:8px;font-weight:700;color:#4a6a4a;text-transform:uppercase;letter-spacing:2px;text-align:center;padding:4px 0;font-family:monospace}
+    .device-frame.embedded .device-screen{overflow:hidden;background:#000;border:1px solid #2a3a2a}
+    .device-frame.embedded .device-screen iframe{width:100%;height:100%;border:none;display:block}
+
+    /* Rotated */
+    .device-frame.rotated .device-bezel{transform:none}
+
+    /* Empty state */
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#333;gap:12px}
+    .empty-state-icon{font-size:48px;opacity:.3}
+    .empty-state-text{font-size:13px;font-weight:600}
+    .empty-state-sub{font-size:11px;color:#222}
+
+    /* DEBUG PANEL */
+    .debug-panel{background:#0a0a16;border-top:1px solid #1a1a2e;transition:height .25s ease;overflow:hidden;flex-shrink:0}
+    .debug-panel.collapsed{height:36px}
+    .debug-panel.expanded{height:250px}
+    .debug-header{display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:36px;cursor:pointer;user-select:none}
+    .debug-header-left{display:flex;align-items:center;gap:12px}
+    .debug-title{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px}
+    .debug-arrow{font-size:10px;color:#444;transition:transform .2s}
+    .debug-panel.expanded .debug-arrow{transform:rotate(180deg)}
+    .debug-tabs{display:flex;gap:0}
+    .debug-tab{padding:4px 12px;font-size:10px;font-weight:700;color:#444;cursor:pointer;border-radius:4px;transition:all .15s}
+    .debug-tab:hover{color:#888}
+    .debug-tab.active{background:#1a1040;color:#c4b5fd}
+    .debug-clear{font-size:10px;color:#444;cursor:pointer;padding:4px 10px;border:1px solid #1a1a2e;border-radius:4px;background:transparent;transition:all .2s}
+    .debug-clear:hover{border-color:#e94560;color:#e94560}
+    .debug-body{height:calc(100% - 36px);overflow:hidden}
+    .debug-content{display:none;height:100%;overflow-y:auto;padding:8px 14px;font-family:'Cascadia Code','Fira Code',monospace;font-size:11px}
+    .debug-content.active{display:block}
+
+    /* Console entries */
+    .console-entry{padding:3px 0;border-bottom:1px solid #0e0e18;display:flex;gap:8px;align-items:flex-start}
+    .console-ts{font-size:9px;color:#333;min-width:65px;flex-shrink:0;font-family:monospace}
+    .console-badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;min-width:36px;text-align:center;flex-shrink:0;text-transform:uppercase}
+    .console-badge.log{background:#0a2a1a;color:#00d084}
+    .console-badge.warn{background:#2a2a0a;color:#ffcc00}
+    .console-badge.error{background:#2a0a0a;color:#ff5555}
+    .console-badge.info{background:#0a1a2a;color:#4da6ff}
+    .console-badge.debug{background:#1a1a2e;color:#888}
+    .console-msg{color:#ccc;word-break:break-all;white-space:pre-wrap}
+
+    /* Network entries */
+    .network-table{width:100%;border-collapse:collapse}
+    .network-table th{padding:4px 10px;text-align:left;font-size:9px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #1a1a2e;position:sticky;top:0;background:#0a0a16}
+    .network-table td{padding:4px 10px;font-size:11px;color:#888;border-bottom:1px solid #0e0e18}
+    .network-method{font-weight:700;color:#7c3aed}
+    .network-status{font-weight:700}
+    .network-status.ok{color:#00d084}
+    .network-status.err{color:#ff5555}
+    .network-status.redirect{color:#ffcc00}
+    .network-dur{color:#444;font-family:monospace}
+
+    /* Info panel */
+    .info-grid{display:grid;grid-template-columns:120px 1fr;gap:6px 12px}
+    .info-label{font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px}
+    .info-value{font-size:11px;color:#aaa;font-family:monospace}
+
+    /* Browser bezel */
+    .device-frame.browser .device-bezel{background:#1e1e2e;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden}
+    .browser-titlebar{background:#161625;padding:8px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2a4a}
+    .browser-dots{display:flex;gap:5px}
+    .browser-dots span{width:10px;height:10px;border-radius:50%}
+    .browser-dots .dot-r{background:#ff5f57}
+    .browser-dots .dot-y{background:#febc2e}
+    .browser-dots .dot-g{background:#28c840}
+    .browser-tab{background:#0e0e1e;padding:4px 14px;border-radius:6px 6px 0 0;font-size:11px;color:#888;font-weight:600;display:flex;align-items:center;gap:6px}
+    .browser-urlbar{background:#0a0a18;border:1px solid #2a2a4a;border-radius:20px;padding:5px 14px;font-size:11px;color:#666;font-family:monospace;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .device-frame.browser .device-screen{overflow:hidden;background:#000}
+    .device-frame.browser .device-screen iframe{width:100%;height:100%;border:none;display:block}
+
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:#07070f}
+    ::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:#2a2a4a}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><span>&#9889;</span><h1>BAZA EMPIRE</h1></div>
+    <a class="nav-link" href="/">Agents</a>
+    <a class="nav-link" href="/ahb123">AHB123</a>
+    <a class="nav-link" href="/crons">Crons</a>
+    <a class="nav-link" href="/tasks">Tasks</a>
+    <a class="nav-link" href="/skills">Skills</a>
+    <a class="nav-link" href="/journal">Journal</a>
+    <a class="nav-link" href="/memory">Memory</a>
+    <a class="nav-link" href="/artifacts">Artifacts</a>
+    <a class="nav-link" href="/infra">Infra</a>
+    <a class="nav-link active" href="/explore">Explore</a>
+    <a class="nav-link" href="/cloud">Cloud</a>
+  <a class="nav-link" href="/settings">Settings</a>
+  </nav>
+
+  <div class="explore-layout">
+    <!-- SIDEBAR -->
+    <aside class="explore-sidebar">
+      <!-- Source Section -->
+      <div class="sidebar-section">
+        <div class="sidebar-label">Source</div>
+        <div class="source-tabs">
+          <div class="source-tab active" data-source="artifacts">Artifacts</div>
+          <div class="source-tab" data-source="upload">Upload</div>
+          <div class="source-tab" data-source="url">URL</div>
+        </div>
+
+        <!-- Artifacts panel -->
+        <div class="source-panel active" id="panel-artifacts">
+          <select class="project-select" id="project-select" onchange="loadArtifactList(this.value)">
+            <option value="">Select project...</option>
+            {% for p in projects %}
+            <option value="{{ p }}">{{ p }}</option>
+            {% endfor %}
+          </select>
+          <div class="artifact-list" id="artifact-list"></div>
+        </div>
+
+        <!-- Upload panel -->
+        <div class="source-panel" id="panel-upload">
+          <div class="drop-zone" id="drop-zone">
+            <div class="drop-zone-text">
+              <span>&#128194;</span>
+              Drop HTML / files here<br>or click to browse
+            </div>
+          </div>
+          <input type="file" id="file-input" style="display:none" accept=".html,.htm,.css,.js,.json,.svg,.png,.jpg">
+          <div class="upload-status" id="upload-status"></div>
+        </div>
+
+        <!-- URL panel -->
+        <div class="source-panel" id="panel-url">
+          <input type="text" class="url-input" id="url-input" placeholder="https://example.com">
+          <button class="btn btn-primary" onclick="loadPreview(document.getElementById('url-input').value)">Load</button>
+        </div>
+      </div>
+
+      <!-- Device Picker -->
+      <div class="sidebar-section" style="overflow-y:auto">
+        <div class="sidebar-label">Device</div>
+        <div id="device-list"></div>
+        <button class="more-devices-btn" id="more-devices-btn" onclick="fetchMoreDevices()">+ More Devices</button>
+      </div>
+    </aside>
+
+    <!-- CENTER -->
+    <div class="explore-center">
+      <!-- Toolbar -->
+      <div class="explore-toolbar">
+        <span class="toolbar-device-info" id="toolbar-device-name">iPhone 16 Pro</span>
+        <span class="toolbar-device-dims" id="toolbar-device-dims">393 x 852</span>
+        <div class="toolbar-sep"></div>
+
+        <button class="toolbar-btn" onclick="toggleRotate()" title="Rotate">&#8635; Rotate</button>
+        <div class="toolbar-sep"></div>
+
+        <div class="zoom-group">
+          <span style="font-size:10px;color:#555">Zoom</span>
+          <input type="range" class="zoom-slider" id="zoom-slider" min="15" max="250" value="60" oninput="setZoom(this.value)">
+          <span class="zoom-label" id="zoom-label">60%</span>
+        </div>
+        <div class="toolbar-sep"></div>
+
+        <div class="toolbar-right">
+          <button class="toolbar-btn" id="touch-mode-btn" onclick="toggleTouchMode()" title="Touch simulation mode">&#128070; Touch</button>
+          <button class="toolbar-btn" onclick="takeScreenshot()" title="Open in new tab">&#128247; Screenshot</button>
+          <div class="toolbar-sep"></div>
+          <button class="toolbar-btn" id="compare-btn" onclick="toggleCompare()" title="Side-by-side comparison">&#9645;&#9645; Compare</button>
+          <button class="toolbar-btn" onclick="refreshPreview()" title="Refresh">&#8635; Refresh</button>
+          <button class="toolbar-btn" id="debug-toggle-btn" onclick="toggleDebug()" title="Toggle debug panel">&#9654; Debug</button>
+
+          <div class="build-dropdown">
+            <button class="toolbar-btn" onclick="toggleBuildMenu()">&#9881; Build &#9662;</button>
+            <div class="build-menu" id="build-menu">
+              <div class="build-menu-item" onclick="buildProject('static')">Static</div>
+              <div class="build-menu-item" onclick="buildProject('flask')">Flask</div>
+              <div class="build-menu-item" onclick="buildProject('node')">Node</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Frame Area -->
+      <div class="frame-area" id="frame-area">
+        <div class="device-frame phone" id="device-frame-1" style="--zoom:0.6">
+          <div class="device-bezel">
+            <div class="device-notch-island" id="notch-1"></div>
+            <div class="device-screen" id="screen-1" style="width:393px;height:852px">
+              <div class="empty-state" id="empty-state-1">
+                <div class="empty-state-icon">&#128270;</div>
+                <div class="empty-state-text">No preview loaded</div>
+                <div class="empty-state-sub">Select an artifact, upload a file, or enter a URL</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="device-frame phone" id="device-frame-2" style="--zoom:0.6;display:none">
+          <div class="device-bezel">
+            <div class="device-notch-island" id="notch-2"></div>
+            <div class="device-screen" id="screen-2" style="width:393px;height:852px">
+              <div class="empty-state" id="empty-state-2">
+                <div class="empty-state-icon">&#128270;</div>
+                <div class="empty-state-text">Compare view</div>
+                <div class="empty-state-sub">Select a second device</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Debug Panel -->
+      <div class="debug-panel collapsed" id="debug-panel">
+        <div class="debug-header" onclick="toggleDebug()">
+          <div class="debug-header-left">
+            <span class="debug-title">Console</span>
+            <span class="debug-arrow">&#9650;</span>
+            <div class="debug-tabs">
+              <div class="debug-tab active" data-tab="console" onclick="event.stopPropagation();switchDebugTab('console')">Console</div>
+              <div class="debug-tab" data-tab="network" onclick="event.stopPropagation();switchDebugTab('network')">Network</div>
+              <div class="debug-tab" data-tab="info" onclick="event.stopPropagation();switchDebugTab('info')">Info</div>
+            </div>
+          </div>
+          <button class="debug-clear" onclick="event.stopPropagation();clearDebugTab()">Clear</button>
+        </div>
+        <div class="debug-body">
+          <div class="debug-content active" id="debug-console"></div>
+          <div class="debug-content" id="debug-network">
+            <table class="network-table">
+              <thead><tr><th>Method</th><th>URL</th><th>Status</th><th>Duration</th></tr></thead>
+              <tbody id="network-tbody"></tbody>
+            </table>
+          </div>
+          <div class="debug-content" id="debug-info">
+            <div class="info-grid" id="info-grid">
+              <span class="info-label">Device</span><span class="info-value" id="info-device">--</span>
+              <span class="info-label">Viewport</span><span class="info-value" id="info-viewport">--</span>
+              <span class="info-label">URL</span><span class="info-value" id="info-url">--</span>
+              <span class="info-label">Session</span><span class="info-value" id="info-session">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ===== DEVICES ===== */
+    const DEVICES = {
+      phones: [
+        { name: 'iPhone 15', w: 393, h: 852, type: 'phone', notch: 'island' },
+        { name: 'iPhone 15 Pro Max', w: 430, h: 932, type: 'phone', notch: 'island' },
+        { name: 'iPhone 16 Pro', w: 402, h: 874, type: 'phone', notch: 'island' },
+        { name: 'iPhone 16 Pro Max', w: 440, h: 956, type: 'phone', notch: 'island' },
+        { name: 'iPhone SE', w: 375, h: 667, type: 'phone', notch: 'home' },
+        { name: 'Pixel 9 Pro', w: 412, h: 915, type: 'phone', notch: 'punch' },
+        { name: 'Galaxy S24 Ultra', w: 384, h: 824, type: 'phone', notch: 'punch' },
+        { name: 'Galaxy Z Fold 6 (outer)', w: 373, h: 832, type: 'phone', notch: 'punch' },
+      ],
+      tablets: [
+        { name: 'iPad Pro 12.9"', w: 1024, h: 1366, type: 'tablet', zoom: 50 },
+        { name: 'iPad Air', w: 820, h: 1180, type: 'tablet', zoom: 50 },
+        { name: 'Galaxy Tab S9', w: 800, h: 1280, type: 'tablet', zoom: 50 },
+      ],
+      desktop: [
+        { name: 'MacBook Pro 14"', w: 1512, h: 982, type: 'desktop', zoom: 35 },
+        { name: 'Desktop 1080p', w: 1920, h: 1080, type: 'desktop', zoom: 35 },
+        { name: 'Desktop 1440p', w: 2560, h: 1440, type: 'desktop', zoom: 35 },
+      ],
+      embedded: [
+        { name: 'Raspberry Pi 7"', w: 800, h: 480, type: 'embedded', chip: 'BCM2711', zoom: 60 },
+        { name: 'ESP32 OLED', w: 128, h: 64, type: 'embedded', chip: 'ESP32-S3', zoom: 200 },
+      ],
+      browsers: [
+        { name: 'Chrome Desktop', w: 1440, h: 900, type: 'browser', zoom: 40 },
+        { name: 'Chrome Mobile', w: 412, h: 915, type: 'browser', zoom: 60 },
+        { name: 'Safari Desktop', w: 1440, h: 900, type: 'browser', zoom: 40 },
+        { name: 'Safari iOS', w: 393, h: 852, type: 'browser', zoom: 60 },
+        { name: 'Firefox Desktop', w: 1440, h: 900, type: 'browser', zoom: 40 },
+        { name: 'Firefox Android', w: 412, h: 915, type: 'browser', zoom: 60 },
+        { name: 'Edge Desktop', w: 1440, h: 900, type: 'browser', zoom: 40 },
+        { name: 'Brave Desktop', w: 1440, h: 900, type: 'browser', zoom: 40 },
+        { name: 'Opera Desktop', w: 1440, h: 900, type: 'browser', zoom: 40 },
+        { name: 'Samsung Internet', w: 360, h: 780, type: 'browser', zoom: 60 },
+      ]
+    };
+
+    let currentDevice = DEVICES.phones[0];
+    let isRotated = false;
+    let isCompare = false;
+    let currentUrl = '';
+    let sessionId = 'sess_' + Date.now().toString(36);
+    let activeDebugTab = 'console';
+
+    /* ===== BRIDGE SCRIPT ===== */
+    const BRIDGE_SCRIPT = `
+      ['log','warn','error','info','debug'].forEach(m=>{
+        const o=console[m];
+        console[m]=function(...a){
+          o.apply(console,a);
+          window.parent.postMessage({type:'explore-console',method:m,
+            args:a.map(x=>typeof x==='object'?JSON.stringify(x,null,2):String(x)),
+            ts:Date.now()},'*');
+        };
+      });
+      window.addEventListener('error',e=>{
+        window.parent.postMessage({type:'explore-console',method:'error',
+          args:[e.message+' at '+e.filename+':'+e.lineno],ts:Date.now()},'*');
+      });
+      window.addEventListener('unhandledrejection',e=>{
+        window.parent.postMessage({type:'explore-console',method:'error',
+          args:['Unhandled Promise: '+e.reason],ts:Date.now()},'*');
+      });
+      const _fetch=window.fetch;
+      window.fetch=function(...a){
+        const url=typeof a[0]==='string'?a[0]:a[0]?.url||'';
+        const method=(a[1]?.method||'GET').toUpperCase();
+        const t0=Date.now();
+        return _fetch.apply(this,a).then(r=>{
+          window.parent.postMessage({type:'explore-network',method,url,
+            status:r.status,duration:Date.now()-t0},'*');
+          return r;
+        }).catch(e=>{
+          window.parent.postMessage({type:'explore-network',method,url,
+            status:0,duration:Date.now()-t0,error:e.message},'*');
+          throw e;
+        });
+      };
+      window.addEventListener('message',function(e){
+        if(!e.data) return;
+        if(e.data.type==='explore-touch'){
+          const el=document.elementFromPoint(e.data.x,e.data.y);
+          if(el){
+            if(e.data.action==='start'){
+              el.dispatchEvent(new PointerEvent('pointerdown',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));
+              el.dispatchEvent(new MouseEvent('mousedown',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));
+            } else if(e.data.action==='end'){
+              el.dispatchEvent(new PointerEvent('pointerup',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));
+              el.dispatchEvent(new MouseEvent('mouseup',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));
+              el.dispatchEvent(new MouseEvent('click',{clientX:e.data.x,clientY:e.data.y,bubbles:true}));
+            }
+          }
+        }
+        if(e.data.type==='explore-scroll'){
+          window.scrollBy({left:e.data.deltaX,top:e.data.deltaY,behavior:'auto'});
+        }
+      });
+    `;
+
+    /* ===== INIT ===== */
+    document.addEventListener('DOMContentLoaded', () => {
+      renderDeviceList(DEVICES);
+      selectDevice(DEVICES.phones[0]);
+      initSourceTabs();
+      initDragDrop();
+      initMessageListener();
+
+      // Auto-load from URL params (when agents send content here)
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('source') === 'artifact' && params.get('project_id') && params.get('filename')) {
+        const proj = params.get('project_id');
+        const file = params.get('filename');
+        const dev = params.get('device');
+
+        // Set project dropdown and load artifact list
+        const projSelect = document.getElementById('project-select');
+        if (projSelect) {
+          projSelect.value = proj;
+          loadArtifactList(proj);
+        }
+
+        // Load preview
+        loadPreview('/api/explore/static/' + encodeURIComponent(proj) + '/' + encodeURIComponent(file));
+
+        // Select specified device if provided
+        if (dev) {
+          for (const [cat, devs] of Object.entries(DEVICES)) {
+            for (let i = 0; i < devs.length; i++) {
+              const dName = devs[i].name.toLowerCase().replace(/[\s"']/g, '-');
+              if (dName === dev || devs[i].name.toLowerCase().includes(dev.replace('-', ' '))) {
+                selectDevice(devs[i]);
+                break;
+              }
+            }
+          }
+        }
+
+        // Show toast notification
+        showAgentToast('Loaded from agent: ' + file);
+      }
+
+      if (params.get('source') === 'url' && params.get('url')) {
+        const targetUrl = params.get('url');
+        const dev = params.get('device');
+
+        // Switch to URL tab
+        document.querySelectorAll('.source-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.source-panel').forEach(p => p.classList.remove('active'));
+        const urlTab = document.querySelector('.source-tab[data-source="url"]');
+        if (urlTab) urlTab.classList.add('active');
+        const urlPanel = document.getElementById('panel-url');
+        if (urlPanel) urlPanel.classList.add('active');
+
+        // Set URL input and load
+        const urlInput = document.getElementById('url-input');
+        if (urlInput) urlInput.value = targetUrl;
+        loadPreview(targetUrl);
+
+        // Select device if specified
+        if (dev) {
+          for (const [cat, devs] of Object.entries(DEVICES)) {
+            for (let i = 0; i < devs.length; i++) {
+              const dName = devs[i].name.toLowerCase().replace(/[\s"']/g, '-');
+              if (dName === dev || devs[i].name.toLowerCase().includes(dev.replace('-', ' '))) {
+                selectDevice(devs[i]);
+                break;
+              }
+            }
+          }
+        }
+
+        showAgentToast('Loaded from agent: ' + targetUrl);
+      }
+    });
+
+    /* ===== SOURCE TABS ===== */
+    function initSourceTabs() {
+      document.querySelectorAll('.source-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.source-tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.source-panel').forEach(p => p.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('panel-' + tab.dataset.source).classList.add('active');
+        });
+      });
+    }
+
+    /* ===== DEVICE LIST ===== */
+    function renderDeviceList(devices, container) {
+      const el = container || document.getElementById('device-list');
+      let html = '';
+      const categories = { phones: 'Phones', tablets: 'Tablets', desktop: 'Desktop', embedded: 'Embedded', browsers: 'Browsers' };
+      for (const [key, label] of Object.entries(categories)) {
+        if (!devices[key] || devices[key].length === 0) continue;
+        html += `<div class="device-category"><div class="device-category-label">${label}</div>`;
+        devices[key].forEach((d, i) => {
+          const id = key + '-' + i;
+          html += `<button class="device-btn" data-device-id="${id}" onclick="selectDeviceById('${key}',${i})">
+            <span>${d.name}</span>
+            <span class="device-dims">${d.w}x${d.h}</span>
+          </button>`;
+        });
+        html += '</div>';
+      }
+      el.innerHTML = html;
+    }
+
+    function selectDeviceById(category, index) {
+      const d = DEVICES[category][index];
+      if (d) selectDevice(d);
+    }
+
+    function selectDevice(d) {
+      currentDevice = d;
+      isRotated = false;
+      const w = d.w, h = d.h;
+      const defaultZoom = d.zoom || (d.type === 'phone' ? 60 : d.type === 'tablet' ? 50 : d.type === 'browser' ? 40 : 35);
+
+      // Update toolbar
+      document.getElementById('toolbar-device-name').textContent = d.name;
+      document.getElementById('toolbar-device-dims').textContent = w + ' x ' + h;
+
+      // Update zoom
+      document.getElementById('zoom-slider').value = defaultZoom;
+      setZoom(defaultZoom);
+
+      // Update frame type
+      applyDeviceFrame('device-frame-1', 'screen-1', 'notch-1', d, w, h);
+      if (isCompare) applyDeviceFrame('device-frame-2', 'screen-2', 'notch-2', d, w, h);
+
+      // Highlight active button
+      document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
+      const activeId = Object.keys(DEVICES).find(k => DEVICES[k].includes(d));
+      const idx = DEVICES[activeId].indexOf(d);
+      const btn = document.querySelector(`[data-device-id="${activeId}-${idx}"]`);
+      if (btn) btn.classList.add('active');
+
+      // Update info panel
+      updateInfoPanel();
+    }
+
+    function applyDeviceFrame(frameId, screenId, notchId, d, w, h) {
+      const frame = document.getElementById(frameId);
+      const screen = document.getElementById(screenId);
+      const notch = document.getElementById(notchId);
+
+      // Set frame type class
+      frame.className = 'device-frame ' + d.type;
+      if (isRotated) frame.classList.add('rotated');
+
+      // Set screen dimensions
+      screen.style.width = w + 'px';
+      screen.style.height = h + 'px';
+
+      // Handle notch/chin
+      if (notch) {
+        notch.className = '';
+        notch.style.display = 'none';
+        notch.innerHTML = '';
+      }
+
+      // Remove any existing chin, browser titlebar, desktop title-bar, or embedded label
+      const existingChin = frame.querySelector('.device-chin');
+      if (existingChin) existingChin.remove();
+      const existingBrowserTb = frame.querySelector('.browser-titlebar');
+      if (existingBrowserTb) existingBrowserTb.remove();
+      const existingTitleBar = frame.querySelector('.title-bar');
+      if (existingTitleBar) existingTitleBar.remove();
+      const existingLabel = frame.querySelector('.device-label');
+      if (existingLabel) existingLabel.remove();
+
+      // Remove old status bar and home indicator
+      const oldStatusBar = frame.querySelector('.device-status-bar');
+      if (oldStatusBar) oldStatusBar.remove();
+      const oldHomeInd = frame.querySelector('.device-home-indicator');
+      if (oldHomeInd) oldHomeInd.remove();
+
+      if (d.type === 'phone') {
+        if (d.notch === 'island' && notch) {
+          notch.className = 'device-notch-island';
+          notch.style.display = 'block';
+        } else if (d.notch === 'punch' && notch) {
+          notch.className = 'device-notch-punch';
+          notch.style.display = 'block';
+        } else if (d.notch === 'home') {
+          if (notch) notch.style.display = 'none';
+          const chin = document.createElement('div');
+          chin.className = 'device-chin';
+          chin.innerHTML = '<div class="device-chin-btn"></div>';
+          const bezel = frame.querySelector('.device-bezel');
+          if (bezel) bezel.appendChild(chin);
+        }
+        // Add home indicator for modern phones (not home button)
+        if (d.notch !== 'home') {
+          const indicator = document.createElement('div');
+          indicator.className = 'device-home-indicator';
+          screen.appendChild(indicator);
+        }
+      }
+
+      // Handle desktop title bar
+      if (d.type === 'desktop') {
+        const bezel = frame.querySelector('.device-bezel');
+        if (bezel && !bezel.querySelector('.title-bar')) {
+          const bar = document.createElement('div');
+          bar.className = 'title-bar';
+          bar.innerHTML = '<div class="title-dot red"></div><div class="title-dot yellow"></div><div class="title-dot green"></div>';
+          bezel.insertBefore(bar, bezel.firstChild);
+        }
+      }
+
+      // Handle embedded label
+      if (d.type === 'embedded') {
+        const bezel = frame.querySelector('.device-bezel');
+        if (bezel && !bezel.querySelector('.device-label')) {
+          const lbl = document.createElement('div');
+          lbl.className = 'device-label';
+          lbl.textContent = d.chip || 'Embedded';
+          bezel.insertBefore(lbl, bezel.firstChild);
+        }
+      }
+
+      // Handle browser frame
+      if (d.type === 'browser') {
+        const bezel = frame.querySelector('.device-bezel');
+        // Remove any existing browser titlebar
+        const existingTb = bezel.querySelector('.browser-titlebar');
+        if (existingTb) existingTb.remove();
+        const browserName = d.name;
+        const titlebar = document.createElement('div');
+        titlebar.className = 'browser-titlebar';
+        titlebar.innerHTML = `
+          <div class="browser-dots"><span class="dot-r"></span><span class="dot-y"></span><span class="dot-g"></span></div>
+          <div class="browser-tab">${browserName}</div>
+          <div class="browser-urlbar" id="browser-url-${screenId}">about:blank</div>
+        `;
+        bezel.insertBefore(titlebar, bezel.firstChild);
+        // Adjust screen height to account for titlebar (~42px)
+        const titlebarHeight = 42;
+        screen.style.height = (h - titlebarHeight) + 'px';
+      }
+    }
+
+    /* ===== PREVIEW LOADING ===== */
+    function loadPreview(url) {
+      if (!url) return;
+      currentUrl = url;
+
+      const screen1 = document.getElementById('screen-1');
+      const empty1 = document.getElementById('empty-state-1');
+      if (empty1) empty1.remove();
+
+      // Remove existing iframe
+      let iframe = screen1.querySelector('iframe');
+      if (iframe) iframe.remove();
+
+      // Create new iframe
+      iframe = document.createElement('iframe');
+      // Only sandbox external URLs — local content needs full navigation
+      if (url.startsWith('http') && !url.includes(window.location.host)) {
+        iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation';
+      }
+      iframe.style.cssText = 'width:100%;height:100%;border:none;display:block';
+      iframe.src = url;
+      iframe.addEventListener('load', () => { injectBridge(iframe); updateUrlBar(iframe); });
+      screen1.appendChild(iframe);
+
+      // Update browser URL bar if present
+      const urlBar1 = document.getElementById('browser-url-screen-1');
+      if (urlBar1) urlBar1.textContent = url;
+
+      // Update info
+      updateInfoPanel();
+
+      // Also load in compare frame if active
+      if (isCompare) {
+        const screen2 = document.getElementById('screen-2');
+        const empty2 = document.getElementById('empty-state-2');
+        if (empty2) empty2.remove();
+        let iframe2 = screen2.querySelector('iframe');
+        if (iframe2) iframe2.remove();
+        iframe2 = document.createElement('iframe');
+        if (url.startsWith('http') && !url.includes(window.location.host)) {
+          iframe2.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation';
+        }
+        iframe2.style.cssText = 'width:100%;height:100%;border:none;display:block';
+        iframe2.src = url;
+        iframe2.addEventListener('load', () => { injectBridge(iframe2); });
+        screen2.appendChild(iframe2);
+
+        // Update browser URL bar for compare frame
+        const urlBar2 = document.getElementById('browser-url-screen-2');
+        if (urlBar2) urlBar2.textContent = url;
+      }
+    }
+
+    function updateUrlBar(iframe) {
+      try {
+        const url = iframe.contentWindow.location.href;
+        const bar1 = document.getElementById('browser-url-screen-1');
+        if (bar1) bar1.textContent = url;
+        currentUrl = url;
+      } catch(e) {}
+    }
+
+    function injectBridge(iframe) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        const script = doc.createElement('script');
+        script.textContent = BRIDGE_SCRIPT;
+        doc.head.appendChild(script);
+      } catch (e) {
+        appendConsole('warn', ['Bridge injection blocked (cross-origin): ' + e.message], Date.now());
+      }
+    }
+
+    function refreshPreview() {
+      const screen1 = document.getElementById('screen-1');
+      const iframe = screen1.querySelector('iframe');
+      if (iframe && iframe.src) {
+        iframe.src = iframe.src;
+      }
+    }
+
+    /* ===== ROTATE ===== */
+    function toggleRotate() {
+      isRotated = !isRotated;
+      const d = currentDevice;
+      const w = isRotated ? d.h : d.w;
+      const h = isRotated ? d.w : d.h;
+
+      document.getElementById('toolbar-device-dims').textContent = w + ' x ' + h;
+
+      const screen1 = document.getElementById('screen-1');
+      screen1.style.width = w + 'px';
+      screen1.style.height = h + 'px';
+
+      const frame1 = document.getElementById('device-frame-1');
+      frame1.classList.toggle('rotated', isRotated);
+
+      if (isCompare) {
+        const screen2 = document.getElementById('screen-2');
+        screen2.style.width = w + 'px';
+        screen2.style.height = h + 'px';
+        document.getElementById('device-frame-2').classList.toggle('rotated', isRotated);
+      }
+
+      updateInfoPanel();
+    }
+
+    /* ===== SCROLL ZOOM ===== */
+    document.getElementById('frame-area').addEventListener('wheel', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const slider = document.getElementById('zoom-slider');
+        let val = parseInt(slider.value) + (e.deltaY < 0 ? 5 : -5);
+        val = Math.max(15, Math.min(250, val));
+        setZoom(val);
+      }
+    }, { passive: false });
+
+    /* ===== ZOOM ===== */
+    function setZoom(val) {
+      val = parseInt(val);
+      document.getElementById('zoom-label').textContent = val + '%';
+      document.getElementById('zoom-slider').value = val;
+      const scale = val / 100;
+      document.getElementById('device-frame-1').style.setProperty('--zoom', scale);
+      if (isCompare) {
+        document.getElementById('device-frame-2').style.setProperty('--zoom', scale);
+      }
+    }
+
+    /* ===== COMPARE ===== */
+    function toggleCompare() {
+      isCompare = !isCompare;
+      const frame2 = document.getElementById('device-frame-2');
+      const area = document.getElementById('frame-area');
+      const btn = document.getElementById('compare-btn');
+
+      frame2.style.display = isCompare ? '' : 'none';
+      area.classList.toggle('compare', isCompare);
+      btn.classList.toggle('active', isCompare);
+
+      if (isCompare) {
+        applyDeviceFrame('device-frame-2', 'screen-2', 'notch-2', currentDevice,
+          isRotated ? currentDevice.h : currentDevice.w,
+          isRotated ? currentDevice.w : currentDevice.h);
+        const scale = parseInt(document.getElementById('zoom-slider').value) / 100;
+        document.getElementById('device-frame-2').style.setProperty('--zoom', scale);
+        if (currentUrl) loadPreview(currentUrl);
+      }
+    }
+
+    /* ===== DEBUG PANEL ===== */
+    function toggleDebug() {
+      const panel = document.getElementById('debug-panel');
+      const btn = document.getElementById('debug-toggle-btn');
+      const isExpanded = panel.classList.contains('expanded');
+      panel.classList.toggle('collapsed', !panel.classList.contains('collapsed'));
+      panel.classList.toggle('expanded', !isExpanded);
+      btn.classList.toggle('active', !isExpanded);
+    }
+
+    function switchDebugTab(tab) {
+      activeDebugTab = tab;
+      document.querySelectorAll('.debug-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.querySelectorAll('.debug-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('debug-' + tab).classList.add('active');
+    }
+
+    function clearDebugTab() {
+      if (activeDebugTab === 'console') {
+        document.getElementById('debug-console').innerHTML = '';
+      } else if (activeDebugTab === 'network') {
+        document.getElementById('network-tbody').innerHTML = '';
+      }
+    }
+
+    function appendConsole(method, args, ts) {
+      const container = document.getElementById('debug-console');
+      const entry = document.createElement('div');
+      entry.className = 'console-entry';
+      const time = new Date(ts);
+      const timeStr = time.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      entry.innerHTML = `
+        <span class="console-ts">${timeStr}</span>
+        <span class="console-badge ${method}">${method}</span>
+        <span class="console-msg">${escapeHtml(args.join(' '))}</span>
+      `;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function appendNetwork(data) {
+      const tbody = document.getElementById('network-tbody');
+      const row = document.createElement('tr');
+      const statusClass = data.status >= 200 && data.status < 300 ? 'ok' : data.status >= 300 && data.status < 400 ? 'redirect' : 'err';
+      row.innerHTML = `
+        <td class="network-method">${escapeHtml(data.method)}</td>
+        <td>${escapeHtml(truncateUrl(data.url))}</td>
+        <td class="network-status ${statusClass}">${data.status || 'ERR'}</td>
+        <td class="network-dur">${data.duration}ms</td>
+      `;
+      tbody.appendChild(row);
+      const container = document.getElementById('debug-network');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    /* ===== MESSAGE LISTENER ===== */
+    function initMessageListener() {
+      window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'explore-console') {
+          appendConsole(e.data.method, e.data.args || [], e.data.ts || Date.now());
+        } else if (e.data && e.data.type === 'explore-network') {
+          appendNetwork(e.data);
+        }
+      });
+    }
+
+    /* ===== ARTIFACT LIST ===== */
+    function loadArtifactList(projectId) {
+      if (!projectId) {
+        document.getElementById('artifact-list').innerHTML = '';
+        return;
+      }
+      fetch('/api/artifacts?project_id=' + encodeURIComponent(projectId))
+        .then(r => r.json())
+        .then(data => {
+          const list = document.getElementById('artifact-list');
+          const files = data.files || data || [];
+          if (!files.length) {
+            list.innerHTML = '<div style="font-size:11px;color:#333;padding:8px">No artifacts found</div>';
+            return;
+          }
+          list.innerHTML = files.map(f => {
+            const name = typeof f === 'string' ? f : f.name || f.filename;
+            // Use rel_path for files in subdirectories (e.g. website/about.html)
+            const relPath = (typeof f === 'object' && f.rel_path) ? f.rel_path : name;
+            // Strip the project_id prefix from rel_path if present
+            const servePath = relPath.startsWith(projectId) ? relPath.substring(projectId.length + 1) : relPath;
+            return `<div class="artifact-item" onclick="selectArtifact(this,'${escapeAttr(projectId)}','${escapeAttr(servePath)}')" title="${escapeAttr(relPath)}">${escapeHtml(name)}</div>`;
+          }).join('');
+        })
+        .catch(err => {
+          document.getElementById('artifact-list').innerHTML = '<div style="font-size:11px;color:#ff5555;padding:8px">Failed to load</div>';
+        });
+    }
+
+    function selectArtifact(el, projectId, filename) {
+      document.querySelectorAll('.artifact-item').forEach(a => a.classList.remove('active'));
+      el.classList.add('active');
+      // Don't encode slashes in filename — it may contain subdirectory paths like website/about.html
+      const parts = filename.split('/').map(p => encodeURIComponent(p)).join('/');
+      const url = '/api/explore/static/' + encodeURIComponent(projectId) + '/' + parts;
+      loadPreview(url);
+    }
+
+    /* ===== DRAG & DROP ===== */
+    function initDragDrop() {
+      const dropZone = document.getElementById('drop-zone');
+      const fileInput = document.getElementById('file-input');
+
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) uploadFile(e.dataTransfer.files[0]);
+      });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) uploadFile(fileInput.files[0]);
+      });
+    }
+
+    function uploadFile(file) {
+      const status = document.getElementById('upload-status');
+      status.textContent = 'Uploading ' + file.name + '...';
+      status.style.color = '#888';
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      fetch('/api/explore/upload', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+          if (data.url) {
+            status.textContent = 'Uploaded: ' + file.name;
+            status.style.color = '#00d084';
+            loadPreview(data.url);
+          } else if (data.error) {
+            status.textContent = 'Error: ' + data.error;
+            status.style.color = '#ff5555';
+          }
+        })
+        .catch(err => {
+          status.textContent = 'Upload failed: ' + err.message;
+          status.style.color = '#ff5555';
+        });
+    }
+
+    /* ===== BUILD ===== */
+    function toggleBuildMenu() {
+      document.getElementById('build-menu').classList.toggle('open');
+    }
+
+    function buildProject(type) {
+      document.getElementById('build-menu').classList.remove('open');
+      const projectId = document.getElementById('project-select').value;
+      if (!projectId) {
+        appendConsole('warn', ['No project selected for build'], Date.now());
+        return;
+      }
+
+      appendConsole('info', ['Starting ' + type + ' build for ' + projectId + '...'], Date.now());
+
+      fetch('/api/explore/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId, type: type })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.url) {
+            appendConsole('log', ['Build complete: ' + data.url], Date.now());
+            loadPreview(data.url);
+          } else if (data.error) {
+            appendConsole('error', ['Build failed: ' + data.error], Date.now());
+          } else {
+            appendConsole('log', ['Build response: ' + JSON.stringify(data)], Date.now());
+          }
+        })
+        .catch(err => {
+          appendConsole('error', ['Build request failed: ' + err.message], Date.now());
+        });
+    }
+
+    /* ===== MORE DEVICES ===== */
+    function fetchMoreDevices() {
+      const btn = document.getElementById('more-devices-btn');
+      btn.textContent = 'Loading...';
+      btn.disabled = true;
+
+      fetch('/api/explore/devices')
+        .then(r => r.json())
+        .then(data => {
+          if (data && typeof data === 'object') {
+            for (const [cat, devs] of Object.entries(data)) {
+              if (!DEVICES[cat]) DEVICES[cat] = [];
+              devs.forEach(d => {
+                const exists = DEVICES[cat].some(e => e.name === d.name);
+                if (!exists) DEVICES[cat].push(d);
+              });
+            }
+          }
+          renderDeviceList(DEVICES);
+          btn.textContent = 'Devices loaded';
+          // Re-highlight current device
+          selectDevice(currentDevice);
+        })
+        .catch(err => {
+          btn.textContent = '+ More Devices';
+          btn.disabled = false;
+          appendConsole('error', ['Failed to fetch devices: ' + err.message], Date.now());
+        });
+    }
+
+    /* ===== INFO PANEL ===== */
+    function updateInfoPanel() {
+      const d = currentDevice;
+      const w = isRotated ? d.h : d.w;
+      const h = isRotated ? d.w : d.h;
+      document.getElementById('info-device').textContent = d.name + (isRotated ? ' (rotated)' : '');
+      document.getElementById('info-viewport').textContent = w + ' x ' + h;
+      document.getElementById('info-url').textContent = currentUrl || '--';
+      document.getElementById('info-session').textContent = sessionId;
+    }
+
+    /* ===== AGENT TOAST ===== */
+    function showAgentToast(message) {
+      const toast = document.createElement('div');
+      toast.textContent = message;
+      toast.style.cssText = 'position:fixed;top:72px;right:24px;background:#1a1040;color:#c4b5fd;padding:10px 18px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid #7c3aed;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.5);transition:opacity .4s';
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = '0'; }, 3500);
+      setTimeout(() => { toast.remove(); }, 4000);
+    }
+
+    /* ===== HELPERS ===== */
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function escapeAttr(str) {
+      return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    function truncateUrl(url) {
+      return url.length > 80 ? url.substring(0, 77) + '...' : url;
+    }
+
+    /* ===== TOUCH SIMULATION ===== */
+    let touchMode = false;
+    let touchCursor = null;
+    let touchRipple = null;
+
+    function initTouchSim() {
+      // Create touch cursor (finger dot)
+      touchCursor = document.createElement('div');
+      touchCursor.id = 'touch-cursor';
+      touchCursor.style.cssText = 'display:none;position:fixed;width:28px;height:28px;border-radius:50%;background:rgba(233,69,96,.35);border:2px solid rgba(233,69,96,.6);pointer-events:none;z-index:9999;transform:translate(-50%,-50%);transition:width .1s,height .1s,opacity .15s';
+      document.body.appendChild(touchCursor);
+
+      // Touch ripple effect
+      touchRipple = document.createElement('div');
+      touchRipple.id = 'touch-ripple';
+      touchRipple.style.cssText = 'display:none;position:fixed;width:50px;height:50px;border-radius:50%;border:2px solid rgba(233,69,96,.4);pointer-events:none;z-index:9998;transform:translate(-50%,-50%) scale(0);transition:transform .3s ease-out,opacity .3s';
+      document.body.appendChild(touchRipple);
+    }
+
+    function toggleTouchMode() {
+      touchMode = !touchMode;
+      const btn = document.getElementById('touch-mode-btn');
+      if (btn) btn.classList.toggle('active', touchMode);
+      const frameArea = document.getElementById('frame-area');
+      frameArea.style.cursor = touchMode ? 'none' : '';
+
+      if (touchMode) {
+        frameArea.addEventListener('mousemove', onTouchMove);
+        frameArea.addEventListener('mousedown', onTouchDown);
+        frameArea.addEventListener('mouseup', onTouchUp);
+        appendConsole('info', ['Touch simulation enabled — click to tap, drag to scroll'], Date.now());
+      } else {
+        frameArea.removeEventListener('mousemove', onTouchMove);
+        frameArea.removeEventListener('mousedown', onTouchDown);
+        frameArea.removeEventListener('mouseup', onTouchUp);
+        if (touchCursor) touchCursor.style.display = 'none';
+        appendConsole('info', ['Touch simulation disabled'], Date.now());
+      }
+    }
+
+    function onTouchMove(e) {
+      if (!touchCursor) return;
+      touchCursor.style.display = 'block';
+      touchCursor.style.left = e.clientX + 'px';
+      touchCursor.style.top = e.clientY + 'px';
+    }
+
+    function onTouchDown(e) {
+      if (!touchCursor) return;
+      touchCursor.style.width = '22px';
+      touchCursor.style.height = '22px';
+      touchCursor.style.background = 'rgba(233,69,96,.55)';
+
+      // Ripple effect
+      if (touchRipple) {
+        touchRipple.style.display = 'block';
+        touchRipple.style.left = e.clientX + 'px';
+        touchRipple.style.top = e.clientY + 'px';
+        touchRipple.style.transform = 'translate(-50%,-50%) scale(0)';
+        touchRipple.style.opacity = '1';
+        requestAnimationFrame(() => {
+          touchRipple.style.transform = 'translate(-50%,-50%) scale(1)';
+          touchRipple.style.opacity = '0';
+        });
+        setTimeout(() => { touchRipple.style.display = 'none'; }, 300);
+      }
+
+      // Forward touch event to iframe
+      const screen = document.getElementById('screen-1');
+      const iframe = screen ? screen.querySelector('iframe') : null;
+      if (iframe) {
+        try {
+          const rect = iframe.getBoundingClientRect();
+          const zoom = parseFloat(document.getElementById('device-frame-1').style.getPropertyValue('--zoom')) || 0.6;
+          const x = (e.clientX - rect.left) / zoom;
+          const y = (e.clientY - rect.top) / zoom;
+          iframe.contentWindow.postMessage({type:'explore-touch', action:'start', x, y}, '*');
+        } catch(err) {}
+      }
+    }
+
+    function onTouchUp(e) {
+      if (!touchCursor) return;
+      touchCursor.style.width = '28px';
+      touchCursor.style.height = '28px';
+      touchCursor.style.background = 'rgba(233,69,96,.35)';
+
+      const screen = document.getElementById('screen-1');
+      const iframe = screen ? screen.querySelector('iframe') : null;
+      if (iframe) {
+        try {
+          const rect = iframe.getBoundingClientRect();
+          const zoom = parseFloat(document.getElementById('device-frame-1').style.getPropertyValue('--zoom')) || 0.6;
+          const x = (e.clientX - rect.left) / zoom;
+          const y = (e.clientY - rect.top) / zoom;
+          iframe.contentWindow.postMessage({type:'explore-touch', action:'end', x, y}, '*');
+        } catch(err) {}
+      }
+    }
+
+    initTouchSim();
+
+    /* ===== PLAIN SCROLL ZOOM (without Ctrl) on frame area ===== */
+    document.getElementById('frame-area').addEventListener('wheel', function(e) {
+      // Ctrl+wheel = zoom (already handled above)
+      // Plain wheel without Ctrl = forward scroll to iframe
+      if (!e.ctrlKey && !e.metaKey) {
+        const screen = document.getElementById('screen-1');
+        const iframe = screen ? screen.querySelector('iframe') : null;
+        if (iframe) {
+          try {
+            iframe.contentWindow.postMessage({type:'explore-scroll', deltaX: e.deltaX, deltaY: e.deltaY}, '*');
+          } catch(err) {}
+        }
+      }
+    }, { passive: true });
+
+    /* ===== ORIENTATION TOGGLE ===== */
+    function toggleOrientation() {
+      const screen = document.getElementById('screen-1');
+      const iframe = screen ? screen.querySelector('iframe') : null;
+      if (iframe) {
+        try {
+          const orient = isRotated ? 'landscape' : 'portrait';
+          iframe.contentWindow.postMessage({type:'explore-orientation', orientation: orient}, '*');
+          appendConsole('info', ['Orientation: ' + orient], Date.now());
+        } catch(err) {}
+      }
+    }
+
+    /* ===== SCREENSHOT ===== */
+    function takeScreenshot() {
+      const screen = document.getElementById('screen-1');
+      const iframe = screen ? screen.querySelector('iframe') : null;
+      if (!iframe) { appendConsole('warn',['No content loaded'],Date.now()); return; }
+      try {
+        // Use html2canvas if available, otherwise just note the URL
+        appendConsole('info', ['Screenshot of: ' + (iframe.src || currentUrl)], Date.now());
+        // Open current page in new tab as a "screenshot"
+        window.open(iframe.src, '_blank');
+      } catch(err) {
+        appendConsole('error', ['Screenshot failed: ' + err.message], Date.now());
+      }
+    }
+
+    /* Close build menu on outside click */
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.build-dropdown')) {
+        document.getElementById('build-menu').classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>

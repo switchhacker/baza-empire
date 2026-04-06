@@ -124,17 +124,36 @@ def list_agent_artifacts(agent_id: str, project_id: str = "") -> list:
             })
     return files
 
-# ── CLI test ──────────────────────────────────────────────────────────────────
+# ── Skill execution (called by SkillsEngine via SKILL_ARGS env var) ──────────
 if __name__ == "__main__":
+    import sys
+    args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
+    agent_id = args.get("agent_id") or os.environ.get("AGENT_ID", "unknown")
+
+    # Support both naming conventions: filename/file_name, content, project_id
+    file_name = args.get("filename") or args.get("file_name", "")
+    content   = args.get("content", "")
+    project_id = args.get("project_id", "shared")
+    description = args.get("description", "")
+    task_id    = args.get("task_id", "")
+    file_path  = args.get("file_path", "")
+
+    if not file_name and not file_path:
+        print(json.dumps({"success": False, "error": "filename or file_path required"}))
+        sys.exit(1)
+
     result = save_artifact(
-        agent_id="claw_batto",
-        project_id="baza-framework",
-        file_name="test_artifact.md",
-        content="# Test\nThis is a test artifact saved by claw_batto.",
-        description="Test artifact save",
+        agent_id=agent_id,
+        file_name=file_name,
+        content=content,
+        project_id=project_id,
+        description=description,
+        task_id=task_id,
+        file_path=file_path,
     )
-    print("Save result:", result)
-    arts = list_agent_artifacts("claw_batto")
-    print(f"Claw artifacts: {len(arts)} files")
-    for a in arts[:5]:
-        print(f"  {a['rel']} ({a['size']} bytes)")
+    if result.get("success"):
+        print(f"Saved: {file_name} -> {result.get('path','')}")
+        print(f"Project: {project_id} | Size: {result.get('size', 0)} bytes")
+    else:
+        print(f"Error: {result.get('error', 'unknown')}")
+    print(json.dumps(result))

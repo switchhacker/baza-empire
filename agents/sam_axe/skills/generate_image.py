@@ -120,12 +120,15 @@ try:
     boundary = "bazaartifactboundary"
     with open(filepath, "rb") as img_f:
         img_data = img_f.read()
+    # Detect project from prompt content
+    low = prompt.lower()
+    proj = "proj-ahb123" if any(k in low for k in ["ahb", "home", "kitchen", "bath", "room", "house", "reno", "floor", "architect"]) else "proj-ahb123"
     body = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="project_id"\r\n\r\n'
-        f"shared\r\n"
+        f"{proj}\r\n"
         f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f'Content-Disposition: form-data; name="file"; filename="sam_axe_{filename}"\r\n'
         f"Content-Type: image/png\r\n\r\n"
     ).encode("utf-8") + img_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
     req = urllib.request.Request(

@@ -76,6 +76,13 @@ class BaseAgent(ContextMixin):
         self._prompt_cache: Optional[str] = None
         self._prompt_cache_ts: float = 0.0
 
+        # Event bus for inter-agent communication
+        try:
+            from core.event_bus import EventBus
+            self.event_bus = EventBus(agent_id=self.agent_id)
+        except Exception:
+            self.event_bus = None
+
     def save_artifact_binary(self, filename: str, data: bytes, project_id: str = "shared") -> dict:
         """
         Upload a binary file (image, pdf, zip, etc.) to the dashboard artifacts.
@@ -151,7 +158,7 @@ class BaseAgent(ContextMixin):
             "ANY output you produce that is a file, report, image, document, code, config, or data "
             "MUST be saved as an artifact immediately. Do not just describe it in chat.\n"
             "Save with: ##SKILL:artifact_save{\"filename\":\"name.ext\",\"content\":\"...\",\"project_id\":\"proj-id\"}##\n"
-            "Supported: .html .json .py .md .sh .yaml .csv .txt .js .ts .css .sql .log .svg .conf .toml\n"
+            "Supported: any text-based format (.md .py .sh .js .ts .html .json .yaml .csv .sql .txt .log .svg .xml .toml .rst .rb .go .php .css and more)\n"
             "Project IDs: proj-ahb123 (All Home Building Co), proj-baza-empire (mining/agents), shared (general)\n"
             "Examples:\n"
             "  ##SKILL:artifact_save{\"filename\":\"proposal.md\",\"content\":\"# Proposal\\n...\",\"project_id\":\"proj-ahb123\"}##\n"
@@ -162,7 +169,29 @@ class BaseAgent(ContextMixin):
             "  - If you produce structured data → save it as .json or .csv\n"
             "  - If you produce HTML → save it as .html\n"
             "  - Save FIRST, then send a brief summary in chat.\n"
-            "== END ARTIFACTS =="
+            "  - There is NO limit on how much you save. Save everything. More is better.\n"
+            "  - If a task produces 10 files, save all 10. Do not summarize or truncate.\n"
+            "  - When saving artifacts: use full markdown, headers, and code blocks — that's what artifacts are for.\n"
+            "== END ARTIFACTS ==\n"
+            "\n\n== RESEARCH → PLAN → EXECUTE WORKFLOW ==\n"
+            "For any task that takes more than 2 steps, follow this sequence:\n"
+            "PHASE 1 — RESEARCH: Use web_search + scrape_page to gather what you need. Save raw notes:\n"
+            "  ##SKILL:artifact_save{\"filename\":\"research_[topic].md\",\"content\":\"...\",\"project_id\":\"...\"}##\n"
+            "PHASE 2 — PLAN: Write a numbered execution plan. SAVE IT FIRST before executing anything:\n"
+            "  ##SKILL:artifact_save{\"filename\":\"plan_[topic].md\",\"content\":\"# Plan\\n1. ...\",\"project_id\":\"...\"}##\n"
+            "PHASE 3 — EXECUTE: Execute each step. Save each output file immediately after generating it.\n"
+            "PHASE 4 — REPORT: Save a summary when done:\n"
+            "  ##SKILL:artifact_save{\"filename\":\"report_[topic].md\",\"content\":\"# Results\\n...\",\"project_id\":\"...\"}##\n"
+            "  Then send a brief chat summary listing what was saved.\n"
+            "RULE: Never describe a plan without saving it. Never finish work without saving results.\n"
+            "== END WORKFLOW ==\n"
+            "\n\n== ARTIFACT AWARENESS ==\n"
+            "Other agents save files to shared artifacts. Check what exists before duplicating work.\n"
+            "To list recent artifacts: ##SKILL:list_artifacts{\"limit\":20}##\n"
+            "To list another agent's work: ##SKILL:list_artifacts{\"agent_id\":\"sam_axe\",\"limit\":10}##\n"
+            "To list by project: ##SKILL:list_artifacts{\"project_id\":\"proj-ahb123\",\"limit\":15}##\n"
+            "When referencing another agent's work (e.g. regenerate Sam's avatar image), call list_artifacts first to find the exact filename.\n"
+            "== END ARTIFACT AWARENESS =="
         )
 
         # Inject dynamic skill creation docs
@@ -175,6 +204,21 @@ class BaseAgent(ContextMixin):
             "You can create: API callers, system queries, file processors, calculators, scrapers — anything.\n"
             "After creating, immediately call it: ##SKILL:tool_name{\"arg\":\"value\"}##\n"
             "== END DYNAMIC TOOLS =="
+        )
+
+        # Inject AHB123 business data access
+        prompt += (
+            "\n\n== AHB123 BUSINESS DATA ==\n"
+            "You have access to AHBCO LLC business data via the ahb123_query skill:\n"
+            "##SKILL:ahb123_query{\"action\":\"list_clients\",\"filters\":{\"status\":\"active\"}}##\n"
+            "##SKILL:ahb123_query{\"action\":\"list_projects\",\"filters\":{\"status\":\"in-progress\"}}##\n"
+            "##SKILL:ahb123_query{\"action\":\"list_invoices\",\"filters\":{\"status\":\"overdue\"}}##\n"
+            "##SKILL:ahb123_query{\"action\":\"dashboard_stats\"}## — get summary counts\n"
+            "##SKILL:ahb123_query{\"action\":\"search\",\"filters\":{\"q\":\"keyword\"}}## — search all tables\n"
+            "Write actions: add_client, update_client, add_project, update_project, add_invoice, add_receipt, add_payroll, add_estimate\n"
+            "All data is for All Home Building Co LLC (AHBCO), Philadelphia PA.\n"
+            "Dashboard: http://localhost:8888/ahb123\n"
+            "== END AHB123 =="
         )
 
         if extra:
@@ -237,15 +281,40 @@ class BaseAgent(ContextMixin):
         """
         Run an LLM inference. Streams internally, returns full response string.
         Uses GPU pool if USE_GPU_POOL, otherwise AMD only.
+        Logs token usage to agent_usage table.
         """
         full = ""
+        usage_meta = {}
+
+        def _on_complete(meta):
+            nonlocal usage_meta
+            usage_meta = meta
+
         if self.USE_GPU_POOL:
-            for chunk in chat_stream_pooled(self.MODEL, messages, system_prompt, self.AGENT_ID):
+            for chunk in chat_stream_pooled(self.MODEL, messages, system_prompt,
+                                            self.AGENT_ID, on_complete=_on_complete):
                 full += chunk
         else:
             from core.ollama_client import OLLAMA_AMD_URL
-            for chunk in chat_stream(self.MODEL, messages, system_prompt, OLLAMA_AMD_URL):
+            for chunk in chat_stream(self.MODEL, messages, system_prompt,
+                                     OLLAMA_AMD_URL, on_complete=_on_complete):
                 full += chunk
+
+        if usage_meta:
+            try:
+                from core.context_db import usage_log
+                duration_ms = usage_meta.get("total_duration_ns", 0) // 1_000_000
+                usage_log(
+                    agent_id=self.AGENT_ID,
+                    model=usage_meta.get("model", self.MODEL),
+                    provider=usage_meta.get("provider", "ollama"),
+                    prompt_tokens=usage_meta.get("prompt_tokens", 0),
+                    completion_tokens=usage_meta.get("completion_tokens", 0),
+                    duration_ms=duration_ms
+                )
+            except Exception:
+                pass
+
         return full.strip()
 
 
@@ -326,6 +395,126 @@ class BaseAgent(ContextMixin):
         return None
 
 
+    # ── Print Request Handling ───────────────────────────────────────────────
+
+    def _is_print_request(self, text: str) -> bool:
+        """Detect print-related requests."""
+        t = text.lower().strip()
+        print_phrases = [
+            "print this", "print that", "print it", "print the",
+            "print a test", "print test", "send to printer",
+            "print page", "printer status", "print status",
+            "print queue", "cancel print", "print last",
+            "print image", "print photo", "print file",
+            "print invoice", "print contract", "print report",
+            "print document", "print pdf",
+        ]
+        return any(phrase in t for phrase in print_phrases) or t == "print"
+
+    def _find_printable_file(self, text: str) -> str | None:
+        """Find the best file to print based on the request text and agent memory."""
+        import re as _re, glob as _glob
+
+        # 1. Explicit file path in the message
+        path_match = _re.search(r'["\']?(/\S+\.\w{2,5})["\']?', text)
+        if path_match and os.path.exists(path_match.group(1)):
+            return path_match.group(1)
+
+        # 2. Agent memory — last analyzed photo or generated image
+        for key in ["last_analyzed_photo", "last_image_generated"]:
+            val = self.recall(key)
+            if val and os.path.exists(val):
+                return val
+
+        # 3. Extract artifact name from message: "print the invoice" → search for "invoice"
+        t = text.lower()
+        # Strip common prefixes to get the target noun
+        for prefix in ["print the ", "print my ", "print this ", "print that ",
+                        "print last ", "print a ", "print "]:
+            if t.startswith(prefix):
+                target = t[len(prefix):].strip().rstrip(".")
+                if target and target not in ("this", "that", "it", "page", "file", "document"):
+                    break
+        else:
+            target = ""
+
+        if target:
+            # Search artifacts for matching filename
+            base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "dashboard", "artifacts")
+            if os.path.isdir(base):
+                matches = _glob.glob(os.path.join(base, "**", f"*{target}*"), recursive=True)
+                # Filter out .meta files
+                matches = [m for m in matches if not m.endswith(".meta") and os.path.isfile(m)]
+                if matches:
+                    # Return most recently modified
+                    return max(matches, key=os.path.getmtime)
+
+        # 4. "print last image/photo" — find most recent image in artifacts
+        if any(w in t for w in ["image", "photo", "picture", "last"]):
+            base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "dashboard", "artifacts")
+            if os.path.isdir(base):
+                imgs = []
+                for ext in ["*.png", "*.jpg", "*.jpeg", "*.webp"]:
+                    imgs.extend(_glob.glob(os.path.join(base, "**", ext), recursive=True))
+                imgs = [i for i in imgs if not i.endswith(".meta")]
+                if imgs:
+                    return max(imgs, key=os.path.getmtime)
+
+        return None
+
+    async def _handle_print_request(self, text: str, chat_id: int) -> str:
+        """Handle print requests directly — bypass LLM, run skill."""
+        t = text.lower().strip()
+        loop = asyncio.get_event_loop()
+
+        # Status / queue
+        if "status" in t or "queue" in t:
+            result = await loop.run_in_executor(
+                None, self.skills.run, "print_document", {"action": "status"}, chat_id
+            )
+            if result.get("success"):
+                try:
+                    parsed = json.loads(result["output"].split("\n")[-1])
+                    return (f"Printer: {parsed.get('printer', 'HP Smart Tank 5101')}\n"
+                            f"Status: {parsed.get('status', 'Unknown')}\n"
+                            f"Pending jobs: {parsed.get('pending_jobs', 0)}")
+                except Exception:
+                    return result.get("output", "Printer checked.")
+            return f"Could not check printer: {result.get('error', 'unknown error')}"
+
+        # Cancel
+        if "cancel" in t:
+            result = await loop.run_in_executor(
+                None, self.skills.run, "print_document", {"action": "cancel"}, chat_id
+            )
+            return "Print jobs cancelled." if result.get("success") else f"Cancel failed: {result.get('error')}"
+
+        # Test page
+        if "test" in t:
+            result = await loop.run_in_executor(
+                None, self.skills.run, "print_document",
+                {"text": f"BAZA EMPIRE — PRINT TEST\n\nHP Smart Tank 5101 is online and connected.\n\nPrinted by: {self.AGENT_ID.replace('_',' ').title()}\nFramework: agent-framework-v3",
+                 "title": "Baza Empire Test Page"}, chat_id
+            )
+            if result.get("success"):
+                return "Test page sent to printer."
+            return f"Print failed: {result.get('error', 'unknown error')}"
+
+        # Find the file to print
+        file_to_print = self._find_printable_file(text)
+        if file_to_print:
+            result = await loop.run_in_executor(
+                None, self.skills.run, "print_document",
+                {"file_path": file_to_print}, chat_id
+            )
+            if result.get("success"):
+                return f"Sent to printer: {os.path.basename(file_to_print)}"
+            return f"Print failed: {result.get('error', 'unknown error')}"
+
+        return "Nothing to print. Send me a photo, generate an image, or specify a filename."
+
     # ── Message Handling ──────────────────────────────────────────────────────
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -349,6 +538,15 @@ class BaseAgent(ContextMixin):
             save_message(chat_id, self.AGENT_ID, "user", text)
             save_message(chat_id, self.AGENT_ID, "assistant", task_confirm)
             await self._send_response(context.bot, chat_id, task_confirm)
+            return
+
+        # ── Print request intercept (fires for ALL agents) ────────────────
+        if self._is_print_request(text):
+            save_message(chat_id, self.AGENT_ID, "user", text)
+            await context.bot.send_message(chat_id=chat_id, text="Sending to printer...")
+            reply = await self._handle_print_request(text, chat_id)
+            save_message(chat_id, self.AGENT_ID, "assistant", reply)
+            await self._send_response(context.bot, chat_id, reply)
             return
 
         # Save incoming message to DB
@@ -457,18 +655,28 @@ class BaseAgent(ContextMixin):
 
         # Detect fenced code blocks: ```lang\n...\n```
         code_blocks = re.findall(r'```(\w*)\n([\s\S]+?)```', response)
+        has_any_code = len(code_blocks) > 0
         has_substantial_code = any(
-            len(code.strip().splitlines()) >= 5
+            len(code.strip().splitlines()) >= 2
             for _, code in code_blocks
         )
 
-        # Detect long structured documents (headers + length)
+        # Detect structured documents (headers + length)
         has_structured_doc = (
-            len(response) > 1000
+            len(response) > 400
             and bool(re.search(r'^#+\s', response, re.MULTILINE))
         )
 
-        if not has_substantial_code and not has_structured_doc:
+        # Detect bullet list output (4+ bullets)
+        has_list_output = (
+            len(response) > 300
+            and len(re.findall(r'^[-*•]\s', response, re.MULTILINE)) >= 4
+        )
+
+        # Detect markdown tables
+        has_table = '|---|' in response or '| --- |' in response or '|:---|' in response
+
+        if not (has_substantial_code or has_any_code or has_structured_doc or has_list_output or has_table):
             return
 
         # Determine extension from first code block language (fallback .md)
@@ -512,6 +720,64 @@ class BaseAgent(ContextMixin):
                 break
 
         self.remember("last_active_chat_id", str(chat_id), "session")
+
+    # ── Event Bus Listener ─────────────────────────────────────────────────────
+
+    async def start_event_listener(self):
+        """Listen for events relevant to this agent."""
+        if not self.event_bus:
+            return
+        try:
+            async for event in self.event_bus.listen("research_complete", "agent_alert", "knowledge_updated"):
+                if event.type == "agent_alert" and event.data.get("target") != self.agent_id:
+                    continue  # Not for us
+                await self._handle_event(event)
+        except Exception as e:
+            logger.error(f"[{self.AGENT_ID}] Event listener error: {e}")
+
+    async def _handle_event(self, event):
+        """Override in subclasses for custom event handling."""
+        logger.info(f"[{self.agent_id}] Received event: {event}")
+
+    # ── Heartbeat ─────────────────────────────────────────────────────────────
+
+    async def _heartbeat_loop(self):
+        """Emit a Redis heartbeat every 60 seconds so the dashboard shows liveness."""
+        try:
+            import redis as _redis
+            r = _redis.Redis(host='localhost', port=6379, decode_responses=True)
+        except Exception:
+            return
+        while True:
+            try:
+                import json as _json
+                payload = _json.dumps({
+                    "agent_id": self.AGENT_ID,
+                    "model": self.MODEL,
+                    "status": "idle",
+                    "ts": int(time.time()),
+                })
+                r.setex(f"baza:heartbeat:{self.AGENT_ID}", 120, payload)
+            except Exception:
+                pass
+            await asyncio.sleep(60)
+
+    # ── Artifact Context Loop ──────────────────────────────────────────────────
+
+    async def _artifact_context_loop(self):
+        """Refresh shared artifact knowledge in empire_knowledge every 5 minutes."""
+        import os as _os
+        artifacts_dir = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+            "dashboard", "artifacts"
+        )
+        while True:
+            try:
+                from core.context_db import update_artifact_empire_knowledge
+                update_artifact_empire_knowledge(artifacts_dir)
+            except Exception:
+                pass
+            await asyncio.sleep(300)
 
     # ── Auto Summarize ────────────────────────────────────────────────────────
 
@@ -602,6 +868,10 @@ class BaseAgent(ContextMixin):
         async with app:
             await app.initialize()
             await app.start()
+            # Start background loops: heartbeat + artifact context refresh + event bus
+            asyncio.ensure_future(self._heartbeat_loop())
+            asyncio.ensure_future(self._artifact_context_loop())
+            asyncio.ensure_future(self.start_event_listener())
             await app.updater.start_polling(drop_pending_updates=True)
             # Keep running until cancelled
             try:

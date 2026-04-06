@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Cloud</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+    a{color:inherit;text-decoration:none}
+
+    /* ── NAV ── */
+    .cloud-nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 24px;display:flex;align-items:center;gap:24px;height:56px;flex-shrink:0}
+    .cloud-brand{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .cloud-brand span{font-size:20px}
+    .nav-spacer{flex:1}
+    .nav-user{font-size:13px;color:#888;font-weight:600}
+    .nav-storage{font-size:12px;color:#444;padding:5px 12px;background:#111;border:1px solid #1a1a2e;border-radius:6px;font-family:monospace}
+    .btn-logout{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a;padding:7px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.5px;transition:opacity .2s}
+    .btn-logout:hover{opacity:.8}
+
+    /* ── LAYOUT ── */
+    .cloud-body{display:flex;flex:1;overflow:hidden}
+
+    /* ── SIDEBAR ── */
+    .sidebar{width:260px;flex-shrink:0;background:#0a0a16;border-right:1px solid #1a1a2e;display:flex;flex-direction:column;overflow:hidden}
+    .sidebar-title{font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:2px;padding:18px 18px 10px}
+
+    .agent-list{flex:1;overflow-y:auto;padding:0 10px 10px}
+    .agent-list::-webkit-scrollbar{width:4px}
+    .agent-list::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:4px}
+
+    .agent-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background .15s;margin-bottom:2px;border-left:3px solid transparent}
+    .agent-item:hover{background:#0e0e1e}
+    .agent-item.active{background:#0e0e1e}
+    .agent-avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+    .agent-info{overflow:hidden}
+    .agent-name{font-size:13px;font-weight:700;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .agent-role{font-size:10px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    .sidebar-divider{height:1px;background:#1a1a2e;margin:8px 16px}
+
+    .sidebar-btn{display:flex;align-items:center;gap:10px;padding:12px 18px;font-size:13px;font-weight:700;color:#888;cursor:pointer;transition:background .15s,color .15s;flex-shrink:0;border:none;background:none;width:100%;text-align:left}
+    .sidebar-btn:hover,.sidebar-btn.active{background:#0e0e1e;color:#e0e0e0}
+    .sidebar-btn span{font-size:18px}
+
+    /* ── MAIN AREA ── */
+    .main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+    /* ── CHAT VIEW ── */
+    .chat-view{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .chat-view.hidden{display:none}
+
+    .chat-header{padding:16px 24px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:14px;flex-shrink:0;background:#0a0a16}
+    .chat-agent-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+    .chat-agent-name{font-size:16px;font-weight:800;color:#fff}
+    .chat-agent-role{font-size:12px;color:#555;margin-left:4px}
+    .chat-header-spacer{flex:1}
+    .btn-clear{background:#111;color:#666;border:1px solid #1a1a2e;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .2s}
+    .btn-clear:hover{opacity:.7}
+
+    .chat-messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:12px}
+    .chat-messages::-webkit-scrollbar{width:5px}
+    .chat-messages::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:4px}
+
+    .msg{max-width:72%;display:flex;flex-direction:column;gap:4px;animation:msgIn .2s ease-out}
+    @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .msg.user{align-self:flex-end;align-items:flex-end}
+    .msg.assistant{align-self:flex-start;align-items:flex-start}
+    .msg.error{align-self:center;align-items:center}
+
+    .msg-bubble{padding:12px 16px;border-radius:12px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+    .msg.user .msg-bubble{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-bottom-right-radius:4px}
+    .msg.assistant .msg-bubble{background:#0e0e1e;border:1px solid #1a1a2e;color:#d0d0d0;border-bottom-left-radius:4px}
+    .msg.error .msg-bubble{background:#2a0d0d;border:1px solid #5a1a1a;color:#ff6666;font-size:12px}
+
+    .msg-time{font-size:10px;color:#333;padding:0 4px}
+
+    .thinking{align-self:flex-start;display:none;align-items:center;gap:8px;padding:4px 24px}
+    .thinking.visible{display:flex}
+    .thinking-dots{display:flex;gap:4px}
+    .thinking-dots span{width:6px;height:6px;border-radius:50%;background:#555;animation:dotPulse 1.2s infinite}
+    .thinking-dots span:nth-child(2){animation-delay:.2s}
+    .thinking-dots span:nth-child(3){animation-delay:.4s}
+    @keyframes dotPulse{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+    .thinking-label{font-size:11px;color:#444}
+
+    .chat-empty{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#222}
+    .chat-empty-icon{font-size:48px;opacity:.3}
+    .chat-empty-text{font-size:14px;font-weight:600}
+    .chat-empty-sub{font-size:12px;color:#333}
+
+    .chat-input-area{padding:16px 24px;border-top:1px solid #1a1a2e;background:#0a0a16;flex-shrink:0;display:flex;gap:10px;align-items:flex-end}
+    .chat-input{flex:1;background:#111;border:1px solid #1a1a2e;border-radius:10px;padding:12px 16px;color:#e0e0e0;font-size:14px;font-family:inherit;outline:none;resize:none;min-height:44px;max-height:160px;line-height:1.5;transition:border-color .2s}
+    .chat-input:focus{border-color:#7c3aed}
+    .chat-input::placeholder{color:#333}
+    .btn-send{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .1s;white-space:nowrap;flex-shrink:0}
+    .btn-send:hover{opacity:.9;transform:translateY(-1px)}
+    .btn-send:active{transform:translateY(0)}
+    .btn-send:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+    /* ── NO AGENT SELECTED ── */
+    .no-agent{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#222}
+    .no-agent.hidden{display:none}
+    .no-agent-icon{font-size:56px;opacity:.15}
+    .no-agent-text{font-size:15px;font-weight:700;color:#333}
+    .no-agent-sub{font-size:12px;color:#222}
+
+    /* ── FILES VIEW ── */
+    .files-view{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .files-view.hidden{display:none}
+
+    .files-toolbar{padding:14px 24px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#0a0a16;flex-wrap:wrap}
+    .breadcrumb{display:flex;align-items:center;gap:4px;font-size:13px;flex:1}
+    .breadcrumb-item{color:#555;cursor:pointer;transition:color .15s;padding:4px 6px;border-radius:4px}
+    .breadcrumb-item:hover{color:#e0e0e0;background:#111}
+    .breadcrumb-item.current{color:#e0e0e0;font-weight:700;cursor:default}
+    .breadcrumb-item.current:hover{background:transparent}
+    .breadcrumb-sep{color:#333;font-size:11px}
+    .btn-tool{background:#111;color:#888;border:1px solid #1a1a2e;padding:7px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;transition:opacity .2s;display:flex;align-items:center;gap:6px}
+    .btn-tool:hover{opacity:.8;color:#e0e0e0}
+    .btn-tool span{font-size:14px}
+
+    .files-area{flex:1;overflow-y:auto;padding:20px 24px}
+    .files-area::-webkit-scrollbar{width:5px}
+    .files-area::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:4px}
+
+    .files-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+    .files-list{display:flex;flex-direction:column;gap:2px}
+
+    .file-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:18px 16px;cursor:pointer;transition:border-color .15s,transform .15s;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;position:relative}
+    .file-card:hover{border-color:#333;transform:translateY(-2px)}
+    .file-icon{font-size:32px;opacity:.7}
+    .file-name{font-size:12px;font-weight:700;color:#ccc;word-break:break-all;line-height:1.3}
+    .file-meta{font-size:10px;color:#444}
+    .file-actions{position:absolute;top:8px;right:8px;display:none}
+    .file-card:hover .file-actions{display:flex;gap:4px}
+    .file-action-btn{background:#111;border:1px solid #1a1a2e;color:#666;width:24px;height:24px;border-radius:4px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;transition:color .15s}
+    .file-action-btn:hover{color:#e0e0e0}
+
+    .file-row{display:grid;grid-template-columns:28px 1fr 80px 140px 60px;gap:12px;align-items:center;padding:10px 14px;border-radius:6px;cursor:pointer;transition:background .15s}
+    .file-row:hover{background:#0e0e1e}
+    .file-row-icon{font-size:16px;opacity:.6;text-align:center}
+    .file-row-name{font-size:13px;font-weight:600;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .file-row-size{font-size:11px;color:#555;text-align:right;font-family:monospace}
+    .file-row-date{font-size:11px;color:#444}
+    .file-row-actions{display:flex;gap:4px;justify-content:flex-end}
+
+    .files-empty{text-align:center;padding:60px 20px;color:#333}
+    .files-empty-icon{font-size:48px;opacity:.2;margin-bottom:12px}
+    .files-empty-text{font-size:14px;font-weight:600}
+    .files-empty-sub{font-size:12px;margin-top:6px}
+
+    /* ── DROP ZONE ── */
+    .drop-overlay{position:absolute;inset:0;background:rgba(7,7,15,.92);display:none;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px}
+    .drop-overlay.visible{display:flex}
+    .drop-overlay-icon{font-size:56px;opacity:.4}
+    .drop-overlay-text{font-size:16px;font-weight:700;color:#7c3aed}
+    .drop-overlay-sub{font-size:12px;color:#555}
+
+    /* ── STORAGE BAR ── */
+    .storage-bar-wrap{padding:12px 24px;border-top:1px solid #1a1a2e;background:#0a0a16;flex-shrink:0;display:none}
+    .storage-bar-wrap.visible{display:block}
+    .storage-track{height:6px;background:#111;border-radius:6px;overflow:hidden;margin-bottom:6px}
+    .storage-fill{height:100%;background:linear-gradient(90deg,#00d084,#7c3aed);border-radius:6px;transition:width .4s ease}
+    .storage-text{font-size:11px;color:#444;font-family:monospace}
+
+    /* ── HIDDEN FILE INPUT ── */
+    .hidden-input{display:none}
+
+    /* ── CONTEXT MENU ── */
+    .ctx-menu{position:fixed;background:#0e0e1e;border:1px solid #1a1a2e;border-radius:8px;padding:6px 0;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:200;display:none}
+    .ctx-menu.visible{display:block}
+    .ctx-item{padding:8px 16px;font-size:12px;color:#bbb;cursor:pointer;transition:background .1s}
+    .ctx-item:hover{background:#111;color:#fff}
+    .ctx-divider{height:1px;background:#1a1a2e;margin:4px 0}
+
+    /* ── NEW FOLDER MODAL ── */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:300}
+    .modal-overlay.visible{display:flex}
+    .modal{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:28px;width:360px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+    .modal-title{font-size:15px;font-weight:800;color:#fff;margin-bottom:16px}
+    .modal input{width:100%;background:#111;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:14px;font-family:inherit;outline:none;margin-bottom:16px}
+    .modal input:focus{border-color:#7c3aed}
+    .modal-btns{display:flex;gap:8px;justify-content:flex-end}
+    .btn-modal-cancel{background:#111;color:#888;border:1px solid #1a1a2e;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+    .btn-modal-ok{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="cloud-nav">
+  <div class="cloud-brand"><span>&#9729;</span> BAZA CLOUD</div>
+  <div class="nav-spacer"></div>
+  <span class="nav-user" id="nav-display-name">{{ user.display_name }}</span>
+  <span class="nav-storage" id="nav-storage">-- / 200 GB</span>
+  <button class="btn-logout" onclick="logout()">Logout</button>
+</nav>
+
+<!-- BODY -->
+<div class="cloud-body">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-title">Agents</div>
+    <div class="agent-list" id="agent-list">
+
+      <div class="agent-item" onclick="selectAgent('simon_bately')" data-agent="simon_bately">
+        <div class="agent-avatar" style="background:#7c3aed">S</div>
+        <div class="agent-info"><div class="agent-name">Simon Bately</div><div class="agent-role">Coordinator</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('claw_batto')" data-agent="claw_batto">
+        <div class="agent-avatar" style="background:#4da6ff">C</div>
+        <div class="agent-info"><div class="agent-name">Claw Batto</div><div class="agent-role">Developer</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('phil_hass')" data-agent="phil_hass">
+        <div class="agent-avatar" style="background:#00d084">P</div>
+        <div class="agent-info"><div class="agent-name">Phil Hass</div><div class="agent-role">Legal / Finance</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('sam_axe')" data-agent="sam_axe">
+        <div class="agent-avatar" style="background:#e94560">S</div>
+        <div class="agent-info"><div class="agent-name">Sam Axe</div><div class="agent-role">Creative</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('rex_valor')" data-agent="rex_valor">
+        <div class="agent-avatar" style="background:#f59e0b">R</div>
+        <div class="agent-info"><div class="agent-name">Rex Valor</div><div class="agent-role">Voice / Sales</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('duke_harmon')" data-agent="duke_harmon">
+        <div class="agent-avatar" style="background:#84cc16">D</div>
+        <div class="agent-info"><div class="agent-name">Duke Harmon</div><div class="agent-role">Project Mgmt</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('scout_reeves')" data-agent="scout_reeves">
+        <div class="agent-avatar" style="background:#06b6d4">S</div>
+        <div class="agent-info"><div class="agent-name">Scout Reeves</div><div class="agent-role">Research</div></div>
+      </div>
+
+      <div class="agent-item" onclick="selectAgent('nova_sterling')" data-agent="nova_sterling">
+        <div class="agent-avatar" style="background:#ec4899">N</div>
+        <div class="agent-info"><div class="agent-name">Nova Sterling</div><div class="agent-role">Client Chat</div></div>
+      </div>
+
+    </div>
+
+    <div class="sidebar-divider"></div>
+    <button class="sidebar-btn" onclick="showFiles()" id="btn-my-files">
+      <span>&#128193;</span> My Files
+    </button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="main-area">
+
+    <!-- Drop overlay -->
+    <div class="drop-overlay" id="drop-overlay">
+      <div class="drop-overlay-icon">&#128228;</div>
+      <div class="drop-overlay-text">Drop files to upload</div>
+      <div class="drop-overlay-sub">Files will be uploaded to the current folder</div>
+    </div>
+
+    <!-- No agent selected (default) -->
+    <div class="no-agent" id="no-agent-view">
+      <div class="no-agent-icon">&#9729;</div>
+      <div class="no-agent-text">Select an agent to start chatting</div>
+      <div class="no-agent-sub">or open My Files to manage your storage</div>
+    </div>
+
+    <!-- Chat view -->
+    <div class="chat-view hidden" id="chat-view">
+      <div class="chat-header">
+        <div class="chat-agent-dot" id="chat-dot"></div>
+        <span class="chat-agent-name" id="chat-agent-name"></span>
+        <span class="chat-agent-role" id="chat-agent-role"></span>
+        <div class="chat-header-spacer"></div>
+        <button class="btn-clear" onclick="clearChat()">Clear Chat</button>
+      </div>
+
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-empty" id="chat-empty">
+          <div class="chat-empty-icon">&#128172;</div>
+          <div class="chat-empty-text">No messages yet</div>
+          <div class="chat-empty-sub">Send a message to start the conversation</div>
+        </div>
+      </div>
+
+      <div class="thinking" id="thinking">
+        <div class="thinking-dots"><span></span><span></span><span></span></div>
+        <div class="thinking-label">Thinking...</div>
+      </div>
+
+      <div class="chat-input-area">
+        <textarea class="chat-input" id="cloud-chat-input" placeholder="Type a message..." rows="1"></textarea>
+        <button class="btn-send" id="btn-send" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <!-- Files view -->
+    <div class="files-view hidden" id="files-view">
+      <div class="files-toolbar">
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <button class="btn-tool" onclick="document.getElementById('file-upload-input').click()"><span>&#8679;</span> Upload</button>
+        <button class="btn-tool" onclick="showNewFolderModal()"><span>&#128193;</span> New Folder</button>
+        <button class="btn-tool" onclick="toggleViewMode()" id="btn-view-toggle"><span>&#9638;</span> Grid</button>
+      </div>
+
+      <div class="files-area" id="files-area"></div>
+
+      <div class="storage-bar-wrap visible" id="storage-bar">
+        <div class="storage-track"><div class="storage-fill" id="storage-fill" style="width:0%"></div></div>
+        <div class="storage-text" id="storage-text">Loading storage info...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Hidden upload input -->
+<input type="file" class="hidden-input" id="file-upload-input" multiple onchange="handleFileInput(this.files)">
+
+<!-- Context menu -->
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-item" onclick="ctxAction('download')">Download</div>
+  <div class="ctx-item" onclick="ctxAction('rename')">Rename</div>
+  <div class="ctx-divider"></div>
+  <div class="ctx-item" onclick="ctxAction('delete')" style="color:#ff6666">Delete</div>
+</div>
+
+<!-- New folder modal -->
+<div class="modal-overlay" id="modal-new-folder">
+  <div class="modal">
+    <div class="modal-title">New Folder</div>
+    <input type="text" id="new-folder-name" placeholder="Folder name">
+    <div class="modal-btns">
+      <button class="btn-modal-cancel" onclick="hideNewFolderModal()">Cancel</button>
+      <button class="btn-modal-ok" onclick="createFolder()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── STATE ── */
+let currentAgent = null;
+let currentPath = '';
+let viewMode = 'grid';
+let chatHistories = {};
+let ctxTarget = null;
+
+const AGENTS = {
+  simon_bately:  {name:'Simon Bately',  role:'Coordinator',     color:'#7c3aed'},
+  claw_batto:    {name:'Claw Batto',    role:'Developer',       color:'#4da6ff'},
+  phil_hass:     {name:'Phil Hass',     role:'Legal / Finance', color:'#00d084'},
+  sam_axe:       {name:'Sam Axe',       role:'Creative',        color:'#e94560'},
+  rex_valor:     {name:'Rex Valor',     role:'Voice / Sales',   color:'#f59e0b'},
+  duke_harmon:   {name:'Duke Harmon',   role:'Project Mgmt',    color:'#84cc16'},
+  scout_reeves:  {name:'Scout Reeves',  role:'Research',        color:'#06b6d4'},
+  nova_sterling: {name:'Nova Sterling', role:'Client Chat',     color:'#ec4899'}
+};
+
+/* ── INIT ── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadStorageUsage();
+  setupTextarea();
+  setupDragDrop();
+});
+
+/* ── AUTH ── */
+async function logout() {
+  await fetch('/api/cloud/logout', {method:'POST'});
+  window.location.href = '/cloud/login';
+}
+
+/* ── AGENT CHAT ── */
+function selectAgent(agentId) {
+  currentAgent = agentId;
+
+  // Update sidebar active state
+  document.querySelectorAll('.agent-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.agent === agentId);
+  });
+  document.getElementById('btn-my-files').classList.remove('active');
+
+  // Show chat view
+  document.getElementById('no-agent-view').classList.add('hidden');
+  document.getElementById('files-view').classList.add('hidden');
+  document.getElementById('chat-view').classList.remove('hidden');
+
+  // Set header
+  const agent = AGENTS[agentId];
+  document.getElementById('chat-dot').style.background = agent.color;
+  document.getElementById('chat-agent-name').textContent = agent.name;
+  document.getElementById('chat-agent-role').textContent = agent.role;
+
+  // Load history
+  loadChatHistory(agentId);
+}
+
+async function loadChatHistory(agentId) {
+  const container = document.getElementById('chat-messages');
+  container.innerHTML = '';
+
+  try {
+    const res = await fetch(`/api/cloud/chat/${agentId}/history`);
+    if (!res.ok) throw new Error('Failed to load');
+    const data = await res.json();
+    chatHistories[agentId] = data.messages || [];
+
+    if (chatHistories[agentId].length === 0) {
+      container.innerHTML = `<div class="chat-empty" id="chat-empty">
+        <div class="chat-empty-icon">&#128172;</div>
+        <div class="chat-empty-text">No messages yet</div>
+        <div class="chat-empty-sub">Send a message to start the conversation</div>
+      </div>`;
+      return;
+    }
+
+    chatHistories[agentId].forEach(m => appendMessage(m.role, m.content, m.timestamp, false));
+    scrollChat();
+  } catch (e) {
+    chatHistories[agentId] = [];
+    container.innerHTML = `<div class="chat-empty">
+      <div class="chat-empty-icon">&#128172;</div>
+      <div class="chat-empty-text">Start a conversation</div>
+      <div class="chat-empty-sub">Send a message to begin</div>
+    </div>`;
+  }
+}
+
+function appendMessage(role, content, timestamp, scroll = true) {
+  const container = document.getElementById('chat-messages');
+  const empty = container.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  const ts = timestamp || new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `<div class="msg-bubble">${escapeHtml(content)}</div><div class="msg-time">${escapeHtml(ts)}</div>`;
+  container.appendChild(div);
+  if (scroll) scrollChat();
+}
+
+function scrollChat() {
+  const el = document.getElementById('chat-messages');
+  el.scrollTop = el.scrollHeight;
+}
+
+function showThinking() {
+  document.getElementById('thinking').classList.add('visible');
+  document.getElementById('btn-send').disabled = true;
+}
+
+function hideThinking() {
+  document.getElementById('thinking').classList.remove('visible');
+  document.getElementById('btn-send').disabled = false;
+}
+
+async function sendMessage() {
+  const input = document.getElementById('cloud-chat-input');
+  const msg = input.value.trim();
+  if (!msg || !currentAgent) return;
+  input.value = '';
+  input.style.height = 'auto';
+
+  appendMessage('user', msg);
+  showThinking();
+
+  try {
+    const res = await fetch(`/api/cloud/chat/${currentAgent}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: msg})
+    });
+    hideThinking();
+    const data = await res.json();
+    if (data.response) {
+      appendMessage('assistant', data.response);
+    } else {
+      appendMessage('error', data.error || 'Failed to get response');
+    }
+  } catch (e) {
+    hideThinking();
+    appendMessage('error', 'Connection error. Please try again.');
+  }
+}
+
+async function clearChat() {
+  if (!currentAgent) return;
+  if (!confirm('Clear all messages with this agent?')) return;
+  try {
+    await fetch(`/api/cloud/chat/${currentAgent}/clear`, {method:'POST'});
+  } catch (e) { /* ignore */ }
+  chatHistories[currentAgent] = [];
+  document.getElementById('chat-messages').innerHTML = `<div class="chat-empty">
+    <div class="chat-empty-icon">&#128172;</div>
+    <div class="chat-empty-text">Chat cleared</div>
+    <div class="chat-empty-sub">Send a message to start over</div>
+  </div>`;
+}
+
+/* ── TEXTAREA AUTO-RESIZE ── */
+function setupTextarea() {
+  const ta = document.getElementById('cloud-chat-input');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+  });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+}
+
+/* ── FILES ── */
+function showFiles() {
+  currentAgent = null;
+  document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('btn-my-files').classList.add('active');
+
+  document.getElementById('no-agent-view').classList.add('hidden');
+  document.getElementById('chat-view').classList.add('hidden');
+  document.getElementById('files-view').classList.remove('hidden');
+
+  loadFiles('');
+}
+
+async function loadFiles(path) {
+  currentPath = path || '';
+  renderBreadcrumb();
+
+  const area = document.getElementById('files-area');
+  area.innerHTML = '<div style="text-align:center;padding:40px;color:#333">Loading...</div>';
+
+  try {
+    const res = await fetch('/api/cloud/files?path=' + encodeURIComponent(currentPath));
+    const data = await res.json();
+    renderFiles(data.items || []);
+  } catch (e) {
+    area.innerHTML = '<div style="text-align:center;padding:40px;color:#555">Failed to load files</div>';
+  }
+}
+
+function renderBreadcrumb() {
+  const bc = document.getElementById('breadcrumb');
+  const parts = currentPath ? currentPath.split('/').filter(Boolean) : [];
+  let html = `<span class="breadcrumb-item ${parts.length === 0 ? 'current' : ''}" onclick="loadFiles('')">Home</span>`;
+
+  let built = '';
+  parts.forEach((part, i) => {
+    built += (built ? '/' : '') + part;
+    const isCurrent = i === parts.length - 1;
+    html += `<span class="breadcrumb-sep">/</span>`;
+    html += `<span class="breadcrumb-item ${isCurrent ? 'current' : ''}" onclick="loadFiles('${escapeAttr(built)}')">${escapeHtml(part)}</span>`;
+  });
+
+  bc.innerHTML = html;
+}
+
+function renderFiles(items) {
+  const area = document.getElementById('files-area');
+
+  if (items.length === 0) {
+    area.innerHTML = `<div class="files-empty">
+      <div class="files-empty-icon">&#128193;</div>
+      <div class="files-empty-text">No files here</div>
+      <div class="files-empty-sub">Upload files or create a folder to get started</div>
+    </div>`;
+    return;
+  }
+
+  // Sort: folders first, then alphabetical
+  items.sort((a, b) => {
+    if (a.type === 'folder' && b.type !== 'folder') return -1;
+    if (a.type !== 'folder' && b.type === 'folder') return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  if (viewMode === 'grid') {
+    let html = '<div class="files-grid">';
+    items.forEach(item => {
+      const icon = item.type === 'folder' ? '&#128193;' : fileIcon(item.name);
+      const meta = item.type === 'folder' ? '' : formatSize(item.size);
+      const dblAction = item.type === 'folder'
+        ? `loadFiles('${escapeAttr(joinPath(currentPath, item.name))}')`
+        : `downloadFile('${escapeAttr(joinPath(currentPath, item.name))}')`;
+      html += `<div class="file-card" ondblclick="${dblAction}" oncontextmenu="showCtxMenu(event, '${escapeAttr(item.name)}', '${item.type}')">
+        <div class="file-actions">
+          <button class="file-action-btn" onclick="event.stopPropagation();showCtxMenu(event,'${escapeAttr(item.name)}','${item.type}')" title="Actions">&#8943;</button>
+        </div>
+        <div class="file-icon">${icon}</div>
+        <div class="file-name">${escapeHtml(item.name)}</div>
+        <div class="file-meta">${meta}${item.modified ? ' &middot; ' + item.modified : ''}</div>
+      </div>`;
+    });
+    html += '</div>';
+    area.innerHTML = html;
+  } else {
+    let html = '<div class="files-list">';
+    items.forEach(item => {
+      const icon = item.type === 'folder' ? '&#128193;' : fileIcon(item.name);
+      const dblAction = item.type === 'folder'
+        ? `loadFiles('${escapeAttr(joinPath(currentPath, item.name))}')`
+        : `downloadFile('${escapeAttr(joinPath(currentPath, item.name))}')`;
+      html += `<div class="file-row" ondblclick="${dblAction}" oncontextmenu="showCtxMenu(event, '${escapeAttr(item.name)}', '${item.type}')">
+        <div class="file-row-icon">${icon}</div>
+        <div class="file-row-name">${escapeHtml(item.name)}</div>
+        <div class="file-row-size">${item.type === 'folder' ? '--' : formatSize(item.size)}</div>
+        <div class="file-row-date">${item.modified || ''}</div>
+        <div class="file-row-actions">
+          <button class="file-action-btn" onclick="event.stopPropagation();showCtxMenu(event,'${escapeAttr(item.name)}','${item.type}')" title="Actions">&#8943;</button>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+    area.innerHTML = html;
+  }
+}
+
+function toggleViewMode() {
+  viewMode = viewMode === 'grid' ? 'list' : 'grid';
+  const btn = document.getElementById('btn-view-toggle');
+  btn.innerHTML = viewMode === 'grid' ? '<span>&#9638;</span> Grid' : '<span>&#9776;</span> List';
+  loadFiles(currentPath);
+}
+
+/* ── FILE OPERATIONS ── */
+function handleFileInput(files) {
+  if (files.length > 0) uploadFiles(files);
+  document.getElementById('file-upload-input').value = '';
+}
+
+async function uploadFiles(files) {
+  const formData = new FormData();
+  formData.append('path', currentPath);
+  for (const f of files) formData.append('files', f);
+
+  try {
+    await fetch('/api/cloud/files/upload', {method:'POST', body: formData});
+    loadFiles(currentPath);
+    loadStorageUsage();
+  } catch (e) {
+    alert('Upload failed. Please try again.');
+  }
+}
+
+function downloadFile(path) {
+  window.open('/api/cloud/files/download?path=' + encodeURIComponent(path), '_blank');
+}
+
+async function deleteFile(name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  const path = joinPath(currentPath, name);
+  try {
+    await fetch('/api/cloud/files/delete', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path})
+    });
+    loadFiles(currentPath);
+    loadStorageUsage();
+  } catch (e) {
+    alert('Delete failed.');
+  }
+}
+
+async function renameFile(oldName) {
+  const newName = prompt('New name:', oldName);
+  if (!newName || newName === oldName) return;
+  try {
+    await fetch('/api/cloud/files/rename', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: joinPath(currentPath, oldName), new_name: newName})
+    });
+    loadFiles(currentPath);
+  } catch (e) {
+    alert('Rename failed.');
+  }
+}
+
+/* ── FOLDER ── */
+function showNewFolderModal() {
+  document.getElementById('modal-new-folder').classList.add('visible');
+  const input = document.getElementById('new-folder-name');
+  input.value = '';
+  setTimeout(() => input.focus(), 100);
+}
+
+function hideNewFolderModal() {
+  document.getElementById('modal-new-folder').classList.remove('visible');
+}
+
+async function createFolder() {
+  const name = document.getElementById('new-folder-name').value.trim();
+  if (!name) return;
+  hideNewFolderModal();
+  try {
+    await fetch('/api/cloud/files/mkdir', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: joinPath(currentPath, name)})
+    });
+    loadFiles(currentPath);
+  } catch (e) {
+    alert('Failed to create folder.');
+  }
+}
+
+/* ── CONTEXT MENU ── */
+function showCtxMenu(e, name, type) {
+  e.preventDefault();
+  e.stopPropagation();
+  ctxTarget = {name, type};
+  const menu = document.getElementById('ctx-menu');
+  menu.style.top = e.clientY + 'px';
+  menu.style.left = e.clientX + 'px';
+  menu.classList.add('visible');
+}
+
+function ctxAction(action) {
+  hideCtxMenu();
+  if (!ctxTarget) return;
+  if (action === 'download') downloadFile(joinPath(currentPath, ctxTarget.name));
+  else if (action === 'rename') renameFile(ctxTarget.name);
+  else if (action === 'delete') deleteFile(ctxTarget.name);
+}
+
+function hideCtxMenu() {
+  document.getElementById('ctx-menu').classList.remove('visible');
+  ctxTarget = null;
+}
+
+document.addEventListener('click', hideCtxMenu);
+
+/* ── DRAG & DROP ── */
+function setupDragDrop() {
+  const main = document.getElementById('main-area');
+  const overlay = document.getElementById('drop-overlay');
+  let dragCount = 0;
+
+  main.addEventListener('dragenter', e => {
+    e.preventDefault();
+    dragCount++;
+    if (document.getElementById('files-view').classList.contains('hidden')) return;
+    overlay.classList.add('visible');
+  });
+
+  main.addEventListener('dragleave', e => {
+    e.preventDefault();
+    dragCount--;
+    if (dragCount <= 0) {
+      dragCount = 0;
+      overlay.classList.remove('visible');
+    }
+  });
+
+  main.addEventListener('dragover', e => e.preventDefault());
+
+  main.addEventListener('drop', e => {
+    e.preventDefault();
+    dragCount = 0;
+    overlay.classList.remove('visible');
+    if (document.getElementById('files-view').classList.contains('hidden')) return;
+    if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+  });
+}
+
+/* ── STORAGE ── */
+async function loadStorageUsage() {
+  try {
+    const res = await fetch('/api/cloud/storage/usage');
+    const data = await res.json();
+    const usedGB = data.used_gb || 0;
+    const totalGB = data.total_gb || 200;
+    const pct = totalGB > 0 ? ((usedGB / totalGB) * 100).toFixed(1) : 0;
+
+    document.getElementById('storage-fill').style.width = pct + '%';
+    document.getElementById('storage-text').textContent = `${usedGB.toFixed(1)} GB / ${totalGB} GB (${pct}%)`;
+    document.getElementById('nav-storage').textContent = `${usedGB.toFixed(1)} / ${totalGB} GB`;
+  } catch (e) {
+    document.getElementById('storage-text').textContent = 'Unable to load storage info';
+  }
+}
+
+/* ── HELPERS ── */
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function escapeAttr(s) {
+  return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function joinPath(base, name) {
+  return base ? base + '/' + name : name;
+}
+
+function formatSize(bytes) {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function fileIcon(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const icons = {
+    pdf:'&#128196;', doc:'&#128196;', docx:'&#128196;', txt:'&#128196;',
+    png:'&#128444;', jpg:'&#128444;', jpeg:'&#128444;', gif:'&#128444;', svg:'&#128444;', webp:'&#128444;',
+    mp4:'&#127909;', mov:'&#127909;', avi:'&#127909;', mkv:'&#127909;',
+    mp3:'&#127925;', wav:'&#127925;', flac:'&#127925;', ogg:'&#127925;',
+    zip:'&#128230;', tar:'&#128230;', gz:'&#128230;', rar:'&#128230;', '7z':'&#128230;',
+    py:'&#128187;', js:'&#128187;', ts:'&#128187;', html:'&#128187;', css:'&#128187;', json:'&#128187;',
+    md:'&#128221;', csv:'&#128202;', xlsx:'&#128202;', xls:'&#128202;'
+  };
+  return icons[ext] || '&#128196;';
+}
+
+/* ── MODAL KEYBOARD ── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    hideNewFolderModal();
+    hideCtxMenu();
+  }
+  const modal = document.getElementById('modal-new-folder');
+  if (modal.classList.contains('visible') && e.key === 'Enter') {
+    createFolder();
+  }
+});
+</script>
+
+</body>
+</html>

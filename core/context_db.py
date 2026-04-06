@@ -41,6 +41,11 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     return _pool
 
 
+def get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    """Public accessor for the connection pool (used by Baza Cloud routes)."""
+    return _get_pool()
+
+
 def get_conn():
     """Get a connection from the pool. Caller must call release_conn(conn) when done."""
     return _get_pool().getconn()
@@ -142,8 +147,152 @@ def init_context_db():
                 system_prompt TEXT,
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+            -- Agent LLM usage tracking (tokens, cost, timing)
+            CREATE TABLE IF NOT EXISTS agent_usage (
+                id SERIAL PRIMARY KEY,
+                agent_id VARCHAR(50) NOT NULL,
+                model VARCHAR(100),
+                provider VARCHAR(20) DEFAULT 'ollama',
+                prompt_tokens INT DEFAULT 0,
+                completion_tokens INT DEFAULT 0,
+                total_tokens INT DEFAULT 0,
+                duration_ms INT DEFAULT 0,
+                cost NUMERIC(10,6) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_usage_agent ON agent_usage(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_agent_usage_created ON agent_usage(created_at);
+
+            -- Baza Cloud: multi-tenant user accounts
+            CREATE TABLE IF NOT EXISTS cloud_users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                display_name VARCHAR(100),
+                storage_quota_mb INTEGER DEFAULT 204800,
+                storage_used_mb INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE,
+                is_admin BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                last_login TIMESTAMP
+            );
+
+            -- Baza Cloud: per-user agent memory
+            CREATE TABLE IF NOT EXISTS cloud_agent_memory (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES cloud_users(id),
+                agent_id VARCHAR(50) NOT NULL,
+                key VARCHAR(255) NOT NULL,
+                value TEXT,
+                category VARCHAR(50) DEFAULT 'general',
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(user_id, agent_id, key)
+            );
+
+            -- Baza Cloud: per-user conversation history
+            CREATE TABLE IF NOT EXISTS cloud_conversations (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES cloud_users(id),
+                agent_id VARCHAR(50) NOT NULL,
+                role VARCHAR(20) NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
         """)
     logger.info("Context DB initialized.")
+
+
+# ── Usage Tracking ───────────────────────────────────────────────────────────
+
+def usage_log(agent_id: str, model: str, provider: str = "ollama",
+              prompt_tokens: int = 0, completion_tokens: int = 0,
+              total_tokens: int = 0, duration_ms: int = 0, cost: float = 0.0):
+    """Log a single LLM call's token usage."""
+    if total_tokens == 0:
+        total_tokens = prompt_tokens + completion_tokens
+    try:
+        with _DB() as (cur, _):
+            cur.execute("""
+                INSERT INTO agent_usage (agent_id, model, provider, prompt_tokens,
+                    completion_tokens, total_tokens, duration_ms, cost)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (agent_id, model, provider, prompt_tokens, completion_tokens,
+                  total_tokens, duration_ms, cost))
+    except Exception as e:
+        logger.warning(f"Failed to log usage: {e}")
+
+
+def usage_get(agent_id: str = None, days: int = 7) -> list:
+    """Get usage records, optionally filtered by agent and time window."""
+    with _DB() as (cur, _):
+        if agent_id:
+            cur.execute("""
+                SELECT agent_id, model, provider, prompt_tokens, completion_tokens,
+                       total_tokens, duration_ms, cost, created_at
+                FROM agent_usage
+                WHERE agent_id = %s AND created_at > NOW() - INTERVAL '%s days'
+                ORDER BY created_at DESC
+            """, (agent_id, days))
+        else:
+            cur.execute("""
+                SELECT agent_id, model, provider, prompt_tokens, completion_tokens,
+                       total_tokens, duration_ms, cost, created_at
+                FROM agent_usage
+                WHERE created_at > NOW() - INTERVAL '%s days'
+                ORDER BY created_at DESC
+            """, (days,))
+        rows = cur.fetchall()
+    return [{"agent_id": r[0], "model": r[1], "provider": r[2],
+             "prompt_tokens": r[3], "completion_tokens": r[4],
+             "total_tokens": r[5], "duration_ms": r[6], "cost": float(r[7]),
+             "created_at": r[8].isoformat() if r[8] else None} for r in rows]
+
+
+def usage_summary(days: int = 7) -> dict:
+    """Get aggregated usage stats per agent."""
+    with _DB() as (cur, _):
+        cur.execute("""
+            SELECT agent_id,
+                   SUM(prompt_tokens) as total_prompt,
+                   SUM(completion_tokens) as total_completion,
+                   SUM(total_tokens) as total_tokens,
+                   COUNT(*) as call_count,
+                   SUM(duration_ms) as total_duration_ms,
+                   SUM(cost) as total_cost
+            FROM agent_usage
+            WHERE created_at > NOW() - INTERVAL '%s days'
+            GROUP BY agent_id ORDER BY total_tokens DESC
+        """, (days,))
+        agent_rows = cur.fetchall()
+
+        cur.execute("""
+            SELECT provider,
+                   SUM(total_tokens) as total_tokens,
+                   COUNT(*) as call_count
+            FROM agent_usage
+            WHERE created_at > NOW() - INTERVAL '%s days'
+            GROUP BY provider
+        """, (days,))
+        provider_rows = cur.fetchall()
+
+        cur.execute("""
+            SELECT DATE(created_at) as day,
+                   SUM(total_tokens) as total_tokens,
+                   COUNT(*) as call_count
+            FROM agent_usage
+            WHERE created_at > NOW() - INTERVAL '%s days'
+            GROUP BY DATE(created_at) ORDER BY day
+        """, (days,))
+        daily_rows = cur.fetchall()
+
+    return {
+        "by_agent": [{"agent_id": r[0], "prompt_tokens": r[1], "completion_tokens": r[2],
+                       "total_tokens": r[3], "call_count": r[4],
+                       "duration_ms": r[5], "cost": float(r[6])} for r in agent_rows],
+        "by_provider": [{"provider": r[0], "total_tokens": r[1], "call_count": r[2]} for r in provider_rows],
+        "by_day": [{"day": r[0].isoformat() if r[0] else None, "total_tokens": r[1],
+                    "call_count": r[2]} for r in daily_rows],
+    }
 
 
 # ── Memory ────────────────────────────────────────────────────────────────────
@@ -234,6 +383,14 @@ def empire_set(key: str, value: str, category: str = "general", updated_by: str 
             SET value = EXCLUDED.value, category = EXCLUDED.category,
                 updated_at = NOW(), updated_by = EXCLUDED.updated_by
         """, (key, value, category, updated_by))
+    # Publish event so other agents can react to knowledge changes
+    try:
+        from core.event_bus import publish_sync
+        publish_sync(updated_by, "knowledge_updated", {
+            "key": key, "category": category, "updated_by": updated_by
+        })
+    except Exception:
+        pass
 
 
 def empire_get(key: str) -> Optional[str]:
@@ -330,6 +487,17 @@ def journal_log(agent_id: str, task_type: str, task_description: str,
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (agent_id, chat_id, task_type, task_description,
               json.dumps(input_data), result, success, duration_ms))
+    # Publish event when a task is completed
+    try:
+        if "complete" in (task_type or "").lower():
+            from core.event_bus import publish_sync
+            publish_sync(agent_id, "task_completed", {
+                "task_type": task_type,
+                "description": (task_description or "")[:200],
+                "agent_id": agent_id
+            })
+    except Exception:
+        pass
 
 
 def journal_get(agent_id: str, limit: int = 20, task_type: str = None) -> list:
@@ -380,9 +548,9 @@ def identity_get(agent_id: str) -> Optional[dict]:
 
 # Char limits for each section to keep total context tight
 _MEMORY_CHAR_LIMIT    = 800
-_EMPIRE_CHAR_LIMIT    = 600
+_EMPIRE_CHAR_LIMIT    = 1200   # increased — needed for artifact list
 _SUMMARY_CHAR_LIMIT   = 500
-_TOTAL_CHAR_LIMIT     = 2200
+_TOTAL_CHAR_LIMIT     = 3000   # increased from 2200
 
 
 def build_agent_context(agent_id: str) -> str:
@@ -446,3 +614,37 @@ def build_agent_context(agent_id: str) -> str:
     if len(result) > _TOTAL_CHAR_LIMIT:
         result = result[:_TOTAL_CHAR_LIMIT] + "\n...[context trimmed]"
     return result
+
+
+# ── Artifact Knowledge ────────────────────────────────────────────────────────
+
+def update_artifact_empire_knowledge(artifacts_dir: str):
+    """
+    Scan the artifacts directory and publish a compact file index to empire_knowledge.
+    All agents read empire_knowledge, so they passively see what other agents have produced.
+    Stores up to 50 most recent files, one line each, under key 'artifact_summary'.
+    """
+    import os as _os
+    import time as _time
+    files = []
+    if not _os.path.exists(artifacts_dir):
+        return
+    try:
+        for proj in _os.listdir(artifacts_dir):
+            proj_path = _os.path.join(artifacts_dir, proj)
+            if not _os.path.isdir(proj_path):
+                continue
+            for fname in _os.listdir(proj_path):
+                fpath = _os.path.join(proj_path, fname)
+                if not _os.path.isfile(fpath):
+                    continue
+                files.append((_os.stat(fpath).st_mtime, proj, fname))
+        files.sort(reverse=True)
+        lines = []
+        for mtime, proj, fname in files[:50]:
+            lines.append(f"- [{proj}] {fname} ({_time.strftime('%m/%d %H:%M', _time.localtime(mtime))})")
+        summary = "\n".join(lines) if lines else "(no artifacts yet)"
+        empire_set("artifact_summary", summary, category="artifacts", updated_by="system")
+        logger.debug(f"Artifact empire knowledge updated: {len(lines)} files")
+    except Exception as e:
+        logger.warning(f"update_artifact_empire_knowledge failed: {e}")

@@ -18,6 +18,7 @@ Usage:
 """
 import os
 import sys
+import json
 import logging
 import sqlite3
 import requests
@@ -34,7 +35,7 @@ load_dotenv(os.path.join(FRAMEWORK_DIR, "configs", "secrets.env"))
 
 from core.task_updater import (
     get_my_tasks, update_task, complete_task,
-    start_task, get_project_stats
+    start_task, get_project_stats, get_task_by_id
 )
 
 logging.basicConfig(
@@ -109,15 +110,21 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
     agent_name  = agent_cfg.get("name", agent_id)
     system_base = agent_cfg.get("system_prompt", f"You are {agent_name}.")
 
+    proj_id = task.get("project_id", "shared")
     system = (
         f"{system_base}\n\n"
         "TASK EXECUTION MODE:\n"
-        "You have been assigned a task. Execute it fully and produce the real deliverable.\n"
-        "At the end of your response, write exactly one of these on its own line:\n"
+        "You have been assigned a task. Execute it fully and produce the real deliverable.\n\n"
+        "MANDATORY: Save ALL deliverables as artifacts using this exact syntax:\n"
+        f"  ##SKILL:artifact_save{{\"filename\":\"deliverable.md\",\"content\":\"...\",\"project_id\":\"{proj_id}\"}}##\n"
+        "For research tasks: save research notes, then a plan, then the final report — all as separate artifacts.\n"
+        "For documents: save as .md or .html. For code: save as .py/.sh/.js. For data: save as .json or .csv.\n"
+        "Use full markdown, headers, and code blocks inside artifact content — that is what artifacts are for.\n\n"
+        "After saving all artifacts, write exactly one of these on its own line:\n"
         "  TASK_COMPLETE — if the task is fully done\n"
         "  TASK_IN_PROGRESS — if you made progress but need more work\n"
         "  TASK_BLOCKED: [reason] — if you cannot proceed\n\n"
-        "Plain text only. No markdown headers. No ** bold. Use emoji for structure."
+        "Plain text only in chat summary. No markdown headers. No ** bold. Use emoji for structure."
     )
 
     user_msg = (
@@ -135,7 +142,7 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
             json={
                 "model": model,
                 "stream": False,
-                "options": {"num_predict": 800, "temperature": 0.3},
+                "options": {"num_predict": 2000, "temperature": 0.3},
                 "messages": [
                     {"role": "system",  "content": system},
                     {"role": "user",    "content": user_msg},
@@ -192,24 +199,111 @@ def notify_serge(message: str):
 
 
 
+def _execute_skill_saves(agent_id: str, output: str) -> int:
+    """
+    Parse ##SKILL:artifact_save{...}## calls from LLM output and execute them via the dashboard API.
+    Returns count of successful saves. Called before the fallback _save_artifact.
+    """
+    import re as _re
+    pattern = _re.compile(r'##SKILL:\s*artifact_save\s*(\{.*?\})\s*##', _re.DOTALL)
+    saved = 0
+    for match in pattern.finditer(output):
+        try:
+            args = json.loads(match.group(1))
+            sys.path.insert(0, FRAMEWORK_DIR)
+            from skills.shared.save_artifact import save_artifact as _api_save
+            result = _api_save(
+                filename=args.get('filename', f'{agent_id}_output.md'),
+                content=args.get('content', ''),
+                project_id=args.get('project_id', 'shared'),
+                agent_id=agent_id,
+            )
+            if result.get('success'):
+                saved += 1
+                logger.info(f"  📁 Skill-save: {args.get('filename')}")
+            else:
+                logger.warning(f"  Skill-save failed: {result.get('error','')}")
+        except Exception as e:
+            logger.warning(f"  Skill-save parse error: {e}")
+    return saved
+
+
 def _save_artifact(agent_id: str, task: dict, content: str):
-    """Save completed task deliverable to artifacts directory."""
+    """Save completed task deliverable via the dashboard API (fallback: direct filesystem)."""
+    import re as _re
     try:
-        proj_id  = task.get("project_id", "shared")
-        title    = task.get("title", "artifact").replace("/", "-").replace(" ", "_")[:40]
-        ts       = datetime.now().strftime("%Y%m%d_%H%M")
-        filename = f"{agent_id}_{ts}_{title}.txt"
-        art_dir  = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts", proj_id)
-        os.makedirs(art_dir, exist_ok=True)
-        with open(os.path.join(art_dir, filename), "w", encoding="utf-8") as f:
-            f.write(f"Task: {task.get('title')}\n")
-            f.write(f"Agent: {agent_id}\n")
-            f.write(f"Completed: {datetime.now().isoformat()}\n")
-            f.write("=" * 60 + "\n\n")
-            f.write(content)
-        logger.info(f"  📁 Artifact saved: {filename}")
+        sys.path.insert(0, FRAMEWORK_DIR)
+        from skills.shared.save_artifact import save_artifact as _api_save, detect_project
+        proj_id = task.get("project_id") or detect_project(content)
+        title   = _re.sub(r'[^\w]', '_', task.get("title", "artifact"))[:40].strip('_')
+        ts      = datetime.now().strftime("%Y%m%d_%H%M")
+
+        # Detect appropriate extension from content
+        code_blocks = _re.findall(r'```(\w*)\n', content)
+        if code_blocks:
+            lang = code_blocks[0].lower()
+            ext = {
+                'python': 'py', 'py': 'py', 'bash': 'sh', 'sh': 'sh',
+                'javascript': 'js', 'js': 'js', 'html': 'html',
+                'json': 'json', 'yaml': 'yml', 'yml': 'yml', 'sql': 'sql',
+            }.get(lang, 'md')
+        elif bool(_re.search(r'^#+\s', content, _re.MULTILINE)):
+            ext = 'md'
+        else:
+            ext = 'md'
+
+        filename = f"{agent_id}_{ts}_{title}.{ext}"
+        result = _api_save(
+            filename=filename,
+            content=content,
+            project_id=proj_id,
+            agent_id=agent_id,
+            task_id=task.get("id", ""),
+        )
+        if result.get("success"):
+            logger.info(f"  📁 Artifact saved: {filename} → {proj_id}")
+        else:
+            raise Exception(result.get("error", "API error"))
     except Exception as e:
-        logger.warning(f"  Artifact save failed: {e}")
+        # Fallback: write directly to filesystem if API is unavailable
+        try:
+            proj_id  = task.get("project_id", "shared")
+            title    = task.get("title", "artifact").replace("/", "-").replace(" ", "_")[:40]
+            ts       = datetime.now().strftime("%Y%m%d_%H%M")
+            filename = f"{agent_id}_{ts}_{title}.md"
+            art_dir  = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts", proj_id)
+            os.makedirs(art_dir, exist_ok=True)
+            with open(os.path.join(art_dir, filename), "w", encoding="utf-8") as f:
+                f.write(f"# Task: {task.get('title')}\n\n")
+                f.write(f"Agent: {agent_id}  \nCompleted: {datetime.now().isoformat()}\n\n---\n\n")
+                f.write(content)
+            logger.info(f"  📁 Artifact saved (direct): {filename}")
+        except Exception as e2:
+            logger.warning(f"  Artifact save failed: {e2}")
+
+
+def _ensure_depends_on_column():
+    """Add depends_on column to tasks table if it doesn't exist (idempotent)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT ''")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Column already exists
+
+
+def check_dependencies(task: dict) -> bool:
+    """Check if all dependency tasks are completed. Returns True if ready to run."""
+    depends = task.get('depends_on', '') or ''
+    if not depends:
+        return True
+    dep_ids = [d.strip() for d in depends.split(',') if d.strip()]
+    for dep_id in dep_ids:
+        dep_task = get_task_by_id(dep_id)
+        if dep_task and dep_task.get('status') != 'completed':
+            return False
+    return True
 
 
 def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_id: str = None) -> list:
@@ -242,6 +336,12 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
 
         logger.info(f"[{agent_id}] Task [{task_id}]: {task_title[:60]}")
 
+        # Check task dependencies before running
+        if not check_dependencies(task):
+            logger.info(f"  Skipping {task_title[:50]} — dependencies not met")
+            results.append({"task": task_title, "status": "waiting_on_deps"})
+            continue
+
         if dry_run:
             actionable = is_llm_actionable(task)
             logger.info(f"  DRY RUN — actionable: {actionable}")
@@ -272,8 +372,19 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
             if result["completed"]:
                 complete_task(task_id, notes=notes)
                 logger.info(f"  ✅ COMPLETED: {task_title[:50]}")
-                # Save full deliverable as artifact
-                _save_artifact(agent_id, task, result["output"])
+                try:
+                    from core.event_bus import publish_sync
+                    publish_sync(agent_id, "task_completed", {
+                        "task_id": task_id, "title": task_title,
+                        "result": notes[:200] if notes else ""
+                    })
+                except Exception:
+                    pass
+                # Execute any ##SKILL:artifact_save## calls from LLM output first
+                skill_saves = _execute_skill_saves(agent_id, result["output"])
+                # Fallback: save full deliverable as artifact if LLM didn't save any
+                if skill_saves == 0:
+                    _save_artifact(agent_id, task, result["output"])
                 # Process any DISPATCH lines in agent output — forward to target agents
                 dispatched = process_dispatch_lines(result["output"], agent_id)
                 results.append({
@@ -416,6 +527,9 @@ def main():
     parser.add_argument("--task-id", help="Run only this specific task ID")
     parser.add_argument("--dry-run", action="store_true", help="Show tasks without executing")
     args = parser.parse_args()
+
+    # Ensure depends_on column exists in tasks table
+    _ensure_depends_on_column()
 
     agents = load_agent_configs()
     if not agents:

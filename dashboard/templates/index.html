@@ -42,6 +42,13 @@
     .status-online{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
     .status-offline{background:#2a0a0a;color:#ff5555;border:1px solid #ff5555}
     .status-unknown{background:#1a1a1a;color:#666;border:1px solid #333}
+    .heartbeat-bar{display:flex;align-items:center;gap:6px;margin-top:6px;margin-bottom:2px}
+    .hb-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+    .hb-dot.hb-alive{background:#00d084;box-shadow:0 0 5px #00d084;animation:hbpulse 2s infinite}
+    .hb-dot.hb-stale{background:#ffaa00}
+    .hb-dot.hb-dead{background:#555}
+    .hb-text{font-size:10px;color:#444;font-family:monospace}
+    @keyframes hbpulse{0%,100%{opacity:1}50%{opacity:.4}}
 
     .agent-role{font-size:12px;color:#6666aa;margin-bottom:12px;line-height:1.4}
     .model-tag{font-size:11px;font-family:monospace;background:#111;border:1px solid #222;padding:3px 8px;border-radius:5px;color:#888;display:inline-block;margin-bottom:14px}
@@ -127,6 +134,7 @@
 <nav class="nav">
   <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
   <a class="nav-link active" href="/">Agents</a>
+  <a class="nav-link" href="/ahb123">AHB123</a>
   <a class="nav-link" href="/crons">Crons</a>
   <a class="nav-link" href="/tasks">Tasks</a>
   <a class="nav-link" href="/skills">Skills</a>
@@ -134,6 +142,8 @@
   <a class="nav-link" href="/memory">Memory</a>
   <a class="nav-link" href="/artifacts">Artifacts</a>
   <a class="nav-link" href="/infra">Infra</a>
+  <a class="nav-link" href="/explore">Explore</a>
+  <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/settings">Settings</a>
   <div class="nav-right">
     <span class="nav-status" id="nav-clock">—</span>
@@ -141,14 +151,21 @@
   </div>
 </nav>
 
-<!-- Live metrics strip -->
-<div class="metrics-strip" id="metricsStrip">
+<!-- Live metrics strip — temps + hardware -->
+<div class="metrics-strip" id="metricsStrip" style="flex-wrap:wrap;gap:2px 12px">
   <div class="metric-item">CPU <span class="metric-val" id="m-cpu">—</span></div>
+  <div class="metric-item">Mobo <span class="metric-val" id="m-mobo">—</span></div>
+  <div class="metric-item">Chipset <span class="metric-val" id="m-chipset">—</span></div>
+  <div class="metric-item" style="color:#76b900">RTX 3070 <span class="metric-val" id="m-nvidia-temp">—</span> <span class="metric-val" style="font-size:10px" id="m-nvidia-fan">—</span> <span class="metric-val" style="font-size:10px" id="m-nvidia-power">—</span></div>
+  <div class="metric-item" style="color:#e94560">RX 6700XT <span class="metric-val" id="m-amd-temp">—</span> <span class="metric-val" style="font-size:10px" id="m-amd-fan2">—</span></div>
+  <div class="metric-item">NVMe1 <span class="metric-val" id="m-nvme0">—</span></div>
+  <div class="metric-item">NVMe2 <span class="metric-val" id="m-nvme1">—</span></div>
   <div class="metric-item">RAM <span class="metric-val" id="m-mem">—</span></div>
   <div class="metric-item">Disk <span class="metric-val" id="m-disk">—</span></div>
-  <div class="metric-item"><span class="metric-dot" id="m-amd-dot"></span>Ollama AMD <span class="metric-val" id="m-amd">—</span></div>
+  <div class="metric-item"><span class="metric-dot" id="m-amd-dot"></span>Ollama Vulkan <span class="metric-val" id="m-amd">—</span></div>
   <div class="metric-item"><span class="metric-dot" id="m-gpu-dot"></span>Ollama CUDA <span class="metric-val" id="m-gpu">—</span></div>
   <div class="metric-item"><span class="metric-dot" id="m-litellm-dot"></span>LiteLLM Cloud <span class="metric-val" id="m-litellm">—</span></div>
+  <div class="metric-item"><span class="metric-dot" id="m-printer-dot"></span>Printer <span class="metric-val" id="m-printer">—</span> <span class="metric-val" style="font-size:10px;color:#555" id="m-printer-jobs"></span></div>
   <div class="metric-item" style="margin-left:auto;color:#2a2a4a">Live · 10s</div>
 </div>
 
@@ -174,6 +191,10 @@
       </div>
       <div class="agent-role">{{ agent.role }}</div>
       <div class="model-tag">{{ agent.model }}</div>
+      <div class="heartbeat-bar" id="hb-{{ agent.id }}">
+        <span class="hb-dot hb-dead"></span>
+        <span class="hb-text">heartbeat: —</span>
+      </div>
 
       <div class="recent-msgs">
         <div class="recent-msgs-label">Recent Messages</div>
@@ -317,22 +338,72 @@
         ).join('');
       }
 
-      // Metrics strip
+      // Metrics strip — all temps + hardware
       const mx = data.metrics || {};
-      document.getElementById('m-cpu').textContent  = mx.cpu_temp||'N/A';
-      document.getElementById('m-mem').textContent  = mx.mem||'—';
-      document.getElementById('m-disk').textContent = mx.disk||'—';
+      document.getElementById('m-cpu').textContent       = mx.cpu_temp||'N/A';
+      document.getElementById('m-mobo').textContent      = mx.mobo_temp||'N/A';
+      document.getElementById('m-chipset').textContent   = mx.chipset_temp||'N/A';
+      document.getElementById('m-nvidia-temp').textContent= mx.nvidia_temp||'N/A';
+      document.getElementById('m-nvidia-fan').textContent = mx.nvidia_fan||'';
+      document.getElementById('m-nvidia-power').textContent=mx.nvidia_power||'';
+      document.getElementById('m-amd-temp').textContent  = mx.amd_temp||'N/A';
+      document.getElementById('m-amd-fan2').textContent  = mx.amd_fan||'';
+      document.getElementById('m-nvme0').textContent     = mx.nvme0_temp||'N/A';
+      document.getElementById('m-nvme1').textContent     = mx.nvme1_temp||'N/A';
+      document.getElementById('m-mem').textContent       = mx.mem||'—';
+      document.getElementById('m-disk').textContent      = mx.disk||'—';
+      // Color-code temps (green <60, yellow 60-80, red >80)
+      ['m-cpu','m-mobo','m-chipset','m-nvidia-temp','m-amd-temp','m-nvme0','m-nvme1'].forEach(id=>{
+        const el=document.getElementById(id);
+        const val=parseInt(el.textContent);
+        if(!isNaN(val)){el.style.color=val>80?'#ff5555':val>60?'#f59e0b':'#00d084';}
+      });
       const amdUp     = mx.ollama_amd==='up';
       const gpuUp     = mx.ollama_gpu==='up';
       const litellmUp = mx.litellm==='up';
       document.getElementById('m-amd').textContent     = mx.ollama_amd||'—';
       document.getElementById('m-gpu').textContent     = mx.ollama_gpu||'—';
       document.getElementById('m-litellm').textContent = mx.litellm||'—';
+      const printerUp = mx.printer==='online';
+      document.getElementById('m-printer').textContent  = printerUp?(mx.printer_name||'HP 5101'):'offline';
+      document.getElementById('m-printer-jobs').textContent = printerUp&&parseInt(mx.printer_jobs||'0')>0?mx.printer_jobs+' jobs':'';
       document.getElementById('m-amd-dot').className    ='metric-dot '+(amdUp?'up':'down');
       document.getElementById('m-gpu-dot').className    ='metric-dot '+(gpuUp?'up':'down');
       document.getElementById('m-litellm-dot').className='metric-dot '+(litellmUp?'up':'down');
+      document.getElementById('m-printer-dot').className='metric-dot '+(printerUp?'up':'down');
     });
   }
+
+  function refreshHeartbeats(){
+    fetch('/api/heartbeats').then(r=>r.json()).then(data=>{
+      // For each agent card, update heartbeat indicator
+      document.querySelectorAll('[id^="hb-"]').forEach(bar=>{
+        const agentId = bar.id.replace('hb-','');
+        const dot  = bar.querySelector('.hb-dot');
+        const text = bar.querySelector('.hb-text');
+        const hb   = data[agentId];
+        if(!hb){
+          dot.className='hb-dot hb-dead';
+          text.textContent='heartbeat: silent';
+        } else {
+          const sec = hb.seconds_ago || 0;
+          if(sec < 70){
+            dot.className='hb-dot hb-alive';
+            text.textContent=`heartbeat: ${sec}s ago`;
+          } else if(sec < 120){
+            dot.className='hb-dot hb-stale';
+            text.textContent=`heartbeat: ${sec}s ago (stale)`;
+          } else {
+            dot.className='hb-dot hb-dead';
+            text.textContent=`heartbeat: silent >2m`;
+          }
+        }
+      });
+    }).catch(()=>{});
+  }
+
+  setInterval(refreshHeartbeats, 10000); refreshHeartbeats();
+  setInterval(refreshAll, 10000);
 
   function agentAction(id, action){
     if(action==='stop' && !confirm('Stop '+id+'?')) return;
