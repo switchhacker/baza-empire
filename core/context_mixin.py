@@ -28,6 +28,7 @@ Usage in an agent:
 """
 
 import json
+import os
 
 from core.context_db import (
     build_agent_context, identity_get,
@@ -36,6 +37,43 @@ from core.context_db import (
     journal_log, save_summary
 )
 from core.skills_engine import SkillsEngine
+
+
+# Repo root: agent-framework-v3/
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PERSONA_SECTIONS = ("IDENTITY.md", "SOUL.md", "MISSION.md", "USER.md")
+_PERSONA_CACHE: dict = {}   # agent_id → (mtime_sum, content)
+
+
+def _load_persona_files(agent_id: str) -> str:
+    """Load and concatenate persona/*.md files for an agent.
+    Returns "" if no MISSION.md exists (signal that this agent hasn't migrated yet).
+    Cached by mtime so live edits are picked up without restart.
+    """
+    persona_dir = os.path.join(_REPO_ROOT, "agents", agent_id, "persona")
+    mission_path = os.path.join(persona_dir, "MISSION.md")
+    if not os.path.isfile(mission_path):
+        return ""
+
+    # Cache key = sum of mtimes for present files (cheap change detection)
+    paths = [os.path.join(persona_dir, f) for f in _PERSONA_SECTIONS]
+    mtime_sum = sum(os.path.getmtime(p) for p in paths if os.path.isfile(p))
+    cached = _PERSONA_CACHE.get(agent_id)
+    if cached and cached[0] == mtime_sum:
+        return cached[1]
+
+    parts = []
+    for fname in _PERSONA_SECTIONS:
+        fpath = os.path.join(persona_dir, fname)
+        if os.path.isfile(fpath):
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    parts.append(f.read().strip())
+            except Exception:
+                pass
+    content = "\n\n".join(parts)
+    _PERSONA_CACHE[agent_id] = (mtime_sum, content)
+    return content
 
 
 class ContextMixin:
@@ -74,9 +112,14 @@ class ContextMixin:
         Returns the full system prompt for LLM calls.
         Structure: live context (memory/skills) THEN system_prompt last.
         System prompt is placed last so it has final authority over the LLM.
+
+        Persona resolution chain (first hit wins):
+          1. agents/<id>/persona/{IDENTITY,SOUL,MISSION,USER}.md   ← Graft 1, preferred
+          2. agent_identity.system_prompt (PostgreSQL)
+          3. (caller's class-level fallback)
         """
-        base = ""
-        if self._identity and self._identity.get("system_prompt"):
+        base = _load_persona_files(self.agent_id)
+        if not base and self._identity and self._identity.get("system_prompt"):
             base = self._identity["system_prompt"]
 
         ctx = self.context()

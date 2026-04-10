@@ -83,6 +83,59 @@ def ts() -> str:
     return str(int(time.time()))
 
 
+# ─── Consistency Enhancement ─────────────────────────────────────────────────
+# SD models generate each image region independently, causing mismatched pairs
+# (different faucets on same vanity, non-matching chairs, inconsistent bricks).
+# Auto-detect prompts with multiples and inject consistency-enforcing language.
+
+_PAIR_KEYWORDS = {
+    "faucet", "faucets", "handle", "handles", "knob", "knobs",
+    "chair", "chairs", "stool", "stools", "seat", "seats",
+    "lamp", "lamps", "light", "lights", "pendant", "pendants", "sconce", "sconces",
+    "pillow", "pillows", "cushion", "cushions",
+    "cabinet", "cabinets", "drawer", "drawers", "door", "doors",
+    "window", "windows", "shutter", "shutters",
+    "column", "columns", "pillar", "pillars",
+    "tile", "tiles", "brick", "bricks", "panel", "panels",
+    "shelf", "shelves", "towel", "towels",
+    "mirror", "mirrors", "frame", "frames",
+    "vase", "vases", "pot", "pots", "planter", "planters",
+    "barstool", "barstools", "nightstand", "nightstands",
+    "pair", "pairs", "matching", "set", "twin", "double", "two", "three", "four",
+}
+
+_CONSISTENCY_SUFFIX = (
+    ", all matching items are identical in design style color and material, "
+    "uniform consistent symmetrical, matching set, cohesive design, "
+    "same pattern same finish same style throughout, "
+    "no mismatched elements, unified aesthetic"
+)
+
+_CONSISTENCY_NEGATIVE = (
+    "mismatched, inconsistent, asymmetric design, different styles mixed, "
+    "clashing patterns, varied finishes on same object type, "
+    "non-uniform, eclectic mishmash, different colors on matching items, "
+    "two different styles, mixed patterns, patchwork, uneven, "
+    "different brick patterns, different lamp styles, mismatched pair, "
+    "feng shui random mix, each one different"
+)
+
+def _enhance_prompt_consistency(prompt: str, neg: str, cfg: float, steps: int):
+    """If prompt involves paired/multiple items, inject consistency language."""
+    words = set(prompt.lower().split())
+    low = prompt.lower()
+    needs = bool(words & _PAIR_KEYWORDS) or any(
+        kw in low for kw in ("dining chair", "end table", "bar stool")
+    )
+    if needs:
+        prompt = prompt + _CONSISTENCY_SUFFIX
+        if _CONSISTENCY_NEGATIVE not in neg:
+            neg = neg + ", " + _CONSISTENCY_NEGATIVE if neg else _CONSISTENCY_NEGATIVE
+        cfg = max(cfg, 7.0)      # raise CFG floor for tighter adherence
+        steps = max(steps, 20)   # more steps for detail consistency
+    return prompt, neg, cfg, steps
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # GENERATION (8 tools)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -98,14 +151,25 @@ async def generate_image(req: ToolRequest):
             raise ValueError("prompt required")
         model = _pick_model(prompt)
         await _set_model(model)
+
+        neg = inp.get("negative_prompt",
+            "blurry, low quality, watermark, text, ugly, EasyNegative")
+        cfg = inp.get("cfg_scale", 2.0)
+        steps = inp.get("steps", 6)
+
+        # Auto-enhance for object consistency
+        enhanced_prompt, neg, cfg, steps = _enhance_prompt_consistency(
+            prompt + ", masterpiece, best quality, ultra detailed, sharp focus, 8k",
+            neg, cfg, steps
+        )
+
         payload = {
-            "prompt": prompt + ", masterpiece, best quality, ultra detailed, sharp focus, 8k",
-            "negative_prompt": inp.get("negative_prompt",
-                "blurry, low quality, watermark, text, ugly, EasyNegative"),
+            "prompt": enhanced_prompt,
+            "negative_prompt": neg,
             "width":  inp.get("width", 1024),
             "height": inp.get("height", 1024),
-            "steps":  inp.get("steps", 6),
-            "cfg_scale": inp.get("cfg_scale", 2.0),
+            "steps":  steps,
+            "cfg_scale": cfg,
             "seed":   inp.get("seed", -1),
             "sampler_name": "DPM++ SDE Karras",
             "batch_size": inp.get("batch_size", 1),
@@ -1055,14 +1119,23 @@ async def regen_image(req: ToolRequest):
             raise ValueError("prompt required for regen")
         model = _pick_model(prompt)
         await _set_model(model)
+
+        neg = inp.get("negative_prompt",
+            "blurry, low quality, jpeg artifacts, noise, watermark, oversaturated, EasyNegative")
+        cfg = inp.get("cfg_scale", 2.0)
+        steps = inp.get("steps", 8)
+        enhanced_prompt, neg, cfg, steps = _enhance_prompt_consistency(
+            prompt + ", masterpiece, best quality, ultra detailed, 8k",
+            neg, cfg, steps
+        )
+
         payload = {
-            "prompt": prompt + ", masterpiece, best quality, ultra detailed, 8k",
-            "negative_prompt": inp.get("negative_prompt",
-                "blurry, low quality, jpeg artifacts, noise, watermark, oversaturated, EasyNegative"),
+            "prompt": enhanced_prompt,
+            "negative_prompt": neg,
             "width":  inp.get("width", 1024),
             "height": inp.get("height", 1024),
-            "steps":  inp.get("steps", 8),
-            "cfg_scale": inp.get("cfg_scale", 2.0),
+            "steps":  steps,
+            "cfg_scale": cfg,
             "seed":   inp.get("seed", -1),
             "sampler_name": "DPM++ SDE Karras",
         }

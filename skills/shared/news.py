@@ -6,8 +6,13 @@ Focuses on crypto, tech, and general top news.
 """
 import os
 import json
+import socket
 import urllib.request
 import xml.etree.ElementTree as ET
+
+# Force IPv6 — IPv4 unreachable on this host
+_orig = socket.getaddrinfo
+socket.getaddrinfo = lambda *a, **k: [r for r in _orig(*a, **k) if r[0] == socket.AF_INET6] or _orig(*a, **k)
 from datetime import datetime
 
 args = json.loads(os.environ.get("SKILL_ARGS", "{}"))

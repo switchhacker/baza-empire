@@ -153,6 +153,15 @@ def add_task(project_id: str, title: str, assigned_to: str,
         conn.commit()
         conn.close()
         logger.info(f"[task_updater] Created task {task_id[:8]}: {title} → {assigned_to}")
+        # Publish task_created event so agents (e.g. Scout) can react
+        try:
+            from core.event_bus import publish_sync
+            publish_sync("system", "task_created", {
+                "task_id": task_id, "title": title, "assigned_to": assigned_to,
+                "description": (description or "")[:200]
+            })
+        except Exception:
+            pass
         return task_id
     except Exception as e:
         logger.warning(f"[task_updater] add_task error: {e}")

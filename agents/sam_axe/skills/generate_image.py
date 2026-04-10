@@ -19,14 +19,73 @@ FALLBACK_DIR = os.path.expanduser("~/stable-diffusion-webui-forge/outputs/txt2im
 
 args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 
-prompt    = args.get("prompt", "a beautiful landscape, photorealistic, 8k")
-negative  = args.get("negative_prompt",
-    "blurry, distorted, low quality, watermark, text, nsfw, ugly, deformed, "
-    "extra limbs, bad anatomy, out of frame")
-steps     = int(args.get("steps", 30))
+# ── Consistency Enhancement ─────────────────────────────────────────────────
+# SD models generate each region independently, causing mismatched pairs
+# (different faucets on same vanity, mismatched chairs, inconsistent bricks).
+# We detect prompts with multiples and inject consistency-enforcing language.
+
+PAIR_KEYWORDS = [
+    "faucet", "faucets", "handle", "handles", "knob", "knobs",
+    "chair", "chairs", "stool", "stools", "seat", "seats",
+    "lamp", "lamps", "light", "lights", "pendant", "pendants", "sconce", "sconces",
+    "pillow", "pillows", "cushion", "cushions",
+    "cabinet", "cabinets", "drawer", "drawers", "door", "doors",
+    "window", "windows", "shutter", "shutters",
+    "column", "columns", "pillar", "pillars",
+    "tile", "tiles", "brick", "bricks", "panel", "panels",
+    "shelf", "shelves", "towel", "towels",
+    "mirror", "mirrors", "frame", "frames",
+    "vase", "vases", "pot", "pots", "planter", "planters",
+    "barstool", "barstools", "dining chair", "dining chairs",
+    "nightstand", "nightstands", "end table", "end tables",
+    "pair", "pairs", "matching", "set", "twin", "double", "two", "three", "four",
+]
+
+CONSISTENCY_SUFFIX = (
+    ", all matching items are identical in design style color and material, "
+    "uniform consistent symmetrical, matching set, cohesive design, "
+    "same pattern same finish same style throughout, "
+    "no mismatched elements, unified aesthetic"
+)
+
+CONSISTENCY_NEGATIVE = (
+    "mismatched, inconsistent, asymmetric design, different styles mixed, "
+    "clashing patterns, varied finishes on same object type, "
+    "non-uniform, eclectic mishmash, different colors on matching items, "
+    "two different styles, mixed patterns, patchwork, uneven, "
+    "different brick patterns, different lamp styles, mismatched pair, "
+    "feng shui random mix, each one different"
+)
+
+raw_prompt = args.get("prompt", "a beautiful landscape, photorealistic, 8k")
+prompt_lower = raw_prompt.lower()
+
+# Detect if prompt involves multiple/paired items
+needs_consistency = any(kw in prompt_lower for kw in PAIR_KEYWORDS)
+
+if needs_consistency:
+    prompt = raw_prompt + CONSISTENCY_SUFFIX
+    base_negative = (
+        "blurry, distorted, low quality, watermark, text, nsfw, ugly, deformed, "
+        "extra limbs, bad anatomy, out of frame, " + CONSISTENCY_NEGATIVE
+    )
+    # Bump CFG for tighter prompt adherence on consistency-sensitive images
+    default_cfg = 8.5
+    default_steps = 35
+else:
+    prompt = raw_prompt
+    base_negative = (
+        "blurry, distorted, low quality, watermark, text, nsfw, ugly, deformed, "
+        "extra limbs, bad anatomy, out of frame"
+    )
+    default_cfg = 7.0
+    default_steps = 30
+
+negative  = args.get("negative_prompt", base_negative)
+steps     = int(args.get("steps", default_steps))
 width     = int(args.get("width", 1024))
 height    = int(args.get("height", 1024))
-cfg_scale = float(args.get("cfg_scale", 7.0))
+cfg_scale = float(args.get("cfg_scale", default_cfg))
 sampler   = args.get("sampler", "DPM++ 2M Karras")
 
 # ── Check SD WebUI is up ────────────────────────────────────────────────────

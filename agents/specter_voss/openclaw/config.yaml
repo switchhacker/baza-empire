@@ -1,0 +1,128 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Specter Voss — OpenClaw Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Agent identity
+name: "Specter Voss"
+description: "Ghost Operative / Cloud Intelligence — Baza Empire Agent #9"
+
+# Telegram integration
+telegram:
+  enabled: true
+  token_env: "TELEGRAM_SPECTER_VOSS"
+  allowed_users: []  # empty = accept all (Serge controls via chat ID)
+
+# Model configuration — Ollama cloud models primary, local models as fallback
+# IMPORTANT: both `default` and `fallback` were previously set to Ollama Cloud
+# models, which meant when the cloud quota was exhausted Specter had no escape
+# hatch and every request returned "API rate limit reached". The fallback MUST
+# be a LOCAL model so Specter stays responsive when cloud is throttled.
+model:
+  provider: "ollama"
+  default: "glm-5:cloud"
+  fallback: "qwen2.5:14b"   # LOCAL — keeps Specter alive when cloud rate-limits
+  # Task-specific model routing — cloud primary with local fallback per task
+  routing:
+    code: "qwen3-coder:480b-cloud"
+    research: "kimi-k2.5:cloud"
+    search: "gpt-oss:120b-cloud"
+    fast: "gemma4:31b-cloud"
+    default: "glm-5:cloud"
+  # Local fallbacks by task when cloud models fail/rate-limit
+  local_fallbacks:
+    code: "deepseek-coder-v2:16b"
+    research: "qwen2.5:14b"
+    search: "qwen2.5:14b"
+    fast: "ministral-3:8b"
+    default: "qwen2.5:14b"
+
+# Ollama connection
+ollama:
+  host: "http://localhost:11434"
+  api_key_env: "OLLAMA_API_KEY"
+
+# Connected services (on main baza server via Tailscale)
+baza:
+  db_host_env: "BAZA_DB_HOST"
+  db_port: 5432
+  db_name: "baza_agents"
+  db_user: "switchhacker"
+  redis_url_env: "BAZA_REDIS_URL"
+  main_server_env: "BAZA_MAIN_HOST"
+  dashboard_url: "http://100.127.118.103:8888"
+
+# Local NUC services
+services:
+  searxng: "http://localhost:8080"
+  perplexica: "http://localhost:3000"
+  n8n: "http://localhost:5678"
+
+# Tool integrations
+tools:
+  # Baza skills (run as subprocess)
+  baza_skills:
+    enabled: true
+    skills_dir: "./skills"
+    shared_skills_dir: "../../skills/shared"
+
+  # Stealth upgrades (approval-gated)
+  stealth:
+    enabled: true
+    tools_dir: "./tools"
+    approval_timeout: 300
+    auto_approve_env: "AUTO_APPROVE_CATEGORIES"
+
+  # Web search via SearXNG
+  web_search:
+    enabled: true
+    engine: "searxng"
+    url: "http://localhost:8080/search"
+
+  # Browser automation
+  browser:
+    enabled: true
+    engine: "browser-use"
+    headless: true
+
+  # Email management
+  email:
+    enabled: false  # enable after Inbox Zero is configured
+    engine: "inbox-zero"
+
+# MCP servers to connect
+mcp_servers:
+  - name: "filesystem"
+    command: "npx"
+    args: ["-y", "@anthropic-ai/mcp-filesystem", "/home/switchhacker/baza-empire"]
+
+  - name: "baza-artifacts"
+    command: "npx"
+    args: ["-y", "@anthropic-ai/mcp-filesystem", "/home/switchhacker/baza-empire/agent-framework-v3/dashboard/artifacts"]
+
+# Scheduled tasks (cron-like)
+scheduled:
+  - name: "morning_scan"
+    cron: "0 7 * * *"
+    action: "baza_scan"
+    description: "Morning infrastructure health check"
+
+  - name: "agent_pulse_check"
+    cron: "*/30 * * * *"
+    action: "agent_pulse"
+    description: "Check all agent heartbeats every 30 min"
+
+  - name: "log_watchdog"
+    cron: "0 */4 * * *"
+    action: "log_scan"
+    description: "Scan service logs for errors every 4 hours"
+
+  - name: "code_health"
+    cron: "0 8 * * 1"
+    action: "code_scan"
+    description: "Weekly codebase health report (Monday 8am)"
+
+# Logging
+logging:
+  dir: "~/.specter/logs"
+  level: "INFO"
+  upgrade_log: "~/.specter/upgrade_logs/upgrades.log"

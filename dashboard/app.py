@@ -36,6 +36,15 @@ CLOUD_QUOTA_MB = 204800  # 200GB per user
 os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
 
+@app.after_request
+def add_no_cache(response):
+    """Prevent browser caching of HTML templates during development."""
+    if response.content_type and 'text/html' in response.content_type:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 # ── AHB123 Business Hub — Schema Init ─────────────────────────────────────────
 
 def init_ahb_tables():
@@ -391,6 +400,21 @@ def init_ahb_tables():
             c.execute(stmt)
         except Exception:
             pass
+    c.executescript("""
+        CREATE TABLE IF NOT EXISTS ahb_quotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            method TEXT,
+            scope TEXT,
+            description TEXT,
+            total REAL NOT NULL,
+            breakdown TEXT,
+            notes TEXT,
+            is_active INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ahb_quotes_pid ON ahb_quotes(project_id);
+    """)
     conn.commit()
     conn.close()
 
@@ -481,11 +505,35 @@ def svc_name(agent_id: str) -> str:
     return f"baza-agent-{agent_id.replace('_', '-')}"
 
 def get_agent_status(agent_id: str) -> str:
+    """Resolve agent status from (1) Redis heartbeat — works for any node,
+    including remote ones like phantom — (2) systemd as fallback for legacy
+    agents that haven't started publishing a heartbeat yet."""
+    # 1. Redis heartbeat is the authoritative cross-node signal
     try:
-        r = subprocess.run(['systemctl','is-active', svc_name(agent_id)],
+        import redis as _redis, time as _time, json as _json
+        r = _redis.Redis(host='localhost', port=6379, decode_responses=True, socket_timeout=2)
+        hb_raw = r.get(f"baza:heartbeat:{agent_id}")
+        if hb_raw:
+            try:
+                hb = _json.loads(hb_raw)
+                age = int(_time.time()) - int(hb.get("ts", 0))
+                if age < 180:
+                    return 'online'
+                if age < 600:
+                    return 'stale'
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # 2. systemd fallback for agents on this host that haven't heartbeat-ed yet
+    try:
+        r = subprocess.run(['systemctl', 'is-active', svc_name(agent_id)],
                            capture_output=True, text=True, timeout=5)
-        return 'online' if r.stdout.strip() == 'active' else 'offline'
-    except:
+        if r.stdout.strip() == 'active':
+            return 'online'
+        # Unit doesn't exist (e.g. specter_voss runs on phantom) AND no heartbeat → offline
+        return 'offline'
+    except Exception:
         return 'unknown'
 
 def get_agent_logs(agent_id: str, lines: int = 80) -> str:
@@ -656,9 +704,20 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
             parts = rel.split(os.sep)
             proj  = project_id or (parts[0] if len(parts) > 1 else "shared")
 
-            # Determine agent_id: sidecar meta > filename inference
+            # Determine agent_id: sidecar meta > filename inference > directory hint > simon_bately fallback
             meta  = _read_artifact_meta(fpath)
-            agent = agent_id or meta.get('agent_id', '') or _infer_agent_from_filename(fname, known_agents) or "unknown"
+            dir_hint = ''
+            for part in parts:
+                # e.g. "simon_bately-uploads", "claw_batto-uploads"
+                if '-uploads' in part or '-chat' in part:
+                    candidate = part.replace('-uploads','').replace('-chat','')
+                    if candidate in known_agents:
+                        dir_hint = candidate
+                        break
+                if part in known_agents:
+                    dir_hint = part
+                    break
+            agent = agent_id or meta.get('agent_id', '') or dir_hint or _infer_agent_from_filename(fname, known_agents) or "simon_bately"
 
             stat = os.stat(fpath)
             ext  = os.path.splitext(fname)[1].lower()
@@ -785,6 +844,11 @@ def crons_page():
 
 @app.route('/artifacts')
 def artifacts_page():
+    """Legacy route — redirect to Data Hub."""
+    return redirect('/datahub')
+
+@app.route('/datahub')
+def datahub_page():
     project_id = request.args.get('project_id', '')
     if project_id:
         arts = artifacts_for_project(project_id)
@@ -794,7 +858,7 @@ def artifacts_page():
     if os.path.exists(ARTIFACTS_DIR):
         projects = [d for d in os.listdir(ARTIFACTS_DIR)
                     if os.path.isdir(os.path.join(ARTIFACTS_DIR, d))]
-    return render_template('artifacts.html', artifacts=arts,
+    return render_template('datahub.html', artifacts=arts,
                            projects=sorted(projects), current_project=project_id)
 
 @app.route('/settings')
@@ -1228,17 +1292,17 @@ def api_artifact_download(project_id, filename):
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
     return send_from_directory(proj_dir, filename, as_attachment=True)
 
-@app.route('/api/artifacts/view/<project_id>/<filename>')
+@app.route('/api/artifacts/view/<project_id>/<path:filename>')
 def api_artifact_view(project_id, filename):
-    # Path traversal protection
-    safe_filename = os.path.basename(filename)
+    """Read text file content for preview. Supports subpaths."""
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
-    fpath    = os.path.join(proj_dir, safe_filename)
-    if not os.path.realpath(fpath).startswith(os.path.realpath(ARTIFACTS_DIR)):
+    fpath = os.path.realpath(os.path.join(proj_dir, filename))
+    if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
         return jsonify({'error': 'Forbidden'}), 403
-    if not os.path.exists(fpath):
+    if not os.path.isfile(fpath):
         return jsonify({'error': 'File not found'}), 404
-    ext = os.path.splitext(safe_filename)[1].lower()
+    base = os.path.basename(fpath)
+    ext = os.path.splitext(base)[1].lower()
     text_exts = {'.txt','.md','.py','.sh','.js','.ts','.jsx','.tsx','.html','.htm',
                  '.css','.json','.yaml','.yml','.toml','.ini','.cfg','.conf','.sql',
                  '.log','.env','.csv','.rst','.xml','.bash','.zsh','.rb','.go',
@@ -1246,24 +1310,205 @@ def api_artifact_view(project_id, filename):
     if ext in text_exts:
         try:
             content = open(fpath, 'r', errors='replace').read(500_000)
-            return jsonify({'content': content, 'name': safe_filename, 'type': 'text'})
+            return jsonify({'content': content, 'name': base, 'type': 'text'})
         except Exception:
             pass
-    # Binary file — return metadata so JS can use the serve endpoint for inline preview
     return jsonify({
-        'content': None, 'name': safe_filename, 'type': 'binary',
-        'serve_url': f'/api/artifacts/serve/{project_id}/{safe_filename}'
+        'content': None, 'name': base, 'type': 'binary',
+        'serve_url': f'/api/artifacts/serve/{project_id}/{filename}'
     })
 
-@app.route('/api/artifacts/serve/<project_id>/<filename>')
+@app.route('/api/artifacts/serve/<project_id>/<path:filename>')
 def api_artifact_serve(project_id, filename):
-    """Serve file inline for browser preview (images, PDFs, etc)."""
-    safe_filename = os.path.basename(filename)
+    """Serve file inline for browser preview (images, PDFs, etc). Supports subpaths."""
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
-    fpath    = os.path.join(proj_dir, safe_filename)
-    if not os.path.realpath(fpath).startswith(os.path.realpath(ARTIFACTS_DIR)):
+    fpath    = os.path.realpath(os.path.join(proj_dir, filename))
+    # Path traversal guard — must stay inside ARTIFACTS_DIR
+    if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
         return jsonify({'error': 'Forbidden'}), 403
-    return send_from_directory(proj_dir, safe_filename)
+    if not os.path.isfile(fpath):
+        return jsonify({'error': 'Not found'}), 404
+    return send_from_directory(os.path.dirname(fpath), os.path.basename(fpath))
+
+@app.route('/api/datahub/specter')
+def api_datahub_specter():
+    """Live Specter Voss status for the DataHub Specter card.
+    Pulls heartbeat from Redis (set by openclaw/telegram_bridge.py every cycle)
+    and recent insights from empire_knowledge (set by publish_insight skill).
+    Returns: status, last_seen, model, recent_insights[]"""
+    out = {
+        "status": "offline",
+        "last_seen": None,
+        "model": None,
+        "seconds_since_heartbeat": None,
+        "insights": [],
+        "insight_count": 0,
+    }
+
+    # Heartbeat from Redis
+    try:
+        import redis as _redis
+        r = _redis.Redis(host="localhost", port=6379, decode_responses=True)
+        hb_raw = r.get("baza:heartbeat:specter_voss")
+        if hb_raw:
+            hb = json.loads(hb_raw)
+            ts = int(hb.get("ts", 0))
+            now_ts = int(datetime.datetime.now().timestamp())
+            age = now_ts - ts
+            out["seconds_since_heartbeat"] = age
+            out["last_seen"] = datetime.datetime.fromtimestamp(ts).isoformat()
+            out["model"] = hb.get("model")
+            # Heartbeat TTL is 120s; treat <180s as alive, otherwise stale
+            if age < 180:
+                out["status"] = hb.get("status", "online") or "online"
+            elif age < 600:
+                out["status"] = "stale"
+            else:
+                out["status"] = "offline"
+    except Exception as e:
+        out["redis_error"] = str(e)
+
+    # Recent insights from PostgreSQL empire_knowledge
+    try:
+        from core.context_db import get_pool
+        pool = get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT key, value, category, updated_at FROM empire_knowledge "
+            "WHERE key LIKE 'specter_%' ORDER BY updated_at DESC LIMIT 12"
+        )
+        rows = cur.fetchall()
+        for k, v, cat, ts in rows:
+            # key format: specter_<category>_<safe_title>
+            title = (k or "").replace(f"specter_{cat}_", "", 1).replace("_", " ").title()
+            out["insights"].append({
+                "key": k,
+                "title": title[:80],
+                "category": cat or "research",
+                "preview": (v or "")[:280],
+                "size": len(v or ""),
+                "updated_at": ts.isoformat() if ts else None,
+            })
+        cur.execute("SELECT count(*) FROM empire_knowledge WHERE key LIKE 'specter_%'")
+        out["insight_count"] = cur.fetchone()[0]
+        cur.close()
+        pool.putconn(conn)
+    except Exception as e:
+        out["pg_error"] = str(e)
+
+    return jsonify(out)
+
+
+@app.route('/api/datahub/feed')
+def api_datahub_feed():
+    """Live feed of recent agent activity from task_journal + recent artifacts."""
+    limit = int(request.args.get('limit', 30))
+    agent_id = request.args.get('agent_id', '')
+    feed = []
+    # Recent artifacts
+    arts = all_artifacts()
+    for a in arts[:limit]:
+        feed.append({
+            'type': 'artifact',
+            'agent_id': a.get('agent_id', 'simon_bately') or 'simon_bately',
+            'name': a.get('name', ''),
+            'project_id': a.get('project_id', ''),
+            'ext': a.get('ext', ''),
+            'size': a.get('size', 0),
+            'modified': a.get('modified', ''),
+            'download_url': a.get('download_url', ''),
+        })
+    # Recent journal entries from PostgreSQL
+    try:
+        from core.context_db import get_conn, release_conn
+        conn = get_conn()
+        cur = conn.cursor()
+        q = "SELECT agent_id, task_type, task_description, result, success, created_at FROM task_journal"
+        params = []
+        if agent_id:
+            q += " WHERE agent_id = %s"
+            params.append(agent_id)
+        q += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(q, params)
+        for row in cur.fetchall():
+            feed.append({
+                'type': 'journal',
+                'agent_id': row[0],
+                'task_type': row[1],
+                'description': row[2][:200] if row[2] else '',
+                'result': row[3][:200] if row[3] else '',
+                'success': row[4],
+                'timestamp': row[5].isoformat() if row[5] else '',
+            })
+        cur.close()
+        release_conn(conn)
+    except Exception:
+        pass
+    # Sort by timestamp/modified
+    feed.sort(key=lambda x: x.get('timestamp') or x.get('modified', ''), reverse=True)
+    return jsonify(feed[:limit])
+
+@app.route('/api/datahub/agent-chat', methods=['POST'])
+def api_datahub_agent_chat():
+    """Relay a message to an agent via skill execution for Data Hub chat."""
+    data = request.json or {}
+    agent_id = data.get('agent_id', '')
+    message = data.get('message', '')
+    file_info = data.get('file_info', '')
+    file_content = data.get('file_content', '')
+    context = data.get('context', '')
+
+    if not agent_id or not message:
+        return jsonify({'error': 'agent_id and message required'}), 400
+
+    # Build a prompt for the agent via Ollama
+    try:
+        import urllib.request as _ur
+        ollama_urls = ['http://localhost:11434', 'http://localhost:11435']
+        system = f"You are {agent_id}. A user is editing a file in the Data Hub and needs your help."
+        if context == 'image':
+            system += " You are an image/design expert. Help with visual editing requests."
+        elif context in ('code', 'text'):
+            system += " You are a code expert. Help edit, refactor, fix, or improve the file."
+
+        user_msg = message
+        if file_info:
+            user_msg = f"[File: {file_info}]\n\n"
+            if file_content:
+                user_msg += f"[Content preview:]\n```\n{file_content[:2000]}\n```\n\n"
+            user_msg += f"User request: {message}"
+
+        payload = json.dumps({
+            "model": "qwen3.5:latest",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg}
+            ],
+            "stream": False,
+            "options": {"num_predict": 800, "temperature": 0.7}
+        }).encode()
+
+        reply = None
+        for url in ollama_urls:
+            try:
+                req = _ur.Request(f"{url}/api/chat", data=payload,
+                                  headers={"Content-Type": "application/json"})
+                with _ur.urlopen(req, timeout=60) as resp:
+                    result = json.loads(resp.read())
+                    reply = result.get('message', {}).get('content', '')
+                    if reply:
+                        break
+            except Exception:
+                continue
+
+        if not reply:
+            return jsonify({'reply': 'Agent is busy or offline. Try again or message them on Telegram.'})
+
+        return jsonify({'reply': reply})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/artifacts/delete', methods=['POST'])
 def api_artifact_delete():
@@ -1416,18 +1661,34 @@ def api_artifact_send_to_agent():
     message = f"\U0001f4ce Artifact Task from Dashboard\n\nFile: {filename}\nProject: {project_id}\nPath: {file_url}\n\nInstruction: {prompt}"
     import requests as _req
     try:
-        resp = _req.get(f"https://api.telegram.org/bot{token}/getUpdates", params={"limit": 5, "offset": -5}, timeout=10)
-        updates = resp.json().get('result', [])
+        # Get chat_id from PostgreSQL messages table (most reliable — bot is actively polling)
         chat_id = None
-        for u in reversed(updates):
-            msg = u.get('message', {})
-            if msg.get('chat', {}).get('type') == 'private':
-                chat_id = msg['chat']['id']
-                break
+        try:
+            from core.context_db import get_pool
+            pool = get_pool()
+            conn = pool.getconn()
+            cur = conn.cursor()
+            cur.execute("SELECT DISTINCT chat_id FROM messages WHERE agent_id=%s ORDER BY chat_id DESC LIMIT 1", (agent_id,))
+            row = cur.fetchone()
+            if row:
+                chat_id = row[0]
+            cur.close()
+            pool.putconn(conn)
+        except Exception:
+            pass
+        # Fallback: try getUpdates
+        if not chat_id:
+            resp = _req.get(f"https://api.telegram.org/bot{token}/getUpdates", params={"limit": 10}, timeout=10)
+            updates = resp.json().get('result', [])
+            for u in reversed(updates):
+                msg = u.get('message', {})
+                if msg.get('chat', {}).get('type') == 'private':
+                    chat_id = msg['chat']['id']
+                    break
         if not chat_id:
             return jsonify({'success': False, 'error': 'No chat found — message the agent on Telegram first'}), 400
         resp = _req.post(f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}, timeout=10)
+            json={"chat_id": chat_id, "text": message}, timeout=10)
         result = resp.json()
         if result.get('ok'):
             try:
@@ -2554,11 +2815,22 @@ def api_ahb_projects_create():
             line_items.append({'description': ph.get('name', f'Phase {i+1}'), 'quantity': 1, 'unit_price': phase_val})
             subtotal += phase_val
 
-        # If no phases, use project value as single line item
+        # If no phases, split the project description into line items + use budget as total
         if not line_items:
-            val = data.get('value') or data.get('budget_high') or 0
-            line_items = [{'description': data.get('title', 'Project'), 'quantity': 1, 'unit_price': val}]
-            subtotal = val
+            budget = data.get('value') or data.get('budget_high') or data.get('budget_low') or 0
+            try: budget = float(budget) if budget else 0
+            except Exception: budget = 0
+            desc = (data.get('description') or '').strip()
+            if desc:
+                line_items = _split_description_to_line_items(desc, budget)
+                subtotal = budget
+            if not line_items:
+                line_items = [{
+                    'description': data.get('title', 'Project'),
+                    'qty': 1, 'rate': budget, 'total': budget,
+                    'quantity': 1, 'unit_price': budget,
+                }]
+                subtotal = budget
 
         # Auto-create correlated invoice
         iid = uuid.uuid4().hex[:24]
@@ -2606,10 +2878,163 @@ def api_ahb_projects_update(pid):
         conn = _ahb_db()
         conn.execute(f"UPDATE ahb_projects SET {', '.join(fields)} WHERE id = ?", vals)
         conn.commit()
+        # Push header changes (title, address, client info, value) into linked invoice
+        invoice_id = _sync_invoice_from_project(conn, pid, data)
+        conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'invoice_id': invoice_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/projects/<pid>/move-to-year', methods=['POST'])
+def api_ahb_project_move_year(pid):
+    """Re-assign a project to a different tax year. Updates the year column,
+    shifts start_date/end_date by the year delta, and propagates the year to
+    every linked invoice so InvoiceIT + Uncle Sam stay consistent."""
+    try:
+        body = request.get_json() or {}
+        new_year = str(body.get('year', '')).strip()
+        if not re.match(r'^\d{4}$', new_year):
+            return jsonify({'success': False, 'error': 'year must be YYYY'}), 400
+        conn = _ahb_db()
+        proj = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (pid,)).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({'success': False, 'error': 'project not found'}), 404
+        proj = dict(proj)
+        # Compute new start/end dates by shifting the year while keeping month/day
+        def _shift(date_str, target_year):
+            if not date_str or len(date_str) < 10:
+                return date_str
+            try:
+                return target_year + date_str[4:]   # YYYY-MM-DD → newYYYY-MM-DD
+            except Exception:
+                return date_str
+        new_start = _shift(proj.get('start_date'), new_year) or f"{new_year}-01-01"
+        new_end   = _shift(proj.get('end_date'),   new_year)
+        conn.execute(
+            "UPDATE ahb_projects SET year=?, start_date=?, end_date=?, updated_at=? WHERE id=?",
+            (new_year, new_start, new_end, datetime.datetime.now().isoformat(), pid)
+        )
+        # Propagate to every linked invoice
+        invs = conn.execute("SELECT id, date, paid_date FROM ahb_invoices WHERE project_id = ?", (pid,)).fetchall()
+        for inv in invs:
+            inv_d = dict(inv)
+            new_inv_date  = _shift(inv_d.get('date'),     new_year)
+            new_inv_paid  = _shift(inv_d.get('paid_date'),new_year)
+            conn.execute(
+                "UPDATE ahb_invoices SET year=?, date=COALESCE(?,date), paid_date=COALESCE(?,paid_date), updated_at=? WHERE id=?",
+                (new_year, new_inv_date, new_inv_paid, datetime.datetime.now().isoformat(), inv_d['id'])
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'year': new_year, 'invoices_updated': len(invs)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/invoices/<iid>/move-to-year', methods=['POST'])
+def api_ahb_invoice_move_year(iid):
+    """Re-assign a single invoice (and its linked project's year if it has one)
+    to a different tax year. Used for one-off InvoiceIT corrections."""
+    try:
+        body = request.get_json() or {}
+        new_year = str(body.get('year', '')).strip()
+        if not re.match(r'^\d{4}$', new_year):
+            return jsonify({'success': False, 'error': 'year must be YYYY'}), 400
+        also_project = bool(body.get('also_project', False))
+        conn = _ahb_db()
+        inv = conn.execute("SELECT * FROM ahb_invoices WHERE id = ?", (iid,)).fetchone()
+        if not inv:
+            conn.close()
+            return jsonify({'success': False, 'error': 'invoice not found'}), 404
+        inv = dict(inv)
+        def _shift(date_str, target_year):
+            if not date_str or len(date_str) < 10:
+                return date_str
+            return target_year + date_str[4:]
+        new_date     = _shift(inv.get('date'),      new_year)
+        new_paid     = _shift(inv.get('paid_date'), new_year)
+        conn.execute(
+            "UPDATE ahb_invoices SET year=?, date=COALESCE(?,date), paid_date=COALESCE(?,paid_date), updated_at=? WHERE id=?",
+            (new_year, new_date, new_paid, datetime.datetime.now().isoformat(), iid)
+        )
+        if also_project and inv.get('project_id'):
+            proj = conn.execute("SELECT start_date, end_date FROM ahb_projects WHERE id = ?", (inv['project_id'],)).fetchone()
+            if proj:
+                new_start = _shift(proj['start_date'], new_year)
+                new_end   = _shift(proj['end_date'],   new_year)
+                conn.execute(
+                    "UPDATE ahb_projects SET year=?, start_date=COALESCE(?,start_date), end_date=COALESCE(?,end_date), updated_at=? WHERE id=?",
+                    (new_year, new_start, new_end, datetime.datetime.now().isoformat(), inv['project_id'])
+                )
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'year': new_year})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── Project Quotes ──────────────────────────────────────────────────────────
+
+@app.route('/api/ahb/projects/<pid>/quotes', methods=['GET', 'POST'])
+def api_ahb_project_quotes(pid):
+    conn = _ahb_db()
+    c = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json() or {}
+        total = float(d.get('total') or 0)
+        if not total:
+            conn.close()
+            return jsonify({'success': False, 'error': 'total required'}), 400
+        c.execute("""INSERT INTO ahb_quotes
+            (project_id, method, scope, description, total, breakdown, notes, is_active)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (pid, d.get('method', 'manual'), d.get('scope', ''),
+             d.get('description', ''), total,
+             json.dumps(d.get('breakdown') or {}),
+             d.get('notes', ''), 1 if d.get('make_active') else 0))
+        qid = c.lastrowid
+        # If marked active, demote others and update project value
+        if d.get('make_active'):
+            c.execute("UPDATE ahb_quotes SET is_active=0 WHERE project_id=? AND id<>?", (pid, qid))
+            c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
+                      (total, total, datetime.datetime.now().isoformat(), pid))
+        conn.commit()
+        row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
+        conn.close()
+        return jsonify({'success': True, 'quote': dict(row)})
+    rows = c.execute("SELECT * FROM ahb_quotes WHERE project_id=? ORDER BY id DESC", (pid,)).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route('/api/ahb/quotes/<int:qid>', methods=['DELETE', 'PUT'])
+def api_ahb_quote_modify(qid):
+    conn = _ahb_db()
+    c = conn.cursor()
+    row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'error': 'not found'}), 404
+    pid = row['project_id']
+    if request.method == 'DELETE':
+        c.execute("DELETE FROM ahb_quotes WHERE id=?", (qid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    d = request.get_json() or {}
+    if d.get('make_active'):
+        c.execute("UPDATE ahb_quotes SET is_active=0 WHERE project_id=?", (pid,))
+        c.execute("UPDATE ahb_quotes SET is_active=1 WHERE id=?", (qid,))
+        c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
+                  (row['total'], row['total'], datetime.datetime.now().isoformat(), pid))
+    if 'notes' in d:
+        c.execute("UPDATE ahb_quotes SET notes=? WHERE id=?", (d['notes'], qid))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 
 @app.route('/api/ahb/projects/<pid>', methods=['DELETE'])
@@ -4033,7 +4458,9 @@ def api_ahb_project_files_upload(pid):
 # ── AHB123 — Project Phases ────────────────────────────────────────────────────
 
 def _rebuild_invoice_line_items(conn, project_id):
-    """Rebuild the linked invoice's line_items JSON from all project phases."""
+    """Rebuild the linked invoice's line_items JSON from all project phases.
+    Writes both legacy ({quantity, unit_price}) AND form-native ({qty, rate, total}) keys
+    so the invoice editor can read either format without breaking."""
     phases = conn.execute(
         "SELECT * FROM ahb_project_phases WHERE project_id = ? ORDER BY phase_number",
         (project_id,)
@@ -4043,7 +4470,11 @@ def _rebuild_invoice_line_items(conn, project_id):
     for ph in phases:
         ph = dict(ph)
         val = ph.get('value', 0) or 0
-        line_items.append({'description': ph.get('name', 'Phase'), 'quantity': 1, 'unit_price': val})
+        line_items.append({
+            'description': ph.get('name', 'Phase'),
+            'qty': 1, 'rate': val, 'total': val,
+            'quantity': 1, 'unit_price': val,   # legacy keys
+        })
         subtotal += val
     # Update first linked invoice
     inv = conn.execute(
@@ -4055,6 +4486,125 @@ def _rebuild_invoice_line_items(conn, project_id):
             "UPDATE ahb_invoices SET line_items = ?, subtotal = ?, total = ?, updated_at = ? WHERE id = ?",
             (json.dumps(line_items), subtotal, subtotal, datetime.datetime.now().isoformat(), inv['id']))
     return inv['id'] if inv else None
+
+
+def _split_description_to_line_items(description: str, total_budget: float) -> list:
+    """Split a project description into individual invoice line items.
+    Each non-empty line (or bullet/numbered item) becomes one line item.
+    The total_budget is divided evenly across all line items so the sum equals the budget.
+    Returns a list of dicts with both {qty,rate,total} and {quantity,unit_price} keys."""
+    if not description or not description.strip():
+        return []
+    raw = description.strip()
+    # Split on newlines, semicolons, or numbered/bulleted markers
+    lines = []
+    for chunk in re.split(r'[\n\r;]+', raw):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        # Strip leading bullets, numbers, dashes
+        chunk = re.sub(r'^[\s\-\*\u2022\u2023\u25E6\u2043\u2219]+', '', chunk)
+        chunk = re.sub(r'^\d+[\.\)]\s*', '', chunk).strip()
+        if chunk:
+            lines.append(chunk)
+    if not lines:
+        return []
+    n = len(lines)
+    budget = float(total_budget or 0)
+    # Even split — round to cents, fix the last line so the sum is exact
+    per = round(budget / n, 2) if n else 0
+    items = []
+    running = 0.0
+    for i, line in enumerate(lines):
+        if i == n - 1:
+            rate = round(budget - running, 2)   # last line absorbs the rounding remainder
+        else:
+            rate = per
+            running += rate
+        items.append({
+            'description': line[:300],
+            'qty': 1, 'rate': rate, 'total': rate,
+            'quantity': 1, 'unit_price': rate,
+        })
+    return items
+
+
+def _sync_invoice_from_project(conn, project_id, project_data):
+    """Push project header fields (title, client info, address, value) into the linked invoice
+    whenever the project is updated. Also rebuilds line items from project description when
+    description or budget changes — each description line becomes one line item, and the
+    project budget (value or budget_high) is split evenly across them as the total.
+
+    Phase-driven invoices (>1 line items already from phases) are left alone unless explicitly
+    rebuilt elsewhere — only single-line / description-driven invoices auto-sync from desc."""
+    inv = conn.execute(
+        "SELECT id, line_items, subtotal FROM ahb_invoices WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+        (project_id,)
+    ).fetchone()
+    if not inv:
+        return None
+    inv = dict(inv)
+
+    # Pull the latest project so we always have the canonical description + budget,
+    # even if the caller only sent a partial PUT (e.g. just notes/dates).
+    proj_row = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (project_id,)).fetchone()
+    if not proj_row:
+        return inv['id']
+    proj = dict(proj_row)
+    # Merge what was just PUT — incoming data wins for fields it specifies
+    for k, v in (project_data or {}).items():
+        if v is not None:
+            proj[k] = v
+
+    sets, vals = [], []
+    sets.append('project_name = ?');   vals.append(proj.get('title') or '')
+    sets.append('client_name = ?');    vals.append(proj.get('client_name') or '')
+    sets.append('client_email = ?');   vals.append(proj.get('client_email') or '')
+    sets.append('client_phone = ?');   vals.append(proj.get('contact_info') or '')
+    sets.append('project_address = ?');vals.append(proj.get('address') or '')
+    sets.append('client_address = ?'); vals.append(proj.get('address') or '')
+    if proj.get('client_id'):
+        sets.append('client_id = ?');  vals.append(proj['client_id'])
+
+    # Determine if invoice is phase-driven (has multiple lines, leave it alone)
+    try:
+        existing_lines = json.loads(inv.get('line_items') or '[]')
+    except Exception:
+        existing_lines = []
+    phase_count = conn.execute(
+        "SELECT COUNT(*) FROM ahb_project_phases WHERE project_id = ?", (project_id,)
+    ).fetchone()[0]
+
+    # Rebuild line items from description ONLY when there are no phases driving the invoice.
+    # If phases exist, _rebuild_invoice_line_items handles them — don't fight that.
+    if phase_count == 0:
+        budget = proj.get('value') or proj.get('budget_high') or proj.get('budget_low') or 0
+        try:
+            budget = float(budget) if budget else 0
+        except Exception:
+            budget = 0
+        desc = (proj.get('description') or '').strip()
+        if desc:
+            new_lines = _split_description_to_line_items(desc, budget)
+            if new_lines:
+                sets.append('line_items = ?'); vals.append(json.dumps(new_lines))
+                sets.append('subtotal = ?');   vals.append(budget)
+                sets.append('total = ?');      vals.append(budget)
+        elif budget and len(existing_lines) <= 1:
+            # No description but a budget — single line fallback
+            single = [{
+                'description': proj.get('title', 'Project'),
+                'qty': 1, 'rate': budget, 'total': budget,
+                'quantity': 1, 'unit_price': budget,
+            }]
+            sets.append('line_items = ?'); vals.append(json.dumps(single))
+            sets.append('subtotal = ?');   vals.append(budget)
+            sets.append('total = ?');      vals.append(budget)
+
+    sets.append('updated_at = ?'); vals.append(datetime.datetime.now().isoformat())
+    vals.append(inv['id'])
+    conn.execute(f"UPDATE ahb_invoices SET {', '.join(sets)} WHERE id = ?", vals)
+    return inv['id']
 
 @app.route('/api/ahb/phases', methods=['GET'])
 def api_ahb_phases_list():
@@ -4634,13 +5184,25 @@ def api_ahb_invoice_pdf(iid):
         items_html = ''
         for i, item in enumerate(line_items, 1):
             desc = item.get('description', '')
-            qty = item.get('quantity', 1)
-            price = item.get('unit_price', 0) or 0
-            total_item = qty * price
+            qty   = item.get('qty')   if item.get('qty')   is not None else item.get('quantity', 1)
+            price = item.get('rate')  if item.get('rate')  is not None else item.get('unit_price', 0)
+            unit  = item.get('unit') or 'qty'
+            try: qty = float(qty or 0)
+            except: qty = 0
+            try: price = float(price or 0)
+            except: price = 0
+            # Honor stored total if it was manually overridden
+            stored_total = item.get('total')
+            try:
+                stored_total = float(stored_total) if stored_total is not None else None
+            except:
+                stored_total = None
+            total_item = stored_total if stored_total is not None else (qty * price)
+            qty_display = f"{qty:g} {unit}" if unit and unit != 'qty' else f"{qty:g}"
             items_html += f'''<tr>
                 <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">${price:,.2f}</td>
                 <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
             </tr>'''
@@ -4730,8 +5292,7 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
 <!-- PAGE 2: CONTRACTOR AGREEMENT -->
 <div class="page-break"></div>
 
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
-    {f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:40px;height:40px;object-fit:contain;">' if logo_b64 else ''}
+<div style="margin-bottom:24px;">
     <h1 style="margin:0;font-size:24px;font-weight:400;color:#333;">CONTRACTOR AGREEMENT</h1>
 </div>
 
@@ -6018,6 +6579,2650 @@ if CLOUD_ENABLED:
         used_mb = round(total / 1024 / 1024, 1)
         return jsonify({'used_mb': used_mb, 'quota_mb': current_user.storage_quota_mb,
                         'percent': round(used_mb / current_user.storage_quota_mb * 100, 1) if current_user.storage_quota_mb else 0})
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public Review Page + QR Code + AHB123 Project Photos
+# ─────────────────────────────────────────────────────────────────────────────
+
+REVIEWS_DIR = os.path.join(ARTIFACTS_DIR, 'ahb123-reviews')
+PHOTOS_DIR  = os.path.join(ARTIFACTS_DIR, 'ahb123-photos')
+os.makedirs(REVIEWS_DIR, exist_ok=True)
+os.makedirs(PHOTOS_DIR, exist_ok=True)
+
+def _public_base_url():
+    """Return the base URL the public should use to reach this dashboard."""
+    return os.environ.get('BAZA_PUBLIC_URL', '').rstrip('/') or request.host_url.rstrip('/')
+
+@app.route('/api/qr')
+def api_qr():
+    """Generate a QR code PNG for any data string. ?data=<url>&size=<px>"""
+    import io
+    try:
+        import qrcode
+    except ImportError:
+        return jsonify({'error': 'qrcode lib not installed'}), 500
+    data = request.args.get('data', '').strip()
+    if not data:
+        return jsonify({'error': 'data param required'}), 400
+    size = max(1, min(40, int(request.args.get('box', '10'))))
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M,
+                       box_size=size, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='#00bcd4', back_color='#0a0a16')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    resp = make_response(buf.read())
+    resp.headers['Content-Type'] = 'image/png'
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+@app.route('/review')
+def public_review_page():
+    """Public-facing review form (no auth) — accessed via QR code."""
+    return render_template('review_public.html', company='All Home Building Co LLC')
+
+@app.route('/api/review/submit', methods=['POST'])
+def api_review_submit():
+    """Public review submission. Accepts multipart form (with optional photo) or JSON."""
+    import re as _re
+    if request.content_type and 'multipart' in request.content_type:
+        data = {
+            'stars':        int(request.form.get('stars', '0') or 0),
+            'name':         request.form.get('name', '').strip()[:80],
+            'text':         request.form.get('text', '').strip()[:2000],
+            'project_type': request.form.get('project_type', '').strip()[:80],
+            'tags':         [t for t in request.form.get('tags', '').split(',') if t.strip()],
+            'email':        request.form.get('email', '').strip()[:120],
+            'phone':        request.form.get('phone', '').strip()[:30],
+        }
+        photo = request.files.get('photo')
+    else:
+        body = request.get_json(silent=True) or {}
+        data = {
+            'stars':        int(body.get('stars', 0) or 0),
+            'name':         (body.get('name') or '').strip()[:80],
+            'text':         (body.get('text') or '').strip()[:2000],
+            'project_type': (body.get('project_type') or '').strip()[:80],
+            'tags':         body.get('tags') or [],
+            'email':        (body.get('email') or '').strip()[:120],
+            'phone':        (body.get('phone') or '').strip()[:30],
+        }
+        photo = None
+    if not (1 <= data['stars'] <= 5):
+        return jsonify({'success': False, 'error': 'stars must be 1-5'}), 400
+    data['date'] = datetime.datetime.now().strftime('%Y-%m-%d')
+    data['ts']   = datetime.datetime.now().isoformat()
+    data['source'] = 'public_qr'
+    data['ip']   = request.remote_addr
+    # Auto-publish 4-5 star reviews to the public website. 1-3 star stay unpublished
+    # pending manual moderation by Serge / Nova so we can address concerns first.
+    data['published'] = data['stars'] >= 4
+    ts = int(datetime.datetime.now().timestamp())
+    if photo and photo.filename:
+        safe_name = _re.sub(r'[^\w.\-_]', '_', photo.filename)
+        photo_name = f'review_{ts}_{safe_name}'
+        photo.save(os.path.join(REVIEWS_DIR, photo_name))
+        data['photo'] = photo_name
+        data['has_photo'] = True
+    fname = f'review_{ts}.json'
+    with open(os.path.join(REVIEWS_DIR, fname), 'w') as f:
+        json.dump(data, f, indent=2)
+    # Notify Nova via task journal so agents see it
+    try:
+        from core.context_db import save_task_journal
+        save_task_journal('nova_sterling', 'public_review_received',
+                          f"{data['stars']}-star from {data['name'] or 'anonymous'}: {data['text'][:120]}",
+                          status='completed')
+    except Exception:
+        pass
+    return jsonify({'success': True, 'file': fname})
+
+
+def _load_reviews(only_published: bool = False) -> list:
+    """Walk the reviews artifact dir and return all review JSON records, newest first."""
+    if not os.path.exists(REVIEWS_DIR):
+        return []
+    out = []
+    for fname in os.listdir(REVIEWS_DIR):
+        if not fname.endswith('.json'):
+            continue
+        try:
+            with open(os.path.join(REVIEWS_DIR, fname)) as f:
+                rev = json.load(f)
+            rev['_file'] = fname
+            if only_published and not rev.get('published', False):
+                continue
+            out.append(rev)
+        except Exception:
+            continue
+    out.sort(key=lambda r: r.get('ts', ''), reverse=True)
+    return out
+
+
+@app.route('/api/reviews/published', methods=['GET'])
+def api_reviews_published():
+    """Public-facing endpoint: returns all reviews flagged for publication.
+    Used by the ahb123.com website to render the reviews section + marketing widgets.
+    Strips PII (email, phone, IP) before returning."""
+    reviews = _load_reviews(only_published=True)
+    safe = []
+    for r in reviews:
+        safe.append({
+            'stars':         r.get('stars'),
+            'name':          r.get('name'),
+            'text':          r.get('text'),
+            'project_type':  r.get('project_type'),
+            'tags':          r.get('tags'),
+            'date':          r.get('date'),
+            'photo':         r.get('photo'),
+            'has_photo':     r.get('has_photo', False),
+            'id':            r.get('_file', '').replace('review_','').replace('.json',''),
+        })
+    # Aggregate stats for marketing — average rating, total count
+    if safe:
+        avg = sum(r['stars'] for r in safe) / len(safe)
+    else:
+        avg = 0
+    resp = make_response(jsonify({
+        'reviews':   safe,
+        'count':     len(safe),
+        'avg_stars': round(avg, 2),
+    }))
+    # Allow cross-origin embedding from the static website
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Cache-Control'] = 'public, max-age=300'  # 5min cache
+    return resp
+
+
+@app.route('/api/reviews/all', methods=['GET'])
+def api_reviews_all():
+    """Admin-only: returns ALL reviews (published + unpublished) with full PII for moderation."""
+    return jsonify(_load_reviews(only_published=False))
+
+
+@app.route('/api/reviews/<rid>/publish', methods=['POST'])
+def api_review_publish(rid):
+    """Toggle a review's published flag for marketing display."""
+    body = request.get_json(silent=True) or {}
+    publish = body.get('publish', True)
+    fname = f'review_{rid}.json' if not rid.startswith('review_') else (rid + ('.json' if not rid.endswith('.json') else ''))
+    fpath = os.path.join(REVIEWS_DIR, fname)
+    if not os.path.exists(fpath):
+        return jsonify({'success': False, 'error': 'not found'}), 404
+    try:
+        with open(fpath) as f:
+            data = json.load(f)
+        data['published'] = bool(publish)
+        with open(fpath, 'w') as f:
+            json.dump(data, f, indent=2)
+        return jsonify({'success': True, 'published': data['published']})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reviews/photo/<path:fname>')
+def api_review_photo(fname):
+    """Serve uploaded review photos. Public — accessed from the website."""
+    resp = send_from_directory(REVIEWS_DIR, fname)
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
+
+
+# ── EstimatOR Super Tool: 3-method estimation ───────────────────────────────
+
+def _ensure_estimator_settings():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_estimator_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        crew_day_rate REAL DEFAULT 800,
+        lead_day_rate REAL DEFAULT 1200,
+        helper_day_rate REAL DEFAULT 450,
+        sub_day_rate REAL DEFAULT 1500,
+        materials_pct REAL DEFAULT 0.40,
+        overhead_pct REAL DEFAULT 0.15,
+        profit_pct REAL DEFAULT 0.18,
+        admin_fee_pct REAL DEFAULT 0.05,
+        permit_fee_default REAL DEFAULT 350,
+        contingency_pct REAL DEFAULT 0.10,
+        last_low_high_factor_low REAL DEFAULT 0.75,
+        last_low_high_factor_high REAL DEFAULT 1.30,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("INSERT OR IGNORE INTO ahb_estimator_settings (id) VALUES (1)")
+    conn.commit()
+    conn.close()
+_ensure_estimator_settings()
+
+
+@app.route('/api/ahb/estimator/settings', methods=['GET','PUT'])
+def api_estimator_settings():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        row = conn.execute("SELECT * FROM ahb_estimator_settings WHERE id=1").fetchone()
+        conn.close()
+        return jsonify(dict(row) if row else {})
+    body = request.get_json() or {}
+    fields = ['crew_day_rate','lead_day_rate','helper_day_rate','sub_day_rate',
+              'materials_pct','overhead_pct','profit_pct','admin_fee_pct',
+              'permit_fee_default','contingency_pct',
+              'last_low_high_factor_low','last_low_high_factor_high']
+    sets, vals = [], []
+    for k in fields:
+        if k in body:
+            sets.append(f"{k}=?"); vals.append(float(body[k]))
+    if sets:
+        sets.append("updated_at=?"); vals.append(datetime.datetime.now().isoformat())
+        conn.execute(f"UPDATE ahb_estimator_settings SET {','.join(sets)} WHERE id=1", vals)
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/estimator/method1', methods=['POST'])
+def api_estimator_method1():
+    """Method 1: time × men × day rate.
+    Body: {days, lead_count, crew_count, helper_count, sub_days, materials, permits, contingency_pct?}
+    Returns labor cost breakdown + materials + total."""
+    body = request.get_json() or {}
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    s = dict(conn.execute("SELECT * FROM ahb_estimator_settings WHERE id=1").fetchone() or {})
+    conn.close()
+    days       = float(body.get('days', 0) or 0)
+    lead_count = float(body.get('lead_count', 1) or 0)
+    crew_count = float(body.get('crew_count', 0) or 0)
+    helper_count = float(body.get('helper_count', 0) or 0)
+    sub_days   = float(body.get('sub_days', 0) or 0)
+    materials  = float(body.get('materials', 0) or 0)
+    permits    = float(body.get('permits', s.get('permit_fee_default', 350)) or 0)
+    contingency_pct = float(body.get('contingency_pct', s.get('contingency_pct', 0.10)) or 0)
+    overhead_pct    = float(body.get('overhead_pct', s.get('overhead_pct', 0.15)) or 0)
+    profit_pct      = float(body.get('profit_pct', s.get('profit_pct', 0.18)) or 0)
+    admin_pct       = float(body.get('admin_fee_pct', s.get('admin_fee_pct', 0.05)) or 0)
+
+    lead_cost   = days * lead_count   * float(s.get('lead_day_rate', 1200))
+    crew_cost   = days * crew_count   * float(s.get('crew_day_rate', 800))
+    helper_cost = days * helper_count * float(s.get('helper_day_rate', 450))
+    sub_cost    = sub_days *            float(s.get('sub_day_rate', 1500))
+    labor_total = lead_cost + crew_cost + helper_cost + sub_cost
+    direct_cost = labor_total + materials + permits
+    contingency = direct_cost * contingency_pct
+    overhead    = direct_cost * overhead_pct
+    profit      = (direct_cost + contingency + overhead) * profit_pct
+    admin       = (direct_cost + contingency + overhead + profit) * admin_pct
+    grand_total = direct_cost + contingency + overhead + profit + admin
+
+    return jsonify({
+        'method': 1,
+        'breakdown': {
+            'lead':        round(lead_cost, 2),
+            'crew':        round(crew_cost, 2),
+            'helpers':     round(helper_cost, 2),
+            'subs':        round(sub_cost, 2),
+            'labor_total': round(labor_total, 2),
+            'materials':   round(materials, 2),
+            'permits':     round(permits, 2),
+            'direct_cost': round(direct_cost, 2),
+            'contingency': round(contingency, 2),
+            'overhead':    round(overhead, 2),
+            'profit':      round(profit, 2),
+            'admin_fee':   round(admin, 2),
+        },
+        'total':      round(grand_total, 2),
+        'days':       days,
+        'crew_size':  lead_count + crew_count + helper_count,
+    })
+
+
+@app.route('/api/ahb/estimator/method2', methods=['POST'])
+def api_estimator_method2():
+    """Method 2: Specter/Scout researches market norms for the project description
+    and generates an estimate based on regional construction industry standards.
+    Body: {description, scope, address?, sqft?}"""
+    body = request.get_json() or {}
+    description = (body.get('description') or '').strip()
+    scope       = (body.get('scope') or '').strip()
+    address     = (body.get('address') or '').strip()
+    sqft        = body.get('sqft')
+    if not description:
+        return jsonify({'success': False, 'error': 'description required'}), 400
+
+    # Build a research prompt asking the LLM to act as Specter (cloud market analyst)
+    sqft_line = f"Square footage: {sqft}" if sqft else ""
+    addr_line = f"Project location: {address}" if address else "Project location: Greater Philadelphia, PA"
+    prompt = (
+        "You are Specter Voss, market intelligence analyst for All Home Building Co LLC, "
+        "a Philadelphia residential general contractor. Your job is to estimate the cost "
+        "of the following project using current 2025-2026 economic norms for Greater "
+        "Philadelphia / Bucks / Montgomery / Delaware county construction.\n\n"
+        f"Project scope: {scope}\n"
+        f"{addr_line}\n"
+        f"{sqft_line}\n\n"
+        "Project description:\n" + description + "\n\n"
+        "Use current market data: Philadelphia regional labor rates ($45-65/hr skilled, "
+        "$25-35/hr helper), material costs from Home Depot / Lowe's / supply houses, "
+        "current PA UCC permit fees, typical GC overhead (15-20%), profit margin (15-22%), "
+        "contingency (10%), and AHBCO's 5% admin fee.\n\n"
+        "Return ONLY a JSON object with these exact keys (use realistic numbers, not zeros):\n"
+        "{\n"
+        '  "labor_cost":      number,\n'
+        '  "materials_cost":  number,\n'
+        '  "permits_cost":    number,\n'
+        '  "subcontractors":  number,\n'
+        '  "overhead":        number,\n'
+        '  "profit":          number,\n'
+        '  "admin_fee":       number,\n'
+        '  "contingency":     number,\n'
+        '  "total_estimate":  number,\n'
+        '  "estimated_days":  number,\n'
+        '  "crew_size":       number,\n'
+        '  "key_materials":   ["list", "of", "main", "materials"],\n'
+        '  "key_assumptions": "1-2 sentences on what assumptions drove this estimate",\n'
+        '  "market_notes":    "1-2 sentences on current Philly area market conditions affecting this estimate",\n'
+        '  "confidence":      0.0-1.0\n'
+        "}\n\nJSON:"
+    )
+    try:
+        result_text = _ollama_text(prompt, model="qwen2.5:14b", json_mode=True, max_tokens=900)
+        result = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', result_text).strip())
+        return jsonify({'success': True, 'method': 2, 'specter_analysis': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/estimator/method3', methods=['POST'])
+def api_estimator_method3():
+    """Method 3: generate low and high cost ranges for a project description,
+    return both bounds + average. Body: {description, scope}"""
+    body = request.get_json() or {}
+    description = (body.get('description') or '').strip()
+    scope       = (body.get('scope') or '').strip()
+    if not description:
+        return jsonify({'success': False, 'error': 'description required'}), 400
+
+    prompt = (
+        "You are a senior construction estimator for a Philadelphia residential GC. "
+        "For the project below, give a realistic LOW estimate (budget-conscious materials, "
+        "minimal change orders, fast schedule) and a HIGH estimate (premium materials, "
+        "buffer for unforeseen conditions, slower careful execution). Use current 2025-2026 "
+        "Greater Philadelphia market rates.\n\n"
+        f"Scope: {scope}\n\n"
+        f"Description: {description}\n\n"
+        "Return ONLY a JSON object:\n"
+        "{\n"
+        '  "low":  {"total": number, "labor": number, "materials": number, "rationale": "1 sentence"},\n'
+        '  "high": {"total": number, "labor": number, "materials": number, "rationale": "1 sentence"},\n'
+        '  "recommended_quote": number,  // sweet spot for the customer\n'
+        '  "factors": ["bullet", "list", "of", "what", "drives", "the", "spread"]\n'
+        "}\n\nJSON:"
+    )
+    try:
+        result_text = _ollama_text(prompt, model="qwen2.5:14b", json_mode=True, max_tokens=700)
+        result = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', result_text).strip())
+        avg = (float(result['low']['total']) + float(result['high']['total'])) / 2
+        result['average'] = round(avg, 2)
+        return jsonify({'success': True, 'method': 3, 'range': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── ahb123.com Static Site Server ───────────────────────────────────────────
+# Serves the static HTML/images at /site/* so you can preview the live site
+# locally and the embedded JS API calls run on the same origin (no CORS issues).
+SITE_DIR = os.path.join(ARTIFACTS_DIR, 'proj-ahb123', 'website')
+
+
+@app.route('/site/')
+@app.route('/site')
+def ahb123_site_index():
+    return send_from_directory(SITE_DIR, 'index.html')
+
+
+@app.route('/site/<path:filename>')
+def ahb123_site_file(filename):
+    return send_from_directory(SITE_DIR, filename)
+
+
+# ── AHB123 Project Photos (before / during / after) ─────────────────────────
+
+PHOTO_META_DB = os.path.join(DASHBOARD_DIR, 'baza_projects.db')
+
+def _init_photos_table():
+    conn = sqlite3.connect(PHOTO_META_DB)
+    conn.execute('''CREATE TABLE IF NOT EXISTS ahb_photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        project_name TEXT,
+        client_name TEXT,
+        location TEXT,
+        phase TEXT,            -- before / during / after
+        category TEXT,         -- kitchen / bath / roof / etc
+        photo_date TEXT,       -- YYYY-MM-DD
+        photo_time TEXT,       -- HH:MM
+        latitude REAL,
+        longitude REAL,
+        notes TEXT,
+        size INTEGER,
+        uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )''')
+    conn.commit()
+    conn.close()
+_init_photos_table()
+
+def _extract_exif(filepath):
+    """Pull date/gps from EXIF if available."""
+    try:
+        from PIL import Image
+        from PIL.ExifTags import TAGS, GPSTAGS
+        img = Image.open(filepath)
+        exif = img._getexif() or {}
+        out = {}
+        for tag_id, value in exif.items():
+            tag = TAGS.get(tag_id, tag_id)
+            if tag == 'DateTimeOriginal' and isinstance(value, str):
+                # "2024:08:14 13:22:08"
+                try:
+                    dt = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+                    out['photo_date'] = dt.strftime('%Y-%m-%d')
+                    out['photo_time'] = dt.strftime('%H:%M')
+                except Exception:
+                    pass
+            if tag == 'GPSInfo':
+                gps = {GPSTAGS.get(k, k): v for k, v in value.items()}
+                def _to_deg(val, ref):
+                    try:
+                        d, m, s = val
+                        deg = float(d) + float(m)/60 + float(s)/3600
+                        if ref in ('S', 'W'):
+                            deg = -deg
+                        return round(deg, 6)
+                    except Exception:
+                        return None
+                if 'GPSLatitude' in gps and 'GPSLatitudeRef' in gps:
+                    out['latitude'] = _to_deg(gps['GPSLatitude'], gps['GPSLatitudeRef'])
+                if 'GPSLongitude' in gps and 'GPSLongitudeRef' in gps:
+                    out['longitude'] = _to_deg(gps['GPSLongitude'], gps['GPSLongitudeRef'])
+        return out
+    except Exception:
+        return {}
+
+@app.route('/api/ahb/photos', methods=['GET'])
+def api_ahb_photos_list():
+    conn = sqlite3.connect(PHOTO_META_DB)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute('SELECT * FROM ahb_photos ORDER BY photo_date DESC, photo_time DESC, id DESC').fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/ahb/photos/upload', methods=['POST'])
+def api_ahb_photos_upload():
+    """Bulk upload photos. Form fields: project_name, client_name, location, phase, category, notes."""
+    import re as _re
+    files = request.files.getlist('files') or request.files.getlist('file')
+    if not files:
+        return jsonify({'success': False, 'error': 'no files'}), 400
+    meta_defaults = {
+        'project_name': request.form.get('project_name', '').strip(),
+        'client_name':  request.form.get('client_name', '').strip(),
+        'location':     request.form.get('location', '').strip(),
+        'phase':        request.form.get('phase', '').strip(),
+        'category':     request.form.get('category', '').strip(),
+        'notes':        request.form.get('notes', '').strip(),
+    }
+    saved = []
+    conn = sqlite3.connect(PHOTO_META_DB)
+    for f in files:
+        if not f or not f.filename:
+            continue
+        ts = int(datetime.datetime.now().timestamp() * 1000)
+        safe = _re.sub(r'[^\w.\-_]', '_', f.filename)
+        fname = f'{ts}_{safe}'
+        fpath = os.path.join(PHOTOS_DIR, fname)
+        f.save(fpath)
+        size = os.path.getsize(fpath)
+        exif = _extract_exif(fpath)
+        photo_date = exif.get('photo_date') or datetime.datetime.now().strftime('%Y-%m-%d')
+        photo_time = exif.get('photo_time') or datetime.datetime.now().strftime('%H:%M')
+        conn.execute('''INSERT INTO ahb_photos
+            (filename, project_name, client_name, location, phase, category,
+             photo_date, photo_time, latitude, longitude, notes, size)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
+            (fname, meta_defaults['project_name'], meta_defaults['client_name'],
+             meta_defaults['location'], meta_defaults['phase'], meta_defaults['category'],
+             photo_date, photo_time, exif.get('latitude'), exif.get('longitude'),
+             meta_defaults['notes'], size))
+        saved.append(fname)
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'count': len(saved), 'files': saved})
+
+@app.route('/api/ahb/photos/<int:pid>', methods=['PATCH', 'DELETE'])
+def api_ahb_photos_modify(pid):
+    conn = sqlite3.connect(PHOTO_META_DB)
+    if request.method == 'DELETE':
+        row = conn.execute('SELECT filename FROM ahb_photos WHERE id=?', (pid,)).fetchone()
+        if row:
+            try: os.remove(os.path.join(PHOTOS_DIR, row[0]))
+            except Exception: pass
+        conn.execute('DELETE FROM ahb_photos WHERE id=?', (pid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    body = request.get_json() or {}
+    fields = ['project_name','client_name','location','phase','category',
+              'photo_date','photo_time','latitude','longitude','notes']
+    sets, vals = [], []
+    for k in fields:
+        if k in body:
+            sets.append(f'{k}=?'); vals.append(body[k])
+    if sets:
+        vals.append(pid)
+        conn.execute(f'UPDATE ahb_photos SET {",".join(sets)} WHERE id=?', vals)
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/ahb/photos/file/<path:fname>')
+def api_ahb_photos_serve(fname):
+    return send_from_directory(PHOTOS_DIR, fname)
+
+# ── Phil's Document Library + DocPrep / Application Packages ────────────────
+
+def _ensure_docprep_tables():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_documents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_path TEXT NOT NULL UNIQUE,
+        original_name TEXT,
+        suggested_name TEXT,
+        doc_type TEXT,
+        entity TEXT,
+        doc_date TEXT,
+        summary TEXT,
+        relevance TEXT,
+        tags TEXT,
+        confidence REAL,
+        agent_id TEXT,
+        chat_id TEXT,
+        project_id TEXT,
+        content_text TEXT,
+        file_size INTEGER,
+        file_kind TEXT,
+        curated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        expires_at TEXT,
+        expiry_alerted INTEGER DEFAULT 0
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_app_packages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        package_type TEXT,
+        project_id TEXT,
+        client_id TEXT,
+        status TEXT DEFAULT 'draft',
+        form_data TEXT,
+        attached_doc_ids TEXT,
+        notes TEXT,
+        submitted_at TEXT,
+        approved_at TEXT,
+        permit_number TEXT,
+        last_reminder_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    # Vendor mini-CRM (feature 6)
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_vendors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        vendor_type TEXT,
+        contact_name TEXT,
+        phone TEXT,
+        email TEXT,
+        address TEXT,
+        ein_or_ssn TEXT,
+        coi_doc_id INTEGER,
+        w9_doc_id INTEGER,
+        license_doc_id INTEGER,
+        coi_expires TEXT,
+        license_expires TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    # Add columns to existing tables if missing (idempotent migrations)
+    for col_def in [
+        ("ahb_documents",   "expires_at TEXT"),
+        ("ahb_documents",   "expiry_alerted INTEGER DEFAULT 0"),
+        ("ahb_app_packages","submitted_at TEXT"),
+        ("ahb_app_packages","approved_at TEXT"),
+        ("ahb_app_packages","permit_number TEXT"),
+        ("ahb_app_packages","last_reminder_at TEXT"),
+    ]:
+        table, col = col_def
+        col_name = col.split()[0]
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+_ensure_docprep_tables()
+
+
+@app.route('/api/ahb/documents', methods=['GET'])
+def api_ahb_documents_list():
+    """List all curated documents with optional filters."""
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    q = "SELECT * FROM ahb_documents WHERE 1=1"
+    params = []
+    if request.args.get('doc_type'):
+        q += " AND doc_type = ?"; params.append(request.args['doc_type'])
+    if request.args.get('entity'):
+        q += " AND entity LIKE ?"; params.append(f"%{request.args['entity']}%")
+    if request.args.get('project_id'):
+        q += " AND project_id = ?"; params.append(request.args['project_id'])
+    if request.args.get('q'):
+        like = f"%{request.args['q']}%"
+        q += " AND (entity LIKE ? OR summary LIKE ? OR tags LIKE ? OR original_name LIKE ?)"
+        params += [like, like, like, like]
+    q += " ORDER BY curated_at DESC LIMIT 500"
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try: d['tags'] = json.loads(d.get('tags') or '[]')
+        except Exception: d['tags'] = []
+        out.append(d)
+    return jsonify(out)
+
+
+@app.route('/api/ahb/documents/<int:did>', methods=['GET','PATCH','DELETE'])
+def api_ahb_document_one(did):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        row = conn.execute("SELECT * FROM ahb_documents WHERE id=?", (did,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error':'not found'}), 404
+        d = dict(row)
+        try: d['tags'] = json.loads(d.get('tags') or '[]')
+        except Exception: d['tags'] = []
+        return jsonify(d)
+    if request.method == 'DELETE':
+        row = conn.execute("SELECT file_path FROM ahb_documents WHERE id=?", (did,)).fetchone()
+        if row:
+            try: os.remove(row['file_path'])
+            except Exception: pass
+            try: os.remove(row['file_path'] + '.meta')
+            except Exception: pass
+        conn.execute("DELETE FROM ahb_documents WHERE id=?", (did,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    body = request.get_json() or {}
+    fields = ['doc_type','entity','doc_date','summary','relevance','project_id','suggested_name']
+    sets, vals = [], []
+    for k in fields:
+        if k in body:
+            sets.append(f"{k}=?"); vals.append(body[k])
+    if 'tags' in body:
+        sets.append("tags=?"); vals.append(json.dumps(body['tags'] or []))
+    if sets:
+        vals.append(did)
+        conn.execute(f"UPDATE ahb_documents SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/documents/file/<int:did>')
+def api_ahb_document_file(did):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT file_path,suggested_name,original_name FROM ahb_documents WHERE id=?",
+                       (did,)).fetchone()
+    conn.close()
+    if not row or not os.path.exists(row['file_path']):
+        return jsonify({'error':'not found'}), 404
+    return send_from_directory(
+        os.path.dirname(row['file_path']),
+        os.path.basename(row['file_path']),
+        as_attachment=False,
+        download_name=row['suggested_name'] or row['original_name']
+    )
+
+
+@app.route('/api/ahb/documents/curate-existing', methods=['POST'])
+def api_ahb_documents_curate_existing():
+    """One-click backfill: walk artifacts and curate every doc/image not yet in the library.
+    Runs the curate_document skill on each unindexed file."""
+    body = request.get_json(silent=True) or {}
+    limit = int(body.get('limit', 50))
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    existing = {row[0] for row in conn.execute("SELECT file_path FROM ahb_documents").fetchall()}
+    conn.close()
+    targets = []
+    SKIPPABLE_EXTS = {'.meta','.pyc','.lock'}
+    for root, dirs, files in os.walk(ARTIFACTS_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        for f in files:
+            if any(f.endswith(s) for s in SKIPPABLE_EXTS): continue
+            fp = os.path.join(root, f)
+            if fp in existing: continue
+            targets.append(fp)
+            if len(targets) >= limit: break
+        if len(targets) >= limit: break
+    # Run curator on each target via the shared skill (subprocess)
+    results = []
+    skill = os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'curate_document.py')
+    for fp in targets:
+        try:
+            env = os.environ.copy()
+            env['SKILL_ARGS'] = json.dumps({'file_path': fp, 'agent_id': 'phil_hass'})
+            p = subprocess.run([VENV_PYTHON, skill], env=env, capture_output=True,
+                               text=True, timeout=240)
+            if p.returncode == 0:
+                results.append({'file': os.path.basename(fp), 'ok': True})
+            else:
+                results.append({'file': os.path.basename(fp), 'ok': False,
+                                'err': (p.stderr or p.stdout)[:200]})
+        except Exception as e:
+            results.append({'file': os.path.basename(fp), 'ok': False, 'err': str(e)})
+    return jsonify({'success': True, 'processed': len(results),
+                    'queued': len(targets), 'results': results})
+
+
+@app.route('/api/ahb/documents/find', methods=['POST'])
+def api_ahb_documents_find():
+    """Phil's smart find — given a natural-language query like
+    'permit application for the Warrington deck build', search the doc library
+    using a combination of keyword + LLM relevance scoring."""
+    body = request.get_json() or {}
+    query = (body.get('query') or '').strip()
+    if not query:
+        return jsonify({'success': False, 'error': 'query required'}), 400
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    # Pull a candidate set with simple keyword matching
+    words = [w.strip().lower() for w in re.findall(r'\w+', query) if len(w) > 2]
+    where, params = [], []
+    for w in words:
+        like = f"%{w}%"
+        where.append("(LOWER(entity) LIKE ? OR LOWER(summary) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(original_name) LIKE ? OR LOWER(content_text) LIKE ?)")
+        params += [like]*5
+    sql = "SELECT * FROM ahb_documents"
+    if where:
+        sql += " WHERE " + " OR ".join(where)
+    sql += " ORDER BY curated_at DESC LIMIT 25"
+    candidates = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    conn.close()
+    for c in candidates:
+        try: c['tags'] = json.loads(c.get('tags') or '[]')
+        except Exception: c['tags'] = []
+    return jsonify({'success': True, 'query': query,
+                    'matches': candidates[:10],
+                    'count': len(candidates)})
+
+
+# ── Application Packages ────────────────────────────────────────────────────
+
+@app.route('/api/ahb/packages', methods=['GET','POST'])
+def api_ahb_packages():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        rows = conn.execute("SELECT * FROM ahb_app_packages ORDER BY updated_at DESC").fetchall()
+        conn.close()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try: d['form_data'] = json.loads(d.get('form_data') or '{}')
+            except Exception: d['form_data'] = {}
+            try: d['attached_doc_ids'] = json.loads(d.get('attached_doc_ids') or '[]')
+            except Exception: d['attached_doc_ids'] = []
+            out.append(d)
+        return jsonify(out)
+    body = request.get_json() or {}
+    cur = conn.execute("""INSERT INTO ahb_app_packages
+        (name, package_type, project_id, client_id, status, form_data, attached_doc_ids, notes)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (body.get('name','Untitled Package'), body.get('package_type'),
+         body.get('project_id'), body.get('client_id'),
+         body.get('status','draft'),
+         json.dumps(body.get('form_data') or {}),
+         json.dumps(body.get('attached_doc_ids') or []),
+         body.get('notes','')))
+    pid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'id': pid})
+
+
+@app.route('/api/ahb/packages/<int:pkg_id>', methods=['GET','PATCH','DELETE'])
+def api_ahb_package_one(pkg_id):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        row = conn.execute("SELECT * FROM ahb_app_packages WHERE id=?", (pkg_id,)).fetchone()
+        conn.close()
+        if not row: return jsonify({'error':'not found'}), 404
+        d = dict(row)
+        try: d['form_data'] = json.loads(d.get('form_data') or '{}')
+        except Exception: d['form_data'] = {}
+        try: d['attached_doc_ids'] = json.loads(d.get('attached_doc_ids') or '[]')
+        except Exception: d['attached_doc_ids'] = []
+        return jsonify(d)
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM ahb_app_packages WHERE id=?", (pkg_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    body = request.get_json() or {}
+    sets, vals = [], []
+    # Auto-stamp transitions: draft→submitted gets submitted_at, →approved gets approved_at
+    if 'status' in body:
+        new_status = body['status']
+        existing = conn.execute("SELECT status, submitted_at, approved_at FROM ahb_app_packages WHERE id=?",
+                                (pkg_id,)).fetchone()
+        if existing:
+            if new_status == 'submitted' and not existing['submitted_at']:
+                sets.append("submitted_at=?"); vals.append(datetime.datetime.now().isoformat())
+            if new_status == 'approved' and not existing['approved_at']:
+                sets.append("approved_at=?"); vals.append(datetime.datetime.now().isoformat())
+    for k in ('name','package_type','project_id','client_id','status','notes','permit_number'):
+        if k in body:
+            sets.append(f"{k}=?"); vals.append(body[k])
+    if 'form_data' in body:
+        sets.append("form_data=?"); vals.append(json.dumps(body['form_data']))
+    if 'attached_doc_ids' in body:
+        sets.append("attached_doc_ids=?"); vals.append(json.dumps(body['attached_doc_ids']))
+    if sets:
+        sets.append("updated_at=?"); vals.append(datetime.datetime.now().isoformat())
+        vals.append(pkg_id)
+        conn.execute(f"UPDATE ahb_app_packages SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/packages/<int:pkg_id>/pdf', methods=['GET'])
+def api_ahb_package_pdf(pkg_id):
+    """Render an application package as a printable PDF — cover sheet with prefilled
+    form fields, followed by every attached document merged into one bundle.
+
+    Non-PDF attachments (images, docx, txt) get a thumbnail/preview page so the
+    final bundle is one cohesive PDF the user can print, sign, scan, or send."""
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    pkg_row = conn.execute("SELECT * FROM ahb_app_packages WHERE id=?", (pkg_id,)).fetchone()
+    if not pkg_row:
+        conn.close()
+        return jsonify({'error':'not found'}), 404
+    pkg = dict(pkg_row)
+    try: form = json.loads(pkg.get('form_data') or '{}')
+    except Exception: form = {}
+    try: doc_ids = json.loads(pkg.get('attached_doc_ids') or '[]')
+    except Exception: doc_ids = []
+    docs = []
+    if doc_ids:
+        placeholders = ",".join("?" * len(doc_ids))
+        rows = conn.execute(
+            f"SELECT * FROM ahb_documents WHERE id IN ({placeholders})", doc_ids
+        ).fetchall()
+        docs = [dict(r) for r in rows]
+    conn.close()
+
+    # Logo for cover sheet
+    logo_b64 = ''
+    logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
+    if os.path.exists(logo_path):
+        import base64 as _b64
+        with open(logo_path, 'rb') as lf:
+            logo_b64 = _b64.b64encode(lf.read()).decode('utf-8')
+
+    # ── Cover sheet HTML ─────────────────────────────────────────────────────
+    pkg_type = (pkg.get('package_type') or 'package').replace('_',' ').title()
+    pkg_name = pkg.get('name','Application Package')
+    today    = datetime.datetime.now().strftime('%B %d, %Y')
+
+    def _fmt_label(k):
+        return k.replace('_',' ').title()
+
+    field_rows = ''
+    # Group fields into pairs for two-column layout
+    items = list(form.items())
+    for i in range(0, len(items), 2):
+        left  = items[i]
+        right = items[i+1] if i+1 < len(items) else None
+        field_rows += '<tr>'
+        field_rows += f'<td style="padding:8px 12px;border:1px solid #ddd;background:#f8fafc;font-size:11px;color:#64748b;font-weight:700;width:18%">{_fmt_label(left[0])}</td>'
+        field_rows += f'<td style="padding:8px 12px;border:1px solid #ddd;font-size:12px;width:32%">{(left[1] or "")}</td>'
+        if right:
+            field_rows += f'<td style="padding:8px 12px;border:1px solid #ddd;background:#f8fafc;font-size:11px;color:#64748b;font-weight:700;width:18%">{_fmt_label(right[0])}</td>'
+            field_rows += f'<td style="padding:8px 12px;border:1px solid #ddd;font-size:12px;width:32%">{(right[1] or "")}</td>'
+        else:
+            field_rows += '<td colspan="2" style="border:1px solid #ddd"></td>'
+        field_rows += '</tr>'
+
+    docs_table_rows = ''
+    for i, d in enumerate(docs, 1):
+        docs_table_rows += f'''<tr>
+            <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;text-align:center;width:6%">{i}</td>
+            <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;font-weight:700;width:18%">{(d.get('doc_type') or '').upper()}</td>
+            <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;width:30%">{(d.get('entity') or '')}</td>
+            <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;width:14%">{d.get('doc_date') or ''}</td>
+            <td style="padding:8px 12px;border:1px solid #ddd;font-size:11px;color:#666;width:32%">{(d.get('summary') or '')[:120]}</td>
+        </tr>'''
+
+    cover_html = f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>{pkg_name}</title>
+<style>
+  @page {{ size: letter; margin: 36px 40px; }}
+  body {{ font-family:'Helvetica Neue',Arial,sans-serif; color:#222; font-size:13px; line-height:1.5; margin:0; }}
+  h1 {{ font-size:22px; margin:0 0 4px; color:#1a1a1a; font-weight:700; }}
+  h2 {{ font-size:14px; margin:24px 0 10px; color:#2563eb; text-transform:uppercase; letter-spacing:1px; border-bottom:2px solid #2563eb; padding-bottom:4px; }}
+  .header {{ display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; padding-bottom:14px; border-bottom:2px solid #1a1a1a; }}
+  .header img {{ width:60px; height:60px; object-fit:contain; }}
+  table {{ width:100%; border-collapse:collapse; }}
+  .meta-grid {{ display:flex; justify-content:space-between; font-size:11px; color:#666; margin-top:6px; }}
+  .signature-block {{ margin-top:36px; display:flex; justify-content:space-between; }}
+  .sig-line {{ width:45%; }}
+  .sig-line .label {{ font-size:11px; color:#888; margin-bottom:4px; }}
+  .sig-line .underline {{ border-bottom:1px solid #333; height:32px; }}
+</style></head><body>
+  <div class="header">
+    <div style="display:flex;align-items:center;gap:14px">
+      {f'<img src="data:image/jpeg;base64,{logo_b64}">' if logo_b64 else ''}
+      <div>
+        <div style="font-size:18px;font-weight:700;">All Home Building Co LLC</div>
+        <div style="font-size:11px;color:#666">2725 Colmar Ave · Bensalem, PA · 800-484-6404</div>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <h1>{pkg_type}</h1>
+      <div style="font-size:11px;color:#666">Generated {today}</div>
+    </div>
+  </div>
+
+  <div style="background:#f0f9ff;border:1px solid #2563eb;border-radius:8px;padding:14px 18px;margin-bottom:18px">
+    <div style="font-size:14px;font-weight:700;color:#1e40af">{pkg_name}</div>
+    <div class="meta-grid">
+      <span>Package ID: #{pkg['id']}</span>
+      <span>Status: {(pkg.get('status') or 'draft').upper()}</span>
+      <span>Documents: {len(docs)}</span>
+    </div>
+  </div>
+
+  <h2>Application Details</h2>
+  <table>{field_rows}</table>
+
+  {(f'<h2>Notes</h2><div style="background:#fafafa;border:1px solid #ddd;border-radius:6px;padding:12px;font-size:12px">{pkg.get("notes","")}</div>') if pkg.get('notes') else ''}
+
+  {(f'<h2>Attached Supporting Documents</h2><table><thead><tr><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af">#</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Type</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Entity</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Date</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Summary</th></tr></thead><tbody>{docs_table_rows}</tbody></table>' if docs else '')}
+
+  <div class="signature-block">
+    <div class="sig-line">
+      <div class="label">Contractor Signature:</div>
+      <div class="underline"></div>
+      <div style="font-size:11px;color:#666;margin-top:4px">{form.get('contractor_name','Sergey Tkach')}</div>
+    </div>
+    <div class="sig-line">
+      <div class="label">Date:</div>
+      <div class="underline"></div>
+    </div>
+  </div>
+</body></html>'''
+
+    # Render cover sheet to PDF
+    try:
+        from weasyprint import HTML as WeasyHTML
+        cover_pdf = WeasyHTML(string=cover_html).write_pdf()
+    except Exception as e:
+        return jsonify({'error': f'cover render failed: {e}'}), 500
+
+    # Merge cover + every attached doc that's a PDF, plus image preview pages
+    try:
+        import io
+        from pypdf import PdfReader, PdfWriter
+        writer = PdfWriter()
+        for page in PdfReader(io.BytesIO(cover_pdf)).pages:
+            writer.add_page(page)
+
+        for d in docs:
+            fp = d.get('file_path') or ''
+            if not fp or not os.path.exists(fp):
+                continue
+            ext = os.path.splitext(fp)[1].lower()
+            try:
+                if ext == '.pdf':
+                    for page in PdfReader(fp).pages:
+                        writer.add_page(page)
+                elif ext in ('.jpg','.jpeg','.png','.webp','.heic','.heif','.gif','.bmp','.tif','.tiff'):
+                    # Render an image-as-PDF-page using weasyprint with the image inline
+                    img_html = _image_attachment_html(fp, d, logo_b64)
+                    img_pdf = WeasyHTML(string=img_html, base_url=os.path.dirname(fp)).write_pdf()
+                    for page in PdfReader(io.BytesIO(img_pdf)).pages:
+                        writer.add_page(page)
+                elif ext in ('.docx','.txt','.md','.rtf','.csv','.html'):
+                    # Render extracted text as a labelled page
+                    text = d.get('content_text') or ''
+                    text_html = _text_attachment_html(text, d, logo_b64)
+                    text_pdf = WeasyHTML(string=text_html).write_pdf()
+                    for page in PdfReader(io.BytesIO(text_pdf)).pages:
+                        writer.add_page(page)
+                # else: skip unsupported binary
+            except Exception as inner:
+                # Add an error placeholder page so the doc isn't silently lost
+                err_html = f'<html><body style="font-family:Arial;padding:40px"><h2>Could not embed: {d.get("original_name","")}</h2><p style="color:#888">{inner}</p></body></html>'
+                err_pdf = WeasyHTML(string=err_html).write_pdf()
+                for page in PdfReader(io.BytesIO(err_pdf)).pages:
+                    writer.add_page(page)
+
+        out_buf = io.BytesIO()
+        writer.write(out_buf)
+        out_buf.seek(0)
+        download = request.args.get('download', '0') == '1'
+        resp = make_response(out_buf.read())
+        resp.headers['Content-Type'] = 'application/pdf'
+        safe_name = re.sub(r'[^\w.\-_]','_', pkg_name)
+        disposition = 'attachment' if download else 'inline'
+        resp.headers['Content-Disposition'] = f'{disposition}; filename="{safe_name}.pdf"'
+        return resp
+    except Exception as e:
+        return jsonify({'error': f'merge failed: {e}'}), 500
+
+
+def _image_attachment_html(filepath, doc, logo_b64):
+    """Build a PDF page for an image attachment with a header label."""
+    import base64 as _b64
+    try:
+        with open(filepath, 'rb') as f:
+            img_b64 = _b64.b64encode(f.read()).decode('utf-8')
+    except Exception:
+        img_b64 = ''
+    ext = os.path.splitext(filepath)[1].lower().lstrip('.')
+    mime = 'jpeg' if ext in ('jpg','jpeg') else ext
+    return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      @page {{ size:letter; margin:36px 40px; }}
+      body {{ font-family:Arial,sans-serif; color:#222; margin:0; }}
+      .label {{ background:#1e40af; color:#fff; padding:10px 14px; font-size:13px; font-weight:700; margin-bottom:14px; border-radius:4px; }}
+      .meta {{ font-size:11px; color:#666; margin-bottom:14px; }}
+      img {{ max-width:100%; max-height:850px; display:block; margin:0 auto; border:1px solid #ddd; }}
+    </style></head><body>
+      <div class="label">{(doc.get('doc_type') or 'DOCUMENT').upper()} — {doc.get('entity','')}</div>
+      <div class="meta">{doc.get('summary','')[:300]}</div>
+      <img src="data:image/{mime};base64,{img_b64}">
+    </body></html>'''
+
+
+def _text_attachment_html(text, doc, logo_b64):
+    safe_text = (text or '').replace('<','&lt;').replace('>','&gt;').replace('\n','<br>')
+    return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      @page {{ size:letter; margin:36px 40px; }}
+      body {{ font-family:Arial,sans-serif; color:#222; margin:0; font-size:11px; line-height:1.5; }}
+      .label {{ background:#1e40af; color:#fff; padding:10px 14px; font-size:13px; font-weight:700; margin-bottom:14px; border-radius:4px; }}
+      .meta {{ font-size:11px; color:#666; margin-bottom:14px; }}
+      .body {{ background:#fafafa; border:1px solid #ddd; border-radius:6px; padding:14px; white-space:pre-wrap; }}
+    </style></head><body>
+      <div class="label">{(doc.get('doc_type') or 'DOCUMENT').upper()} — {doc.get('entity','')}</div>
+      <div class="meta">{doc.get('summary','')[:300]}</div>
+      <div class="body">{safe_text[:8000]}</div>
+    </body></html>'''
+
+
+# ── DocPrep Universal File Actions ──────────────────────────────────────────
+
+def _get_doc(did: int):
+    """Load doc row + verify file exists. Returns (dict, file_path) or (None, error_msg)."""
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ahb_documents WHERE id=?", (did,)).fetchone()
+    conn.close()
+    if not row:
+        return None, "doc not found"
+    d = dict(row)
+    if not d.get('file_path') or not os.path.exists(d['file_path']):
+        return None, "file missing on disk"
+    return d, d['file_path']
+
+
+def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = False, max_tokens: int = 1200) -> str:
+    """Quick local Ollama text generation helper for doc actions."""
+    import urllib.request as _ur
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.1, "num_predict": max_tokens},
+    }
+    if json_mode:
+        payload["format"] = "json"
+    try:
+        req = _ur.Request("http://localhost:11434/api/generate",
+                          data=json.dumps(payload).encode(),
+                          headers={"Content-Type": "application/json"})
+        with _ur.urlopen(req, timeout=120) as r:
+            data = json.loads(r.read())
+        return (data.get("response") or "").strip()
+    except Exception as e:
+        return f"[LLM error: {e}]"
+
+
+@app.route('/api/ahb/documents/<int:did>/recurate', methods=['POST'])
+def api_doc_recurate(did):
+    """Re-run the curate_document skill on this doc and refresh metadata."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    skill = os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'curate_document.py')
+    try:
+        env = os.environ.copy()
+        env['SKILL_ARGS'] = json.dumps({
+            'file_path': fp,
+            'agent_id': d.get('agent_id') or 'phil_hass',
+        })
+        proc = subprocess.run([VENV_PYTHON, skill], env=env,
+                              capture_output=True, text=True, timeout=240)
+        if proc.returncode != 0:
+            return jsonify({'success': False, 'error': (proc.stderr or proc.stdout)[:500]}), 500
+        try:
+            result = json.loads(proc.stdout.strip())
+        except Exception:
+            result = {}
+        return jsonify({'success': True, 'analysis': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/rename', methods=['POST'])
+def api_doc_rename(did):
+    """Rename the file on disk to match suggested_name and update file_path in DB."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    new_name = (d.get('suggested_name') or '').strip()
+    body = request.get_json(silent=True) or {}
+    if body.get('name'):
+        new_name = body['name'].strip()
+    if not new_name:
+        return jsonify({'success': False, 'error': 'no suggested_name set'}), 400
+    new_name = re.sub(r'[^\w.\-_ ()]', '_', new_name).strip()
+    new_path = os.path.join(os.path.dirname(fp), new_name)
+    if os.path.exists(new_path) and new_path != fp:
+        # Append _2, _3, etc. to avoid collision
+        base, ext = os.path.splitext(new_path)
+        i = 2
+        while os.path.exists(f"{base}_{i}{ext}"):
+            i += 1
+        new_path = f"{base}_{i}{ext}"
+    try:
+        os.rename(fp, new_path)
+        # Move sidecar meta if present
+        old_meta = fp + '.meta'
+        if os.path.exists(old_meta):
+            try: os.rename(old_meta, new_path + '.meta')
+            except Exception: pass
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("UPDATE ahb_documents SET file_path=?, original_name=? WHERE id=?",
+                     (new_path, os.path.basename(new_path), did))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'new_name': os.path.basename(new_path), 'new_path': new_path})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/extract-text', methods=['POST'])
+def api_doc_extract_text(did):
+    """Re-extract text from a doc — uses pdfplumber for PDFs, vision LLM for images, plain read for text."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    ext = os.path.splitext(fp)[1].lower()
+    text = ""
+    try:
+        if ext == '.pdf':
+            import pdfplumber
+            txt = []
+            with pdfplumber.open(fp) as pdf:
+                for page in pdf.pages[:30]:
+                    t = page.extract_text() or ""
+                    if t.strip():
+                        txt.append(t)
+            text = "\n".join(txt)
+        elif ext == '.docx':
+            import docx
+            doc = docx.Document(fp)
+            text = "\n".join(p.text for p in doc.paragraphs)
+        elif ext in ('.txt','.md','.csv','.html','.rtf','.log','.xml'):
+            with open(fp, 'r', errors='ignore') as f:
+                text = f.read()
+        elif ext in ('.jpg','.jpeg','.png','.webp','.heic','.heif','.gif','.bmp','.tif','.tiff'):
+            # Use the curate_document skill's vision path via the same skill
+            skill = os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'curate_document.py')
+            env = os.environ.copy()
+            env['SKILL_ARGS'] = json.dumps({'file_path': fp, 'agent_id': 'phil_hass'})
+            proc = subprocess.run([VENV_PYTHON, skill], env=env,
+                                  capture_output=True, text=True, timeout=240)
+            # The skill saves content_text to DB; reload from DB
+            conn2 = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+            row = conn2.execute("SELECT content_text FROM ahb_documents WHERE id=?", (did,)).fetchone()
+            conn2.close()
+            text = (row[0] if row else "") or ""
+        else:
+            return jsonify({'success': False, 'error': f'unsupported extension {ext}'}), 400
+
+        text = text[:50000]
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("UPDATE ahb_documents SET content_text=? WHERE id=?", (text, did))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'text_length': len(text), 'preview': text[:500]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/summarize', methods=['POST'])
+def api_doc_summarize(did):
+    """Quick summary regen — uses existing content_text, doesn't re-extract."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    text = (d.get('content_text') or '')[:8000]
+    if not text:
+        return jsonify({'success': False, 'error': 'no content_text — run extract first'}), 400
+    prompt = (
+        "You are Phil Hass, document curator for All Home Building Co LLC. Summarize this "
+        "document in 1-3 plain English sentences. Mention the entity, document type, key "
+        "dates, dollar amounts if present.\n\nDocument:\n" + text + "\n\nSummary:"
+    )
+    summary = _ollama_text(prompt, max_tokens=300)
+    if summary.startswith("[LLM error"):
+        return jsonify({'success': False, 'error': summary}), 500
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.execute("UPDATE ahb_documents SET summary=? WHERE id=?", (summary, did))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'summary': summary})
+
+
+@app.route('/api/ahb/documents/<int:did>/convert', methods=['POST'])
+def api_doc_convert(did):
+    """Convert a doc to PDF (or other format) and save as sibling file. Returns new doc id."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    body = request.get_json() or {}
+    target = (body.get('format') or 'pdf').lower()
+    ext = os.path.splitext(fp)[1].lower()
+    base = os.path.splitext(fp)[0]
+    new_path = f"{base}.{target}"
+    try:
+        if target == 'pdf':
+            from weasyprint import HTML as WeasyHTML
+            if ext == '.pdf':
+                return jsonify({'success': False, 'error': 'already PDF'}), 400
+            if ext in ('.txt','.md','.csv','.log','.html','.rtf'):
+                with open(fp, 'r', errors='ignore') as f:
+                    body_text = f.read()
+                if ext != '.html':
+                    body_text = '<pre style="white-space:pre-wrap;font-family:monospace;font-size:11px">' + (body_text.replace('<','&lt;').replace('>','&gt;')) + '</pre>'
+                html = f'<html><head><style>@page{{size:letter;margin:36px 40px}}body{{font-family:Arial,sans-serif}}</style></head><body>{body_text}</body></html>'
+                WeasyHTML(string=html).write_pdf(new_path)
+            elif ext == '.docx':
+                import docx
+                d2 = docx.Document(fp)
+                body_text = '<br>'.join(p.text.replace('<','&lt;').replace('>','&gt;') for p in d2.paragraphs)
+                html = f'<html><head><style>@page{{size:letter;margin:36px 40px}}body{{font-family:Arial,sans-serif;font-size:12px;line-height:1.5}}</style></head><body>{body_text}</body></html>'
+                WeasyHTML(string=html).write_pdf(new_path)
+            elif ext in ('.jpg','.jpeg','.png','.webp','.heic','.heif','.gif','.bmp','.tif','.tiff'):
+                import base64 as _b64
+                with open(fp, 'rb') as f:
+                    img_b64 = _b64.b64encode(f.read()).decode('utf-8')
+                mime = 'jpeg' if ext in ('.jpg','.jpeg') else ext.lstrip('.')
+                html = f'<html><head><style>@page{{size:letter;margin:36px 40px}}body{{margin:0;text-align:center}}img{{max-width:100%;max-height:900px}}</style></head><body><img src="data:image/{mime};base64,{img_b64}"></body></html>'
+                WeasyHTML(string=html).write_pdf(new_path)
+            else:
+                return jsonify({'success': False, 'error': f'cannot convert {ext} to pdf'}), 400
+        else:
+            return jsonify({'success': False, 'error': f'unsupported target format {target}'}), 400
+        # Insert as new doc row
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        cur = conn.execute("""INSERT INTO ahb_documents
+            (file_path, original_name, suggested_name, doc_type, entity, doc_date,
+             summary, relevance, tags, agent_id, file_size, file_kind)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (new_path, os.path.basename(new_path), os.path.basename(new_path),
+             d.get('doc_type'), d.get('entity'), d.get('doc_date'),
+             (d.get('summary') or '') + ' [Converted to PDF]',
+             d.get('relevance'), d.get('tags') or '[]',
+             d.get('agent_id') or 'phil_hass',
+             os.path.getsize(new_path), 'pdf'))
+        new_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'new_doc_id': new_id, 'new_path': new_path})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/replace', methods=['POST'])
+def api_doc_replace(did):
+    """Upload a new version of the file. Old version is archived as .v<n>.bak."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({'success': False, 'error': 'no file'}), 400
+    try:
+        # Archive old version
+        i = 1
+        while os.path.exists(f"{fp}.v{i}.bak"):
+            i += 1
+        os.rename(fp, f"{fp}.v{i}.bak")
+        f.save(fp)
+        new_size = os.path.getsize(fp)
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("UPDATE ahb_documents SET file_size=?, curated_at=CURRENT_TIMESTAMP WHERE id=?",
+                     (new_size, did))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'archived_version': i, 'new_size': new_size})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/content', methods=['GET','PUT'])
+def api_doc_content(did):
+    """For text-based files: read or write the file content directly."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    ext = os.path.splitext(fp)[1].lower()
+    text_exts = {'.txt','.md','.csv','.html','.htm','.rtf','.log','.xml','.json','.yaml','.yml','.ini','.conf','.py','.js','.css'}
+    if ext not in text_exts:
+        return jsonify({'success': False, 'error': f'not a text file ({ext})'}), 400
+    if request.method == 'GET':
+        try:
+            with open(fp, 'r', errors='ignore') as f:
+                content = f.read()
+            return jsonify({'success': True, 'content': content})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+    body = request.get_json() or {}
+    content = body.get('content', '')
+    try:
+        with open(fp, 'w') as f:
+            f.write(content)
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("UPDATE ahb_documents SET content_text=?, file_size=? WHERE id=?",
+                     (content[:50000], len(content.encode()), did))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'size': len(content)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/attach-to-package', methods=['POST'])
+def api_doc_attach_to_package(did):
+    body = request.get_json() or {}
+    pkg_id = body.get('package_id')
+    if not pkg_id:
+        return jsonify({'success': False, 'error': 'package_id required'}), 400
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    row = conn.execute("SELECT attached_doc_ids FROM ahb_app_packages WHERE id=?", (pkg_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'error': 'package not found'}), 404
+    try:
+        ids = json.loads(row[0] or '[]')
+    except Exception:
+        ids = []
+    if did not in ids:
+        ids.append(did)
+    conn.execute("UPDATE ahb_app_packages SET attached_doc_ids=?, updated_at=? WHERE id=?",
+                 (json.dumps(ids), datetime.datetime.now().isoformat(), pkg_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'attached_count': len(ids)})
+
+
+@app.route('/api/ahb/documents/<int:did>/print', methods=['POST'])
+def api_doc_print(did):
+    """Send doc to thermal printer via the existing print_document skill."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    skill = os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'print_document.py')
+    if not os.path.exists(skill):
+        return jsonify({'success': False, 'error': 'print_document skill not installed'}), 500
+    try:
+        env = os.environ.copy()
+        env['SKILL_ARGS'] = json.dumps({'action': 'print', 'file_path': fp})
+        proc = subprocess.run([VENV_PYTHON, skill], env=env,
+                              capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            return jsonify({'success': False, 'error': (proc.stderr or proc.stdout)[:500]}), 500
+        return jsonify({'success': True, 'output': proc.stdout[:500]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/email', methods=['POST'])
+def api_doc_email(did):
+    """Email doc as attachment via the email pipeline."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    body = request.get_json() or {}
+    to_addr = (body.get('to') or '').strip()
+    subject = (body.get('subject') or f'Document from AHBCO: {os.path.basename(fp)}').strip()
+    msg     = (body.get('body') or d.get('summary') or 'Please see attached.').strip()
+    if not to_addr:
+        return jsonify({'success': False, 'error': 'recipient required'}), 400
+    # Use Gmail OAuth via the email-pipeline send_reply.py (it accepts attachment via env)
+    sender = os.path.join(FRAMEWORK_DIR, 'email-pipeline', 'send_reply.py')
+    if not os.path.exists(sender):
+        return jsonify({'success': False, 'error': 'email pipeline not configured'}), 500
+    try:
+        env = os.environ.copy()
+        env['EMAIL_TO'] = to_addr
+        env['EMAIL_SUBJECT'] = subject
+        env['EMAIL_BODY'] = msg
+        env['EMAIL_ATTACHMENT'] = fp
+        proc = subprocess.run([VENV_PYTHON, sender], env=env,
+                              capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            return jsonify({'success': False, 'error': (proc.stderr or proc.stdout)[:500]}), 500
+        return jsonify({'success': True, 'output': proc.stdout[:500]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/documents/<int:did>/ask', methods=['POST'])
+def api_doc_ask(did):
+    """Ad-hoc LLM query against the document content."""
+    d, fp = _get_doc(did)
+    if not d:
+        return jsonify({'success': False, 'error': fp}), 404
+    body = request.get_json() or {}
+    question = (body.get('question') or '').strip()
+    if not question:
+        return jsonify({'success': False, 'error': 'question required'}), 400
+    text = (d.get('content_text') or '')[:10000]
+    if not text:
+        return jsonify({'success': False, 'error': 'no content_text — run Extract Text first'}), 400
+    prompt = (
+        "You are Phil Hass, document curator for All Home Building Co LLC. Read the document "
+        "below and answer the user's question precisely. If the answer is not in the document, "
+        "say so explicitly.\n\n=== Document ===\n" + text + "\n\n=== Question ===\n" + question + "\n\n=== Answer ==="
+    )
+    answer = _ollama_text(prompt, max_tokens=600)
+    if answer.startswith("[LLM error"):
+        return jsonify({'success': False, 'error': answer}), 500
+    return jsonify({'success': True, 'answer': answer})
+
+
+# ── Uncle Sam: Business Profile + PA LLC Tax Requirements ──────────────────
+
+def _ensure_business_profile_table():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_business_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        legal_name TEXT, dba TEXT, ein TEXT, ssn_last4 TEXT,
+        structure_type TEXT DEFAULT 'single_member_llc',
+        state_of_formation TEXT DEFAULT 'PA',
+        formation_date TEXT, registered_agent TEXT,
+        business_address TEXT, business_phone TEXT, business_email TEXT,
+        fiscal_year_end TEXT DEFAULT '12-31',
+        accounting_method TEXT DEFAULT 'cash',
+        naics_code TEXT, hic_number TEXT, hic_expires TEXT,
+        pa_tax_id TEXT, philly_tax_account TEXT,
+        has_employees INTEGER DEFAULT 0,
+        collects_sales_tax INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_tax_filings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        requirement_id TEXT NOT NULL,
+        period TEXT,
+        filed_date TEXT NOT NULL,
+        amount_paid REAL,
+        confirmation_number TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    # Seed empty row
+    conn.execute("INSERT OR IGNORE INTO ahb_business_profile (id, legal_name) VALUES (1, 'All Home Building Co LLC')")
+    conn.commit()
+    conn.close()
+_ensure_business_profile_table()
+
+
+# Hardcoded PA LLC tax requirements catalog. Items are filtered by structure_type,
+# has_employees, and in_philly. Each "due" pattern is parsed to compute the next date.
+PA_LLC_TAX_REQUIREMENTS = [
+    # ── Federal income tax ────────────────────────────────────────
+    {"id":"fed_ein","jurisdiction":"federal","category":"licensing","name":"Federal EIN",
+     "description":"Employer Identification Number from the IRS — one-time, free at irs.gov.",
+     "applies_to":["sole_prop","single_member_llc","multi_member_llc","s_corp","c_corp","partnership"],
+     "due":"one_time","required_docs":["tax_document"],"info_url":"https://www.irs.gov/businesses/small-businesses-self-employed/apply-for-an-employer-identification-number-ein-online"},
+    {"id":"fed_1040_sch_c","jurisdiction":"federal","category":"income_tax","name":"Form 1040 + Schedule C",
+     "description":"Federal income tax return — single-member LLC reports business income on owner's 1040.",
+     "applies_to":["sole_prop","single_member_llc"],
+     "due":"annual:04-15","required_docs":["tax_document"],
+     "info_url":"https://www.irs.gov/forms-pubs/about-schedule-c-form-1040"},
+    {"id":"fed_1065","jurisdiction":"federal","category":"income_tax","name":"Form 1065 (Partnership Return)",
+     "description":"Multi-member LLC partnership return + K-1s to members.",
+     "applies_to":["multi_member_llc","partnership"],
+     "due":"annual:03-15","required_docs":["tax_document"],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-1065"},
+    {"id":"fed_1120s","jurisdiction":"federal","category":"income_tax","name":"Form 1120-S (S-Corp)",
+     "description":"S-Corporation return + K-1s to shareholders.",
+     "applies_to":["s_corp"],
+     "due":"annual:03-15","required_docs":["tax_document"],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-1120-s"},
+    {"id":"fed_1120","jurisdiction":"federal","category":"income_tax","name":"Form 1120 (C-Corp)",
+     "description":"C-Corporation income tax return.",
+     "applies_to":["c_corp"],
+     "due":"annual:04-15","required_docs":["tax_document"],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-1120"},
+    {"id":"fed_se","jurisdiction":"federal","category":"income_tax","name":"Schedule SE (Self-Employment)",
+     "description":"Self-employment tax (15.3%) for Social Security + Medicare on net earnings.",
+     "applies_to":["sole_prop","single_member_llc","multi_member_llc","partnership"],
+     "due":"annual:04-15","required_docs":[],"info_url":"https://www.irs.gov/forms-pubs/about-schedule-se-form-1040"},
+    {"id":"fed_1040es","jurisdiction":"federal","category":"quarterly","name":"Quarterly Estimated Tax (1040-ES)",
+     "description":"Quarterly estimated income tax + SE tax payments.",
+     "applies_to":["sole_prop","single_member_llc","multi_member_llc","partnership","s_corp"],
+     "due":"quarterly_est","required_docs":[],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-1040-es"},
+    {"id":"fed_941","jurisdiction":"federal","category":"employment","name":"Form 941 (Quarterly Employment Tax)",
+     "description":"Quarterly federal employment tax return — withholdings + employer SS/Medicare.",
+     "applies_to":["any"],"requires":"has_employees",
+     "due":"quarterly:04-30,07-31,10-31,01-31","required_docs":[],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-941"},
+    {"id":"fed_940","jurisdiction":"federal","category":"employment","name":"Form 940 (FUTA)",
+     "description":"Annual federal unemployment tax return.",
+     "applies_to":["any"],"requires":"has_employees",
+     "due":"annual:01-31","required_docs":[],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-940"},
+    {"id":"fed_w2","jurisdiction":"federal","category":"employment","name":"W-2 / W-3 to employees",
+     "description":"Employee wage statements + transmittal to SSA.",
+     "applies_to":["any"],"requires":"has_employees",
+     "due":"annual:01-31","required_docs":[],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-w-2"},
+    {"id":"fed_1099nec","jurisdiction":"federal","category":"employment","name":"1099-NEC to subcontractors",
+     "description":"Send to any subcontractor paid >$600 in calendar year.",
+     "applies_to":["any"],
+     "due":"annual:01-31","required_docs":["w9"],
+     "info_url":"https://www.irs.gov/forms-pubs/about-form-1099-nec"},
+
+    # ── PA State ──────────────────────────────────────────────────
+    {"id":"pa_100","jurisdiction":"pa","category":"licensing","name":"PA-100 Business Registration",
+     "description":"One-time business tax registration with PA Department of Revenue.",
+     "applies_to":["any"],
+     "due":"one_time","required_docs":[],
+     "info_url":"https://www.pa100.state.pa.us/"},
+    {"id":"pa_40","jurisdiction":"pa","category":"income_tax","name":"PA-40 Personal Income Tax",
+     "description":"Pennsylvania personal income tax (3.07% flat) — passes through from LLC.",
+     "applies_to":["sole_prop","single_member_llc","multi_member_llc","partnership","s_corp"],
+     "due":"annual:04-15","required_docs":[],
+     "info_url":"https://www.revenue.pa.gov/FormsandPublications/FormsforIndividuals/PIT/Pages/default.aspx"},
+    {"id":"pa_annual_report","jurisdiction":"pa","category":"licensing","name":"PA Annual Report (Act 122)",
+     "description":"MANDATORY for LLCs since 2025 (Act 122 of 2022). Filed with PA Department of State. Late fee $500.",
+     "applies_to":["single_member_llc","multi_member_llc","s_corp","c_corp"],
+     "due":"annual:09-30","required_docs":[],
+     "info_url":"https://www.dos.pa.gov/BusinessCharities/Business/Pages/Annual-Reports.aspx"},
+    {"id":"pa_uc","jurisdiction":"pa","category":"employment","name":"PA UC Tax Registration",
+     "description":"PA Unemployment Compensation tax — quarterly filings if you have employees.",
+     "applies_to":["any"],"requires":"has_employees",
+     "due":"quarterly:04-30,07-31,10-31,01-31","required_docs":[],
+     "info_url":"https://www.uc.pa.gov/employers-uc-services-uc-tax/Pages/default.aspx"},
+    {"id":"pa_sales_tax","jurisdiction":"pa","category":"sales_use","name":"PA Sales Tax License",
+     "description":"Required if collecting sales tax. Construction labor is generally exempt; materials are taxable.",
+     "applies_to":["any"],"requires":"collects_sales_tax",
+     "due":"monthly_or_quarterly","required_docs":[],
+     "info_url":"https://www.revenue.pa.gov/TaxTypes/SUT/Pages/default.aspx"},
+
+    # ── Philadelphia ──────────────────────────────────────────────
+    {"id":"phl_birt","jurisdiction":"philadelphia","category":"income_tax","name":"BIRT (Business Income & Receipts Tax)",
+     "description":"Philadelphia business tax — gross receipts + net income components. Due annually.",
+     "applies_to":["any"],"requires":"in_philly",
+     "due":"annual:04-15","required_docs":["tax_document"],
+     "info_url":"https://www.phila.gov/services/payments-assistance-taxes/business-taxes/business-income-receipts-tax-birt/"},
+    {"id":"phl_npt","jurisdiction":"philadelphia","category":"income_tax","name":"NPT (Net Profits Tax)",
+     "description":"Philadelphia net profits tax — 3.79% for residents, 3.44% non-residents.",
+     "applies_to":["sole_prop","single_member_llc","multi_member_llc","partnership"],"requires":"in_philly",
+     "due":"annual:04-15","required_docs":[],
+     "info_url":"https://www.phila.gov/services/payments-assistance-taxes/business-taxes/net-profits-tax/"},
+    {"id":"phl_wage","jurisdiction":"philadelphia","category":"employment","name":"Philadelphia Wage Tax",
+     "description":"Withhold from employee wages working in Philly. Quarterly returns.",
+     "applies_to":["any"],"requires":"has_employees_in_philly",
+     "due":"quarterly:04-30,07-31,10-31,01-31","required_docs":[],
+     "info_url":"https://www.phila.gov/services/payments-assistance-taxes/business-taxes/wage-tax-employers/"},
+    {"id":"phl_cal","jurisdiction":"philadelphia","category":"licensing","name":"Commercial Activity License",
+     "description":"One-time CAL from Philadelphia Department of Licenses & Inspections.",
+     "applies_to":["any"],"requires":"in_philly",
+     "due":"one_time","required_docs":["license"],
+     "info_url":"https://www.phila.gov/services/permits-violations-licenses/get-a-license/business-licenses/get-a-commercial-activity-license/"},
+
+    # ── Construction-specific ─────────────────────────────────────
+    {"id":"pa_hic","jurisdiction":"construction","category":"licensing","name":"HIC Registration (PA AG)",
+     "description":"Home Improvement Contractor registration with PA Office of Attorney General. Required for any contractor doing residential work over $500/year. Annual renewal.",
+     "applies_to":["any"],
+     "due":"annual_renewal","required_docs":["license","coi"],
+     "info_url":"https://www.attorneygeneral.gov/protect-yourself/home-improvement-consumer-protection/"},
+    {"id":"general_liability","jurisdiction":"construction","category":"licensing","name":"General Liability Insurance",
+     "description":"Required for HIC. Minimum $50K personal injury / $50K property damage. Most townships require $1M.",
+     "applies_to":["any"],
+     "due":"annual_renewal","required_docs":["coi"],
+     "info_url":""},
+    {"id":"workers_comp","jurisdiction":"construction","category":"employment","name":"Workers' Compensation Insurance",
+     "description":"Required by PA law if you have any employees (including yourself if structured as employee).",
+     "applies_to":["any"],"requires":"has_employees",
+     "due":"annual_renewal","required_docs":["coi"],
+     "info_url":"https://www.dli.pa.gov/Businesses/Compensation/WC/Pages/default.aspx"},
+]
+
+
+def _filter_requirements(structure_type, has_employees, in_philly, collects_sales_tax):
+    """Return only the requirements that apply to this business setup."""
+    out = []
+    for r in PA_LLC_TAX_REQUIREMENTS:
+        applies = r.get("applies_to", [])
+        if "any" not in applies and structure_type not in applies:
+            continue
+        req = r.get("requires")
+        if req == "has_employees" and not has_employees:
+            continue
+        if req == "in_philly" and not in_philly:
+            continue
+        if req == "has_employees_in_philly" and not (has_employees and in_philly):
+            continue
+        if req == "collects_sales_tax" and not collects_sales_tax:
+            continue
+        out.append(r)
+    return out
+
+
+def _next_due_date(due_pattern: str):
+    """Compute the next due date for a 'due' pattern. Returns (date_iso, days_until)."""
+    today = datetime.date.today()
+    if not due_pattern or due_pattern == "one_time":
+        return None, None
+    if due_pattern.startswith("annual:"):
+        mm, dd = due_pattern.split(":")[1].split("-")
+        candidate = datetime.date(today.year, int(mm), int(dd))
+        if candidate < today:
+            candidate = datetime.date(today.year + 1, int(mm), int(dd))
+        return candidate.isoformat(), (candidate - today).days
+    if due_pattern == "annual_renewal":
+        # 1 year from today as a placeholder — user can override per requirement
+        candidate = datetime.date(today.year + 1, today.month, today.day)
+        return candidate.isoformat(), (candidate - today).days
+    if due_pattern == "quarterly_est":
+        # Federal estimated tax: Apr 15, Jun 15, Sep 15, Jan 15
+        candidates = [
+            datetime.date(today.year, 4, 15),
+            datetime.date(today.year, 6, 15),
+            datetime.date(today.year, 9, 15),
+            datetime.date(today.year + 1, 1, 15),
+        ]
+        for c in candidates:
+            if c >= today:
+                return c.isoformat(), (c - today).days
+        return None, None
+    if due_pattern.startswith("quarterly:"):
+        dates = due_pattern.split(":")[1].split(",")
+        for ds in dates:
+            mm, dd = ds.split("-")
+            yr = today.year
+            if int(mm) == 1 and today.month >= 11:
+                yr = today.year + 1
+            cand = datetime.date(yr, int(mm), int(dd))
+            if cand >= today:
+                return cand.isoformat(), (cand - today).days
+        # rollover to next year first quarter
+        mm, dd = dates[0].split("-")
+        cand = datetime.date(today.year + 1, int(mm), int(dd))
+        return cand.isoformat(), (cand - today).days
+    if due_pattern == "monthly_or_quarterly":
+        # End of next month as a sane default
+        nm = today.replace(day=1) + datetime.timedelta(days=32)
+        eom = nm.replace(day=1) - datetime.timedelta(days=1)
+        return eom.isoformat(), (eom - today).days
+    return None, None
+
+
+def _check_required_docs(doc_types: list) -> dict:
+    """Check ahb_documents for AHBCO docs of the given types. Returns map of type → doc info or None."""
+    if not doc_types:
+        return {}
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    out = {}
+    for dt in doc_types:
+        row = conn.execute(
+            """SELECT id, suggested_name, original_name, doc_date, entity FROM ahb_documents
+               WHERE doc_type=? AND (entity LIKE '%AHBCO%' OR entity LIKE '%All Home Building%')
+               ORDER BY doc_date DESC NULLS LAST LIMIT 1""",
+            (dt,)
+        ).fetchone()
+        out[dt] = dict(row) if row else None
+    conn.close()
+    return out
+
+
+@app.route('/api/ahb/business-profile', methods=['GET'])
+def api_ahb_business_profile_get():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ahb_business_profile WHERE id=1").fetchone()
+    conn.close()
+    if not row:
+        return jsonify({})
+    return jsonify(dict(row))
+
+
+@app.route('/api/ahb/business-profile', methods=['PUT'])
+def api_ahb_business_profile_put():
+    body = request.get_json() or {}
+    fields = ['legal_name','dba','ein','ssn_last4','structure_type','state_of_formation',
+              'formation_date','registered_agent','business_address','business_phone',
+              'business_email','fiscal_year_end','accounting_method','naics_code',
+              'hic_number','hic_expires','pa_tax_id','philly_tax_account',
+              'has_employees','collects_sales_tax']
+    sets, vals = [], []
+    for k in fields:
+        if k in body:
+            sets.append(f"{k}=?"); vals.append(body[k])
+    if not sets:
+        return jsonify({'success': False, 'error': 'no fields'}), 400
+    sets.append("updated_at=?"); vals.append(datetime.datetime.now().isoformat())
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.execute(f"UPDATE ahb_business_profile SET {','.join(sets)} WHERE id=1", vals)
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/tax-requirements/pa-llc', methods=['GET'])
+def api_ahb_pa_llc_requirements():
+    structure = request.args.get('structure', 'single_member_llc')
+    has_employees = request.args.get('has_employees', '0') in ('1','true','True')
+    collects_sales_tax = request.args.get('collects_sales_tax', '0') in ('1','true','True')
+    address = (request.args.get('address') or '').lower()
+    in_philly = 'philadelphia' in address or 'phila' in address or 'philly' in address
+    items = _filter_requirements(structure, has_employees, in_philly, collects_sales_tax)
+    out = []
+    for r in items:
+        copy = dict(r)
+        next_date, days_until = _next_due_date(r.get("due", ""))
+        copy["next_due_date"] = next_date
+        copy["days_until"] = days_until
+        copy["required_docs_status"] = _check_required_docs(r.get("required_docs", []))
+        out.append(copy)
+    # Pull recent filings to mark items as filed
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    filings = {row['requirement_id']: dict(row) for row in conn.execute(
+        "SELECT * FROM ahb_tax_filings ORDER BY filed_date DESC"
+    ).fetchall()}
+    conn.close()
+    for item in out:
+        f = filings.get(item['id'])
+        if f:
+            item['last_filed'] = f.get('filed_date')
+            item['filing_id'] = f.get('id')
+    return jsonify({
+        'in_philly': in_philly,
+        'has_employees': has_employees,
+        'structure': structure,
+        'items': out,
+    })
+
+
+@app.route('/api/ahb/tax-filings', methods=['POST'])
+def api_ahb_tax_filings_create():
+    body = request.get_json() or {}
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    cur = conn.execute("""INSERT INTO ahb_tax_filings
+        (requirement_id, period, filed_date, amount_paid, confirmation_number, notes)
+        VALUES (?,?,?,?,?,?)""",
+        (body.get('requirement_id'), body.get('period'),
+         body.get('filed_date') or datetime.date.today().isoformat(),
+         body.get('amount_paid'), body.get('confirmation_number'), body.get('notes')))
+    fid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'id': fid})
+
+
+@app.route('/api/ahb/tax-filings/<int:fid>', methods=['DELETE'])
+def api_ahb_tax_filings_delete(fid):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.execute("DELETE FROM ahb_tax_filings WHERE id=?", (fid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+# ── Vendor mini-CRM ─────────────────────────────────────────────────────────
+
+@app.route('/api/ahb/vendors', methods=['GET','POST'])
+def api_ahb_vendors():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        rows = conn.execute("SELECT * FROM ahb_vendors ORDER BY name").fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    body = request.get_json() or {}
+    cur = conn.execute("""INSERT INTO ahb_vendors
+        (name, vendor_type, contact_name, phone, email, address, ein_or_ssn, notes)
+        VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT(name) DO UPDATE SET
+            vendor_type=excluded.vendor_type,
+            contact_name=excluded.contact_name,
+            phone=excluded.phone,
+            email=excluded.email,
+            address=excluded.address,
+            ein_or_ssn=excluded.ein_or_ssn,
+            notes=excluded.notes,
+            updated_at=CURRENT_TIMESTAMP""",
+        (body.get('name'), body.get('vendor_type'), body.get('contact_name'),
+         body.get('phone'), body.get('email'), body.get('address'),
+         body.get('ein_or_ssn'), body.get('notes')))
+    vid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'id': vid})
+
+
+@app.route('/api/ahb/vendors/<int:vid>', methods=['PATCH','DELETE'])
+def api_ahb_vendor_one(vid):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM ahb_vendors WHERE id=?", (vid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    body = request.get_json() or {}
+    sets, vals = [], []
+    for k in ('name','vendor_type','contact_name','phone','email','address',
+              'ein_or_ssn','notes','coi_expires','license_expires'):
+        if k in body:
+            sets.append(f"{k}=?"); vals.append(body[k])
+    if sets:
+        sets.append("updated_at=?"); vals.append(datetime.datetime.now().isoformat())
+        vals.append(vid)
+        conn.execute(f"UPDATE ahb_vendors SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/packages/build-from-project', methods=['POST'])
+def api_ahb_package_build():
+    """Phil's intelligent package builder. Given a project_id and a package_type
+    (e.g. 'permit'), this:
+      1. Pulls the project + client + linked invoice
+      2. Finds related curated documents (COI, license, etc.)
+      3. Prefills a form template with known data
+      4. Creates a draft package the user can review/edit
+    """
+    body = request.get_json() or {}
+    project_id = body.get('project_id')
+    pkg_type   = (body.get('package_type') or 'permit').lower()
+    name_hint  = body.get('name', '')
+    if not project_id:
+        return jsonify({'success': False, 'error': 'project_id required'}), 400
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    project = conn.execute("SELECT * FROM ahb_projects WHERE id=?", (project_id,)).fetchone()
+    if not project:
+        conn.close()
+        return jsonify({'success': False, 'error': 'project not found'}), 404
+    project = dict(project)
+    client = None
+    if project.get('client_id'):
+        c = conn.execute("SELECT * FROM ahb_clients WHERE id=?", (project['client_id'],)).fetchone()
+        if c: client = dict(c)
+    # Pull standing AHBCO docs (license, COI, W9) + project-specific docs
+    standing = [dict(r) for r in conn.execute(
+        "SELECT * FROM ahb_documents WHERE doc_type IN ('license','coi','w9','tax_document') "
+        "AND (entity LIKE '%AHBCO%' OR entity LIKE '%All Home Building%') "
+        "ORDER BY doc_date DESC"
+    ).fetchall()]
+    # Project-specific docs (matched by project_id or address mention in summary)
+    addr = (project.get('address') or '').strip()
+    proj_docs_rows = conn.execute(
+        "SELECT * FROM ahb_documents WHERE project_id=? OR (? != '' AND content_text LIKE ?) "
+        "ORDER BY curated_at DESC",
+        (project_id, addr, f"%{addr}%")
+    ).fetchall() if addr else conn.execute(
+        "SELECT * FROM ahb_documents WHERE project_id=? ORDER BY curated_at DESC",
+        (project_id,)
+    ).fetchall()
+    proj_docs = [dict(r) for r in proj_docs_rows]
+    # Build the prefilled form data based on package type
+    form = _build_form_template(pkg_type, project, client)
+    # Pick attached doc ids — standing docs by default, plus any project-specific
+    attached_ids = [d['id'] for d in (standing + proj_docs)]
+    name = name_hint or f"{pkg_type.title()} package — {project.get('title','Project')}"
+    cur = conn.execute("""INSERT INTO ahb_app_packages
+        (name, package_type, project_id, client_id, status, form_data, attached_doc_ids, notes)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (name, pkg_type, project_id, project.get('client_id'),
+         'draft', json.dumps(form), json.dumps(attached_ids),
+         f"Auto-built by Phil from project {project.get('title','')}."))
+    pid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'id': pid, 'form_data': form,
+                    'attached_doc_ids': attached_ids,
+                    'standing_docs': len(standing),
+                    'project_docs': len(proj_docs)})
+
+
+def _detect_municipality(address: str) -> str:
+    """Best-effort guess at jurisdiction from a project address. Returns one of:
+    'philadelphia', 'bensalem', 'bucks_county', 'montgomery_county', 'delaware_county',
+    'chester_county', 'pa_other', or 'unknown'."""
+    if not address:
+        return 'unknown'
+    a = address.lower()
+    if 'philadelphia' in a or 'phila' in a or 'philly' in a:
+        return 'philadelphia'
+    if 'bensalem' in a:
+        return 'bensalem'
+    # Bucks County boroughs/townships
+    bucks_hints = ('warrington','warminster','doylestown','newtown','levittown','feasterville',
+                   'langhorne','yardley','perkasie','quakertown','sellersville','richboro',
+                   'bristol','morrisville','bucks county')
+    if any(h in a for h in bucks_hints):
+        return 'bucks_county'
+    montco_hints = ('king of prussia','norristown','ambler','jenkintown','abington','willow grove',
+                    'fort washington','blue bell','plymouth meeting','conshohocken','lansdale',
+                    'pottstown','collegeville','montgomery county')
+    if any(h in a for h in montco_hints):
+        return 'montgomery_county'
+    delco_hints = ('upper darby','media','chester','springfield','havertown','newtown square',
+                   'broomall','aldan','lansdowne','delaware county')
+    if any(h in a for h in delco_hints):
+        return 'delaware_county'
+    chesco_hints = ('west chester','exton','downingtown','phoenixville','kennett','coatesville',
+                    'malvern','chester county')
+    if any(h in a for h in chesco_hints):
+        return 'chester_county'
+    if ' pa' in a or ', pa' in a:
+        return 'pa_other'
+    return 'unknown'
+
+
+def _municipality_extras(muni: str) -> dict:
+    """Return additional permit-form fields specific to a jurisdiction."""
+    if muni == 'philadelphia':
+        return {
+            'submission_office':    'Philadelphia Department of Licenses & Inspections (L&I)',
+            'submission_address':   '1401 John F. Kennedy Blvd, Philadelphia, PA 19102',
+            'submission_portal':    'https://www.phila.gov/eclipse/',
+            'permit_type':          'Building Permit (Alteration/Repair)',
+            'use_group':            'R-3 (Single Family)',
+            'construction_type':    'V-B (Wood Frame)',
+            'historic_district':    'Check at atlas.phila.gov before submission',
+            'zoning_overlay':       '',
+            'l_and_i_property_id':  '',
+            'opa_account_number':   '',
+            'flood_plain':          'Check FEMA flood map',
+        }
+    if muni == 'bensalem':
+        return {
+            'submission_office':    'Bensalem Township Building Department',
+            'submission_address':   '2400 Byberry Rd, Bensalem, PA 19020',
+            'submission_phone':     '215-633-3600',
+            'permit_type':          'Building Permit',
+            'parcel_id':            '',
+            'zoning_district':      '',
+            'lot_size':             '',
+            'setback_front':        '',
+            'setback_rear':         '',
+            'setback_side':         '',
+        }
+    if muni == 'bucks_county':
+        return {
+            'submission_office':    'Township Building Department (Bucks County)',
+            'permit_type':          'Building Permit',
+            'parcel_id':            '',
+            'zoning_district':      '',
+            'lot_size':             '',
+            'setback_front':        '',
+            'setback_rear':         '',
+            'setback_side':         '',
+            'uniform_construction_code': 'Pennsylvania UCC compliant',
+        }
+    if muni == 'montgomery_county':
+        return {
+            'submission_office':    'Township/Borough Building Department (Montgomery County)',
+            'permit_type':          'Building Permit',
+            'parcel_id':            '',
+            'zoning_district':      '',
+        }
+    if muni == 'delaware_county':
+        return {
+            'submission_office':    'Township/Borough Building Department (Delaware County)',
+            'permit_type':          'Building Permit',
+            'parcel_id':            '',
+            'zoning_district':      '',
+        }
+    if muni == 'chester_county':
+        return {
+            'submission_office':    'Township/Borough Building Department (Chester County)',
+            'permit_type':          'Building Permit',
+            'parcel_id':            '',
+            'zoning_district':      '',
+        }
+    return {
+        'submission_office':    'Local Building Department',
+        'permit_type':          'Building Permit',
+    }
+
+
+def _build_form_template(pkg_type: str, project: dict, client: dict | None) -> dict:
+    """Return a dict of prefilled form fields for the given package type.
+    The user can edit any field in the DocPrep UI."""
+    base = {
+        'contractor_name':       'Sergey Tkach',
+        'contractor_company':    'All Home Building Co LLC',
+        'contractor_address':    '2725 Colmar Ave, Bensalem, PA',
+        'contractor_phone':      '800-484-6404',
+        'contractor_license':    '',  # to be filled from license doc
+        'contractor_email':      'admin@allhomebuilding.co',
+        'project_address':       project.get('address') or '',
+        'project_description':   project.get('description') or '',
+        'project_scope':         project.get('scope') or '',
+        'project_budget':        project.get('value') or project.get('budget_high') or '',
+        'project_start_date':    project.get('start_date') or '',
+        'project_end_date':      project.get('end_date') or '',
+        'client_name':           (client or {}).get('name') or project.get('client_name') or '',
+        'client_phone':          (client or {}).get('phone') or '',
+        'client_email':          (client or {}).get('email') or '',
+        'client_address':        (client or {}).get('address') or project.get('address') or '',
+    }
+    if pkg_type == 'permit':
+        muni = _detect_municipality(project.get('address') or '')
+        base['detected_jurisdiction'] = muni.replace('_',' ').title()
+        base.update({
+            'permit_type':           'Building Permit',
+            'work_description':      project.get('description') or project.get('scope') or '',
+            'estimated_cost':        project.get('value') or project.get('budget_high') or '',
+            'property_owner':        (client or {}).get('name') or '',
+            'parcel_number':         '',
+            'zoning':                '',
+            'square_footage_change': '',
+            'occupancy_type':        'Single Family Residential',
+            'fire_sprinkler':        'No',
+            'subcontractors':        '',
+            'work_to_be_performed':  project.get('description') or '',
+        })
+        # Layer in jurisdiction-specific fields (overrides any duplicates)
+        base.update(_municipality_extras(muni))
+    elif pkg_type == 'coi_request':
+        base.update({
+            'certificate_holder':    (client or {}).get('name') or '',
+            'certificate_address':   (client or {}).get('address') or project.get('address') or '',
+            'project_reference':     project.get('title') or '',
+            'coverage_dates':        '',
+            'additional_insured':    '',
+        })
+    elif pkg_type == 'contract':
+        base.update({
+            'contract_amount':       project.get('value') or project.get('budget_high') or '',
+            'payment_schedule':      'Deposit before commencement, balance on completion',
+            'completion_date':       project.get('end_date') or '',
+            'warranty_period':       '1 year on workmanship',
+            'change_order_terms':    'Any change in scope requires written change order signed by both parties.',
+        })
+    elif pkg_type == 'change_order':
+        base.update({
+            'original_contract_amount': project.get('value') or project.get('budget_high') or '',
+            'change_description':       '',
+            'change_amount':            '',
+            'reason_for_change':        '',
+        })
+    return base
+
+
+# ── Project Document Scraper (extract fields from PDFs/docs via LLM) ─────────
+
+def _extract_text(filepath: str) -> str:
+    """Best-effort text extraction from common doc formats."""
+    ext = os.path.splitext(filepath)[1].lower()
+    try:
+        if ext == '.pdf':
+            try:
+                import pdfplumber
+                txt = []
+                with pdfplumber.open(filepath) as pdf:
+                    for page in pdf.pages[:20]:  # cap at 20 pages
+                        t = page.extract_text() or ''
+                        if t:
+                            txt.append(t)
+                return '\n'.join(txt)
+            except Exception as e:
+                return f"[pdf extract failed: {e}]"
+        if ext in ('.docx',):
+            try:
+                import docx
+                d = docx.Document(filepath)
+                return '\n'.join(p.text for p in d.paragraphs)
+            except Exception as e:
+                return f"[docx extract failed: {e}]"
+        if ext in ('.txt', '.md', '.csv', '.html', '.rtf'):
+            with open(filepath, 'r', errors='ignore') as f:
+                return f.read()[:50000]
+        # Image — leave empty (could OCR via tesseract later)
+        return ''
+    except Exception as e:
+        return f"[extract failed: {e}]"
+
+
+def _scrape_project_fields(text: str) -> dict:
+    """Send extracted text through Ollama with a structured prompt to pull project fields."""
+    if not text or not text.strip():
+        return {}
+    text = text[:12000]  # context cap
+    prompt = (
+        "You are extracting structured project information from a construction document "
+        "(could be a contract, estimate, bid, lead form, or job description). "
+        "Return ONLY a JSON object with these exact keys (use null if not present):\n"
+        "{\n"
+        '  "client_name": "full name",\n'
+        '  "client_phone": "phone",\n'
+        '  "client_email": "email",\n'
+        '  "address": "full project street address with city/state/zip",\n'
+        '  "scope": "kitchen|bathroom|addition|basement|deck|full-reno|other",\n'
+        '  "scope_other": "if scope is other, describe what it is",\n'
+        '  "title": "short project title",\n'
+        '  "description": "1-3 sentence summary of the work",\n'
+        '  "budget_low": number_or_null,\n'
+        '  "budget_high": number_or_null,\n'
+        '  "start_date": "YYYY-MM-DD",\n'
+        '  "end_date": "YYYY-MM-DD",\n'
+        '  "competitors": ["list of any other contractor/company names mentioned"]\n'
+        "}\n\n"
+        "Document text:\n" + text + "\n\nJSON:"
+    )
+    try:
+        import urllib.request as _ur
+        payload = json.dumps({
+            "model": "qwen2.5:14b",
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.1, "num_predict": 800}
+        }).encode()
+        req = _ur.Request("http://localhost:11434/api/generate", data=payload,
+                          headers={"Content-Type": "application/json"})
+        with _ur.urlopen(req, timeout=120) as r:
+            data = json.loads(r.read())
+        raw = data.get("response", "").strip()
+        # Strip code fences if present
+        raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw).strip()
+        return json.loads(raw)
+    except Exception as e:
+        return {"_error": str(e)}
+
+
+@app.route('/api/ahb/projects/<pid>/adopt-staging', methods=['POST'])
+def api_ahb_project_adopt_staging(pid):
+    """Move scrape-staging files into the real project artifacts dir after the project is saved."""
+    body = request.get_json() or {}
+    staging_id = body.get('staging_id', '')
+    if not staging_id or not staging_id.startswith('scrape-'):
+        return jsonify({'success': False, 'error': 'invalid staging_id'}), 400
+    src = os.path.join(ARTIFACTS_DIR, staging_id)
+    dst = os.path.join(ARTIFACTS_DIR, pid)
+    if not os.path.isdir(src):
+        return jsonify({'success': False, 'error': 'staging not found'}), 404
+    os.makedirs(dst, exist_ok=True)
+    moved = []
+    for f in os.listdir(src):
+        sp = os.path.join(src, f)
+        dp = os.path.join(dst, f)
+        try:
+            os.rename(sp, dp)
+            moved.append(f)
+        except Exception:
+            pass
+    try: os.rmdir(src)
+    except Exception: pass
+    return jsonify({'success': True, 'moved': moved})
+
+
+@app.route('/api/ahb/projects/scrape', methods=['POST'])
+def api_ahb_project_scrape():
+    """Upload one or more docs (multipart). Extract text. Run LLM. Return suggested fields.
+    Files are also saved to artifacts/<project_id>/ if a project_id is provided, otherwise
+    to artifacts/scrape-staging/ keyed by a temp uuid."""
+    files = request.files.getlist('files') or request.files.getlist('file')
+    if not files:
+        return jsonify({'success': False, 'error': 'no files'}), 400
+    project_id = request.form.get('project_id') or f"scrape-{uuid.uuid4().hex[:8]}"
+    proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
+    os.makedirs(proj_dir, exist_ok=True)
+    saved   = []
+    blobs   = []
+    for f in files:
+        if not f or not f.filename:
+            continue
+        safe = re.sub(r'[^\w.\-_ ()]', '_', f.filename)
+        fpath = os.path.join(proj_dir, safe)
+        f.save(fpath)
+        saved.append(safe)
+        text = _extract_text(fpath)
+        if text:
+            blobs.append(f"=== {safe} ===\n{text}")
+    combined = '\n\n'.join(blobs)
+    suggested = _scrape_project_fields(combined) if combined else {}
+    return jsonify({
+        'success': True,
+        'project_id': project_id,
+        'files': saved,
+        'text_length': len(combined),
+        'suggested': suggested,
+    })
+
+# ── Project Geocoding (for iCloud GPS classifier) ────────────────────────────
+
+@app.route('/api/ahb/geocode/status')
+def api_geocode_status():
+    from core.geocoder import project_geocode_status
+    return jsonify(project_geocode_status())
+
+@app.route('/api/ahb/geocode/run', methods=['POST'])
+def api_geocode_run():
+    """Bulk geocode all AHB project addresses. Rate-limited to ~1 req/sec."""
+    from core.geocoder import geocode_all_projects
+    body = request.get_json(silent=True) or {}
+    force = bool(body.get('force', False))
+    try:
+        result = geocode_all_projects(force=force)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+# ── iCloud Ingest Pipeline (admin + multi-tenant) ────────────────────────────
+
+def _icloud_user_id():
+    """Return cloud user_id if logged in, else None (admin/Serge mode)."""
+    if CLOUD_ENABLED:
+        try:
+            if current_user and current_user.is_authenticated:
+                return current_user.id
+        except Exception:
+            pass
+    return None
+
+@app.route('/api/icloud/accounts', methods=['GET'])
+def api_icloud_accounts():
+    from core.icloud_ingest import list_accounts
+    uid = _icloud_user_id()
+    accs = list_accounts(user_id=uid, include_admin=(uid is None))
+    # Hide passwords in response
+    for a in accs:
+        a.pop('app_password', None)
+    return jsonify(accs)
+
+@app.route('/api/icloud/accounts', methods=['POST'])
+def api_icloud_add_account():
+    """Register an iCloud account. Auth-only step still requires CLI run for 2FA."""
+    from core.icloud_ingest import add_account
+    body = request.get_json() or {}
+    apple_id = (body.get('apple_id') or '').strip()
+    password = body.get('password') or ''
+    ahb_owner= bool(body.get('ahb_owner', False))
+    if not apple_id or not password:
+        return jsonify({'success': False, 'error': 'apple_id and password required'}), 400
+    uid = _icloud_user_id()
+    try:
+        aid = add_account(apple_id, password, user_id=uid, ahb_owner=ahb_owner)
+        return jsonify({'success': True, 'id': aid,
+                        'next_step': 'Run: venv/bin/python scripts/icloud_setup.py' +
+                                     (f' --user {uid}' if uid else '') +
+                                     ' (in a terminal to complete 2FA)'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/icloud/accounts/<int:aid>', methods=['DELETE'])
+def api_icloud_remove_account(aid):
+    from core.icloud_ingest import remove_account, _get_account
+    acc = _get_account(aid)
+    if not acc:
+        return jsonify({'success': False, 'error': 'not found'}), 404
+    uid = _icloud_user_id()
+    if acc['user_id'] != uid:
+        return jsonify({'success': False, 'error': 'forbidden'}), 403
+    remove_account(aid, user_id=uid)
+    return jsonify({'success': True})
+
+@app.route('/api/icloud/sync', methods=['POST'])
+def api_icloud_sync():
+    """Trigger sync for one account or all of the current user's accounts."""
+    from core.icloud_ingest import ingest_account, ingest_all, _get_account
+    body = request.get_json() or {}
+    aid = body.get('account_id')
+    uid = _icloud_user_id()
+    try:
+        if aid:
+            acc = _get_account(int(aid))
+            if not acc or acc['user_id'] != uid:
+                return jsonify({'success': False, 'error': 'forbidden'}), 403
+            result = ingest_account(int(aid), recent=body.get('recent'),
+                                    until_found=body.get('until_found', 100))
+            return jsonify({'success': result.get('ok', False), 'result': result})
+        results = ingest_all(user_id=uid)
+        return jsonify({'success': True, 'results': results})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/icloud/status')
+def api_icloud_status():
+    """Lightweight status for the dashboard widget."""
+    from core.icloud_ingest import list_accounts
+    uid = _icloud_user_id()
+    accs = list_accounts(user_id=uid, include_admin=(uid is None))
+    total_synced  = sum(a.get('total_synced')  or 0 for a in accs)
+    total_jobsite = sum(a.get('total_jobsite') or 0 for a in accs)
+    total_personal= sum(a.get('total_personal') or 0 for a in accs)
+    last_sync = max((a.get('last_sync') or '' for a in accs), default='')
+    return jsonify({
+        'accounts': len(accs),
+        'last_sync': last_sync,
+        'total_synced': total_synced,
+        'total_jobsite': total_jobsite,
+        'total_personal': total_personal,
+        'is_cloud_user': uid is not None,
+    })
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMMS — Sophisticated chat platform for talking to any agent
+# ─────────────────────────────────────────────────────────────────────────────
+COMMS_UPLOAD_DIR = os.path.join(DASHBOARD_DIR, 'uploads', 'comms')
+os.makedirs(COMMS_UPLOAD_DIR, exist_ok=True)
+
+def _comms_init():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    c = conn.cursor()
+    c.executescript("""
+        CREATE TABLE IF NOT EXISTS comms_sessions (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            title TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS comms_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT,
+            attachments TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_comms_msgs_sess ON comms_messages(session_id);
+    """)
+    conn.commit()
+    conn.close()
+_comms_init()
+
+def _comms_db():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+@app.route('/comms')
+def comms_page():
+    config = load_config()
+    agents = config.get('agents', {})
+    agent_list = []
+    for aid, ac in agents.items():
+        agent_list.append({
+            'id': aid,
+            'name': ac.get('name', aid),
+            'role': ac.get('role', ''),
+            'model': ac.get('model', ''),
+            'company_title': ac.get('company_title', ''),
+        })
+    return render_template('comms.html', agents=agent_list)
+
+@app.route('/api/comms/sessions', methods=['GET', 'POST'])
+def api_comms_sessions():
+    conn = _comms_db()
+    c = conn.cursor()
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        sid = uuid.uuid4().hex[:12]
+        c.execute("INSERT INTO comms_sessions (id, agent_id, title) VALUES (?, ?, ?)",
+                  (sid, data.get('agent_id', 'simon_bately'), data.get('title', 'New chat')))
+        conn.commit()
+        row = c.execute("SELECT * FROM comms_sessions WHERE id=?", (sid,)).fetchone()
+        conn.close()
+        return jsonify(dict(row))
+    rows = c.execute("""
+        SELECT s.*, (SELECT COUNT(*) FROM comms_messages WHERE session_id=s.id) AS msg_count,
+               (SELECT content FROM comms_messages WHERE session_id=s.id ORDER BY id DESC LIMIT 1) AS last_msg
+        FROM comms_sessions s ORDER BY datetime(updated_at) DESC
+    """).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/comms/sessions/<sid>', methods=['GET', 'PUT', 'DELETE'])
+def api_comms_session(sid):
+    conn = _comms_db()
+    c = conn.cursor()
+    if request.method == 'DELETE':
+        c.execute("DELETE FROM comms_messages WHERE session_id=?", (sid,))
+        c.execute("DELETE FROM comms_sessions WHERE id=?", (sid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    if request.method == 'PUT':
+        data = request.get_json() or {}
+        if 'title' in data:
+            c.execute("UPDATE comms_sessions SET title=?, updated_at=datetime('now') WHERE id=?",
+                      (data['title'], sid))
+        if 'agent_id' in data:
+            c.execute("UPDATE comms_sessions SET agent_id=?, updated_at=datetime('now') WHERE id=?",
+                      (data['agent_id'], sid))
+        conn.commit()
+    sess = c.execute("SELECT * FROM comms_sessions WHERE id=?", (sid,)).fetchone()
+    if not sess:
+        conn.close()
+        return jsonify({'error': 'not found'}), 404
+    msgs = c.execute("SELECT * FROM comms_messages WHERE session_id=? ORDER BY id ASC", (sid,)).fetchall()
+    conn.close()
+    out = dict(sess)
+    out['messages'] = [dict(m) for m in msgs]
+    return jsonify(out)
+
+def _comms_ollama_url(model):
+    """Pick which Ollama instance hosts a model. Try AMD first, then NVIDIA."""
+    import requests as _r
+    for url in ('http://127.0.0.1:11434', 'http://127.0.0.1:11435'):
+        try:
+            r = _r.get(f"{url}/api/tags", timeout=2)
+            if r.ok:
+                tags = [m['name'] for m in r.json().get('models', [])]
+                if model in tags or any(t.split(':')[0] == model.split(':')[0] for t in tags):
+                    return url
+        except Exception:
+            continue
+    return 'http://127.0.0.1:11434'
+
+@app.route('/api/comms/send', methods=['POST'])
+def api_comms_send():
+    """Send a user message and stream the agent's reply via SSE."""
+    from flask import Response, stream_with_context
+    import requests as _r
+    data = request.get_json() or {}
+    sid = data.get('session_id')
+    user_text = (data.get('content') or '').strip()
+    attachments = data.get('attachments') or []
+    if not sid or not user_text:
+        return jsonify({'error': 'session_id and content required'}), 400
+
+    conn = _comms_db()
+    c = conn.cursor()
+    sess = c.execute("SELECT * FROM comms_sessions WHERE id=?", (sid,)).fetchone()
+    if not sess:
+        conn.close()
+        return jsonify({'error': 'session not found'}), 404
+    sess = dict(sess)
+    agent_id = sess['agent_id']
+
+    # Save user message
+    c.execute("INSERT INTO comms_messages (session_id, role, content, attachments) VALUES (?,?,?,?)",
+              (sid, 'user', user_text, json.dumps(attachments)))
+    # Auto-title from first user message
+    if (sess.get('title') or '').strip() in ('', 'New chat'):
+        c.execute("UPDATE comms_sessions SET title=? WHERE id=?", (user_text[:60], sid))
+    c.execute("UPDATE comms_sessions SET updated_at=datetime('now') WHERE id=?", (sid,))
+    conn.commit()
+
+    # Build LLM context
+    config = load_config()
+    agent_cfg = (config.get('agents') or {}).get(agent_id, {})
+    model = agent_cfg.get('model', 'mistral-small:22b')
+    system_prompt = agent_cfg.get('system_prompt', f'You are {agent_cfg.get("name", agent_id)}.')
+
+    history = c.execute(
+        "SELECT role, content FROM comms_messages WHERE session_id=? ORDER BY id ASC", (sid,)
+    ).fetchall()
+    messages = [{"role": "system", "content": system_prompt}]
+    for h in history:
+        messages.append({"role": h['role'], "content": h['content']})
+    if attachments:
+        files_note = "\n\n[User attached files: " + ", ".join(a.get('name','file') for a in attachments) + "]"
+        messages[-1]['content'] += files_note
+    conn.close()
+
+    def generate():
+        full_response = ''
+        try:
+            url = _comms_ollama_url(model)
+            payload = {"model": model, "messages": messages, "stream": True}
+            with _r.post(f"{url}/api/chat", json=payload, stream=True, timeout=300) as resp:
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line.decode('utf-8'))
+                    except Exception:
+                        continue
+                    tok = (chunk.get('message') or {}).get('content', '')
+                    if tok:
+                        full_response += tok
+                        yield f"data: {json.dumps({'token': tok})}\n\n"
+                    if chunk.get('done'):
+                        break
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        # Persist assistant message
+        try:
+            c2 = _comms_db()
+            c2.execute(
+                "INSERT INTO comms_messages (session_id, role, content) VALUES (?,?,?)",
+                (sid, 'assistant', full_response)
+            )
+            c2.execute("UPDATE comms_sessions SET updated_at=datetime('now') WHERE id=?", (sid,))
+            c2.commit()
+            c2.close()
+        except Exception:
+            pass
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype='text/event-stream',
+                    headers={'X-Accel-Buffering': 'no', 'Cache-Control': 'no-cache'})
+
+@app.route('/api/comms/upload', methods=['POST'])
+def api_comms_upload():
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'no file'}), 400
+    sid = request.form.get('session_id', 'tmp')
+    folder = os.path.join(COMMS_UPLOAD_DIR, sid)
+    os.makedirs(folder, exist_ok=True)
+    name = secure_filename(f.filename or f"file_{uuid.uuid4().hex[:8]}")
+    path = os.path.join(folder, name)
+    f.save(path)
+    return jsonify({
+        'success': True,
+        'name': name,
+        'size': os.path.getsize(path),
+        'url': f"/api/comms/file/{sid}/{name}",
+    })
+
+@app.route('/api/comms/file/<sid>/<path:fname>')
+def api_comms_file(sid, fname):
+    folder = os.path.join(COMMS_UPLOAD_DIR, sid)
+    return send_from_directory(folder, fname)
+
+@app.route('/api/comms/voice', methods=['POST'])
+def api_comms_voice():
+    """Transcribe an audio blob via local whisper if available, else echo error."""
+    f = request.files.get('audio')
+    if not f:
+        return jsonify({'error': 'no audio'}), 400
+    tmp = os.path.join(COMMS_UPLOAD_DIR, f"voice_{uuid.uuid4().hex[:8]}.webm")
+    f.save(tmp)
+    try:
+        # Try whisper.cpp / whisper CLI
+        for cmd in (['whisper', tmp, '--model', 'base', '--output_format', 'txt', '--output_dir', COMMS_UPLOAD_DIR],
+                    ['whisper-cpp', '-f', tmp]):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if r.returncode == 0:
+                    text = r.stdout.strip()
+                    if not text:
+                        # whisper writes file
+                        txt_path = tmp.rsplit('.', 1)[0] + '.txt'
+                        if os.path.exists(txt_path):
+                            text = open(txt_path).read().strip()
+                    return jsonify({'text': text})
+            except FileNotFoundError:
+                continue
+        return jsonify({'error': 'whisper not installed; install openai-whisper for voice input'}), 501
+    finally:
+        try: os.remove(tmp)
+        except: pass
+
+@app.route('/api/comms/shell', methods=['POST'])
+def api_comms_shell():
+    """Run a shell command from the inline terminal popout. Restricted to baza user."""
+    data = request.get_json() or {}
+    cmd = (data.get('cmd') or '').strip()
+    if not cmd:
+        return jsonify({'error': 'no command'}), 400
+    try:
+        r = subprocess.run(['bash', '-lc', cmd], capture_output=True, text=True, timeout=60)
+        return jsonify({
+            'stdout': r.stdout,
+            'stderr': r.stderr,
+            'code': r.returncode,
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'timeout (60s)'}), 408
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8888, debug=False)

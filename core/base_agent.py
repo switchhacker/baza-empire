@@ -62,7 +62,15 @@ class BaseAgent(ContextMixin):
     """
     AGENT_ID: str = "base"
     MODEL: str = "qwen2.5:14b"
+    # Local model used when MODEL is rate-limited (cloud quota exhausted, 429,
+    # etc). Override per agent in subclass or via agents.yaml `local_fallback_model`.
+    FALLBACK_MODEL: str = "qwen2.5:14b"
     TOKEN_ENV: str = ""
+
+    # Graft 5 — per-task model routing. Override in subclass to send code-heavy
+    # questions to a coder model, research questions to a long-context model, etc.
+    # Keys: code | research | legal | fast | default. Missing keys fall back to MODEL.
+    MODEL_ROUTING: dict = {}
 
     # Set True to use GPU pool (both GPUs shared), False to use AMD only
     USE_GPU_POOL: bool = True
@@ -275,14 +283,98 @@ class BaseAgent(ContextMixin):
                 pass
         return {"success": False, "error": result.get("output", "skill error")}
 
+    # ── Approval Gate (Graft 2) ───────────────────────────────────────────────
+
+    def request_approval(self, action: str, details: str = "",
+                         category: str = "general", timeout: int = None) -> bool:
+        """
+        Block on Serge's approval before doing something destructive or expensive.
+        Wraps core.approval.request_approval, passing the agent's own bot token.
+
+        Returns True if approved, False if denied or timed out. Always journaled.
+
+        Use for: deletes, sends, spends, external API mutations, anything you'd
+        regret doing wrong. Don't use for read-only or generative work.
+        """
+        from core.approval import request_approval as _ra
+        return _ra(self.AGENT_ID, action, details=details,
+                   category=category, timeout=timeout)
+
     # ── LLM Call ──────────────────────────────────────────────────────────────
 
-    def llm_chat(self, messages: list, system_prompt: str) -> str:
+    # Graft 5 — naive keyword scorer for per-task model routing.
+    # First match wins. Order matters: more specific tasks should come first.
+    _ROUTING_KEYWORDS = (
+        ("code",     ("code", "debug", "fix bug", "stack trace", "deploy", "script",
+                      "function", "compile", "regex", "syntax", "git ", "docker",
+                      "kubernetes", "ansible", "terraform", "systemd")),
+        ("legal",    ("legal", "lawsuit", "contract", "liability", "compliance",
+                      "tax", "irs", "deduction", "schedule c", "1099", "w-9",
+                      "llc", "operating agreement", "lien", "invoice", "audit")),
+        ("research", ("research", "investigate", "find out", "look up", "market",
+                      "competitor", "news", "industry", "trend", "benchmark",
+                      "compare", "analysis", "report on")),
+        ("fast",     ("quick", "tldr", "brief", "short", "summary", "summarize",
+                      "in one sentence", "yes or no", "real quick")),
+    )
+
+    def _route_model(self, text: str) -> str:
+        """Pick a model name based on the user message keywords.
+        Returns self.MODEL if no MODEL_ROUTING is configured or no keyword matches.
+        """
+        if not self.MODEL_ROUTING:
+            return self.MODEL
+        if not text:
+            return self.MODEL_ROUTING.get("default", self.MODEL)
+        low = text.lower()
+        for task, keywords in self._ROUTING_KEYWORDS:
+            if task not in self.MODEL_ROUTING:
+                continue
+            if any(k in low for k in keywords):
+                return self.MODEL_ROUTING[task]
+        return self.MODEL_ROUTING.get("default", self.MODEL)
+
+    def llm_chat(self, messages: list, system_prompt: str,
+                 model_override: str = None) -> str:
         """
         Run an LLM inference. Streams internally, returns full response string.
         Uses GPU pool if USE_GPU_POOL, otherwise AMD only.
         Logs token usage to agent_usage table.
+
+        If `model_override` is provided, it bypasses self.MODEL — use this with
+        `_route_model()` for per-task routing.
+
+        Runs every input through core.context_optimizer first, which dedupes
+        history, compresses old turns into a summary, hard-caps tokens, and
+        may downgrade trivial requests to a smaller model. Set the env var
+        BAZA_OPTIMIZER_OFF=1 to disable per-agent.
         """
+        model = model_override or self.MODEL
+
+        # ── Context optimizer (token saver) ──────────────────────────────────
+        if not os.environ.get("BAZA_OPTIMIZER_OFF"):
+            try:
+                from core.context_optimizer import optimize
+                opt_msgs, opt_sys, opt_model, stats = optimize(
+                    agent_id=self.AGENT_ID,
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    target_model=model,
+                    max_tokens=int(os.environ.get("BAZA_OPTIMIZER_MAX_TOKENS", "6000")),
+                    keep_recent=int(os.environ.get("BAZA_OPTIMIZER_KEEP_RECENT", "8")),
+                )
+                # Only adopt the optimizer's suggestions if they actually saved tokens
+                if stats["after_tokens"] < stats["before_tokens"]:
+                    messages = opt_msgs
+                    system_prompt = opt_sys
+                if stats["downgraded"]:
+                    logger.info(f"[{self.AGENT_ID}] optimizer downgraded {model} → {opt_model} ({stats['complexity']})")
+                    model = opt_model
+                if stats["saved_pct"] >= 20:
+                    logger.info(f"[{self.AGENT_ID}] optimizer saved {stats['saved_pct']}% ({stats['before_tokens']}→{stats['after_tokens']} tokens)")
+            except Exception as e:
+                logger.warning(f"[{self.AGENT_ID}] optimizer failed (using raw messages): {e}")
+
         full = ""
         usage_meta = {}
 
@@ -291,12 +383,13 @@ class BaseAgent(ContextMixin):
             usage_meta = meta
 
         if self.USE_GPU_POOL:
-            for chunk in chat_stream_pooled(self.MODEL, messages, system_prompt,
-                                            self.AGENT_ID, on_complete=_on_complete):
+            for chunk in chat_stream_pooled(model, messages, system_prompt,
+                                            self.AGENT_ID, on_complete=_on_complete,
+                                            fallback_model=self.FALLBACK_MODEL):
                 full += chunk
         else:
             from core.ollama_client import OLLAMA_AMD_URL
-            for chunk in chat_stream(self.MODEL, messages, system_prompt,
+            for chunk in chat_stream(model, messages, system_prompt,
                                      OLLAMA_AMD_URL, on_complete=_on_complete):
                 full += chunk
 
@@ -306,7 +399,7 @@ class BaseAgent(ContextMixin):
                 duration_ms = usage_meta.get("total_duration_ns", 0) // 1_000_000
                 usage_log(
                     agent_id=self.AGENT_ID,
-                    model=usage_meta.get("model", self.MODEL),
+                    model=usage_meta.get("model", model),
                     provider=usage_meta.get("provider", "ollama"),
                     prompt_tokens=usage_meta.get("prompt_tokens", 0),
                     completion_tokens=usage_meta.get("completion_tokens", 0),
@@ -517,6 +610,325 @@ class BaseAgent(ContextMixin):
 
     # ── Message Handling ──────────────────────────────────────────────────────
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # DocPrep intent detection — shared across ALL agents
+    # Any agent can recognize "find/build/list" doc requests and route them to
+    # the dashboard's curator + package builder. Phil is mentioned in the reply
+    # so the user always knows who's curating.
+    # ─────────────────────────────────────────────────────────────────────────
+
+    _DOC_FIND_VERBS = (
+        "find", "search", "locate", "where is", "where's", "show me",
+        "pull up", "get me", "look up", "lookup", "do we have", "i need",
+    )
+    _DOC_BUILD_VERBS = (
+        "build", "create", "prepare", "prep", "make me", "make a", "draft",
+        "generate", "put together", "assemble", "package up",
+    )
+    _DOC_TYPES = {
+        "permit":         ["permit", "building permit", "construction permit", "zoning permit"],
+        "coi":            ["coi", "certificate of insurance", "insurance cert", "liability cert"],
+        "w9":             ["w9", "w-9", "w 9"],
+        "license":        ["license", "contractor license", "hic", "home improvement contractor"],
+        "contract":       ["contract", "agreement"],
+        "change_order":   ["change order", "change-order"],
+        "lien_waiver":    ["lien waiver", "waiver of lien"],
+        "estimate":       ["estimate", "quote", "bid"],
+        "tax_document":   ["tax doc", "1099", "tax form"],
+        "id_document":    ["id document", "drivers license", "driver's license", "passport"],
+    }
+
+    def _detect_doc_intent(self, text: str):
+        """Return {action, doc_type, query, project_hint} dict or None."""
+        import re as _re
+        t = (text or "").lower().strip()
+        if len(t) < 5:
+            return None
+
+        action = None
+        if any(v in t for v in self._DOC_BUILD_VERBS) and any(
+            kw in t for kw in ("package", "application", "permit application", "coi request")
+        ):
+            action = "build"
+        elif any(t.startswith(v) or f" {v} " in f" {t} " for v in self._DOC_FIND_VERBS):
+            # Only fire find-intent if a doc keyword is also present, otherwise it
+            # eats normal questions like "find me on twitter"
+            doc_keywords = ("permit","coi","w9","license","contract","change order",
+                            "lien","estimate","tax","id doc","insurance","application","document",
+                            "permits","contracts","licenses","cois")
+            if any(kw in t for kw in doc_keywords):
+                action = "find"
+        elif (t.startswith(("show all","list all")) or "all permits" in t or "all cois" in t
+              or "all licenses" in t or "all contracts" in t):
+            action = "list"
+
+        if not action:
+            return None
+
+        doc_type = None
+        for dt, kws in self._DOC_TYPES.items():
+            if any(kw in t for kw in kws):
+                doc_type = dt
+                break
+
+        project_hint = None
+        m = _re.search(
+            r"\bfor (?:the )?([a-z0-9 .'\-]+?)(?:\s+(?:project|build|deck|reno|renovation|kitchen|bath|bathroom|job|address|home|house)|[?.,]|$)",
+            t,
+        )
+        if m:
+            project_hint = m.group(1).strip()
+
+        return {"action": action, "doc_type": doc_type,
+                "query": text.strip(), "project_hint": project_hint}
+
+    async def _handle_doc_intent(self, intent: dict, text: str, chat_id: int):
+        """Execute the detected intent against the dashboard API and return a reply.
+        Works identically for any agent — the reply mentions Phil so the curator
+        attribution stays consistent."""
+        import urllib.request as _ur
+        import json as _j
+        import re as _re
+
+        loop = asyncio.get_event_loop()
+        action = intent["action"]
+        doc_type = intent.get("doc_type")
+        project_hint = intent.get("project_hint")
+        am_phil = (self.AGENT_ID == "phil_hass")
+        prefix = "" if am_phil else "Phil here (relayed by " + self.AGENT_ID.replace("_"," ").title() + "):\n\n"
+
+        def _api(method, path, body=None):
+            url = f"http://localhost:8888{path}"
+            data = _j.dumps(body).encode() if body is not None else None
+            req = _ur.Request(url, data=data, method=method,
+                              headers={"Content-Type": "application/json"})
+            with _ur.urlopen(req, timeout=30) as r:
+                return _j.loads(r.read())
+
+        try:
+            if action in ("find", "list"):
+                query_parts = []
+                if doc_type:    query_parts.append(doc_type)
+                if project_hint: query_parts.append(project_hint)
+                query = " ".join(query_parts) if query_parts else text
+                results = await loop.run_in_executor(
+                    None, lambda: _api("POST", "/api/ahb/documents/find", {"query": query})
+                )
+                matches = results.get("matches") or []
+                if not matches:
+                    return (prefix + f"I checked the document library for \"{query}\" but nothing matched. "
+                            "Send me the file directly and I'll curate it on the spot, or open AHB123 → DocPrep "
+                            "to browse what we have.")
+                lines = [prefix + f"📚 Found {len(matches)} match{'es' if len(matches)>1 else ''} for \"{query}\":\n"]
+                icons = {"coi":"🛡","license":"🪪","permit":"📜","contract":"📝","w9":"📋",
+                         "change_order":"🔄","invoice":"💰","estimate":"🧮","lien_waiver":"⚖️",
+                         "lead_form":"📞","project_photo":"📸","blueprint":"📐","receipt":"🧾",
+                         "correspondence":"✉️","id_document":"🪪","tax_document":"💼"}
+                for i, m in enumerate(matches[:6], 1):
+                    icon = icons.get(m.get("doc_type"), "📄")
+                    lines.append(f"{i}. {icon} {(m.get('doc_type') or '').upper()} — {m.get('entity') or 'unknown'}")
+                    if m.get("doc_date"):
+                        lines.append(f"   Date: {m['doc_date']}")
+                    if m.get("summary"):
+                        lines.append(f"   {m['summary'][:160]}")
+                    lines.append(f"   Open: http://localhost:8888/api/ahb/documents/file/{m['id']}")
+                    lines.append("")
+                lines.append("View the full library + edit fields in AHB123 → DocPrep tab.")
+                return "\n".join(lines)
+
+            if action == "build":
+                if not project_hint:
+                    return (prefix + "I need to know which project. Try: \"Build a permit package "
+                            "for the Warrington deck build\" or \"create a COI request for Kim French project\".")
+                projects = await loop.run_in_executor(None, lambda: _api("GET", "/api/ahb/projects"))
+                hint = project_hint.lower()
+                hint_words = set(_re.findall(r"\w+", hint))
+                best = None
+                best_score = 0
+                for p in projects:
+                    blob = " ".join(filter(None, [
+                        p.get("title",""), p.get("client_name",""),
+                        p.get("address",""), (p.get("description") or "")[:200],
+                    ])).lower()
+                    score = sum(1 for w in hint_words if w in blob and len(w) > 2)
+                    if score > best_score:
+                        best_score = score
+                        best = p
+                if not best or best_score == 0:
+                    sample = ", ".join((p.get("title") or "")[:30] for p in projects[:5])
+                    return (prefix + f"Couldn't find a project matching \"{project_hint}\". "
+                            f"A few I see: {sample}. Try the exact title or address.")
+                pkg_type = doc_type or "permit"
+                if pkg_type not in ("permit", "coi_request", "contract", "change_order"):
+                    pkg_type = "permit"
+                result = await loop.run_in_executor(
+                    None, lambda: _api("POST", "/api/ahb/packages/build-from-project",
+                                       {"project_id": best["id"], "package_type": pkg_type})
+                )
+                if not result.get("success"):
+                    return prefix + f"Build failed: {result.get('error','unknown')}"
+                pkg_id = result.get("id")
+                return (prefix +
+                    f"📦 Built {pkg_type.replace('_',' ').upper()} package for "
+                    f"\"{best.get('title','project')}\".\n\n"
+                    f"• {result.get('standing_docs',0)} standing AHBCO docs attached "
+                    f"(license, COI, W9)\n"
+                    f"• {result.get('project_docs',0)} project-specific docs attached\n"
+                    f"• Form prefilled with project + client info\n\n"
+                    f"📄 View the package PDF: http://localhost:8888/api/ahb/packages/{pkg_id}/pdf\n"
+                    f"⬇ Download: http://localhost:8888/api/ahb/packages/{pkg_id}/pdf?download=1\n"
+                    f"✏️ Edit in dashboard: AHB123 → DocPrep → click the new package")
+        except Exception as e:
+            logger.error(f"[{self.AGENT_ID}] doc intent failed: {e}")
+            return prefix + f"Hit an error handling that request: {e}"
+        return None
+
+    async def handle_attachment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Capture every photo/document/video/audio sent in chat → save to datahub.
+
+        Files are saved under dashboard/artifacts/<agent_id>-uploads/ with a sidecar
+        .meta file tagging them with the agent_id so the Data Hub can attribute them
+        correctly when filtering 'by agent'."""
+        import datetime as _dt
+        chat_id = update.effective_chat.id
+        msg = update.message
+        if not msg:
+            return
+        try:
+            framework_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            upload_dir = os.path.join(framework_dir, "dashboard", "artifacts",
+                                      f"{self.AGENT_ID}-uploads")
+            os.makedirs(upload_dir, exist_ok=True)
+
+            # Pick the right file object + filename
+            file_obj = None
+            orig_name = None
+            kind = "file"
+            caption = (msg.caption or "").strip()
+
+            if msg.photo:
+                file_obj = await context.bot.get_file(msg.photo[-1].file_id)
+                orig_name = f"photo_{msg.photo[-1].file_unique_id}.jpg"
+                kind = "photo"
+            elif msg.document:
+                file_obj = await context.bot.get_file(msg.document.file_id)
+                orig_name = msg.document.file_name or f"doc_{msg.document.file_unique_id}"
+                kind = "document"
+            elif msg.video:
+                file_obj = await context.bot.get_file(msg.video.file_id)
+                orig_name = msg.video.file_name or f"video_{msg.video.file_unique_id}.mp4"
+                kind = "video"
+            elif msg.audio:
+                file_obj = await context.bot.get_file(msg.audio.file_id)
+                orig_name = msg.audio.file_name or f"audio_{msg.audio.file_unique_id}.mp3"
+                kind = "audio"
+            elif msg.voice:
+                file_obj = await context.bot.get_file(msg.voice.file_id)
+                orig_name = f"voice_{msg.voice.file_unique_id}.ogg"
+                kind = "voice"
+
+            if not file_obj:
+                return
+
+            # Sanitize + timestamp the saved filename so duplicates don't collide
+            import re as _re
+            safe = _re.sub(r"[^\w.\-_ ()]", "_", orig_name).strip() or "upload"
+            ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"{ts}_{safe}"
+            fpath = os.path.join(upload_dir, fname)
+            await file_obj.download_to_drive(fpath)
+
+            # Sidecar meta so the dashboard's scan_artifacts_dir tags this with the right agent
+            try:
+                with open(fpath + ".meta", "w") as mf:
+                    mf.write(f"agent_id={self.AGENT_ID}\n")
+                    mf.write(f"chat_id={chat_id}\n")
+                    mf.write(f"kind={kind}\n")
+                    mf.write(f"received_at={_dt.datetime.now().isoformat()}\n")
+                    if caption:
+                        mf.write(f"caption={caption[:500]}\n")
+            except Exception:
+                pass
+
+            logger.info(f"[{self.AGENT_ID}] saved {kind} from chat {chat_id}: {fname}")
+            self.journal("attachment_received",
+                         f"{kind}: {orig_name} ({os.path.getsize(fpath)} bytes)",
+                         chat_id=chat_id)
+
+            # Save a chat record so history shows the upload happened
+            try:
+                save_message(chat_id, self.AGENT_ID, "user",
+                             f"[{kind} uploaded: {orig_name}]" + (f"  caption: {caption}" if caption else ""))
+            except Exception:
+                pass
+
+            # Send a fast initial ack so the user knows it landed
+            init_ack = f"\u2705 Got your {kind}: {fname}\n\u2026 analyzing with Phil's curator..."
+            try:
+                ack_msg = await context.bot.send_message(chat_id=chat_id, text=init_ack)
+            except Exception:
+                ack_msg = None
+            if kind == "photo":
+                try:
+                    self.set_memory("last_uploaded_photo", fpath, category="recent_files")
+                except Exception:
+                    pass
+
+            # Run the curator skill in the background — doesn't block the chat handler
+            async def _curate_and_reply():
+                try:
+                    loop2 = asyncio.get_event_loop()
+                    result = await loop2.run_in_executor(
+                        None, self.skills.run, "curate_document",
+                        {"file_path": fpath, "agent_id": self.AGENT_ID, "chat_id": chat_id}
+                    )
+                    # Skills engine returns the stdout — parse it
+                    try:
+                        analysis = json.loads(result) if isinstance(result, str) else result
+                    except Exception:
+                        analysis = {}
+                    if not isinstance(analysis, dict):
+                        analysis = {}
+                    doc_type = analysis.get("doc_type") or "document"
+                    entity   = analysis.get("entity") or "unknown entity"
+                    summary  = (analysis.get("summary") or "").strip()
+                    relevance= (analysis.get("relevance") or "").strip()
+                    suggested= analysis.get("suggested_name") or fname
+                    tags     = analysis.get("tags") or []
+                    msg_text = (
+                        f"\u2705 Filed: <b>{doc_type.upper()}</b>\n"
+                        f"<b>Entity:</b> {entity}\n"
+                    )
+                    if analysis.get("doc_date"):
+                        msg_text += f"<b>Date:</b> {analysis['doc_date']}\n"
+                    if summary:
+                        msg_text += f"\n{summary}\n"
+                    if relevance:
+                        msg_text += f"\n<i>{relevance}</i>\n"
+                    if tags:
+                        msg_text += f"\n<code>tags: {', '.join(tags[:6])}</code>\n"
+                    msg_text += f"\n\U0001F4C1 <code>{suggested}</code>"
+                    try:
+                        await context.bot.send_message(chat_id=chat_id, text=msg_text, parse_mode="HTML")
+                    except Exception:
+                        await context.bot.send_message(chat_id=chat_id, text=msg_text.replace("<b>","").replace("</b>","").replace("<i>","").replace("</i>","").replace("<code>","").replace("</code>",""))
+                except Exception as e:
+                    logger.error(f"[{self.AGENT_ID}] curate failed: {e}")
+                    try:
+                        await context.bot.send_message(chat_id=chat_id,
+                            text=f"(Couldn't auto-analyze the file: {e}\u2014 it's still saved in your Data Hub.)")
+                    except Exception:
+                        pass
+
+            asyncio.ensure_future(_curate_and_reply())
+        except Exception as e:
+            logger.error(f"[{self.AGENT_ID}] handle_attachment failed: {e}")
+            try:
+                await context.bot.send_message(chat_id=chat_id,
+                                               text=f"Couldn't save that file: {e}")
+            except Exception:
+                pass
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         text = update.message.text or ""
@@ -531,6 +943,19 @@ class BaseAgent(ContextMixin):
 
         # Track message count for this chat session
         self._message_counts[chat_id] = self._message_counts.get(chat_id, 0) + 1
+
+        # ── DocPrep intent intercept (fires for ALL agents) ───────────────────
+        doc_intent = self._detect_doc_intent(text)
+        if doc_intent:
+            doc_reply = await self._handle_doc_intent(doc_intent, text, chat_id)
+            if doc_reply:
+                save_message(chat_id, self.AGENT_ID, "user", text)
+                save_message(chat_id, self.AGENT_ID, "assistant", doc_reply)
+                self.journal("doc_intent_handled",
+                             f"{doc_intent['action']}: {text[:100]}",
+                             chat_id=chat_id)
+                await self._send_response(context.bot, chat_id, doc_reply)
+                return
 
         # ── Task creation intercept (fires for ALL agents) ────────────────────
         task_confirm = self._try_create_task_from_message(text)
@@ -565,11 +990,16 @@ class BaseAgent(ContextMixin):
         # Build full system prompt with live context
         system = self.build_system_prompt()
 
+        # ── Graft 5: route to a task-specialized model if MODEL_ROUTING is set ──
+        routed_model = self._route_model(text)
+        if routed_model != self.MODEL:
+            logger.info(f"[{self.AGENT_ID}] routing to {routed_model} (text: {text[:60]!r})")
+
         # ── Pass 1: LLM decides what to do (may emit ##SKILL:## calls) ────────
         loop = asyncio.get_event_loop()
         t0 = time.time()
         response = await loop.run_in_executor(
-            None, self.llm_chat, messages, system
+            None, lambda: self.llm_chat(messages, system, model_override=routed_model)
         )
         duration_ms = int((time.time() - t0) * 1000)
 
@@ -745,7 +1175,9 @@ class BaseAgent(ContextMixin):
         """Emit a Redis heartbeat every 60 seconds so the dashboard shows liveness."""
         try:
             import redis as _redis
-            r = _redis.Redis(host='localhost', port=6379, decode_responses=True)
+            _redis_host = os.environ.get("BAZA_REDIS_HOST", "localhost")
+            _redis_port = int(os.environ.get("BAZA_REDIS_PORT", "6379"))
+            r = _redis.Redis(host=_redis_host, port=_redis_port, decode_responses=True)
         except Exception:
             return
         while True:
@@ -861,6 +1293,11 @@ class BaseAgent(ContextMixin):
 
         app = Application.builder().token(token).build()
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        # Capture every photo / document / video / audio sent in chat → save to datahub
+        app.add_handler(MessageHandler(
+            filters.PHOTO | filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE,
+            self.handle_attachment
+        ))
 
         logger.info(f"[{self.AGENT_ID}] Starting Telegram bot...")
 

@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>AHBCO Employee Portal</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center}
+    a{color:inherit;text-decoration:none}
+
+    .app{width:100%;max-width:480px;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;position:relative}
+
+    /* HEADER */
+    .header{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+    .header-brand{display:flex;align-items:center;gap:8px}
+    .header-brand h1{font-size:16px;font-weight:800;color:#e94560;letter-spacing:1.5px}
+    .header-user{font-size:12px;color:#666;cursor:pointer}
+    .header-user:hover{color:#e94560}
+
+    /* SCREENS */
+    .screen{display:none;flex:1;flex-direction:column;padding:20px;padding-bottom:80px;overflow-y:auto}
+    .screen.active{display:flex}
+
+    /* LOGIN SCREEN */
+    .login-screen{justify-content:center;align-items:center;gap:24px;padding-bottom:0}
+    .login-logo{text-align:center;margin-bottom:12px}
+    .login-logo h2{font-size:22px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .login-logo p{font-size:13px;color:#555;margin-top:6px}
+    .login-form{width:100%;max-width:320px;display:flex;flex-direction:column;gap:16px}
+    .form-group{display:flex;flex-direction:column;gap:6px}
+    .form-group label{font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px}
+    .form-group select,.form-group input{width:100%;padding:14px 16px;background:#0e0e1e;border:1px solid #1a1a3a;border-radius:10px;color:#e0e0e0;font-size:16px;font-family:inherit;outline:none;transition:border-color .2s}
+    .form-group select:focus,.form-group input:focus{border-color:#7c3aed}
+    .form-group select option{background:#0e0e1e;color:#e0e0e0}
+    .pin-input{text-align:center;letter-spacing:12px;font-size:24px !important;font-weight:700}
+    .btn-login{padding:16px;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:1px;transition:opacity .2s}
+    .btn-login:hover{opacity:.9}
+    .btn-login:disabled{opacity:.4;cursor:not-allowed}
+    .login-error{color:#e94560;font-size:13px;text-align:center;min-height:20px}
+
+    /* CLOCK DISPLAY */
+    .clock-display{text-align:center;padding:24px 0 16px}
+    .clock-time{font-size:56px;font-weight:200;color:#fff;font-variant-numeric:tabular-nums;letter-spacing:2px}
+    .clock-date{font-size:14px;color:#555;margin-top:4px}
+    .clock-status{margin-top:12px;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;display:inline-block}
+    .status-not-in{background:#1a1a2e;color:#666;border:1px solid #2a2a4a}
+    .status-clocked-in{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
+    .status-on-lunch{background:#2a2a0a;color:#ffaa00;border:1px solid #ffaa00}
+    .status-done{background:#0d2040;color:#4da6ff;border:1px solid #1a3a6a}
+
+    /* PUNCH BUTTONS */
+    .punch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}
+    .punch-btn{min-height:64px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+    .punch-btn:active{transform:scale(.97)}
+    .punch-btn:disabled{opacity:.2;cursor:not-allowed;transform:none}
+    .punch-btn .punch-icon{font-size:22px}
+    .btn-clock-in{background:#0d2a0d;color:#66cc66;border:2px solid #1a5a1a;grid-column:1}
+    .btn-clock-in:not(:disabled):hover{background:#103a10}
+    .btn-lunch-start{background:#2a2a0d;color:#dddd66;border:2px solid #5a5a1a}
+    .btn-lunch-start:not(:disabled):hover{background:#3a3a10}
+    .btn-lunch-end{background:#2a2a0d;color:#dddd66;border:2px solid #5a5a1a}
+    .btn-lunch-end:not(:disabled):hover{background:#3a3a10}
+    .btn-clock-out{background:#2a0d0d;color:#ff6666;border:2px solid #5a1a1a;grid-column:2}
+    .btn-clock-out:not(:disabled):hover{background:#3a1010}
+
+    /* DONE MESSAGE */
+    .done-message{text-align:center;padding:32px 20px;margin-top:20px;background:#0e0e1e;border:1px solid #1a3a6a;border-radius:12px}
+    .done-message h3{color:#4da6ff;font-size:18px;margin-bottom:8px}
+    .done-message p{color:#555;font-size:13px}
+
+    /* TODAY SUMMARY */
+    .summary-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:18px;margin-top:20px}
+    .summary-title{font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px}
+    .summary-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #111}
+    .summary-row:last-child{border-bottom:none}
+    .summary-label{font-size:13px;color:#666}
+    .summary-value{font-size:14px;font-weight:600;color:#e0e0e0;font-variant-numeric:tabular-nums}
+
+    /* REMINDERS */
+    .reminder{padding:12px 16px;border-radius:10px;margin-top:12px;font-size:13px;font-weight:600;display:none;align-items:center;gap:8px}
+    .reminder.visible{display:flex}
+    .reminder-clock-in{background:#2a1a0a;color:#ffaa00;border:1px solid #5a3a1a}
+    .reminder-lunch{background:#2a2a0a;color:#dddd66;border:1px solid #5a5a1a}
+    .reminder-overtime{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+
+    /* SCHEDULE SCREEN */
+    .schedule-empty{text-align:center;color:#444;padding:40px 20px;font-size:14px}
+    .event-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;margin-bottom:10px}
+    .event-date{font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:1px}
+    .event-title{font-size:15px;font-weight:600;color:#fff;margin-top:4px}
+    .event-time{font-size:12px;color:#555;margin-top:4px}
+    .event-desc{font-size:12px;color:#666;margin-top:6px;line-height:1.5}
+
+    /* HISTORY SCREEN */
+    .history-list{display:flex;flex-direction:column;gap:8px}
+    .history-day{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+    .history-date{font-size:14px;font-weight:600;color:#e0e0e0}
+    .history-date-sub{font-size:11px;color:#555;margin-top:2px}
+    .history-hours{font-size:18px;font-weight:700;color:#7c3aed;font-variant-numeric:tabular-nums}
+    .history-hours small{font-size:11px;color:#555;font-weight:400}
+
+    /* TAB BAR */
+    .tab-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#0d0d1e;border-top:1px solid #1a1a3a;display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom,0)}
+    .tab{flex:1;padding:12px 0 10px;text-align:center;cursor:pointer;transition:color .2s;display:flex;flex-direction:column;align-items:center;gap:3px}
+    .tab-icon{font-size:20px}
+    .tab-label{font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px}
+    .tab:hover .tab-label{color:#888}
+    .tab.active .tab-label{color:#e94560}
+    .tab.active .tab-icon{filter:none}
+
+    /* LOADING SPINNER */
+    .spinner{display:inline-block;width:18px;height:18px;border:2px solid #333;border-top-color:#7c3aed;border-radius:50%;animation:spin .6s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .screen-loading{display:flex;justify-content:center;align-items:center;padding:40px}
+
+    /* TOAST */
+    .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);max-width:400px;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+    .toast.visible{opacity:1}
+    .toast-success{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
+    .toast-error{background:#2a0a0a;color:#ff5555;border:1px solid #ff5555}
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:#1a1a3a;border-radius:4px}
+  </style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- LOGIN SCREEN -->
+  <div class="screen login-screen active" id="screen-login">
+    <div class="login-logo">
+      <h2>AHBCO</h2>
+      <p>Employee Portal</p>
+    </div>
+    <div class="login-form">
+      <div class="form-group">
+        <label>Employee</label>
+        <select id="login-employee" onchange="checkLoginReady()">
+          <option value="">Select your name...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>PIN</label>
+        <input type="tel" id="login-pin" class="pin-input" maxlength="4" placeholder="----" oninput="checkLoginReady()" autocomplete="off">
+      </div>
+      <div class="login-error" id="login-error"></div>
+      <button class="btn-login" id="btn-login" disabled onclick="doLogin()">Sign In</button>
+    </div>
+  </div>
+
+  <!-- MAIN APP (after login) -->
+  <div id="main-app" style="display:none;flex:1;display:none;flex-direction:column;width:100%">
+    <div class="header">
+      <div class="header-brand">
+        <h1>AHBCO</h1>
+      </div>
+      <div class="header-user" id="header-user" onclick="doLogout()">Logout</div>
+    </div>
+
+    <!-- CLOCK SCREEN -->
+    <div class="screen active" id="screen-clock">
+      <div class="clock-display">
+        <div class="clock-time" id="clock-time">--:--:--</div>
+        <div class="clock-date" id="clock-date"></div>
+        <div class="clock-status status-not-in" id="clock-status">Not Clocked In</div>
+      </div>
+
+      <!-- Reminders -->
+      <div class="reminder reminder-clock-in" id="reminder-clockin">&#9200; Don't forget to clock in!</div>
+      <div class="reminder reminder-lunch" id="reminder-lunch">&#127860; Time for lunch!</div>
+      <div class="reminder reminder-overtime" id="reminder-overtime">&#128721; You've been clocked in 8+ hours. Time to clock out!</div>
+
+      <!-- Punch Buttons -->
+      <div class="punch-grid" id="punch-grid">
+        <button class="punch-btn btn-clock-in" id="btn-punch-in" onclick="punch('clock_in')">
+          <span class="punch-icon">&#9654;</span>Clock In
+        </button>
+        <button class="punch-btn btn-clock-out" id="btn-punch-out" onclick="punch('clock_out')" disabled>
+          <span class="punch-icon">&#9632;</span>Clock Out
+        </button>
+        <button class="punch-btn btn-lunch-start" id="btn-punch-lunch-start" onclick="punch('lunch_start')" disabled>
+          <span class="punch-icon">&#127860;</span>Lunch Start
+        </button>
+        <button class="punch-btn btn-lunch-end" id="btn-punch-lunch-end" onclick="punch('lunch_end')" disabled>
+          <span class="punch-icon">&#9654;</span>Lunch End
+        </button>
+      </div>
+
+      <!-- Done Message (hidden by default) -->
+      <div class="done-message" id="done-message" style="display:none">
+        <h3>Done for today!</h3>
+        <p>Great work. See you tomorrow.</p>
+      </div>
+
+      <!-- Today's Summary -->
+      <div class="summary-card" id="summary-card">
+        <div class="summary-title">Today's Summary</div>
+        <div class="summary-row">
+          <span class="summary-label">Clocked In</span>
+          <span class="summary-value" id="sum-clock-in">--</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">Lunch</span>
+          <span class="summary-value" id="sum-lunch">--</span>
+        </div>
+        <div class="summary-row">
+          <span class="summary-label">Hours Worked</span>
+          <span class="summary-value" id="sum-hours">0h 0m</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE SCREEN -->
+    <div class="screen" id="screen-schedule">
+      <div class="summary-title" style="margin-bottom:16px">My Schedule</div>
+      <div id="schedule-list">
+        <div class="screen-loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- HISTORY SCREEN -->
+    <div class="screen" id="screen-history">
+      <div class="summary-title" style="margin-bottom:16px">Past 7 Days</div>
+      <div id="history-list" class="history-list">
+        <div class="screen-loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- TAB BAR -->
+    <div class="tab-bar">
+      <div class="tab active" data-tab="clock" onclick="switchTab('clock')">
+        <span class="tab-icon">&#128339;</span>
+        <span class="tab-label">Clock</span>
+      </div>
+      <div class="tab" data-tab="schedule" onclick="switchTab('schedule')">
+        <span class="tab-icon">&#128197;</span>
+        <span class="tab-label">Schedule</span>
+      </div>
+      <div class="tab" data-tab="history" onclick="switchTab('history')">
+        <span class="tab-icon">&#128202;</span>
+        <span class="tab-label">History</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let employeeId = null;
+let employeeName = '';
+let currentState = 'not_in'; // not_in, clocked_in, on_lunch, done
+let clockInTime = null;
+let lunchStartTime = null;
+let lunchTotalMs = 0;
+let clockTick = null;
+let statusPoll = null;
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('ahb_employee_id');
+  const savedName = localStorage.getItem('ahb_employee_name');
+  if (saved) {
+    employeeId = parseInt(saved);
+    employeeName = savedName || '';
+    showMainApp();
+  } else {
+    loadEmployees();
+  }
+  startClock();
+});
+
+// ── Clock Display ──
+function startClock() {
+  function tick() {
+    const now = new Date();
+    const t = now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true});
+    const d = now.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+    const timeEl = document.getElementById('clock-time');
+    const dateEl = document.getElementById('clock-date');
+    if (timeEl) timeEl.textContent = t;
+    if (dateEl) dateEl.textContent = d;
+    updateLiveHours();
+    checkReminders();
+  }
+  tick();
+  clockTick = setInterval(tick, 1000);
+}
+
+// ── Login ──
+async function loadEmployees() {
+  try {
+    const res = await fetch('/api/ahb/employees?active=1');
+    const data = await res.json();
+    const sel = document.getElementById('login-employee');
+    const employees = data.employees || data || [];
+    employees.forEach(emp => {
+      const opt = document.createElement('option');
+      opt.value = emp.id;
+      opt.textContent = emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim();
+      sel.appendChild(opt);
+    });
+  } catch(e) {
+    document.getElementById('login-error').textContent = 'Could not load employees';
+  }
+}
+
+function checkLoginReady() {
+  const emp = document.getElementById('login-employee').value;
+  const pin = document.getElementById('login-pin').value;
+  document.getElementById('btn-login').disabled = !(emp && pin.length === 4);
+}
+
+function doLogin() {
+  const sel = document.getElementById('login-employee');
+  employeeId = parseInt(sel.value);
+  employeeName = sel.options[sel.selectedIndex].text;
+  localStorage.setItem('ahb_employee_id', employeeId);
+  localStorage.setItem('ahb_employee_name', employeeName);
+  showMainApp();
+}
+
+function doLogout() {
+  localStorage.removeItem('ahb_employee_id');
+  localStorage.removeItem('ahb_employee_name');
+  employeeId = null;
+  employeeName = '';
+  currentState = 'not_in';
+  clockInTime = null;
+  lunchStartTime = null;
+  lunchTotalMs = 0;
+  if (statusPoll) clearInterval(statusPoll);
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('screen-login').classList.add('active');
+  document.getElementById('login-pin').value = '';
+  document.getElementById('login-employee').value = '';
+  document.getElementById('btn-login').disabled = true;
+  loadEmployees();
+}
+
+function showMainApp() {
+  document.getElementById('screen-login').classList.remove('active');
+  const mainApp = document.getElementById('main-app');
+  mainApp.style.display = 'flex';
+  mainApp.style.flexDirection = 'column';
+  document.getElementById('header-user').textContent = employeeName ? `${employeeName} (Logout)` : 'Logout';
+  fetchStatus();
+  statusPoll = setInterval(fetchStatus, 30000);
+}
+
+// ── Tab Navigation ──
+function switchTab(tab) {
+  document.querySelectorAll('.screen:not(.login-screen)').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`screen-${tab}`).classList.add('active');
+  document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+
+  if (tab === 'schedule') loadSchedule();
+  if (tab === 'history') loadHistory();
+}
+
+// ── Time Clock Status ──
+async function fetchStatus() {
+  if (!employeeId) return;
+  try {
+    const res = await fetch(`/api/ahb/timeclock/status/${employeeId}`);
+    const data = await res.json();
+    applyStatus(data);
+  } catch(e) {
+    // Silently retry on next poll
+  }
+}
+
+function applyStatus(data) {
+  const state = data.status || data.state || 'not_in';
+  currentState = state;
+
+  // Parse times from response
+  if (data.clock_in_time) {
+    clockInTime = new Date(data.clock_in_time);
+  } else {
+    clockInTime = null;
+  }
+  if (data.lunch_start_time) {
+    lunchStartTime = new Date(data.lunch_start_time);
+  } else {
+    lunchStartTime = null;
+  }
+  lunchTotalMs = (data.lunch_duration_minutes || 0) * 60 * 1000;
+
+  // Update summary fields
+  document.getElementById('sum-clock-in').textContent = clockInTime
+    ? clockInTime.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit', hour12:true})
+    : '--';
+  document.getElementById('sum-lunch').textContent = lunchTotalMs > 0
+    ? `${Math.round(lunchTotalMs / 60000)}m`
+    : '--';
+
+  updateButtonStates();
+  updateStatusBadge();
+  updateLiveHours();
+}
+
+function updateButtonStates() {
+  const btnIn = document.getElementById('btn-punch-in');
+  const btnOut = document.getElementById('btn-punch-out');
+  const btnLS = document.getElementById('btn-punch-lunch-start');
+  const btnLE = document.getElementById('btn-punch-lunch-end');
+  const punchGrid = document.getElementById('punch-grid');
+  const doneMsg = document.getElementById('done-message');
+
+  btnIn.disabled = true;
+  btnOut.disabled = true;
+  btnLS.disabled = true;
+  btnLE.disabled = true;
+  punchGrid.style.display = 'grid';
+  doneMsg.style.display = 'none';
+
+  switch(currentState) {
+    case 'not_in':
+      btnIn.disabled = false;
+      break;
+    case 'clocked_in':
+      btnOut.disabled = false;
+      btnLS.disabled = false;
+      break;
+    case 'on_lunch':
+      btnLE.disabled = false;
+      break;
+    case 'done':
+    case 'clocked_out':
+      punchGrid.style.display = 'none';
+      doneMsg.style.display = 'block';
+      break;
+  }
+}
+
+function updateStatusBadge() {
+  const badge = document.getElementById('clock-status');
+  badge.className = 'clock-status';
+  switch(currentState) {
+    case 'not_in':
+      badge.classList.add('status-not-in');
+      badge.textContent = 'Not Clocked In';
+      break;
+    case 'clocked_in':
+      badge.classList.add('status-clocked-in');
+      badge.textContent = 'Clocked In';
+      break;
+    case 'on_lunch':
+      badge.classList.add('status-on-lunch');
+      badge.textContent = 'On Lunch';
+      break;
+    case 'done':
+    case 'clocked_out':
+      badge.classList.add('status-done');
+      badge.textContent = 'Done for Today';
+      break;
+  }
+}
+
+function updateLiveHours() {
+  if (!clockInTime) {
+    document.getElementById('sum-hours').textContent = '0h 0m';
+    return;
+  }
+  const now = new Date();
+  let workedMs = now - clockInTime;
+
+  // Subtract completed lunch time
+  workedMs -= lunchTotalMs;
+
+  // If currently on lunch, subtract active lunch time too
+  if (currentState === 'on_lunch' && lunchStartTime) {
+    workedMs -= (now - lunchStartTime);
+  }
+
+  if (workedMs < 0) workedMs = 0;
+  const hours = Math.floor(workedMs / 3600000);
+  const mins = Math.floor((workedMs % 3600000) / 60000);
+  document.getElementById('sum-hours').textContent = `${hours}h ${mins}m`;
+}
+
+// ── Punch ──
+async function punch(type) {
+  // Disable all buttons during request
+  document.querySelectorAll('.punch-btn').forEach(b => b.disabled = true);
+  try {
+    const res = await fetch('/api/ahb/timeclock/punch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({employee_id: employeeId, type: type})
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(punchLabel(type) + ' recorded!', 'success');
+      await fetchStatus();
+    } else {
+      showToast(data.error || 'Punch failed', 'error');
+      updateButtonStates();
+    }
+  } catch(e) {
+    showToast('Network error', 'error');
+    updateButtonStates();
+  }
+}
+
+function punchLabel(type) {
+  switch(type) {
+    case 'clock_in': return 'Clock In';
+    case 'clock_out': return 'Clock Out';
+    case 'lunch_start': return 'Lunch Start';
+    case 'lunch_end': return 'Lunch End';
+    default: return type;
+  }
+}
+
+// ── Reminders ──
+function checkReminders() {
+  const now = new Date();
+  const h = now.getHours();
+  const rClockIn = document.getElementById('reminder-clockin');
+  const rLunch = document.getElementById('reminder-lunch');
+  const rOvertime = document.getElementById('reminder-overtime');
+
+  // Not clocked in after 8 AM
+  rClockIn.classList.toggle('visible', currentState === 'not_in' && h >= 8);
+
+  // Clocked in 4+ hours without lunch
+  if (currentState === 'clocked_in' && clockInTime && lunchTotalMs === 0) {
+    const worked = (now - clockInTime) / 3600000;
+    rLunch.classList.toggle('visible', worked >= 4);
+  } else {
+    rLunch.classList.remove('visible');
+  }
+
+  // Clocked in 8+ hours
+  if ((currentState === 'clocked_in' || currentState === 'on_lunch') && clockInTime) {
+    const total = (now - clockInTime) / 3600000;
+    rOvertime.classList.toggle('visible', total >= 8);
+  } else {
+    rOvertime.classList.remove('visible');
+  }
+}
+
+// ── Schedule ──
+async function loadSchedule() {
+  const list = document.getElementById('schedule-list');
+  list.innerHTML = '<div class="screen-loading"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(`/api/ahb/events?employee_id=${employeeId}`);
+    const data = await res.json();
+    const events = data.events || data || [];
+    if (!events.length) {
+      list.innerHTML = '<div class="schedule-empty">No upcoming events</div>';
+      return;
+    }
+    list.innerHTML = events.map(ev => {
+      const dt = ev.date ? new Date(ev.date) : null;
+      const dateStr = dt ? dt.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) : '';
+      return `<div class="event-card">
+        <div class="event-date">${dateStr}</div>
+        <div class="event-title">${esc(ev.title || ev.name || 'Event')}</div>
+        ${ev.time ? `<div class="event-time">${esc(ev.time)}</div>` : ''}
+        ${ev.description ? `<div class="event-desc">${esc(ev.description)}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div class="schedule-empty">Could not load schedule</div>';
+  }
+}
+
+// ── History ──
+async function loadHistory() {
+  const list = document.getElementById('history-list');
+  list.innerHTML = '<div class="screen-loading"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(`/api/ahb/timeclock?employee_id=${employeeId}`);
+    const data = await res.json();
+    const records = data.records || data || [];
+    if (!records.length) {
+      list.innerHTML = '<div class="schedule-empty">No records found</div>';
+      return;
+    }
+    // Group by day, show last 7
+    const days = {};
+    records.forEach(r => {
+      const d = r.date || (r.clock_in_time ? r.clock_in_time.split('T')[0] : null);
+      if (!d) return;
+      if (!days[d]) days[d] = {date: d, hours: 0};
+      days[d].hours += (r.hours_worked || r.hours || 0);
+    });
+    const sorted = Object.values(days).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
+    if (!sorted.length) {
+      list.innerHTML = '<div class="schedule-empty">No records found</div>';
+      return;
+    }
+    list.innerHTML = sorted.map(day => {
+      const dt = new Date(day.date + 'T12:00:00');
+      const dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
+      const dateStr = dt.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+      const h = Math.floor(day.hours);
+      const m = Math.round((day.hours - h) * 60);
+      return `<div class="history-day">
+        <div>
+          <div class="history-date">${dayName}</div>
+          <div class="history-date-sub">${dateStr}</div>
+        </div>
+        <div class="history-hours">${h}h ${m}m</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div class="schedule-empty">Could not load history</div>';
+  }
+}
+
+// ── Utilities ──
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast toast-${type} visible`;
+  setTimeout(() => t.classList.remove('visible'), 3000);
+}
+</script>
+</body>
+</html>

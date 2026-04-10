@@ -1,0 +1,18 @@
+[Unit]
+Description=Baza Empire — Specter Voss (NUC Ghost Operative)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=/home/switchhacker/baza-empire/.env.nuc
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python main.py specter
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

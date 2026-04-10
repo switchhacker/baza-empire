@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Data Hub</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+
+    .container{max-width:1600px;margin:0 auto;padding:24px 28px}
+
+    /* Header */
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:16px;flex-wrap:wrap}
+    .page-title{font-size:24px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+    .header-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s}
+    .btn:hover{opacity:.82}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-ghost{background:transparent;color:#7c3aed;border:1px solid #7c3aed}
+    .btn-sm{padding:5px 11px;font-size:11px;border-radius:5px}
+
+    /* Live Feed Banner */
+    .feed-banner{background:linear-gradient(135deg,#0d0820,#0a0a18);border:1px solid #1a1a3a;border-radius:12px;padding:16px 20px;margin-bottom:20px;overflow:hidden}
+    .feed-title{font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+    .feed-title .live-dot{width:8px;height:8px;border-radius:50%;background:#00d084;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    .feed-items{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin;scrollbar-color:#1a1a3a transparent}
+    .feed-card{flex-shrink:0;background:#0a0a16;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;min-width:220px;max-width:280px;cursor:pointer;transition:border-color .2s}
+    .feed-card:hover{border-color:#7c3aed}
+    .feed-agent{font-size:10px;font-weight:700;color:#e94560;text-transform:uppercase;letter-spacing:1px}
+    .feed-desc{font-size:12px;color:#ccc;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .feed-time{font-size:10px;color:#333;margin-top:4px}
+    .feed-badge{display:inline-block;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:6px}
+    .feed-badge.ok{background:#061a10;color:#00d084}
+    .feed-badge.err{background:#1a0606;color:#ff6666}
+    .feed-badge.art{background:#0d0820;color:#7c3aed}
+
+    /* Stats */
+    .stats-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px}
+    .stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px 18px;text-align:center}
+    .stat-val{font-size:22px;font-weight:800}
+    .stat-lbl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+
+    /* Tabs */
+    .hub-tabs{display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid #1a1a2e;overflow-x:auto}
+    .hub-tab{padding:12px 20px;font-size:13px;font-weight:700;color:#555;cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap}
+    .hub-tab:hover{color:#ccc}
+    .hub-tab.active{color:#fff;border-bottom-color:#e94560}
+    .hub-tab .tab-count{font-size:10px;background:#1a1a2e;color:#666;padding:2px 7px;border-radius:10px;margin-left:6px}
+    .hub-tab.active .tab-count{background:#e94560;color:#fff}
+
+    /* Toolbar */
+    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+    .search-box{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 14px;color:#e0e0e0;font-size:13px;outline:none;width:300px;transition:border-color .2s}
+    .search-box:focus{border-color:#7c3aed}
+    .agent-pills{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+    .agent-pill{padding:5px 10px;border-radius:16px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid #1a1a2e;background:#0a0a16;color:#555;transition:all .2s}
+    .agent-pill:hover,.agent-pill.active{border-color:#7c3aed;color:#c4b5fd;background:#120d22}
+    .agent-pill .dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+
+    /* Main layout */
+    .hub-layout{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:start}
+    @media(max-width:800px){.hub-layout{grid-template-columns:1fr}}
+
+    /* Sidebar */
+    .sidebar{background:#0a0a16;border:1px solid #111;border-radius:10px;padding:14px;position:sticky;top:72px}
+    .sidebar-title{font-size:10px;font-weight:700;color:#333;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px}
+    .sidebar-section{margin-bottom:18px}
+    .proj-item{padding:7px 10px;border-radius:6px;font-size:12px;color:#555;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:space-between}
+    .proj-item:hover,.proj-item.active{background:#1a1a2e;color:#c4b5fd}
+    .proj-count{font-size:10px;color:#333;background:#0d0d1a;padding:2px 6px;border-radius:10px}
+
+    /* Category items in sidebar */
+    .cat-item{padding:6px 10px;border-radius:6px;font-size:11px;color:#555;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:8px}
+    .cat-item:hover,.cat-item.active{background:#1a1a2e;color:#c4b5fd}
+    .cat-icon{font-size:14px}
+
+    /* Files grid */
+    .files-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+    .file-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:9px;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;position:relative}
+    .file-card:hover{border-color:#7c3aed;transform:translateY(-1px)}
+    .file-card-preview{height:110px;display:flex;align-items:center;justify-content:center;background:#080814;font-size:36px;position:relative;overflow:hidden}
+    .file-card-preview img{width:100%;height:100%;object-fit:cover}
+    .file-card-body{padding:10px}
+    .file-card-name{font-size:11px;font-weight:700;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+    .file-card-meta{font-size:10px;color:#333;display:flex;align-items:center;justify-content:space-between}
+    .file-card-agent{font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:#0d0820;color:#7c3aed}
+    .file-card-actions{position:absolute;top:6px;right:6px;display:none;gap:4px}
+    .file-card:hover .file-card-actions{display:flex}
+    .fca-btn{width:24px;height:24px;border-radius:4px;border:none;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);color:#fff}
+
+    /* Insight cards (for reports/insights tab) */
+    .insight-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;margin-bottom:10px;cursor:pointer;transition:border-color .2s}
+    .insight-card:hover{border-color:#7c3aed}
+    .insight-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .insight-type{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1px;padding:3px 8px;border-radius:4px}
+    .insight-type.report{background:#0d1a0d;color:#00d084}
+    .insight-type.alert{background:#1a0606;color:#ff6666}
+    .insight-type.research{background:#0d0820;color:#7c3aed}
+    .insight-type.insight{background:#1a1500;color:#f0c040}
+    .insight-agent{font-size:10px;color:#e94560;font-weight:700}
+    .insight-time{font-size:10px;color:#333;margin-left:auto}
+    .insight-title{font-size:14px;font-weight:700;color:#fff;margin-bottom:6px}
+    .insight-excerpt{font-size:12px;color:#666;line-height:1.5;overflow:hidden;max-height:60px}
+
+    /* Drop zone */
+    .drop-zone{border:2px dashed #1a1a2e;border-radius:12px;padding:40px;text-align:center;transition:all .2s;margin-bottom:16px;display:none}
+    .drop-zone.visible{display:block}
+    .drop-zone.dragover{border-color:#7c3aed;background:#0d0820}
+
+    /* Preview modal */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;align-items:center;justify-content:center}
+    .modal-overlay.open{display:flex}
+    .modal{background:#0d0d1e;border:1px solid #2a2a4a;border-radius:14px;padding:28px;max-width:800px;width:100%;margin:20px;max-height:92vh;display:flex;flex-direction:column}
+    .modal-title{font-size:16px;font-weight:800;color:#fff;margin-bottom:6px}
+    .modal-sub{font-size:12px;color:#444;margin-bottom:20px}
+    .modal-body{flex:1;overflow-y:auto}
+    .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid #111}
+    .preview-content{background:#020208;border:1px solid #1a1a2e;border-radius:8px;overflow:auto;max-height:60vh}
+    .preview-code{font-family:'Courier New',monospace;font-size:12px;color:#a0f0a0;padding:16px;white-space:pre-wrap;word-break:break-word;line-height:1.6}
+    .preview-img{max-width:100%;max-height:60vh;display:block;margin:0 auto}
+
+    /* Ext badges */
+    .ext-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid}
+    .ext-py{background:#0d1a0d;color:#4CAF50;border-color:#1a3a1a}
+    .ext-js,.ext-ts{background:#1a1500;color:#f0c040;border-color:#3a2a00}
+    .ext-html{background:#1a0d00;color:#ff8c00;border-color:#3a1a00}
+    .ext-md,.ext-txt{background:#0a0a0a;color:#888;border-color:#222}
+    .ext-json,.ext-yaml{background:#0d001a;color:#c084fc;border-color:#1a003a}
+    .ext-png,.ext-jpg,.ext-jpeg,.ext-gif,.ext-webp{background:#1a000d;color:#ff69b4;border-color:#3a001a}
+    .ext-pdf{background:#1a0000;color:#ff4444;border-color:#3a0000}
+    .ext-default{background:#0a0a0a;color:#555;border-color:#1a1a1a}
+
+    .empty-state{text-align:center;padding:60px 20px;color:#333}
+
+    .toast{position:fixed;bottom:20px;right:20px;padding:11px 18px;border-radius:8px;font-size:13px;font-weight:700;z-index:9999;display:none;animation:su .3s ease}
+    .toast.ok{background:#061a10;border:1px solid #00d084;color:#00d084}
+    .toast.err{background:#1a0606;border:1px solid #ff6666;color:#ff6666}
+    @keyframes su{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+    /* Specter section */
+    .specter-section{background:linear-gradient(135deg,#0a0818,#0d0d1a);border:1px solid #1a1a3a;border-radius:12px;padding:18px;margin-bottom:20px}
+    .specter-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .specter-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#e94560);display:flex;align-items:center;justify-content:center;font-size:16px}
+    .specter-name{font-size:14px;font-weight:800;color:#c4b5fd}
+    .specter-status{font-size:10px;color:#00d084;margin-left:auto}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand"><span>&#9889;</span><h1>BAZA EMPIRE</h1></div>
+  <a class="nav-link" href="/">Agents</a>
+  <a class="nav-link" href="/ahb123">AHB123</a>
+  <a class="nav-link" href="/crons">Cron Hub</a>
+  <a class="nav-link active" href="/datahub">Data Hub</a>
+  <a class="nav-link" href="/email">Email</a>
+  <a class="nav-link" href="/infra">Infra Map</a>
+  <a class="nav-link" href="/explore">Explore</a>
+  <a class="nav-link" href="/comms">Comms</a>
+  <a class="nav-link" href="/cloud">Cloud</a>
+  <a class="nav-link" href="/settings">Settings</a>
+</nav>
+
+<div class="container">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Data Hub</div>
+      <div class="page-sub">Central intelligence for all agents — files, insights, reports, research, live feed</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick="toggleDrop()">Drop Zone</button>
+      <button class="btn btn-ghost" onclick="openNewFile()">+ New File</button>
+      <button class="btn btn-primary" onclick="openUpload()">Upload</button>
+    </div>
+  </div>
+
+  <!-- Live Feed -->
+  <div class="feed-banner">
+    <div class="feed-title"><span class="live-dot"></span> Live Agent Feed</div>
+    <div class="feed-items" id="feedItems">
+      <div style="color:#333;font-size:12px;padding:10px">Loading feed...</div>
+    </div>
+  </div>
+
+  <!-- Specter Section -->
+  <div class="specter-section" id="specterSection">
+    <div class="specter-header">
+      <div class="specter-avatar">S</div>
+      <div><div class="specter-name">Specter Voss</div><div style="font-size:10px;color:#555">Ghost Operative / NUC Node</div></div>
+      <div class="specter-status" id="specterStatus">Awaiting deployment</div>
+    </div>
+    <div id="specterInsights" style="display:flex;gap:10px;overflow-x:auto">
+      <div style="color:#444;font-size:12px;padding:8px">Specter insights will appear here once deployed on phantom</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-val" id="st-total" style="color:#fff">--</div><div class="stat-lbl">Total Files</div></div>
+    <div class="stat"><div class="stat-val" id="st-size" style="color:#7c3aed">--</div><div class="stat-lbl">Total Size</div></div>
+    <div class="stat"><div class="stat-val" id="st-insights" style="color:#f0c040">--</div><div class="stat-lbl">Insights</div></div>
+    <div class="stat"><div class="stat-val" id="st-agents" style="color:#e94560">--</div><div class="stat-lbl">Active Agents</div></div>
+    <div class="stat"><div class="stat-val" id="st-code" style="color:#4da6ff">--</div><div class="stat-lbl">Code</div></div>
+    <div class="stat"><div class="stat-val" id="st-images" style="color:#ff69b4">--</div><div class="stat-lbl">Images</div></div>
+    <div class="stat"><div class="stat-val" id="st-docs" style="color:#00d084">--</div><div class="stat-lbl">Docs</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="hub-tabs">
+    <div class="hub-tab active" onclick="setTab('all',this)">All <span class="tab-count" id="tc-all">0</span></div>
+    <div class="hub-tab" onclick="setTab('insights',this)">Insights <span class="tab-count" id="tc-insights">0</span></div>
+    <div class="hub-tab" onclick="setTab('reports',this)">Reports <span class="tab-count" id="tc-reports">0</span></div>
+    <div class="hub-tab" onclick="setTab('research',this)">Research <span class="tab-count" id="tc-research">0</span></div>
+    <div class="hub-tab" onclick="setTab('code',this)">Code <span class="tab-count" id="tc-code">0</span></div>
+    <div class="hub-tab" onclick="setTab('media',this)">Media <span class="tab-count" id="tc-media">0</span></div>
+    <div class="hub-tab" onclick="setTab('alerts',this)">Alerts <span class="tab-count" id="tc-alerts">0</span></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input class="search-box" type="text" placeholder="Search data hub..." oninput="applyFilters()" id="searchBox">
+    <div class="agent-pills" id="agentPills"></div>
+  </div>
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event)">
+    <div style="font-size:36px;margin-bottom:10px">&#128194;</div>
+    <div style="font-size:14px;color:#888">Drop files here to upload to Data Hub</div>
+  </div>
+
+  <!-- Main layout -->
+  <div class="hub-layout">
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">Projects</div>
+        <div id="projList">
+          <div class="proj-item active" onclick="setProject('',this)">All Projects <span class="proj-count" id="pc-all">0</span></div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">Categories</div>
+        <div id="catList">
+          <div class="cat-item active" onclick="setCat('all',this)"><span class="cat-icon">&#9679;</span> All</div>
+          <div class="cat-item" onclick="setCat('insight',this)"><span class="cat-icon">&#128161;</span> Insights</div>
+          <div class="cat-item" onclick="setCat('alert',this)"><span class="cat-icon">&#128680;</span> Alerts</div>
+          <div class="cat-item" onclick="setCat('report',this)"><span class="cat-icon">&#128202;</span> Reports</div>
+          <div class="cat-item" onclick="setCat('research',this)"><span class="cat-icon">&#128270;</span> Research</div>
+          <div class="cat-item" onclick="setCat('code',this)"><span class="cat-icon">&#128187;</span> Code</div>
+          <div class="cat-item" onclick="setCat('media',this)"><span class="cat-icon">&#127912;</span> Media</div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-title">Agents</div>
+        <div id="agentList"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="files-grid" id="filesGrid"></div>
+      <div id="insightsView" style="display:none"></div>
+      <div id="emptyState" class="empty-state" style="display:none">
+        <div style="font-size:48px;margin-bottom:14px">&#128193;</div>
+        <div style="font-size:14px;margin-bottom:8px">No data yet</div>
+        <div style="font-size:12px;color:#444">Upload files, or wait for agents to publish artifacts</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- File Action Modal — context-aware opener -->
+<div class="modal-overlay" id="fileModal" onclick="if(event.target===this)closeFileModal()">
+  <div class="modal" style="max-width:900px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div class="modal-title" id="fmTitle" style="flex:1;margin:0"></div>
+      <div id="fmActions" style="display:flex;gap:6px"></div>
+      <button class="btn btn-secondary btn-sm" onclick="closeFileModal()" style="margin-left:8px">Close</button>
+    </div>
+    <div class="modal-sub" id="fmSub"></div>
+    <div class="modal-body" id="fmBody" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div id="fmContent" style="flex:1;overflow:auto"></div>
+      <!-- Agent chat panel (slides in for image/code editing) -->
+      <div id="fmChat" style="display:none;border-top:1px solid #1a1a2e;padding-top:12px;margin-top:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div id="fmChatAvatar" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff"></div>
+          <div id="fmChatName" style="font-size:12px;font-weight:700;color:#e94560"></div>
+          <div style="font-size:10px;color:#444" id="fmChatRole"></div>
+        </div>
+        <div id="fmChatHistory" style="max-height:120px;overflow-y:auto;margin-bottom:8px;padding:8px;background:#020208;border-radius:6px;font-size:12px;color:#888"></div>
+        <div style="display:flex;gap:6px">
+          <input id="fmChatInput" type="text" placeholder="Ask the agent..." style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:8px 12px;color:#e0e0e0;font-size:12px;outline:none" onkeydown="if(event.key==='Enter')sendAgentChat()">
+          <button class="btn btn-primary btn-sm" onclick="sendAgentChat()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal-overlay" id="uploadModal" onclick="if(event.target===this)closeUpload()">
+  <div class="modal">
+    <div class="modal-title">Upload to Data Hub</div>
+    <div class="modal-sub">Any file type. Agents can access uploaded files.</div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px">Project</label>
+        <input id="uploadProject" type="text" value="data-hub" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:9px 12px;color:#e0e0e0;font-size:13px;outline:none">
+      </div>
+      <div style="border:2px dashed #2a2a4a;border-radius:10px;padding:36px;text-align:center;cursor:pointer" onclick="document.getElementById('fileInput').click()" id="uploadDrop" ondragover="event.preventDefault();this.style.borderColor='#7c3aed'" ondragleave="this.style.borderColor='#2a2a4a'" ondrop="handleUploadDrop(event)">
+        <div style="font-size:32px;margin-bottom:8px">&#128194;</div>
+        <div style="font-size:14px;color:#888">Click or drop files here</div>
+        <input type="file" id="fileInput" multiple style="display:none" onchange="queueFiles(this.files)">
+      </div>
+      <div id="fileQueue" style="margin-top:14px;display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeUpload()">Cancel</button>
+      <button class="btn btn-primary" onclick="doUpload()">Upload All</button>
+    </div>
+  </div>
+</div>
+
+<!-- New File Modal -->
+<div class="modal-overlay" id="newFileModal" onclick="if(event.target===this)closeNewFile()">
+  <div class="modal">
+    <div class="modal-title">Create New File</div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;display:block;margin-bottom:5px">Filename</label>
+        <input id="newFileName" type="text" placeholder="report.md" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:9px 12px;color:#e0e0e0;font-size:13px;outline:none">
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;display:block;margin-bottom:5px">Project</label>
+        <input id="newFileProject" type="text" value="data-hub" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:9px 12px;color:#e0e0e0;font-size:13px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;display:block;margin-bottom:5px">Content</label>
+        <textarea id="newFileContent" rows="12" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:7px;padding:9px 12px;color:#e0e0e0;font-size:13px;font-family:monospace;outline:none;resize:vertical"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeNewFile()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewFile()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let allFiles=[], currentProject='', currentTab='all', currentCat='all', currentAgent='', uploadQueue=[];
+let openFileData=null; // currently open file in modal
+
+const AGENTS={simon_bately:'Simon',claw_batto:'Claw',phil_hass:'Phil',sam_axe:'Sam',rex_valor:'Rex',duke_harmon:'Duke',scout_reeves:'Scout',nova_sterling:'Nova',specter_voss:'Specter'};
+const AGENT_COLORS={simon_bately:'#e94560',claw_batto:'#00d084',phil_hass:'#4da6ff',sam_axe:'#ff69b4',rex_valor:'#f0c040',duke_harmon:'#ff8c00',scout_reeves:'#9f7aea',nova_sterling:'#00bcd4',specter_voss:'#7c3aed'};
+const EXT_ICONS={'.py':'\u{1F40D}','.js':'\u270D','.ts':'\u270D','.html':'\u{1F310}','.css':'\u{1F3A8}','.md':'\u{1F4C4}','.txt':'\u{1F4C4}','.json':'\u{1F4CB}','.yaml':'\u{1F4CB}','.yml':'\u{1F4CB}','.png':'\u{1F4F7}','.jpg':'\u{1F4F7}','.jpeg':'\u{1F4F7}','.gif':'\u{1F3AC}','.webp':'\u{1F4F7}','.pdf':'\u{1F4D6}','.sh':'\u{1F4BB}','.sql':'\u{1F5C2}','.csv':'\u{1F4CA}','.mp3':'\u{1F3B5}','.wav':'\u{1F3B5}','.mp4':'\u{1F3AC}','.zip':'\u{1F4E6}','.log':'\u{1F4DC}'};
+
+const IMG_EXTS=['.png','.jpg','.jpeg','.gif','.webp','.svg'];
+const CODE_EXTS=['.py','.js','.ts','.jsx','.tsx','.sh','.sql','.css','.json','.yaml','.yml','.toml','.ini','.cfg','.conf','.go','.rs','.rb','.php','.c','.cpp','.h','.java'];
+const WEB_EXTS=['.html','.htm'];
+const TEXT_EXTS=['.md','.txt','.log','.csv','.rst','.xml','.env'];
+
+function getIcon(ext){return EXT_ICONS[ext]||'\u{1F4C4}'}
+function getCategory(f){
+  const e=f.ext||'',n=(f.name||'').toLowerCase();
+  if(n.includes('insight')||n.includes('finding'))return 'insight';
+  if(n.includes('alert')||n.includes('warning'))return 'alert';
+  if(n.includes('report')||n.includes('summary')||n.includes('briefing'))return 'report';
+  if(n.includes('research')||n.includes('analysis'))return 'research';
+  if(CODE_EXTS.includes(e)||WEB_EXTS.includes(e))return 'code';
+  if(IMG_EXTS.includes(e)||['.mp4','.mp3','.wav'].includes(e))return 'media';
+  return 'other';
+}
+function getFileType(ext){
+  if(IMG_EXTS.includes(ext))return 'image';
+  if(WEB_EXTS.includes(ext))return 'web';
+  if(CODE_EXTS.includes(ext))return 'code';
+  if(TEXT_EXTS.includes(ext))return 'text';
+  if(ext==='.pdf')return 'pdf';
+  return 'binary';
+}
+function formatSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB'}
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Data Loading
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadFiles(){
+  try{
+    let url='/api/artifacts';
+    if(currentProject)url+='?project_id='+encodeURIComponent(currentProject);
+    const r=await fetch(url);allFiles=await r.json();
+    allFiles.forEach(f=>f.category=getCategory(f));
+    renderAll();
+  }catch(e){console.error(e)}
+}
+
+async function loadFeed(){
+  try{
+    const r=await fetch('/api/datahub/feed?limit=20');
+    const feed=await r.json();
+    const el=document.getElementById('feedItems');
+    if(!feed.length){el.innerHTML='<div style="color:#333;font-size:12px;padding:10px">No recent activity</div>';return}
+    el.innerHTML=feed.slice(0,15).map(f=>{
+      const isArt=f.type==='artifact',agent=AGENTS[f.agent_id]||f.agent_id||'',color=AGENT_COLORS[f.agent_id]||'#555';
+      const badge=isArt?'<span class="feed-badge art">FILE</span>':(f.success?'<span class="feed-badge ok">OK</span>':'<span class="feed-badge err">ERR</span>');
+      const desc=isArt?(f.name||''):(f.description||f.task_type||'');
+      const time=f.timestamp||f.modified||'';
+      const click=isArt?`openFile('${f.project_id||''}','${f.name||''}')`:'';
+      return `<div class="feed-card" ${click?`onclick="${click}"`:''}><div class="feed-agent" style="color:${color}">${agent} ${badge}</div><div class="feed-desc">${escHtml(desc)}</div><div class="feed-time">${time}</div></div>`;
+    }).join('');
+  }catch(e){console.error(e)}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Rendering
+// ═══════════════════════════════════════════════════════════════════════════
+function renderAll(){
+  let filtered=[...allFiles];
+  if(currentTab!=='all'){
+    const tabMap={insights:'insight',reports:'report',research:'research',code:'code',media:'media',alerts:'alert'};
+    if(tabMap[currentTab])filtered=filtered.filter(f=>f.category===tabMap[currentTab]);
+  }
+  if(currentCat!=='all')filtered=filtered.filter(f=>f.category===currentCat);
+  if(currentAgent)filtered=filtered.filter(f=>f.agent_id===currentAgent);
+  const q=(document.getElementById('searchBox').value||'').toLowerCase();
+  if(q)filtered=filtered.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.project_id||'').toLowerCase().includes(q)||(f.agent_id||'').toLowerCase().includes(q));
+  renderStats();renderProjects();renderAgentSidebar();renderCatSidebar();renderGrid(filtered);renderTabCounts();
+}
+
+function renderStats(){
+  document.getElementById('st-total').textContent=allFiles.length;
+  document.getElementById('st-size').textContent=formatSize(allFiles.reduce((s,f)=>s+(f.size||0),0));
+  document.getElementById('st-insights').textContent=allFiles.filter(f=>f.category==='insight'||f.category==='report').length;
+  document.getElementById('st-agents').textContent=new Set(allFiles.map(f=>f.agent_id).filter(Boolean)).size;
+  document.getElementById('st-code').textContent=allFiles.filter(f=>f.category==='code').length;
+  document.getElementById('st-images').textContent=allFiles.filter(f=>f.category==='media').length;
+  document.getElementById('st-docs').textContent=allFiles.filter(f=>['.md','.txt','.pdf','.csv'].includes(f.ext)).length;
+}
+
+function renderTabCounts(){
+  document.getElementById('tc-all').textContent=allFiles.length;
+  document.getElementById('tc-insights').textContent=allFiles.filter(f=>f.category==='insight').length;
+  document.getElementById('tc-reports').textContent=allFiles.filter(f=>f.category==='report').length;
+  document.getElementById('tc-research').textContent=allFiles.filter(f=>f.category==='research').length;
+  document.getElementById('tc-code').textContent=allFiles.filter(f=>f.category==='code').length;
+  document.getElementById('tc-media').textContent=allFiles.filter(f=>f.category==='media').length;
+  document.getElementById('tc-alerts').textContent=allFiles.filter(f=>f.category==='alert').length;
+}
+
+function renderProjects(){
+  const counts={};allFiles.forEach(f=>{counts[f.project_id||'none']=(counts[f.project_id||'none']||0)+1});
+  const el=document.getElementById('projList');
+  let html=`<div class="proj-item ${!currentProject?'active':''}" onclick="setProject('')">All Projects <span class="proj-count">${allFiles.length}</span></div>`;
+  Object.keys(counts).sort().forEach(p=>{
+    html+=`<div class="proj-item ${currentProject===p?'active':''}" onclick="setProject('${p}')">${p} <span class="proj-count">${counts[p]}</span></div>`;
+  });
+  el.innerHTML=html;
+}
+
+function renderCatSidebar(){
+  const cats=['all','insight','alert','report','research','code','media'];
+  const icons={all:'\u25CF',insight:'\u{1F4A1}',alert:'\u{1F6A8}',report:'\u{1F4CA}',research:'\u{1F50D}',code:'\u{1F4BB}',media:'\u{1F3A8}'};
+  const labels={all:'All',insight:'Insights',alert:'Alerts',report:'Reports',research:'Research',code:'Code',media:'Media'};
+  const el=document.getElementById('catList');
+  el.innerHTML=cats.map(c=>`<div class="cat-item ${currentCat===c?'active':''}" onclick="setCat('${c}')"><span class="cat-icon">${icons[c]}</span> ${labels[c]}</div>`).join('');
+}
+
+function renderAgentSidebar(){
+  const counts={};allFiles.forEach(f=>{counts[f.agent_id||'unknown']=(counts[f.agent_id||'unknown']||0)+1});
+  const el=document.getElementById('agentList');
+  let html=`<div class="cat-item ${!currentAgent?'active':''}" onclick="setAgent('')">\u25CF All Agents</div>`;
+  Object.keys(counts).sort().forEach(a=>{
+    const name=AGENTS[a]||a,color=AGENT_COLORS[a]||'#555';
+    html+=`<div class="cat-item ${currentAgent===a?'active':''}" onclick="setAgent('${a}')"><span style="color:${color}">\u25CF</span> ${name} <span class="proj-count">${counts[a]}</span></div>`;
+  });
+  el.innerHTML=html;
+}
+
+function renderGrid(files){
+  const grid=document.getElementById('filesGrid'),empty=document.getElementById('emptyState');
+  if(!files.length){grid.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';
+  grid.innerHTML=files.map(f=>{
+    const icon=getIcon(f.ext),agent=AGENTS[f.agent_id]||'',color=AGENT_COLORS[f.agent_id]||'#555';
+    const isImg=IMG_EXTS.includes(f.ext);
+    const preview=isImg?`<img src="/api/artifacts/serve/${f.project_id}/${f.name}" loading="lazy">`:`<span style="font-size:36px">${icon}</span>`;
+    const fileType=getFileType(f.ext);
+    const typeLabel={image:'\u{1F3A8} Sam Edit',web:'\u{1F310} Explore',code:'\u2328 Claw Edit',text:'\u{1F4DD} Edit',pdf:'\u{1F4D6} View'}[fileType]||'\u{1F4C2} Open';
+    return `<div class="file-card" onclick="openFile('${f.project_id}','${f.name}')">
+      <div class="file-card-actions">
+        <a class="fca-btn" href="/api/artifacts/download/${f.project_id}/${f.name}" download title="Download" onclick="event.stopPropagation()">\u2193</a>
+        <button class="fca-btn" onclick="event.stopPropagation();deleteFile('${f.project_id}','${f.name}')" title="Delete" style="background:rgba(255,50,50,.3)">\u2715</button>
+      </div>
+      <div class="file-card-preview">${preview}</div>
+      <div class="file-card-body">
+        <div class="file-card-name" title="${f.name}">${f.name}</div>
+        <div class="file-card-meta">
+          ${agent?`<span class="file-card-agent" style="color:${color};border:1px solid ${color}30;background:${color}10">${agent}</span>`:''}
+          <span>${formatSize(f.size||0)}</span>
+        </div>
+        <div style="font-size:9px;color:#555;margin-top:4px">${typeLabel}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Filtering
+// ═══════════════════════════════════════════════════════════════════════════
+function setTab(tab,el){
+  currentTab=tab;
+  document.querySelectorAll('.hub-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderAll();
+}
+function setProject(p){currentProject=p;loadFiles()}
+function setCat(c){currentCat=c;renderAll()}
+function setAgent(a){currentAgent=a;renderAll()}
+function applyFilters(){renderAll()}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// File Opener — Context-aware actions based on file type
+// ═══════════════════════════════════════════════════════════════════════════
+async function openFile(proj,name){
+  const ext=(name.match(/\.\w+$/)||[''])[0].toLowerCase();
+  const fileType=getFileType(ext);
+
+  // Web files → open in Explore in new tab
+  if(fileType==='web'){
+    window.open(`/explore?source=artifact&project_id=${encodeURIComponent(proj)}&filename=${encodeURIComponent(name)}`,'_blank');
+    return;
+  }
+
+  // All other files → open in modal with context-aware tools
+  const modal=document.getElementById('fileModal');
+  const title=document.getElementById('fmTitle');
+  const sub=document.getElementById('fmSub');
+  const actions=document.getElementById('fmActions');
+  const content=document.getElementById('fmContent');
+  const chat=document.getElementById('fmChat');
+
+  openFileData={proj,name,ext,fileType};
+  title.textContent=name;
+  sub.textContent=`Project: ${proj} \u00B7 Type: ${fileType}`;
+  content.innerHTML='<div style="padding:20px;color:#444">Loading...</div>';
+  chat.style.display='none';
+
+  // Action buttons based on file type
+  let btns=`<a class="btn btn-secondary btn-sm" href="/api/artifacts/download/${proj}/${name}" download>\u2193 Download</a>`;
+  btns+=`<button class="btn btn-ghost btn-sm" onclick="window.open('/explore?source=artifact&project_id='+encodeURIComponent(proj)+'&filename='+encodeURIComponent(name),'_blank')">\u{1F310} Explore</button>`;
+
+  if(fileType==='image'){
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('sam_axe','image')">\u{1F3A8} Sam Edit</button>`;
+  }else if(fileType==='code'){
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','code')">\u2328 Claw Edit</button>`;
+  }else if(fileType==='text'){
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','text')">\u{1F4DD} Claw Edit</button>`;
+  }
+  actions.innerHTML=btns;
+  modal.classList.add('open');
+
+  // Load content
+  try{
+    if(fileType==='image'){
+      content.innerHTML=`<div style="text-align:center;padding:10px;background:#020208;border-radius:8px"><img src="/api/artifacts/serve/${proj}/${name}" style="max-width:100%;max-height:55vh;border-radius:6px"></div>`;
+    }else if(fileType==='pdf'){
+      content.innerHTML=`<iframe src="/api/artifacts/serve/${proj}/${name}" style="width:100%;height:60vh;border:none;border-radius:8px"></iframe>`;
+    }else if(fileType==='code'||fileType==='text'){
+      const r=await fetch(`/api/artifacts/view/${proj}/${name}`);
+      const d=await r.json();
+      if(d.type==='text'){
+        content.innerHTML=`<div style="position:relative"><div style="position:absolute;top:6px;right:6px;display:flex;gap:4px"><button class="btn btn-sm btn-secondary" onclick="toggleEditMode()">Edit</button></div><pre class="preview-code" id="fmCodeView" style="background:#020208;border:1px solid #1a1a2e;border-radius:8px;max-height:55vh;overflow:auto">${escHtml(d.content)}</pre><textarea id="fmCodeEdit" style="display:none;width:100%;height:55vh;background:#020208;border:1px solid #1a1a2e;border-radius:8px;padding:16px;color:#a0f0a0;font-family:monospace;font-size:12px;resize:none;outline:none">${escHtml(d.content)}</textarea></div>`;
+      }else{
+        content.innerHTML=`<div style="padding:40px;text-align:center;color:#555">Cannot preview this file</div>`;
+      }
+    }else{
+      content.innerHTML=`<div style="padding:40px;text-align:center;color:#555">Binary file \u2014 <a href="/api/artifacts/download/${proj}/${name}" style="color:#7c3aed" download>Download</a></div>`;
+    }
+  }catch(e){content.innerHTML=`<div style="padding:20px;color:#ff6666">Error: ${e}</div>`}
+}
+
+function toggleEditMode(){
+  const view=document.getElementById('fmCodeView');
+  const edit=document.getElementById('fmCodeEdit');
+  if(!view||!edit)return;
+  if(edit.style.display==='none'){
+    edit.style.display='block';view.style.display='none';
+    // Add save button
+    const actions=document.getElementById('fmActions');
+    if(!document.getElementById('fmSaveBtn')){
+      actions.insertAdjacentHTML('beforeend','<button id="fmSaveBtn" class="btn btn-primary btn-sm" onclick="saveEditedFile()">\u2714 Save</button>');
+    }
+  }else{
+    edit.style.display='none';view.style.display='block';
+    const sb=document.getElementById('fmSaveBtn');if(sb)sb.remove();
+  }
+}
+
+async function saveEditedFile(){
+  if(!openFileData)return;
+  const edit=document.getElementById('fmCodeEdit');
+  if(!edit)return;
+  try{
+    await fetch('/api/artifacts/save-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:openFileData.name,content:edit.value,project_id:openFileData.proj})});
+    toast('File saved','ok');
+    // Refresh view
+    document.getElementById('fmCodeView').innerHTML=escHtml(edit.value);
+    toggleEditMode();
+  }catch(e){toast('Save failed','err')}
+}
+
+function closeFileModal(){
+  document.getElementById('fileModal').classList.remove('open');
+  openFileData=null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Agent Chat Panel — Sam for images, Claw for code/text
+// ═══════════════════════════════════════════════════════════════════════════
+let chatAgent='', chatContext='';
+
+function openAgentChat(agentId,context){
+  chatAgent=agentId;chatContext=context;
+  const chat=document.getElementById('fmChat');
+  const avatar=document.getElementById('fmChatAvatar');
+  const nameEl=document.getElementById('fmChatName');
+  const roleEl=document.getElementById('fmChatRole');
+  const history=document.getElementById('fmChatHistory');
+
+  const name=AGENTS[agentId]||agentId;
+  const color=AGENT_COLORS[agentId]||'#555';
+  avatar.style.background=color;
+  avatar.textContent=name[0];
+  nameEl.textContent=name;nameEl.style.color=color;
+
+  if(agentId==='sam_axe'){
+    roleEl.textContent='Design / Image Editor';
+    history.innerHTML=`<div style="color:#ff69b4">Sam here. I can see the image. Tell me what you want \u2014 enhance, edit, resize, add text, generate variations, or anything visual.</div>`;
+  }else if(agentId==='claw_batto'){
+    roleEl.textContent='Dev / Code Editor';
+    history.innerHTML=`<div style="color:#00d084">Claw ready. I see the file. Tell me what to change \u2014 refactor, fix bugs, add features, explain, optimize, or rewrite sections.</div>`;
+  }
+
+  chat.style.display='block';
+  document.getElementById('fmChatInput').focus();
+}
+
+async function sendAgentChat(){
+  const input=document.getElementById('fmChatInput');
+  const msg=input.value.trim();
+  if(!msg)return;
+  input.value='';
+
+  const history=document.getElementById('fmChatHistory');
+  const color=AGENT_COLORS[chatAgent]||'#555';
+  const name=AGENTS[chatAgent]||chatAgent;
+
+  // Show user message
+  history.innerHTML+=`<div style="margin-top:8px"><span style="color:#e94560;font-weight:700">You:</span> ${escHtml(msg)}</div>`;
+  history.innerHTML+=`<div style="margin-top:4px;color:#444"><span style="color:${color};font-weight:700">${name}:</span> <em>thinking...</em></div>`;
+  history.scrollTop=history.scrollHeight;
+
+  // Build context for the agent
+  const fileInfo=openFileData?`File: ${openFileData.name} (${openFileData.proj})`:'-';
+  let fileContent='';
+  if(openFileData&&(openFileData.fileType==='code'||openFileData.fileType==='text')){
+    const edit=document.getElementById('fmCodeEdit');
+    const view=document.getElementById('fmCodeView');
+    fileContent=(edit&&edit.style.display!=='none')?edit.value:(view?view.textContent:'');
+  }
+
+  try{
+    // Use the dashboard API to relay to the agent's Telegram
+    // For now, simulate with a skill call
+    const payload={
+      agent_id:chatAgent,
+      message:msg,
+      file_info:fileInfo,
+      file_content:fileContent?fileContent.substring(0,2000):'',
+      context:chatContext
+    };
+
+    const r=await fetch('/api/datahub/agent-chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    const reply=d.reply||d.error||'No response';
+
+    // Replace thinking with actual reply
+    const msgs=history.querySelectorAll('div');
+    const last=msgs[msgs.length-1];
+    if(last)last.innerHTML=`<span style="color:${color};font-weight:700">${name}:</span> ${escHtml(reply)}`;
+    history.scrollTop=history.scrollHeight;
+
+    // If it's code and the agent returned modified code, offer to apply
+    if(d.modified_code){
+      const edit=document.getElementById('fmCodeEdit');
+      if(edit){
+        edit.value=d.modified_code;
+        if(edit.style.display==='none')toggleEditMode();
+        toast('Code updated by '+name,'ok');
+      }
+    }
+  }catch(e){
+    const msgs=history.querySelectorAll('div');
+    const last=msgs[msgs.length-1];
+    if(last)last.innerHTML=`<span style="color:${color};font-weight:700">${name}:</span> <span style="color:#ff6666">Connection error \u2014 agent may be offline. Try messaging ${name} directly on Telegram.</span>`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Upload / Create
+// ═══════════════════════════════════════════════════════════════════════════
+function toggleDrop(){document.getElementById('dropZone').classList.toggle('visible')}
+function openUpload(){document.getElementById('uploadModal').classList.add('open');uploadQueue=[]}
+function closeUpload(){document.getElementById('uploadModal').classList.remove('open')}
+function openNewFile(){document.getElementById('newFileModal').classList.add('open')}
+function closeNewFile(){document.getElementById('newFileModal').classList.remove('open')}
+
+function queueFiles(files){
+  uploadQueue=[...uploadQueue,...files];
+  const el=document.getElementById('fileQueue');
+  el.innerHTML=uploadQueue.map(f=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#070712;border:1px solid #111;border-radius:6px;font-size:12px"><span style="flex:1;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span><span style="color:#444;font-family:monospace">${formatSize(f.size)}</span></div>`).join('');
+}
+function handleUploadDrop(e){e.preventDefault();queueFiles(e.dataTransfer.files)}
+function handleDrop(e){
+  e.preventDefault();document.getElementById('dropZone').classList.remove('dragover');
+  const fd=new FormData();[...e.dataTransfer.files].forEach(f=>fd.append('file',f));fd.append('project_id','data-hub');
+  fetch('/api/artifacts/upload',{method:'POST',body:fd}).then(()=>{toast('Files uploaded','ok');loadFiles()}).catch(()=>toast('Upload failed','err'));
+}
+
+async function doUpload(){
+  if(!uploadQueue.length)return;
+  const proj=document.getElementById('uploadProject').value||'data-hub';
+  const fd=new FormData();uploadQueue.forEach(f=>fd.append('file',f));fd.append('project_id',proj);
+  try{await fetch('/api/artifacts/upload',{method:'POST',body:fd});toast('Uploaded '+uploadQueue.length+' files','ok');closeUpload();loadFiles()}catch(e){toast('Upload failed','err')}
+}
+
+async function saveNewFile(){
+  const name=document.getElementById('newFileName').value,proj=document.getElementById('newFileProject').value||'data-hub',content=document.getElementById('newFileContent').value;
+  if(!name){toast('Filename required','err');return}
+  try{await fetch('/api/artifacts/save-text',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:name,content,project_id:proj})});toast('File created','ok');closeNewFile();loadFiles()}catch(e){toast('Save failed','err')}
+}
+
+async function deleteFile(proj,name){
+  if(!confirm('Delete '+name+'?'))return;
+  try{await fetch('/api/artifacts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:proj,name})});toast('Deleted','ok');loadFiles()}catch(e){toast('Delete failed','err')}
+}
+
+function toast(msg,type){
+  const t=document.getElementById('toast');t.textContent=msg;t.className='toast '+type;t.style.display='block';
+  setTimeout(()=>t.style.display='none',3000);
+}
+
+async function loadSpecter(){
+  try{
+    const r=await fetch('/api/datahub/specter');
+    const d=await r.json();
+    const statusEl=document.getElementById('specterStatus');
+    const insEl=document.getElementById('specterInsights');
+    // Status pill
+    const statusColor={online:'#00d084',idle:'#00d084',busy:'#f0c040',stale:'#f0c040',offline:'#ff5555'};
+    const statusLabel={online:'● Online',idle:'● Online · idle',busy:'● Working',stale:'⚠ Stale (no recent heartbeat)',offline:'○ Offline'};
+    const c=statusColor[d.status]||'#888';
+    const lbl=statusLabel[d.status]||'● '+d.status;
+    let suffix='';
+    if(d.seconds_since_heartbeat!=null){
+      const s=d.seconds_since_heartbeat;
+      const ago=s<60?s+'s ago':(s<3600?Math.floor(s/60)+'m ago':Math.floor(s/3600)+'h ago');
+      suffix=' · '+ago;
+    }
+    if(d.model) suffix+=' · '+d.model;
+    statusEl.style.color=c;
+    statusEl.textContent=lbl+suffix;
+    // Insights
+    if(!d.insights||!d.insights.length){
+      insEl.innerHTML='<div style="color:#444;font-size:12px;padding:8px">Specter is online but has no published insights yet. He auto-publishes via the publish_insight skill into empire_knowledge.</div>';
+      return;
+    }
+    insEl.innerHTML=d.insights.map(i=>{
+      const dt=i.updated_at?new Date(i.updated_at).toLocaleString():'';
+      const catColor={research:'#7c3aed',report:'#4da6ff',insight:'#f0c040',alert:'#ff5555',scout:'#00d084'};
+      const cc=catColor[i.category]||'#888';
+      const safeTitle=(i.title||'').replace(/[<>]/g,'');
+      const safePreview=(i.preview||'').replace(/[<>]/g,'');
+      return `<div style="flex:0 0 280px;background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:12px;cursor:pointer" title="${safePreview}">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <span style="display:inline-block;padding:2px 8px;border-radius:8px;background:${cc}22;color:${cc};font-size:9px;font-weight:800;text-transform:uppercase">${i.category}</span>
+          <span style="font-size:9px;color:#444;margin-left:auto">${dt}</span>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:#c4b5fd;margin-bottom:4px;line-height:1.3">${safeTitle}</div>
+        <div style="font-size:10px;color:#888;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${safePreview}</div>
+      </div>`;
+    }).join('');
+    if(d.insight_count>d.insights.length){
+      insEl.innerHTML+=`<div style="flex:0 0 100px;background:#070712;border:1px dashed #2a2a4a;border-radius:10px;padding:12px;display:flex;align-items:center;justify-content:center;color:#666;font-size:11px;text-align:center">+${d.insight_count-d.insights.length} more</div>`;
+    }
+  }catch(e){
+    console.error('loadSpecter',e);
+  }
+}
+
+// Init
+loadFiles();loadFeed();loadSpecter();setInterval(loadFeed,30000);setInterval(loadSpecter,30000);
+</script>
+</body>
+</html>

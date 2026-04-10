@@ -45,17 +45,24 @@ class SkillsEngine:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=skill_timeout, env=env)
             duration_ms = int((time.time()-start)*1000)
             success = proc.returncode == 0
-            output = proc.stdout.strip() if success else proc.stderr.strip()
+            stdout_clean = (proc.stdout or "").strip()
+            stderr_clean = (proc.stderr or "").strip()
+            output = stdout_clean if success else (stderr_clean or stdout_clean or f"exit code {proc.returncode}")
             skill_ran(self.agent_id, skill_name)
             journal_log(agent_id=self.agent_id, task_type=f"skill:{skill_name}",
                 task_description=f"Ran {skill_name} with {json.dumps(args)}",
                 result=output[:500], success=success, input_data=args,
                 duration_ms=duration_ms, chat_id=chat_id)
-            return {"success": success, "output": output, "duration_ms": duration_ms, "skill": skill_name}
+            result = {"success": success, "output": output, "duration_ms": duration_ms, "skill": skill_name}
+            if not success:
+                # Always populate `error` on failure so callers don't KeyError
+                result["error"] = stderr_clean or stdout_clean or f"skill exited with code {proc.returncode}"
+                logger.error(f"[skills_engine] {skill_name} failed (exit {proc.returncode}): {result['error'][:300]}")
+            return result
         except subprocess.TimeoutExpired:
-            return {"success": False, "error": f"Skill '{skill_name}' timed out"}
+            return {"success": False, "error": f"Skill '{skill_name}' timed out", "output": ""}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": str(e), "output": ""}
 
     def parse_and_run(self, llm_output, chat_id=None):
         results = []
@@ -67,9 +74,10 @@ class SkillsEngine:
             except: args = {}
             result = self.run(skill_name, args, chat_id=chat_id)
             results.append(result)
-            if result["success"]:
-                replacement = f"\n[SKILL RESULT: {skill_name}]\n{result['output']}\n"
+            if result.get("success"):
+                replacement = f"\n[SKILL RESULT: {skill_name}]\n{result.get('output','')}\n"
             else:
-                replacement = f"\n[SKILL ERROR: {skill_name}] {result['error']}\n"
+                err_text = result.get('error') or result.get('output') or 'unknown error'
+                replacement = f"\n[SKILL ERROR: {skill_name}] {err_text}\n"
             modified = modified.replace(full_match, replacement)
         return modified, results

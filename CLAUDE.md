@@ -106,7 +106,7 @@ Flask app at `dashboard/app.py` (port 8888). Manages agents (start/stop/restart 
 FastAPI service at `tools/server.py` exposing agent tools as `POST /tools/{agent}/{tool}`. Runs under `baza-tool-server.service`. Sam's imaging endpoints (Stable Diffusion) are mounted via `sam_imaging.py` in the same process.
 
 ```bash
-cd tools && uvicorn server:app --port 8001
+cd tools && uvicorn server:app --port 8000
 ```
 
 ### LiteLLM Cloud Proxy

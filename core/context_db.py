@@ -22,10 +22,10 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "dbname": "baza_agents",
-    "user": "switchhacker",
+    "host": os.environ.get("BAZA_DB_HOST", "localhost"),
+    "port": int(os.environ.get("BAZA_DB_PORT", "5432")),
+    "dbname": os.environ.get("BAZA_DB_NAME", "baza_agents"),
+    "user": os.environ.get("BAZA_DB_USER", "switchhacker"),
     "password": os.environ.get("DB_PASSWORD", "baza2026")
 }
 

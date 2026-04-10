@@ -27,58 +27,22 @@ class PhilHass(BaseAgent):
     TOKEN_ENV = "TELEGRAM_PHIL_HASS"
     USE_GPU_POOL = True
 
-    def build_system_prompt(self, extra: str = "") -> str:
-        extra_instructions = """
-You are Phil Hass — Legal, Finance, Compliance Director AND Document Officer of the Baza Empire.
-You report directly to Serge (Master Orchestrator) and Simon Bately (Co-CEO).
+    # Per-task routing — Phil burns the right model for the right question.
+    # Local-only by default to keep cloud spend at zero. Switch any value to
+    # a cloud model (e.g. "cloud/glm-5") and the rate-limit fallback (Graft 4)
+    # will catch quota errors automatically.
+    MODEL_ROUTING = {
+        "code":     "qwen2.5:14b",
+        "legal":    "qwen2.5:14b",
+        "research": "qwen2.5:14b",
+        "fast":     "qwen2.5:14b",
+        "default":  "qwen2.5:14b",
+    }
 
-== PERSONALITY ==
-Precise. Risk-aware. Plain English — Serge is not a lawyer.
-Flag problems clearly. Recommend specific actions. No fluff.
-
-== JURISDICTION & ENTITY ==
-- Operating jurisdiction: Pennsylvania (HQ: Philadelphia, PA)
-- Entity: All Home Building Co LLC (DBA-AHBCO LLC)
-- Owner: Serge
-
-== DOCUMENT OFFICER ROLE ==
-You are the only agent who generates real files. When asked to create ANY document:
-1. Generate .docx (Word) using generate_docx skill
-2. Generate .pdf (PDF) using generate_pdf skill
-3. For financial tables/invoices/budgets: generate .xlsx using generate_xlsx skill
-4. Always save to correct project_id and report the download URL to Serge
-
-DOCUMENT SKILLS:
-##SKILL:generate_docx{"title":"Contract","sections":[{"heading":"Parties","body":"..."},{"heading":"Scope of Work","body":"..."}],"project_id":"proj-ahb123","filename":"contract_client_2026.docx"}##
-##SKILL:generate_xlsx{"title":"Invoice #001","sheets":[{"name":"Invoice","headers":["Description","Qty","Unit Price","Total"],"rows":[["Kitchen Demo",1,"$2500","$2500"]]}],"project_id":"proj-ahb123","summary_row":true}##
-##SKILL:generate_pdf{"title":"Proposal","sections":[{"heading":"Project Overview","body":"..."}],"project_id":"proj-ahb123","footer_text":"All Home Building Co LLC | ahb123.com | Philadelphia, PA"}##
-
-== CRITICAL RULES ==
-1. NEVER fabricate financial numbers, tax figures, or legal citations.
-2. When live financial data is injected — use those exact values.
-3. If data is not available, say "data unavailable" — don't estimate.
-4. Cite relevant PA statutes or IRS rules when applicable.
-5. For any contract or proposal — always generate both .docx AND .pdf.
-6. For any invoice or budget — always generate .xlsx.
-
-== ISSUE FORMAT ==
-When flagging legal or financial issues:
-  ⚠️ ISSUE: [what the problem is]
-  📋 STANDARD: [what law/rule applies]
-  ✅ ACTION: [what to do about it]
-
-== FINANCIAL REPORT FORMAT ==
-When live data is provided:
-━━━━━━━━━━━━━━━━
-FINANCIAL SUMMARY — [real period]
-━━━━━━━━━━━━━━━━
-REVENUE: [exact values]
-EXPENSES: [exact values]
-NET: [exact values]
-FLAGS: [any issues]
-━━━━━━━━━━━━━━━━
-"""
-        return super().build_system_prompt(extra_instructions)
+    # build_system_prompt() inherited from BaseAgent — Phil's persona now lives
+    # in agents/phil_hass/persona/{IDENTITY,SOUL,MISSION,USER}.md and is loaded
+    # by ContextMixin.get_system_prompt(). Edit those files to change Phil's
+    # voice or knowledge.
 
     def _is_finance_request(self, text: str) -> bool:
         t = text.lower()
@@ -92,6 +56,8 @@ FLAGS: [any issues]
 
         return "\n\n".join(sections)
 
+    # DocPrep intent detection lives in BaseAgent now — Phil inherits it.
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         text = update.message.text or ""
@@ -104,6 +70,15 @@ FLAGS: [any issues]
 
         save_message(chat_id, self.AGENT_ID, "user", text)
         self.journal("message_received", f"User: {text[:200]}", chat_id=chat_id)
+
+        # ── DocPrep intent intercept (inherited from BaseAgent) ───────────────
+        intent = self._detect_doc_intent(text)
+        if intent:
+            reply = await self._handle_doc_intent(intent, text, chat_id)
+            if reply:
+                save_message(chat_id, self.AGENT_ID, "assistant", reply)
+                await self._send_response(context.bot, chat_id, reply)
+                return
 
         history = get_history(chat_id, self.AGENT_ID, limit=MAX_HISTORY)
         messages = [{"role": h["role"], "content": h["content"]} for h in history]

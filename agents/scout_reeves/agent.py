@@ -10,6 +10,8 @@ from telegram.constants import ChatAction
 from telegram.ext import ContextTypes
 from core.base_agent import BaseAgent
 from core.memory import save_message, get_history
+from core.context_db import empire_set
+from core.event_bus import publish_sync
 
 logger = logging.getLogger(__name__)
 
@@ -21,90 +23,41 @@ RESEARCH_KEYWORDS = [
     "regulation", "market", "intel", "rate", "cost", "compare", "search"
 ]
 
-LOCAL_SEARCH_KEYWORDS = [
-    "near me", "near 19020", "near zip", "in my area", "local",
-    "find a ", "find me a", "find me an", "find an ", "find some",
-    "who does", "who can", "where can i", "recommend a", "recommend an",
-    "closest", "nearby", "in bensalem", "in philly", "in philadelphia",
+# Strong locational signals — these MUST be present for the local-business fast-path.
+# Generic words like "find" or "search" alone are NOT enough — Scout is a general
+# research agent, not just a local business finder.
+LOCAL_SEARCH_LOCATION_SIGNALS = [
+    "near me", "near 19020", "near zip", "in my area", "nearby", "closest",
+    "in bensalem", "in philly", "in philadelphia", "in king of prussia",
+    "in doylestown", "in warrington", "in jenkintown",
     "contractor near", "shop near", "service near", "provider near",
+    "near my", "near here", "around me", "around here",
 ]
 
 
 class ScoutReeves(BaseAgent):
     AGENT_ID = "scout_reeves"
-    MODEL = "qwen2.5:14b"
+    MODEL = "gpt-oss:20b"
     TOKEN_ENV = "TELEGRAM_SCOUT_REEVES"
     USE_GPU_POOL = True
 
-    def build_system_prompt(self, extra: str = "") -> str:
-        extra_instructions = """
-You are Scout Reeves — Research & Market Intelligence Agent for the Baza Empire and AHBCO LLC.
-You report directly to Serge (Master Orchestrator).
-
-== YOUR ROLE ==
-- Hunt for market intel, competitor data, supplier pricing, permit requirements
-- Research building codes, zoning laws, contractor licensing for Philadelphia PA
-- Find the best vendors, subcontractors, and material suppliers
-- Analyze competitors in the Philadelphia home building/remodeling space
-- Research crypto mining hardware, software, and pool performance
-- Deliver concise, actionable intelligence — no filler, just facts
-
-== RESEARCH DOMAINS ==
-- Construction: permits, codes, material costs, subcontractor rates (Philadelphia PA)
-- Business: competitor analysis, market rates, DBA/LLC registration requirements
-- Technology: hardware specs, software tools, mining profitability, AI models
-- Finance: crypto prices, mining ROI, material cost trends
-
-== AVAILABLE SKILLS ==
-LOCAL BUSINESS SEARCH (use this when asked to find a service, contractor, shop, or pro near a location):
-  ##SKILL:local_business_search{"query": "auto glass replacement", "zip": "19020", "n": 5}##
-  ##SKILL:local_business_search{"query": "plumber", "zip": "19020", "radius": 10}##
-  The skill returns real businesses with name, phone, address, and hours.
-  Default zip is 19020 (Bensalem PA — Baza HQ). Always use this for "find a __ near me" requests.
-
-WEB RESEARCH:
-  ##SKILL:web_search{"query": "Philadelphia HIC permit requirements 2025", "n": 5}##
-  ##SKILL:web_fetch{"url": "https://www.phila.gov/permits/", "max_chars": 6000}##
-  ##SKILL:news{"category": "construction"}##
-  ##SKILL:news{"category": "crypto"}##
-  ##SKILL:crypto_prices{"coins": ["bitcoin", "monero", "ravencoin"]}##
-  ##SKILL:weather{"location": "Philadelphia, PA"}##
-
-Use local_business_search for ANY request to find a local service provider near a zip code.
-Use web_search to find current info on any research topic.
-Use web_fetch to read the full content of a specific URL.
-Always cite phone numbers and addresses from skill results — never fabricate them.
-
-== CRITICAL FORMATTING RULES ==
-NO markdown. NO ### headers. NO ** bold. NO --- dividers.
-Use emoji for structure. Use plain text. Use ━━━ for dividers.
-
-== INTELLIGENCE REPORT FORMAT ==
-━━━━━━━━━━━━━━━━
-🔍 INTEL REPORT — [topic]
-━━━━━━━━━━━━━━━━
-
-📌 FINDING 1: [fact]
-📌 FINDING 2: [fact]
-📌 FINDING 3: [fact]
-
-💡 RECOMMENDATION: [what to do with this info]
-⚠️ WATCH: [anything to monitor]
-
-━━━━━━━━━━━━━━━━
-"""
-        return super().build_system_prompt(extra_instructions)
+    # build_system_prompt() inherited from BaseAgent — Scout's persona now lives
+    # in agents/scout_reeves/persona/{IDENTITY,SOUL,MISSION,USER}.md
 
     def _is_research_request(self, text: str) -> bool:
         t = text.lower()
         return any(kw in t for kw in RESEARCH_KEYWORDS)
 
     def _is_local_search_request(self, text: str) -> bool:
+        """Only fire the local-business fast-path when there's a CLEAR locational
+        signal (zip code, 'near me', explicit city). Generic 'find me X' is NOT
+        enough — Scout is a general research agent, not a near-me-only bot."""
         t = text.lower()
-        if any(kw in t for kw in LOCAL_SEARCH_KEYWORDS):
+        # Strong location-phrase signal
+        if any(kw in t for kw in LOCAL_SEARCH_LOCATION_SIGNALS):
             return True
-        # Also catch "near XXXXX" with any 5-digit zip
-        if re.search(r'\bnear\s+\d{5}\b', t):
+        # 5-digit zip preceded by "near" / "around" / "in"
+        if re.search(r'\b(?:near|around|in)\s+\d{5}\b', t):
             return True
         return False
 
@@ -248,7 +201,84 @@ Use emoji for structure. Use plain text. Use ━━━ for dividers.
             user_msg, re.IGNORECASE
         )
         if topic_match:
-            self.remember("last_research_topic", topic_match.group(1).strip(), "research")
+            topic = topic_match.group(1).strip()
+            self.remember("last_research_topic", topic, "research")
+            # Auto-publish research results to empire_knowledge
+            self._publish_research(topic, agent_reply)
+
+    def _publish_research(self, topic: str, response: str):
+        """Publish completed research to empire_knowledge and event bus."""
+        try:
+            topic_slug = re.sub(r'[^\w]', '_', topic.lower())[:50].strip('_')
+            empire_set(
+                key=f"scout_research_{topic_slug}",
+                value=response[:1000],
+                category="research",
+                updated_by="scout_reeves"
+            )
+            publish_sync("scout_reeves", "research_complete", {
+                "topic": topic_slug,
+                "summary": response[:300],
+                "artifact": ""
+            })
+        except Exception as e:
+            logger.error(f"[scout_reeves] Failed to publish research: {e}")
+
+    async def _watch_for_research_needs(self):
+        """Watch for new tasks that might need research."""
+        if not self.event_bus:
+            return
+        try:
+            async for event in self.event_bus.listen("task_created"):
+                title = event.data.get("title", "")
+                desc = event.data.get("description", "")
+                research_keywords = [
+                    "research", "find", "competitor", "permit", "license",
+                    "pricing", "market", "website", "squarespace"
+                ]
+                needs_research = any(
+                    kw in (title + " " + desc).lower() for kw in research_keywords
+                )
+                if needs_research:
+                    logger.info(f"[scout_reeves] Auto-researching for task: {title}")
+                    await self.event_bus.publish("research_complete", {
+                        "triggered_by": event.data.get("task_id"),
+                        "topic": title,
+                        "status": "queued"
+                    })
+        except Exception as e:
+            logger.error(f"[scout_reeves] Research watcher error: {e}")
+
+    async def run(self):
+        """Override run to also start the research watcher."""
+        # Start the research watcher as a background task once the event loop is available
+        self._research_watcher_started = False
+        original_run = super().run
+
+        # We need to hook into the run lifecycle; override to add our task
+        token = __import__('os').environ.get(self.TOKEN_ENV)
+        if not token:
+            raise ValueError(f"[{self.AGENT_ID}] Missing token: {self.TOKEN_ENV}")
+
+        from telegram.ext import Application, MessageHandler, filters
+        app = Application.builder().token(token).build()
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+
+        logger.info(f"[{self.AGENT_ID}] Starting Telegram bot...")
+
+        async with app:
+            await app.initialize()
+            await app.start()
+            asyncio.ensure_future(self._heartbeat_loop())
+            asyncio.ensure_future(self._artifact_context_loop())
+            asyncio.ensure_future(self.start_event_listener())
+            asyncio.ensure_future(self._watch_for_research_needs())
+            await app.updater.start_polling(drop_pending_updates=True)
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await app.updater.stop()
+                await app.stop()
 
 
 if __name__ == "__main__":

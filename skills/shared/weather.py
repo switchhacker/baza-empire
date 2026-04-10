@@ -5,8 +5,13 @@ Get current weather and forecast using wttr.in (no API key needed).
 """
 import os
 import json
+import socket
 import urllib.request
 import urllib.parse
+
+# Force IPv6 — IPv4 unreachable on this host
+_orig = socket.getaddrinfo
+socket.getaddrinfo = lambda *a, **k: [r for r in _orig(*a, **k) if r[0] == socket.AF_INET6] or _orig(*a, **k)
 
 args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 location = args.get("location", os.environ.get("EMPIRE_LOCATION", "New York"))
@@ -16,7 +21,7 @@ url = f"https://wttr.in/{encoded}?format=j1"
 
 try:
     req = urllib.request.Request(url, headers={"User-Agent": "BazaEmpire/1.0"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
+    with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read())
 
     current = data["current_condition"][0]

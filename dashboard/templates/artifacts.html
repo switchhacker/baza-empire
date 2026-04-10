@@ -64,9 +64,12 @@
     .file-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:9px;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;position:relative}
     .file-card:hover{border-color:#7c3aed;transform:translateY(-1px)}
     .file-card.selected{border-color:#e94560;background:#1a0a12}
-    .file-card-preview{height:100px;display:flex;align-items:center;justify-content:center;background:#080814;font-size:36px;position:relative;overflow:hidden}
+    .file-card-preview{height:120px;display:flex;align-items:center;justify-content:center;background:#080814;font-size:36px;position:relative;overflow:hidden}
     .file-card-preview img{width:100%;height:100%;object-fit:cover}
+    .file-card-preview iframe{position:absolute;top:0;left:0;background:#fff}
+    .file-card-preview video{position:absolute;top:0;left:0}
     .file-card-preview .pdf-thumb{font-size:40px}
+    .file-card-preview .text-preview{font-family:'Consolas','Monaco',monospace}
     .file-card-body{padding:10px}
     .file-card-name{font-size:11px;font-weight:700;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
     .file-card-meta{font-size:10px;color:#333}
@@ -185,6 +188,7 @@
   <a class="nav-link" href="/email">Email</a>
   <a class="nav-link" href="/infra">Infra Map</a>
   <a class="nav-link" href="/explore">Explore</a>
+  <a class="nav-link" href="/comms">Comms</a>
   <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/settings">Settings</a>
 </nav>
@@ -673,16 +677,40 @@ function renderGrid() {
     const key  = fileKey(f);
     const sel  = selectedFiles.has(key);
     const ext  = f.ext||'';
-    const preview = IMAGE_EXT.has(ext)
-      ? `<img src="/api/artifacts/serve/${f.project_id}/${encodeURIComponent(f.name)}" loading="lazy" onerror="this.parentNode.innerHTML='${getEmoji(ext)}';">`
-      : `<span>${getEmoji(ext)}</span>`;
-    return `<div class="file-card${sel?' selected':''}" id="fc-${esc(key)}" onclick="cardClick(event,'${esc(key)}','${esc(f.project_id)}','${esc(f.name)}')">
+    // Use rel_path (which includes subdirectory) for serving, fall back to name
+    const relPath = f.rel_path || f.name;
+    // Strip project_id prefix if rel_path starts with it
+    const servePath = relPath.startsWith(f.project_id) ? relPath.substring(f.project_id.length + 1) : relPath;
+    const serveUrl = '/api/artifacts/serve/' + encodeURIComponent(f.project_id) + '/' + servePath.split('/').map(p => encodeURIComponent(p)).join('/');
+    const viewUrl  = '/api/artifacts/view/'  + encodeURIComponent(f.project_id) + '/' + servePath.split('/').map(p => encodeURIComponent(p)).join('/');
+
+    let preview;
+    if (IMAGE_EXT.has(ext)) {
+      preview = `<img src="${serveUrl}" loading="lazy" onerror="this.parentNode.innerHTML='${getEmoji(ext)}';">`;
+    } else if (['.html','.htm'].includes(ext)) {
+      // Render HTML in a tiny non-interactive iframe
+      preview = `<iframe src="${serveUrl}" loading="lazy" sandbox="allow-same-origin" style="width:300%;height:300%;border:none;transform:scale(0.333);transform-origin:top left;pointer-events:none;background:#fff" scrolling="no"></iframe>`;
+    } else if (ext === '.pdf') {
+      // PDF first page preview using browser native PDF rendering
+      preview = `<iframe src="${serveUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH" loading="lazy" style="width:100%;height:100%;border:none;pointer-events:none;background:#fff" scrolling="no"></iframe>`;
+    } else if (VIDEO_EXT.has(ext)) {
+      preview = `<video src="${serveUrl}" preload="metadata" muted style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.innerHTML='${getEmoji(ext)}';"></video>`;
+    } else if (AUDIO_EXT.has(ext)) {
+      preview = `<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font-size:32px">🎵</span><span style="font-size:9px;color:#666">${ext.replace('.','').toUpperCase()}</span></div>`;
+    } else if (CODE_EXT.has(ext) || DOC_EXT.has(ext)) {
+      // Fetch text and show first few lines as code preview (cached)
+      preview = `<div class="text-preview" data-url="${viewUrl}" style="width:100%;height:100%;background:#0a0a18;color:#a0f0a0;font-family:monospace;font-size:7px;padding:6px;overflow:hidden;line-height:1.2;text-align:left;white-space:pre-wrap">${getEmoji(ext)}</div>`;
+    } else {
+      preview = `<span>${getEmoji(ext)}</span>`;
+    }
+
+    return `<div class="file-card${sel?' selected':''}" id="fc-${esc(key)}" onclick="cardClick(event,'${esc(key)}','${esc(f.project_id)}','${esc(servePath)}')">
       <div class="file-card-check">✓</div>
       <div class="file-card-preview">${preview}</div>
       <div class="file-card-actions">
-        <button class="fca-btn" style="background:#0d2040;color:#4da6ff" title="Preview" onclick="event.stopPropagation();previewFile('${esc(f.project_id)}','${esc(f.name)}','${esc(f.ext)}',${f.size||0})">👁</button>
-        <button class="fca-btn" style="background:#0d2040;color:#00d084" title="Download" onclick="event.stopPropagation();downloadFile('${esc(f.project_id)}','${esc(f.name)}')">⬇</button>
-        <button class="fca-btn" style="background:#2a0d0d;color:#ff6666" title="Delete" onclick="event.stopPropagation();deleteFile('${esc(f.project_id)}','${esc(f.name)}')">✕</button>
+        <button class="fca-btn" style="background:#0d2040;color:#4da6ff" title="Preview" onclick="event.stopPropagation();previewFile('${esc(f.project_id)}','${esc(servePath)}','${esc(f.ext)}',${f.size||0})">👁</button>
+        <button class="fca-btn" style="background:#0d2040;color:#00d084" title="Download" onclick="event.stopPropagation();downloadFile('${esc(f.project_id)}','${esc(servePath)}')">⬇</button>
+        <button class="fca-btn" style="background:#2a0d0d;color:#ff6666" title="Delete" onclick="event.stopPropagation();deleteFile('${esc(f.project_id)}','${esc(servePath)}')">✕</button>
       </div>
       <div class="file-card-body">
         <div class="file-card-name" title="${esc(f.name)}">${esc(f.name)}</div>
@@ -691,6 +719,18 @@ function renderGrid() {
       </div>
     </div>`;
   }).join('');
+
+  // Lazy-load text previews for code/doc files
+  document.querySelectorAll('.text-preview[data-url]').forEach(el => {
+    const url = el.getAttribute('data-url');
+    el.removeAttribute('data-url');
+    fetch(url).then(r => r.json()).then(d => {
+      if (d.content) {
+        const lines = d.content.split('\n').slice(0, 18).join('\n');
+        el.textContent = lines;
+      }
+    }).catch(() => {});
+  });
 }
 
 function renderList() {

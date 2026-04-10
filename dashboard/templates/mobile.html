@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Baza Empire</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Baza Empire">
+  <meta name="theme-color" content="#07070f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="apple-touch-icon" href="/static/img/ahb_logo.jpeg">
+  <link rel="manifest" href="/mobile/manifest.json">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+    html,body{height:100%;overflow:hidden}
+    body{
+      background:#07070f;color:#f0f0f0;
+      font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text',system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+      overscroll-behavior:none;
+      padding-top:env(safe-area-inset-top);
+      padding-left:env(safe-area-inset-left);
+      padding-right:env(safe-area-inset-right);
+    }
+    ::-webkit-scrollbar{display:none}
+    *{scrollbar-width:none}
+    a{color:inherit;text-decoration:none}
+    input,select,textarea,button{font-family:inherit;font-size:inherit}
+
+    /* CSS Variables */
+    :root{
+      --bg:#07070f;--bg2:#0d0d1e;--bg3:#0e0e1e;--bg4:#0a0a18;
+      --border:#1a1a2e;--border2:#1a1a3a;
+      --text:#f0f0f0;--text2:#aaa;--text3:#666;--text4:#444;
+      --accent:#e94560;--accent2:#7c3aed;
+      --green:#00d084;--red:#ff5555;--yellow:#f59e0b;--blue:#4da6ff;
+      --tab-h:60px;--safe-b:env(safe-area-inset-bottom);
+      --grad:linear-gradient(135deg,var(--accent),var(--accent2));
+    }
+
+    /* App Shell */
+    .app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+    .app-content{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--tab-h) + var(--safe-b) + 16px)}
+
+    /* Tab Views */
+    .tab-view{display:none;min-height:100%}
+    .tab-view.active{display:block}
+
+    /* Sub Views (slide-in panels) */
+    .sub-view{
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:var(--bg);z-index:500;
+      transform:translateX(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);
+      overflow-y:auto;-webkit-overflow-scrolling:touch;
+      padding-top:env(safe-area-inset-top);
+    }
+    .sub-view.open{transform:translateX(0)}
+    .sub-view-header{
+      position:sticky;top:0;z-index:10;
+      display:flex;align-items:center;gap:12px;
+      padding:16px;background:var(--bg);border-bottom:1px solid var(--border);
+    }
+    .sub-view-header .back-btn{
+      width:36px;height:36px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);
+      display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
+    }
+    .sub-view-header .back-btn svg{width:18px;height:18px;color:var(--text2)}
+    .sub-view-header h2{font-size:17px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sub-view-body{padding:16px;padding-bottom:100px}
+
+    /* Bottom Tab Bar */
+    .tab-bar{
+      position:fixed;bottom:0;left:0;right:0;
+      background:var(--bg2);border-top:1px solid var(--border2);
+      display:flex;justify-content:space-around;align-items:center;
+      padding:6px 0 calc(6px + var(--safe-b));
+      z-index:1000;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    }
+    .tab-bar-item{
+      display:flex;flex-direction:column;align-items:center;gap:2px;
+      font-size:10px;font-weight:600;color:#555;padding:4px 12px;cursor:pointer;
+      transition:color .2s;position:relative;min-width:48px;min-height:48px;
+      justify-content:center;
+    }
+    .tab-bar-item.active{color:var(--accent)}
+    .tab-bar-item svg{width:24px;height:24px}
+    .tab-bar-item .badge-dot{
+      position:absolute;top:2px;right:8px;width:8px;height:8px;
+      border-radius:50%;background:var(--accent);
+    }
+
+    /* Pull to Refresh */
+    .ptr-indicator{
+      text-align:center;padding:12px;font-size:12px;color:var(--text3);
+      transition:opacity .2s;opacity:0;height:0;overflow:hidden;
+    }
+    .ptr-indicator.visible{opacity:1;height:auto}
+
+    /* Common Components */
+    .section-title{font-size:11px;font-weight:700;color:var(--text4);text-transform:uppercase;letter-spacing:1.5px;margin:20px 0 10px;padding:0 16px}
+    .card{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:16px;margin:0 16px 10px}
+    .card-sm{padding:12px;border-radius:12px}
+    .stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px;margin-bottom:16px}
+    .stats-grid.three{grid-template-columns:1fr 1fr 1fr}
+    .stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center}
+    .stat-val{font-size:22px;font-weight:800;line-height:1.2}
+    .stat-lbl{font-size:9px;color:var(--text4);text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+    .stat-val.green{color:var(--green)}.stat-val.red{color:var(--red)}.stat-val.yellow{color:var(--yellow)}.stat-val.blue{color:var(--blue)}.stat-val.accent{color:var(--accent)}.stat-val.purple{color:var(--accent2)}
+
+    .badge{display:inline-block;padding:3px 8px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .badge-lead{background:#2a1a00;color:var(--yellow);border:1px solid var(--yellow)}
+    .badge-active,.badge-in_progress{background:#001a10;color:var(--green);border:1px solid var(--green)}
+    .badge-complete,.badge-completed,.badge-paid{background:#001a10;color:var(--green);border:1px solid var(--green)}
+    .badge-pending,.badge-draft,.badge-estimate{background:#1a1a2e;color:var(--text3);border:1px solid var(--text3)}
+    .badge-sent,.badge-invoiced{background:#0d1a2a;color:var(--blue);border:1px solid var(--blue)}
+    .badge-overdue,.badge-blocked,.badge-cancelled{background:#2a0d0d;color:var(--red);border:1px solid var(--red)}
+
+    /* Buttons */
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;gap:6px;
+      padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;
+      cursor:pointer;border:none;transition:opacity .15s,transform .1s;
+      min-height:44px;
+    }
+    .btn:active{transform:scale(.97);opacity:.8}
+    .btn-primary{background:var(--grad);color:#fff}
+    .btn-secondary{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
+    .btn-danger{background:#2a0d0d;color:var(--red);border:1px solid #5a1a1a}
+    .btn-sm{padding:6px 12px;font-size:11px;border-radius:8px;min-height:36px}
+    .btn-block{width:100%;justify-content:center}
+
+    /* FAB */
+    .fab{
+      position:fixed;bottom:calc(var(--tab-h) + var(--safe-b) + 20px);right:20px;
+      width:56px;height:56px;border-radius:50%;
+      background:var(--grad);color:#fff;border:none;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 4px 20px rgba(233,69,96,.4);cursor:pointer;z-index:400;
+      transition:transform .15s;
+    }
+    .fab:active{transform:scale(.9)}
+    .fab svg{width:24px;height:24px}
+
+    /* Search */
+    .search-wrap{padding:0 16px;margin-bottom:12px}
+    .search-input{
+      width:100%;padding:12px 16px 12px 40px;
+      background:var(--bg4);border:1px solid var(--border);border-radius:12px;
+      color:var(--text);font-size:15px;outline:none;
+      transition:border-color .2s;
+    }
+    .search-input:focus{border-color:var(--accent2)}
+    .search-wrap{position:relative}
+    .search-wrap svg{position:absolute;left:28px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--text3);pointer-events:none}
+
+    /* Pills */
+    .pills{display:flex;gap:6px;padding:0 16px;margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap}
+    .pill{
+      padding:7px 16px;border-radius:20px;font-size:12px;font-weight:600;
+      color:var(--text3);background:var(--bg3);border:1px solid var(--border);
+      cursor:pointer;white-space:nowrap;transition:all .2s;flex-shrink:0;
+    }
+    .pill.active{background:var(--grad);color:#fff;border-color:transparent}
+
+    /* List Items */
+    .list-item{
+      display:flex;align-items:center;gap:12px;
+      padding:14px 16px;border-bottom:1px solid var(--border);
+      cursor:pointer;transition:background .15s;min-height:60px;
+    }
+    .list-item:active{background:rgba(255,255,255,.03)}
+    .list-item-icon{
+      width:40px;height:40px;border-radius:12px;
+      display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;font-size:18px;
+    }
+    .list-item-body{flex:1;overflow:hidden}
+    .list-item-title{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .list-item-sub{font-size:12px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .list-item-right{text-align:right;flex-shrink:0}
+    .list-item-val{font-size:15px;font-weight:700}
+    .list-item-meta{font-size:11px;color:var(--text4);margin-top:2px}
+
+    /* Quick Actions */
+    .quick-actions{display:flex;gap:10px;padding:0 16px;margin-bottom:16px;overflow-x:auto}
+    .qa-btn{
+      flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;
+      padding:14px 16px;background:var(--bg3);border:1px solid var(--border);
+      border-radius:14px;cursor:pointer;min-width:90px;transition:border-color .2s;
+    }
+    .qa-btn:active{border-color:var(--accent2)}
+    .qa-btn svg{width:22px;height:22px;color:var(--accent)}
+    .qa-btn span{font-size:11px;font-weight:600;color:var(--text2);white-space:nowrap}
+
+    /* Agent Card */
+    .agent-card-m{
+      display:flex;align-items:center;gap:12px;
+      padding:12px 16px;border-bottom:1px solid var(--border);
+    }
+    .agent-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+    .agent-dot.online{background:var(--green);box-shadow:0 0 6px var(--green)}
+    .agent-dot.offline{background:var(--red)}
+    .agent-info{flex:1}
+    .agent-name-m{font-size:14px;font-weight:600}
+    .agent-role-m{font-size:11px;color:var(--text3)}
+
+    /* Calendar */
+    .cal-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
+    .cal-header h3{font-size:17px;font-weight:700}
+    .cal-nav{display:flex;gap:8px}
+    .cal-nav button{
+      width:36px;height:36px;border-radius:50%;background:var(--bg3);
+      border:1px solid var(--border);color:var(--text2);cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 12px;margin-bottom:12px}
+    .cal-day-name{text-align:center;font-size:10px;font-weight:700;color:var(--text4);padding:6px 0;text-transform:uppercase}
+    .cal-day{
+      text-align:center;padding:8px 0;border-radius:10px;font-size:14px;font-weight:500;
+      cursor:pointer;transition:background .15s;position:relative;min-height:40px;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+    }
+    .cal-day:active{background:rgba(255,255,255,.05)}
+    .cal-day.today{background:var(--accent);color:#fff;font-weight:700;border-radius:50%;width:36px;height:36px;margin:0 auto}
+    .cal-day.selected{background:var(--accent2);color:#fff;border-radius:50%;width:36px;height:36px;margin:0 auto}
+    .cal-day.other-month{color:var(--text4);opacity:.4}
+    .cal-day .event-dots{display:flex;gap:2px;margin-top:2px;justify-content:center}
+    .cal-day .event-dots .dot{width:4px;height:4px;border-radius:50%;background:var(--accent)}
+
+    /* Modal */
+    .modal-overlay{
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,.6);z-index:900;
+      display:none;align-items:flex-end;justify-content:center;
+      backdrop-filter:blur(4px);
+    }
+    .modal-overlay.open{display:flex}
+    .modal-sheet{
+      width:100%;max-height:90vh;background:var(--bg2);
+      border-radius:20px 20px 0 0;overflow-y:auto;
+      padding:20px 16px calc(20px + var(--safe-b));
+      animation:slideUp .3s cubic-bezier(.32,.72,0,1);
+    }
+    @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    .modal-handle{width:36px;height:4px;border-radius:2px;background:var(--text4);margin:0 auto 16px}
+    .modal-title{font-size:18px;font-weight:700;margin-bottom:16px}
+    .form-group{margin-bottom:14px}
+    .form-label{display:block;font-size:12px;font-weight:600;color:var(--text3);margin-bottom:6px}
+    .form-input,.form-select,.form-textarea{
+      width:100%;padding:12px 14px;background:var(--bg4);border:1px solid var(--border);
+      border-radius:10px;color:var(--text);font-size:15px;outline:none;
+    }
+    .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent2)}
+    .form-textarea{resize:vertical;min-height:80px}
+    .form-select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+
+    /* More Grid */
+    .more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:0 16px;margin-top:10px}
+    .more-item{
+      display:flex;flex-direction:column;align-items:center;gap:8px;
+      padding:20px 10px;background:var(--bg3);border:1px solid var(--border);
+      border-radius:14px;cursor:pointer;transition:border-color .2s;
+    }
+    .more-item:active{border-color:var(--accent2);background:rgba(124,58,237,.08)}
+    .more-item svg{width:28px;height:28px}
+    .more-item span{font-size:11px;font-weight:600;color:var(--text2)}
+
+    /* Receipt Kanban */
+    .kanban-row{display:flex;gap:12px;overflow-x:auto;padding:0 16px;margin-bottom:16px}
+    .kanban-col{min-width:260px;flex-shrink:0}
+    .kanban-col-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding:0 4px}
+    .kanban-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px}
+    .kanban-card-title{font-size:13px;font-weight:600;margin-bottom:4px}
+    .kanban-card-meta{font-size:11px;color:var(--text3)}
+
+    /* Photo Gallery */
+    .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 16px;margin:10px 0}
+    .photo-thumb{aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bg3);border:1px solid var(--border)}
+    .photo-thumb img{width:100%;height:100%;object-fit:cover}
+    .photo-add{display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .photo-add svg{width:28px;height:28px;color:var(--text4)}
+
+    /* Empty State */
+    .empty-state{text-align:center;padding:40px 20px;color:var(--text4)}
+    .empty-state svg{width:48px;height:48px;margin-bottom:12px;opacity:.3}
+    .empty-state p{font-size:14px}
+
+    /* Skeleton Loading */
+    .skeleton{background:linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
+    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+    /* Toast */
+    .toast{
+      position:fixed;top:calc(env(safe-area-inset-top) + 16px);left:50%;transform:translateX(-50%) translateY(-100px);
+      background:var(--bg2);border:1px solid var(--border2);border-radius:14px;
+      padding:12px 20px;font-size:13px;font-weight:600;z-index:2000;
+      transition:transform .3s cubic-bezier(.32,.72,0,1);
+      box-shadow:0 8px 30px rgba(0,0,0,.4);
+    }
+    .toast.show{transform:translateX(-50%) translateY(0)}
+
+    /* Greeting */
+    .greeting{padding:20px 16px 4px}
+    .greeting-sub{font-size:13px;color:var(--text3);margin-top:2px}
+    .greeting h1{font-size:24px;font-weight:800}
+
+    /* Status row */
+    .status-row{display:flex;gap:8px;padding:0 16px;margin:12px 0;overflow-x:auto}
+    .status-chip{
+      display:flex;align-items:center;gap:6px;padding:8px 14px;
+      background:var(--bg3);border:1px solid var(--border);border-radius:20px;
+      font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;flex-shrink:0;
+    }
+    .status-chip .dot{width:6px;height:6px;border-radius:50%}
+    .status-chip .dot.on{background:var(--green);box-shadow:0 0 4px var(--green)}
+    .status-chip .dot.off{background:var(--red)}
+
+    /* Detail sections */
+    .detail-section{margin-bottom:20px}
+    .detail-section h3{font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;padding:0 16px}
+    .detail-row{display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border)}
+    .detail-row .label{font-size:13px;color:var(--text3)}
+    .detail-row .value{font-size:13px;font-weight:600;text-align:right;max-width:60%}
+
+    /* Invoice PDF area */
+    .invoice-preview{background:var(--bg4);border:1px solid var(--border);border-radius:12px;padding:20px;margin:0 16px}
+    .invoice-preview .inv-line{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+    .invoice-preview .inv-total{font-size:18px;font-weight:800;color:var(--green);margin-top:10px;text-align:right}
+
+    /* Workflow buttons */
+    .workflow-btns{display:flex;gap:8px;padding:0 16px;margin:12px 0;flex-wrap:wrap}
+    .workflow-btn{
+      flex:1;min-width:0;padding:10px;border-radius:10px;font-size:12px;font-weight:700;
+      text-align:center;cursor:pointer;border:1px solid var(--border);background:var(--bg3);color:var(--text2);
+      transition:all .2s;
+    }
+    .workflow-btn.current{background:var(--grad);color:#fff;border-color:transparent}
+    .workflow-btn:active{opacity:.7}
+
+    /* Checklist */
+    .checklist-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+    .checklist-check{width:22px;height:22px;border-radius:6px;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+    .checklist-check.checked{background:var(--green);border-color:var(--green)}
+    .checklist-check.checked svg{display:block}
+    .checklist-check svg{display:none;width:14px;height:14px;color:#fff}
+    .checklist-text{font-size:14px;flex:1}
+    .checklist-text.done{text-decoration:line-through;color:var(--text4)}
+
+    /* Note card */
+    .note-card{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:14px;margin:0 16px 10px}
+    .note-card .pin{position:absolute;top:8px;right:8px;color:var(--yellow);font-size:12px}
+    .note-card h4{font-size:14px;font-weight:700;margin-bottom:6px}
+    .note-card p{font-size:13px;color:var(--text2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .note-card .note-meta{font-size:10px;color:var(--text4);margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Main Content Area -->
+    <div class="app-content" id="appContent">
+      <!-- Tab 1: Home -->
+      <div class="tab-view active" id="tab-home">
+        <div class="ptr-indicator" id="ptrIndicator">Pull to refresh...</div>
+        <div class="greeting" id="greeting">
+          <h1>Hey Serge</h1>
+          <div class="greeting-sub" id="greetingTime"></div>
+        </div>
+
+        <!-- Agent Status Row -->
+        <div class="status-row" id="agentStatusRow"></div>
+
+        <!-- Stats Grid -->
+        <div class="section-title">Overview</div>
+        <div class="stats-grid" id="homeStats">
+          <div class="stat-card"><div class="stat-val accent skeleton" style="height:26px;width:60px;margin:0 auto">&nbsp;</div><div class="stat-lbl">Projects</div></div>
+          <div class="stat-card"><div class="stat-val green skeleton" style="height:26px;width:80px;margin:0 auto">&nbsp;</div><div class="stat-lbl">Revenue</div></div>
+          <div class="stat-card"><div class="stat-val red skeleton" style="height:26px;width:80px;margin:0 auto">&nbsp;</div><div class="stat-lbl">Expenses</div></div>
+          <div class="stat-card"><div class="stat-val yellow skeleton" style="height:26px;width:80px;margin:0 auto">&nbsp;</div><div class="stat-lbl">Payroll</div></div>
+          <div class="stat-card"><div class="stat-val red skeleton" style="height:26px;width:80px;margin:0 auto">&nbsp;</div><div class="stat-lbl">Debt</div></div>
+          <div class="stat-card"><div class="stat-val blue skeleton" style="height:26px;width:40px;margin:0 auto">&nbsp;</div><div class="stat-lbl">Team</div></div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="section-title">Quick Actions</div>
+        <div class="quick-actions">
+          <div class="qa-btn" onclick="openNewProject()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
+            <span>New Project</span>
+          </div>
+          <div class="qa-btn" onclick="openNewInvoice()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M12 11v6M9 14h6"/></svg>
+            <span>New Invoice</span>
+          </div>
+          <div class="qa-btn" onclick="openReceiptCapture()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span>Receipt</span>
+          </div>
+          <div class="qa-btn" onclick="openNewEvent()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M12 14v4M10 16h4"/></svg>
+            <span>Add Event</span>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="section-title">Recent Activity</div>
+        <div id="recentActivity">
+          <div class="card skeleton" style="height:60px;margin-bottom:8px"></div>
+          <div class="card skeleton" style="height:60px;margin-bottom:8px"></div>
+          <div class="card skeleton" style="height:60px"></div>
+        </div>
+
+        <!-- Recent Projects -->
+        <div class="section-title">Recent Projects</div>
+        <div id="recentProjects"></div>
+      </div>
+
+      <!-- Tab 2: Projects -->
+      <div class="tab-view" id="tab-projects">
+        <div style="padding:20px 0 4px">
+          <div style="padding:0 16px"><h1 style="font-size:22px;font-weight:800">Projects</h1></div>
+        </div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" class="search-input" id="projectSearch" placeholder="Search projects..." oninput="filterProjects()">
+        </div>
+        <div class="pills" id="projectYearPills"></div>
+        <div id="projectsList"></div>
+        <button class="fab" onclick="openNewProject()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
+      <!-- Tab 3: Money -->
+      <div class="tab-view" id="tab-money">
+        <div style="padding:20px 0 4px">
+          <div style="padding:0 16px"><h1 style="font-size:22px;font-weight:800">Money</h1></div>
+        </div>
+        <div class="pills" id="moneyPills">
+          <div class="pill active" data-tab="invoices" onclick="switchMoneyTab('invoices')">Invoices</div>
+          <div class="pill" data-tab="receipts" onclick="switchMoneyTab('receipts')">Receipts</div>
+          <div class="pill" data-tab="billing" onclick="switchMoneyTab('billing')">Billing</div>
+        </div>
+
+        <!-- Invoices Sub -->
+        <div id="money-invoices">
+          <div class="pills" id="invoiceYearPills"></div>
+          <div class="stats-grid three" id="invoiceStats"></div>
+          <div id="invoicesList"></div>
+        </div>
+
+        <!-- Receipts Sub -->
+        <div id="money-receipts" style="display:none">
+          <div class="pills" id="receiptYearPills"></div>
+          <div id="receiptKanban"></div>
+          <button class="fab" onclick="openReceiptCapture()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </button>
+        </div>
+
+        <!-- Billing Sub -->
+        <div id="money-billing" style="display:none">
+          <div class="stats-grid three" id="billingStats"></div>
+          <div class="section-title">Active Bills</div>
+          <div id="billingList"></div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Schedule -->
+      <div class="tab-view" id="tab-schedule">
+        <div style="padding:20px 0 4px">
+          <div style="padding:0 16px"><h1 style="font-size:22px;font-weight:800">Schedule</h1></div>
+        </div>
+        <div class="cal-header">
+          <div class="cal-nav">
+            <button onclick="calNav(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M15 18l-6-6 6-6"/></svg></button>
+          </div>
+          <h3 id="calMonthLabel"></h3>
+          <div class="cal-nav">
+            <button onclick="calNav(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg></button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="section-title" id="calEventLabel">Events Today</div>
+        <div id="calEvents"></div>
+        <button class="fab" onclick="openNewEvent()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+
+      <!-- Tab 5: More -->
+      <div class="tab-view" id="tab-more">
+        <div style="padding:20px 0 4px">
+          <div style="padding:0 16px"><h1 style="font-size:22px;font-weight:800">More</h1></div>
+        </div>
+        <div class="more-grid">
+          <div class="more-item" onclick="openMoreSection('agents')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 00-16 0"/></svg>
+            <span>Agents</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('clients')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            <span>Clients</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('employees')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6M19 8v6"/></svg>
+            <span>Employees</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('notes')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+            <span>Notes</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('ipay')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            <span>IPAY</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('files')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+            <span>Files</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('tax')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            <span>Tax Docs</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('payroll')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
+            <span>Payroll</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('settings')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            <span>Settings</span>
+          </div>
+        </div>
+        <!-- Baza Operations Section -->
+        <div style="padding:16px 16px 4px"><h2 style="font-size:16px;font-weight:700;color:var(--text2)">Baza Operations</h2></div>
+        <div class="more-grid">
+          <div class="more-item" onclick="openMoreSection('tasks')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M9 11l3 3L22 4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+            <span>Tasks</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('infra')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>
+            <span>Infra</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('email')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/></svg>
+            <span>Email</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('crons')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            <span>Cron Jobs</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('artifacts')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+            <span>Artifacts</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('journal')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+            <span>Journal</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('skills')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+            <span>Skills</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('changeorders')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <span>Change Orders</span>
+          </div>
+          <div class="more-item" onclick="openMoreSection('estimator')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h4"/></svg>
+            <span>Estimates</span>
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:30px 16px;color:var(--text4);font-size:12px">
+          Baza Empire v3 &mdash; Command Center<br>
+          <div style="display:flex;justify-content:center;gap:16px;margin-top:8px">
+            <a href="/" style="color:var(--accent)">Desktop</a>
+            <a href="/ahb123" style="color:var(--accent)">AHB123</a>
+            <a href="/portal" style="color:var(--accent)">Portal</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Tab Bar -->
+    <nav class="tab-bar">
+      <div class="tab-bar-item active" data-tab="home" onclick="switchTab('home')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>
+        <span>Home</span>
+      </div>
+      <div class="tab-bar-item" data-tab="projects" onclick="switchTab('projects')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        <span>Projects</span>
+      </div>
+      <div class="tab-bar-item" data-tab="money" onclick="switchTab('money')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <span>Money</span>
+      </div>
+      <div class="tab-bar-item" data-tab="schedule" onclick="switchTab('schedule')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span>Schedule</span>
+      </div>
+      <div class="tab-bar-item" data-tab="more" onclick="switchTab('more')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span>More</span>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Sub-view Container (used for all detail/more views) -->
+  <div class="sub-view" id="subView">
+    <div class="sub-view-header">
+      <div class="back-btn" onclick="closeSubView()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </div>
+      <h2 id="subViewTitle"></h2>
+      <div id="subViewActions"></div>
+    </div>
+    <div class="sub-view-body" id="subViewBody"></div>
+  </div>
+
+  <!-- Modal (for forms) -->
+  <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // ── State ──
+    const S = {
+      tab: 'home',
+      year: new Date().getFullYear().toString(),
+      moneyTab: 'invoices',
+      calDate: new Date(),
+      calSelectedDate: null,
+      projects: [], invoices: [], receipts: [], clients: [], employees: [],
+      events: [], notes: [], debts: [], files: [], tax: [], payroll: [],
+      agents: {}, dashboard: {},
+      subViewStack: [],
+    };
+
+    // ── Helpers ──
+    const $ = id => document.getElementById(id);
+    const fmt = n => {
+      if(n == null || isNaN(n)) return '$0';
+      return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+    };
+    const fmtK = n => {
+      if(!n) return '$0';
+      if(n >= 1000) return '$' + (n/1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+      return '$' + Math.round(n);
+    };
+    const dateStr = d => {
+      if(!d) return '';
+      const dt = new Date(d + 'T00:00:00');
+      return dt.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    };
+    const haptic = () => { try { navigator.vibrate && navigator.vibrate(10); } catch(e){} };
+    function toast(msg, dur=2000) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), dur);
+    }
+
+    // ── API ──
+    async function api(path, opts={}) {
+      try {
+        const r = await fetch(path, {
+          headers: {'Content-Type': 'application/json', ...opts.headers},
+          ...opts,
+          body: opts.body ? JSON.stringify(opts.body) : undefined,
+        });
+        return await r.json();
+      } catch(e) { console.error('API error:', path, e); return null; }
+    }
+    async function apiUpload(path, formData) {
+      try {
+        const r = await fetch(path, { method: 'POST', body: formData });
+        return await r.json();
+      } catch(e) { console.error('Upload error:', path, e); return null; }
+    }
+
+    // ── Tab Switching ──
+    function switchTab(tab) {
+      haptic();
+      S.tab = tab;
+      document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.tab-bar-item').forEach(i => i.classList.remove('active'));
+      $('tab-' + tab).classList.add('active');
+      document.querySelector(`.tab-bar-item[data-tab="${tab}"]`).classList.add('active');
+      $('appContent').scrollTop = 0;
+      history.pushState({tab}, '', '#' + tab);
+      // Load data for tab
+      if(tab === 'home') loadHome();
+      else if(tab === 'projects') loadProjects();
+      else if(tab === 'money') loadMoneyTab();
+      else if(tab === 'schedule') renderCalendar();
+      else if(tab === 'more') {}
+    }
+
+    // ── Money Tab Switch ──
+    function switchMoneyTab(sub) {
+      haptic();
+      S.moneyTab = sub;
+      document.querySelectorAll('#moneyPills .pill').forEach(p => p.classList.toggle('active', p.dataset.tab === sub));
+      $('money-invoices').style.display = sub === 'invoices' ? '' : 'none';
+      $('money-receipts').style.display = sub === 'receipts' ? '' : 'none';
+      $('money-billing').style.display = sub === 'billing' ? '' : 'none';
+      loadMoneyTab();
+    }
+
+    // ── Sub View ──
+    function openSubView(title, contentFn, actions='') {
+      haptic();
+      $('subViewTitle').textContent = title;
+      $('subViewActions').innerHTML = actions;
+      $('subViewBody').innerHTML = '<div class="skeleton" style="height:200px;margin:16px 0"></div>';
+      $('subView').classList.add('open');
+      history.pushState({subView:true, title}, '', '#' + title.toLowerCase().replace(/\s+/g, '-'));
+      if(contentFn) contentFn($('subViewBody'));
+    }
+    function closeSubView() {
+      haptic();
+      $('subView').classList.remove('open');
+      if(history.state && history.state.subView) history.back();
+    }
+
+    // ── Modal ──
+    function openModal(html) {
+      $('modalContent').innerHTML = html;
+      $('modal').classList.add('open');
+    }
+    function closeModal() {
+      $('modal').classList.remove('open');
+    }
+
+    // ── Back button handling ──
+    window.addEventListener('popstate', e => {
+      if($('subView').classList.contains('open')) {
+        $('subView').classList.remove('open');
+      } else if($('modal').classList.contains('open')) {
+        $('modal').classList.remove('open');
+      } else if(e.state && e.state.tab) {
+        S.tab = e.state.tab;
+        switchTab(S.tab);
+      }
+    });
+
+    // ── Year Pills Generator ──
+    function yearPills(containerId, onChange) {
+      const years = ['All', '2024', '2025', '2026'];
+      const el = $(containerId);
+      if(!el) return;
+      el.innerHTML = years.map(y =>
+        `<div class="pill${y === (S.year || 'All') ? ' active' : ''}" onclick="selectYear('${containerId}','${y}',${onChange})">${y}</div>`
+      ).join('');
+    }
+    window._yearCallbacks = {};
+    function selectYear(cid, y, cbRef) {
+      S.year = y === 'All' ? '' : y;
+      document.querySelectorAll(`#${cid} .pill`).forEach(p => p.classList.toggle('active', p.textContent === y));
+      if(S.tab === 'projects') loadProjects();
+      else if(S.tab === 'money') loadMoneyTab();
+      else if(S.tab === 'home') loadHome();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // TAB 1: HOME
+    // ══════════════════════════════════════════════════════════════════════
+    async function loadHome() {
+      // Greeting
+      const now = new Date();
+      const h = now.getHours();
+      const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+      $('greeting').querySelector('h1').textContent = `${greeting}, Serge`;
+      $('greetingTime').textContent = now.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'}) + ' — ' + now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+
+      // Load data in parallel
+      const [dash, status, journal] = await Promise.all([
+        api('/api/ahb/dashboard' + (S.year ? '?year=' + S.year : '')),
+        api('/api/status'),
+        api('/api/journal?limit=5'),
+      ]);
+
+      S.dashboard = dash || {};
+      S.agents = status || {};
+
+      // Stats
+      if(dash) {
+        const rev = dash.invoices_total || 0;
+        const exp = dash.receipts_total || 0;
+        const pay = dash.payroll_total || 0;
+        const debt = dash.debt_balance || 0;
+        const team = dash.employees_active || 0;
+        const proj = dash.projects_total || 0;
+        $('homeStats').innerHTML = `
+          <div class="stat-card"><div class="stat-val accent">${proj}</div><div class="stat-lbl">Projects</div></div>
+          <div class="stat-card"><div class="stat-val green">${fmtK(rev)}</div><div class="stat-lbl">Revenue</div></div>
+          <div class="stat-card"><div class="stat-val red">${fmtK(exp)}</div><div class="stat-lbl">Expenses</div></div>
+          <div class="stat-card"><div class="stat-val yellow">${fmtK(pay)}</div><div class="stat-lbl">Payroll</div></div>
+          <div class="stat-card"><div class="stat-val red">${fmtK(debt)}</div><div class="stat-lbl">Debt</div></div>
+          <div class="stat-card"><div class="stat-val blue">${team}</div><div class="stat-lbl">Team</div></div>
+        `;
+      }
+
+      // Agent status chips
+      if(status) {
+        const chips = Object.entries(status).map(([id, st]) => {
+          const name = id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).split(' ')[0];
+          const on = st === 'online' || (st && st.status === 'online');
+          return `<div class="status-chip"><span class="dot ${on ? 'on' : 'off'}"></span>${name}</div>`;
+        }).join('');
+        $('agentStatusRow').innerHTML = chips;
+      }
+
+      // Recent journal
+      if(journal && journal.entries) {
+        $('recentActivity').innerHTML = journal.entries.slice(0, 5).map(e => `
+          <div class="card card-sm" style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:6px;flex-shrink:0"></div>
+            <div style="flex:1;overflow:hidden">
+              <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.action || e.event || '')}</div>
+              <div style="font-size:11px;color:var(--text4);margin-top:2px">${esc(e.agent_id || '')} &mdash; ${timeAgo(e.ts || e.created_at)}</div>
+            </div>
+          </div>
+        `).join('') || '<div class="empty-state"><p>No recent activity</p></div>';
+      }
+
+      // Recent projects
+      if(dash && dash.recent_projects) {
+        $('recentProjects').innerHTML = dash.recent_projects.map(p => `
+          <div class="list-item" onclick="openProjectDetail('${p.id}')">
+            <div class="list-item-icon" style="background:var(--bg4);color:var(--accent);font-weight:700">${(p.title||'?')[0]}</div>
+            <div class="list-item-body">
+              <div class="list-item-title">${esc(p.title)}</div>
+              <div class="list-item-sub">${esc(p.address || '')}</div>
+            </div>
+            <div class="list-item-right">
+              <span class="badge badge-${(p.status||'').toLowerCase()}">${esc(p.status||'')}</span>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    function timeAgo(ts) {
+      if(!ts) return '';
+      const d = new Date(ts);
+      const diff = (Date.now() - d.getTime()) / 1000;
+      if(diff < 60) return 'just now';
+      if(diff < 3600) return Math.floor(diff/60) + 'm ago';
+      if(diff < 86400) return Math.floor(diff/3600) + 'h ago';
+      return Math.floor(diff/86400) + 'd ago';
+    }
+    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // TAB 2: PROJECTS
+    // ══════════════════════════════════════════════════════════════════════
+    async function loadProjects() {
+      yearPills('projectYearPills', null);
+      const data = await api('/api/ahb/projects' + (S.year ? '?year=' + S.year : ''));
+      S.projects = (data && data.projects) || data || [];
+      renderProjects();
+    }
+    function filterProjects() {
+      renderProjects();
+    }
+    function renderProjects() {
+      const q = ($('projectSearch').value || '').toLowerCase();
+      const list = S.projects.filter(p => {
+        if(q && !(p.title||'').toLowerCase().includes(q) && !(p.client_name||'').toLowerCase().includes(q) && !(p.address||'').toLowerCase().includes(q)) return false;
+        return true;
+      });
+      $('projectsList').innerHTML = list.length ? list.map(p => `
+        <div class="list-item" onclick="openProjectDetail('${p.id}')">
+          <div class="list-item-icon" style="background:${statusColor(p.status)};color:#fff;font-weight:700;font-size:14px;border-radius:12px">
+            ${(p.title||'?').charAt(0).toUpperCase()}
+          </div>
+          <div class="list-item-body">
+            <div class="list-item-title">${esc(p.title||'Untitled')}</div>
+            <div class="list-item-sub">${esc(p.client_name||p.address||'')}</div>
+          </div>
+          <div class="list-item-right">
+            <div class="list-item-val">${fmt(p.value)}</div>
+            <span class="badge badge-${(p.status||'').toLowerCase().replace(/\s+/g,'_')}" style="margin-top:4px">${esc(p.status||'')}</span>
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state"><p>No projects found</p></div>';
+    }
+    function statusColor(s) {
+      s = (s||'').toLowerCase();
+      if(s.includes('complete')) return 'rgba(0,208,132,.2)';
+      if(s.includes('active') || s.includes('progress')) return 'rgba(77,166,255,.2)';
+      if(s.includes('lead')) return 'rgba(245,158,11,.2)';
+      return 'rgba(100,100,150,.15)';
+    }
+
+    // Project Detail
+    async function openProjectDetail(pid) {
+      openSubView('Project', async (body) => {
+        const [pData, invoices, receipts, events] = await Promise.all([
+          api('/api/ahb/projects'),
+          api('/api/ahb/invoices'),
+          api('/api/ahb/receipts'),
+          api('/api/ahb/events'),
+        ]);
+        const projects = (pData && pData.projects) || pData || [];
+        const p = projects.find(x => x.id === pid);
+        if(!p) { body.innerHTML = '<div class="empty-state"><p>Project not found</p></div>'; return; }
+
+        const pInvoices = ((invoices && invoices.invoices) || invoices || []).filter(i => i.project_id === pid);
+        const pReceipts = ((receipts && receipts.receipts) || receipts || []).filter(r => r.project_id === pid);
+        const pEvents = ((events && events.events) || events || []).filter(e => e.project_id === pid);
+
+        const statuses = ['Lead','Estimate','Contract','Active','In Progress','Punch List','Complete','Invoiced','Paid','Cancelled'];
+        const workflowHTML = statuses.map(st =>
+          `<div class="workflow-btn${(p.status||'').toLowerCase()===st.toLowerCase()?' current':''}" onclick="updateProjectStatus('${pid}','${st}')">${st}</div>`
+        ).join('');
+
+        body.innerHTML = `
+          <div style="padding:0 16px;margin-bottom:16px">
+            <h1 style="font-size:20px;font-weight:800;margin-bottom:4px">${esc(p.title||'')}</h1>
+            <div style="font-size:13px;color:var(--text3)">${esc(p.client_name||'')} ${p.address ? '&mdash; ' + esc(p.address) : ''}</div>
+          </div>
+
+          <div class="section-title" style="padding:0">Status Workflow</div>
+          <div class="workflow-btns" style="padding:0;margin:8px 0 16px">${workflowHTML}</div>
+
+          <div class="stats-grid three" style="padding:0;margin-bottom:16px">
+            <div class="stat-card"><div class="stat-val green">${fmt(p.value)}</div><div class="stat-lbl">Value</div></div>
+            <div class="stat-card"><div class="stat-val blue">${pInvoices.length}</div><div class="stat-lbl">Invoices</div></div>
+            <div class="stat-card"><div class="stat-val yellow">${pReceipts.length}</div><div class="stat-lbl">Receipts</div></div>
+          </div>
+
+          <div class="detail-section">
+            <h3 style="padding:0">Details</h3>
+            <div class="detail-row"><span class="label">Status</span><span class="value"><span class="badge badge-${(p.status||'').toLowerCase().replace(/\s+/g,'_')}">${esc(p.status||'')}</span></span></div>
+            <div class="detail-row"><span class="label">Start Date</span><span class="value">${dateStr(p.start_date)}</span></div>
+            <div class="detail-row"><span class="label">End Date</span><span class="value">${dateStr(p.end_date)}</span></div>
+            ${p.description ? `<div style="padding:12px 0;font-size:13px;color:var(--text2);line-height:1.6;border-bottom:1px solid var(--border)">${esc(p.description)}</div>` : ''}
+          </div>
+
+          ${pInvoices.length ? `
+          <div class="detail-section">
+            <h3 style="padding:0">Invoices</h3>
+            ${pInvoices.map(i => `
+              <div class="list-item" style="padding:10px 0" onclick="openInvoiceDetail('${i.id}')">
+                <div class="list-item-body">
+                  <div class="list-item-title">${esc(i.title || 'Invoice')}</div>
+                  <div class="list-item-sub">${dateStr(i.due_date)}</div>
+                </div>
+                <div class="list-item-right">
+                  <div class="list-item-val">${fmt(i.total)}</div>
+                  <span class="badge badge-${(i.status||'').toLowerCase()}" style="margin-top:4px">${esc(i.status||'')}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>` : ''}
+
+          ${pReceipts.length ? `
+          <div class="detail-section">
+            <h3 style="padding:0">Receipts</h3>
+            ${pReceipts.map(r => `
+              <div class="list-item" style="padding:10px 0" onclick="openReceiptDetail('${r.id}')">
+                <div class="list-item-body">
+                  <div class="list-item-title">${esc(r.vendor || r.store || 'Receipt')}</div>
+                  <div class="list-item-sub">${esc(r.category || '')} &mdash; ${dateStr(r.receipt_date)}</div>
+                </div>
+                <div class="list-item-right">
+                  <div class="list-item-val">${fmt(r.total)}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>` : ''}
+
+          ${pEvents.length ? `
+          <div class="detail-section">
+            <h3 style="padding:0">Events</h3>
+            ${pEvents.map(e => `
+              <div class="list-item" style="padding:10px 0">
+                <div class="list-item-body">
+                  <div class="list-item-title">${esc(e.title)}</div>
+                  <div class="list-item-sub">${dateStr(e.date)} ${e.time||''}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>` : ''}
+
+          <div style="display:flex;gap:10px;margin-top:20px">
+            <button class="btn btn-secondary" style="flex:1" onclick="shareProject('${pid}')">Share</button>
+            <button class="btn btn-danger" style="flex:1" onclick="if(confirm('Delete project?'))deleteProject('${pid}')">Delete</button>
+          </div>
+        `;
+      });
+    }
+
+    async function updateProjectStatus(pid, status) {
+      haptic();
+      await api(`/api/ahb/projects/${pid}/status`, {method:'POST', body:{status}});
+      toast('Status updated');
+      openProjectDetail(pid);
+      loadProjects();
+    }
+
+    async function deleteProject(pid) {
+      await api(`/api/ahb/projects/${pid}`, {method:'DELETE'});
+      toast('Project deleted');
+      closeSubView();
+      loadProjects();
+    }
+
+    function shareProject(pid) {
+      const p = S.projects.find(x => x.id === pid);
+      if(!p) return;
+      if(navigator.share) {
+        navigator.share({title: p.title, text: `${p.title} - ${p.status} - ${fmt(p.value)}`, url: window.location.href});
+      } else {
+        toast('Share not supported');
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // TAB 3: MONEY
+    // ══════════════════════════════════════════════════════════════════════
+    async function loadMoneyTab() {
+      if(S.moneyTab === 'invoices') await loadInvoices();
+      else if(S.moneyTab === 'receipts') await loadReceipts();
+      else if(S.moneyTab === 'billing') await loadBilling();
+    }
+
+    // Invoices
+    async function loadInvoices() {
+      yearPills('invoiceYearPills', null);
+      const data = await api('/api/ahb/invoices' + (S.year ? '?year=' + S.year : ''));
+      S.invoices = (data && data.invoices) || data || [];
+
+      // Stats
+      const byStatus = {};
+      S.invoices.forEach(i => {
+        const st = (i.status||'draft').toLowerCase();
+        if(!byStatus[st]) byStatus[st] = {count:0, total:0};
+        byStatus[st].count++;
+        byStatus[st].total += (i.total||0);
+      });
+      $('invoiceStats').innerHTML = `
+        <div class="stat-card"><div class="stat-val yellow">${(byStatus.sent||byStatus.due||{count:0}).count + (byStatus.draft||{count:0}).count}</div><div class="stat-lbl">Due</div></div>
+        <div class="stat-card"><div class="stat-val red">${(byStatus.overdue||{count:0}).count}</div><div class="stat-lbl">Overdue</div></div>
+        <div class="stat-card"><div class="stat-val green">${fmtK((byStatus.paid||{total:0}).total)}</div><div class="stat-lbl">Paid</div></div>
+      `;
+
+      $('invoicesList').innerHTML = S.invoices.length ? S.invoices.map(i => `
+        <div class="list-item" onclick="openInvoiceDetail('${i.id}')">
+          <div class="list-item-icon" style="background:rgba(233,69,96,.1);color:var(--accent);font-weight:700;font-size:12px">INV</div>
+          <div class="list-item-body">
+            <div class="list-item-title">${esc(i.title || i.client_name || 'Invoice')}</div>
+            <div class="list-item-sub">${esc(i.client_name||'')} &mdash; Due ${dateStr(i.due_date)}</div>
+          </div>
+          <div class="list-item-right">
+            <div class="list-item-val">${fmt(i.total)}</div>
+            <span class="badge badge-${(i.status||'').toLowerCase()}" style="margin-top:4px">${esc(i.status||'')}</span>
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state"><p>No invoices found</p></div>';
+    }
+
+    // Invoice Detail
+    async function openInvoiceDetail(iid) {
+      openSubView('Invoice', async (body) => {
+        const data = await api('/api/ahb/invoices');
+        const invoices = (data && data.invoices) || data || [];
+        const inv = invoices.find(x => x.id === iid);
+        if(!inv) { body.innerHTML = '<div class="empty-state"><p>Invoice not found</p></div>'; return; }
+
+        let items = [];
+        try { items = JSON.parse(inv.items || '[]'); } catch(e) {}
+
+        body.innerHTML = `
+          <div style="margin-bottom:16px">
+            <h1 style="font-size:18px;font-weight:800">${esc(inv.title || 'Invoice')}</h1>
+            <div style="font-size:13px;color:var(--text3);margin-top:4px">${esc(inv.client_name||'')} &mdash; <span class="badge badge-${(inv.status||'').toLowerCase()}">${esc(inv.status||'')}</span></div>
+          </div>
+
+          <div class="detail-section">
+            <div class="detail-row"><span class="label">Due Date</span><span class="value">${dateStr(inv.due_date)}</span></div>
+            <div class="detail-row"><span class="label">Paid Date</span><span class="value">${dateStr(inv.paid_date)}</span></div>
+            <div class="detail-row"><span class="label">Total</span><span class="value" style="font-size:18px;font-weight:800;color:var(--green)">${fmt(inv.total)}</span></div>
+          </div>
+
+          ${items.length ? `
+          <div class="detail-section">
+            <h3 style="padding:0">Line Items</h3>
+            <div class="invoice-preview" style="margin:8px 0">
+              ${items.map(it => `<div class="inv-line"><span>${esc(it.description||it.name||'')}</span><span>${fmt(it.amount||it.total||0)}</span></div>`).join('')}
+              <div class="inv-total">${fmt(inv.total)}</div>
+            </div>
+          </div>` : ''}
+
+          ${inv.notes ? `<div style="font-size:13px;color:var(--text2);line-height:1.6;padding:12px 0;border-top:1px solid var(--border)">${esc(inv.notes)}</div>` : ''}
+
+          <div style="display:flex;gap:10px;margin-top:20px">
+            <button class="btn btn-primary" style="flex:1" onclick="shareInvoice('${iid}')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>
+              Share
+            </button>
+            <button class="btn btn-secondary" style="flex:1" onclick="updateInvoiceStatus('${iid}','paid')">Mark Paid</button>
+          </div>
+        `;
+      });
+    }
+
+    async function updateInvoiceStatus(iid, status) {
+      haptic();
+      await api(`/api/ahb/invoices/${iid}`, {method:'PUT', body:{status, paid_date: new Date().toISOString().split('T')[0]}});
+      toast('Invoice updated');
+      openInvoiceDetail(iid);
+    }
+
+    function shareInvoice(iid) {
+      const inv = S.invoices.find(x => x.id === iid);
+      if(!inv) return;
+      if(navigator.share) {
+        navigator.share({title: inv.title || 'Invoice', text: `Invoice: ${inv.title} - ${fmt(inv.total)} - ${inv.status}`, url: window.location.href});
+      } else { toast('Share not supported'); }
+    }
+
+    // Receipts
+    async function loadReceipts() {
+      yearPills('receiptYearPills', null);
+      const data = await api('/api/ahb/receipts' + (S.year ? '?year=' + S.year : ''));
+      S.receipts = (data && data.receipts) || data || [];
+
+      // Group by category for kanban
+      const cats = {};
+      S.receipts.forEach(r => {
+        const c = r.category || 'Uncategorized';
+        if(!cats[c]) cats[c] = [];
+        cats[c].push(r);
+      });
+
+      $('receiptKanban').innerHTML = Object.keys(cats).length ? `
+        <div class="kanban-row">
+          ${Object.entries(cats).map(([cat, items]) => `
+            <div class="kanban-col">
+              <div class="kanban-col-title">${esc(cat)} (${items.length})</div>
+              ${items.slice(0, 10).map(r => `
+                <div class="kanban-card" onclick="openReceiptDetail('${r.id}')">
+                  <div class="kanban-card-title">${esc(r.vendor || r.store || 'Receipt')}</div>
+                  <div style="font-size:14px;font-weight:700;color:var(--accent);margin:4px 0">${fmt(r.total)}</div>
+                  <div class="kanban-card-meta">${dateStr(r.receipt_date)}</div>
+                </div>
+              `).join('')}
+            </div>
+          `).join('')}
+        </div>
+      ` : '<div class="empty-state"><p>No receipts found</p></div>';
+    }
+
+    // Receipt Detail
+    async function openReceiptDetail(rid) {
+      openSubView('Receipt', async (body) => {
+        const r = await api(`/api/ahb/receipts/${rid}`);
+        if(!r || r.error) { body.innerHTML = '<div class="empty-state"><p>Receipt not found</p></div>'; return; }
+
+        body.innerHTML = `
+          <div style="margin-bottom:16px">
+            <h1 style="font-size:18px;font-weight:800">${esc(r.vendor || r.store || 'Receipt')}</h1>
+            <div style="font-size:13px;color:var(--text3)">${esc(r.category||'')} &mdash; ${dateStr(r.receipt_date)}</div>
+          </div>
+
+          ${r.image_path ? `<div style="margin-bottom:16px;border-radius:12px;overflow:hidden"><img src="/api/ahb/receipts/image/${rid}" style="width:100%;display:block" onerror="this.style.display='none'"></div>` : ''}
+
+          <div class="detail-section">
+            <div class="detail-row"><span class="label">Total</span><span class="value" style="font-size:18px;font-weight:800;color:var(--accent)">${fmt(r.total)}</span></div>
+            <div class="detail-row"><span class="label">Tax</span><span class="value">${fmt(r.tax)}</span></div>
+            <div class="detail-row"><span class="label">Payment</span><span class="value">${esc(r.payment_method||'')}</span></div>
+            <div class="detail-row"><span class="label">Category</span><span class="value">${esc(r.category||'')}</span></div>
+            ${r.project_id ? `<div class="detail-row"><span class="label">Project</span><span class="value"><a style="color:var(--blue)" onclick="openProjectDetail('${r.project_id}')">${esc(r.project_title||r.project_id)}</a></span></div>` : ''}
+          </div>
+
+          ${r.notes ? `<div style="font-size:13px;color:var(--text2);line-height:1.6;padding:12px 0">${esc(r.notes)}</div>` : ''}
+
+          <button class="btn btn-secondary btn-block" style="margin-top:16px" onclick="runReceiptOCR('${rid}')">Run OCR</button>
+        `;
+      });
+    }
+
+    async function runReceiptOCR(rid) {
+      toast('Running OCR...');
+      await api(`/api/ahb/receipts/${rid}/ocr`, {method:'POST'});
+      toast('OCR complete');
+      openReceiptDetail(rid);
+    }
+
+    // Billing (Debts)
+    async function loadBilling() {
+      const data = await api('/api/ahb/debts');
+      S.debts = (data && data.debts) || data || [];
+
+      let totalBal = 0, totalMonthly = 0;
+      S.debts.forEach(d => { totalBal += (d.balance||0); totalMonthly += (d.payment_amount||0); });
+
+      $('billingStats').innerHTML = `
+        <div class="stat-card"><div class="stat-val red">${fmtK(totalBal)}</div><div class="stat-lbl">Total Debt</div></div>
+        <div class="stat-card"><div class="stat-val yellow">${fmtK(totalMonthly)}</div><div class="stat-lbl">Monthly</div></div>
+        <div class="stat-card"><div class="stat-val blue">${S.debts.length}</div><div class="stat-lbl">Accounts</div></div>
+      `;
+
+      $('billingList').innerHTML = S.debts.length ? S.debts.map(d => `
+        <div class="list-item" onclick="openDebtDetail('${d.id}')">
+          <div class="list-item-icon" style="background:rgba(255,85,85,.1);color:var(--red);font-weight:700;font-size:12px">${(d.type||'?')[0].toUpperCase()}</div>
+          <div class="list-item-body">
+            <div class="list-item-title">${esc(d.name)}</div>
+            <div class="list-item-sub">${esc(d.type||'')} &mdash; Due ${dateStr(d.due_date)}</div>
+          </div>
+          <div class="list-item-right">
+            <div class="list-item-val" style="color:var(--red)">${fmt(d.balance)}</div>
+            <div class="list-item-meta">${fmt(d.payment_amount)}/mo</div>
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state"><p>No debts tracked</p></div>';
+    }
+
+    function openDebtDetail(did) {
+      const d = S.debts.find(x => x.id === did);
+      if(!d) return;
+      openSubView(d.name, (body) => {
+        body.innerHTML = `
+          <div class="detail-section">
+            <div class="detail-row"><span class="label">Type</span><span class="value">${esc(d.type||'')}</span></div>
+            <div class="detail-row"><span class="label">Balance</span><span class="value" style="color:var(--red);font-weight:800">${fmt(d.balance)}</span></div>
+            <div class="detail-row"><span class="label">Payment</span><span class="value">${fmt(d.payment_amount)}</span></div>
+            <div class="detail-row"><span class="label">Frequency</span><span class="value">${esc(d.frequency||'')}</span></div>
+            <div class="detail-row"><span class="label">Due Date</span><span class="value">${dateStr(d.due_date)}</span></div>
+            <div class="detail-row"><span class="label">Payoff Date</span><span class="value">${dateStr(d.payoff_date)}</span></div>
+          </div>
+        `;
+      });
+    }
+
+    // Receipt Upload/Capture
+    function openReceiptCapture() {
+      openModal(`
+        <div class="modal-title">Upload Receipt</div>
+        <div class="form-group">
+          <label class="form-label">Photo</label>
+          <input type="file" accept="image/*" capture="environment" id="receiptFile" class="form-input" style="padding:10px">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <select id="receiptCategory" class="form-select">
+            <option value="Materials">Materials</option>
+            <option value="Tools">Tools</option>
+            <option value="Gas">Gas</option>
+            <option value="Food">Food</option>
+            <option value="Office">Office</option>
+            <option value="Misc">Misc</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Project (optional)</label>
+          <select id="receiptProject" class="form-select">
+            <option value="">None</option>
+            ${S.projects.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="submitReceipt()">Upload & OCR</button>
+      `);
+    }
+
+    async function submitReceipt() {
+      const file = $('receiptFile').files[0];
+      if(!file) { toast('Select a photo'); return; }
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('category', $('receiptCategory').value);
+      const pid = $('receiptProject').value;
+      if(pid) fd.append('project_id', pid);
+      toast('Uploading...');
+      closeModal();
+      const r = await apiUpload('/api/ahb/receipts/upload', fd);
+      if(r && !r.error) { toast('Receipt uploaded!'); loadReceipts(); }
+      else toast('Upload failed');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // TAB 4: SCHEDULE
+    // ══════════════════════════════════════════════════════════════════════
+    async function loadEvents() {
+      const data = await api('/api/ahb/events');
+      S.events = (data && data.events) || data || [];
+    }
+
+    function renderCalendar() {
+      loadEvents().then(() => {
+        const d = S.calDate;
+        const y = d.getFullYear(), m = d.getMonth();
+        $('calMonthLabel').textContent = d.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+
+        const first = new Date(y, m, 1);
+        const last = new Date(y, m + 1, 0);
+        const startDay = first.getDay();
+        const daysInMonth = last.getDate();
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+
+        // Event counts by date
+        const evCounts = {};
+        S.events.forEach(e => {
+          if(e.date) { evCounts[e.date] = (evCounts[e.date]||0) + 1; }
+        });
+
+        let html = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-day-name">${d}</div>`).join('');
+
+        // Previous month days
+        const prevLast = new Date(y, m, 0).getDate();
+        for(let i = startDay - 1; i >= 0; i--) {
+          html += `<div class="cal-day other-month">${prevLast - i}</div>`;
+        }
+
+        // Current month
+        for(let day = 1; day <= daysInMonth; day++) {
+          const dateKey = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+          const isToday = dateKey === todayStr;
+          const isSelected = S.calSelectedDate === dateKey;
+          const evCount = evCounts[dateKey] || 0;
+          const dots = evCount ? `<div class="event-dots">${Array(Math.min(evCount,3)).fill('<span class="dot"></span>').join('')}</div>` : '';
+          html += `<div class="cal-day${isToday ? ' today' : ''}${isSelected ? ' selected' : ''}" onclick="selectCalDay('${dateKey}')">${day}${dots}</div>`;
+        }
+
+        // Next month
+        const remaining = 42 - (startDay + daysInMonth);
+        for(let i = 1; i <= remaining; i++) {
+          html += `<div class="cal-day other-month">${i}</div>`;
+        }
+
+        $('calGrid').innerHTML = html;
+        showCalEvents(S.calSelectedDate || todayStr);
+      });
+    }
+
+    function calNav(dir) {
+      haptic();
+      S.calDate.setMonth(S.calDate.getMonth() + dir);
+      renderCalendar();
+    }
+
+    function selectCalDay(dateKey) {
+      haptic();
+      S.calSelectedDate = dateKey;
+      renderCalendar();
+    }
+
+    function showCalEvents(dateKey) {
+      const dayEvents = S.events.filter(e => e.date === dateKey);
+      const d = new Date(dateKey + 'T00:00:00');
+      $('calEventLabel').textContent = d.toLocaleDateString('en-US', {weekday:'long', month:'short', day:'numeric'});
+
+      $('calEvents').innerHTML = dayEvents.length ? dayEvents.map(e => `
+        <div class="list-item">
+          <div class="list-item-icon" style="background:rgba(233,69,96,.15);color:var(--accent)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="list-item-body">
+            <div class="list-item-title">${esc(e.title)}</div>
+            <div class="list-item-sub">${e.time ? e.time : 'All day'}${e.type ? ' &mdash; ' + esc(e.type) : ''}</div>
+          </div>
+        </div>
+      `).join('') : '<div class="empty-state" style="padding:20px"><p>No events this day</p></div>';
+    }
+
+    function openNewEvent() {
+      const today = new Date().toISOString().split('T')[0];
+      openModal(`
+        <div class="modal-title">New Event</div>
+        <div class="form-group">
+          <label class="form-label">Title</label>
+          <input type="text" id="evTitle" class="form-input" placeholder="Event title">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input type="date" id="evDate" class="form-input" value="${S.calSelectedDate || today}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Time (optional)</label>
+          <input type="time" id="evTime" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select id="evType" class="form-select">
+            <option value="meeting">Meeting</option>
+            <option value="deadline">Deadline</option>
+            <option value="inspection">Inspection</option>
+            <option value="delivery">Delivery</option>
+            <option value="payment">Payment</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="evNotes" class="form-textarea" placeholder="Optional notes"></textarea>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="submitEvent()">Create Event</button>
+      `);
+    }
+
+    async function submitEvent() {
+      const data = {
+        title: $('evTitle').value,
+        date: $('evDate').value,
+        time: $('evTime').value || null,
+        type: $('evType').value,
+        notes: $('evNotes').value || null,
+      };
+      if(!data.title || !data.date) { toast('Title and date required'); return; }
+      closeModal();
+      const r = await api('/api/ahb/events', {method:'POST', body:data});
+      if(r && !r.error) { toast('Event created'); renderCalendar(); }
+      else toast('Failed to create event');
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // TAB 5: MORE — Sub Sections
+    // ══════════════════════════════════════════════════════════════════════
+    function openMoreSection(section) {
+      const views={agents:openAgentsView,clients:openClientsView,employees:openEmployeesView,
+        notes:openNotesView,ipay:openIPAYView,files:openFilesView,tax:openTaxView,
+        payroll:openPayrollView,settings:openSettingsView,tasks:openTasksView,
+        infra:openInfraView,email:openEmailView,crons:openCronsView,
+        artifacts:openArtifactsView,journal:openJournalView,skills:openSkillsView,
+        changeorders:openChangeOrdersView,estimator:openEstimatesView};
+      if(views[section]) views[section]();
+    }
+
+    // Agents
+    async function openAgentsView() {
+      openSubView('Agents', async (body) => {
+        const [status, heartbeats] = await Promise.all([
+          api('/api/status'),
+          api('/api/heartbeats'),
+        ]);
+        const hbMap = {};
+        if(heartbeats) Object.entries(heartbeats).forEach(([k,v]) => hbMap[k] = v);
+
+        body.innerHTML = Object.entries(status||{}).map(([id, st]) => {
+          const on = st === 'online' || (st && st.status === 'online');
+          const name = id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          const hb = hbMap[id];
+          const hbText = hb ? timeAgo(hb.last_seen || hb.ts) : 'unknown';
+          return `
+            <div class="agent-card-m" onclick="openAgentMessages('${id}')">
+              <div class="agent-dot ${on ? 'online' : 'offline'}"></div>
+              <div class="agent-info">
+                <div class="agent-name-m">${name}</div>
+                <div class="agent-role-m">${on ? 'Online' : 'Offline'} &mdash; ${hbText}</div>
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text4)" stroke-width="2" width="18" height="18"><path d="M9 18l6-6-6-6"/></svg>
+            </div>
+          `;
+        }).join('') || '<div class="empty-state"><p>No agents found</p></div>';
+      });
+    }
+
+    async function openAgentMessages(agentId) {
+      const name=agentId.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+      openSubView(name, async (body) => {
+        const msgs = await api(`/api/messages/${agentId}?limit=20`);
+        body.innerHTML = `
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+            <button class="btn btn-sm" style="background:var(--green);color:#fff" onclick="agentAction('${agentId}','start')">Start</button>
+            <button class="btn btn-sm" style="background:var(--yellow);color:#111" onclick="agentAction('${agentId}','restart')">Restart</button>
+            <button class="btn btn-sm" style="background:var(--red);color:#fff" onclick="agentAction('${agentId}','stop')">Stop</button>
+            <button class="btn btn-sm btn-secondary" onclick="window.open('/agent/${agentId}')">Desktop View</button>
+          </div>
+          <h3 style="font-size:14px;color:var(--text2);margin-bottom:8px">Recent Messages</h3>
+          ${(msgs||[]).map(m => `
+          <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:10px;font-weight:700;color:${m.role==='user' ? 'var(--accent2)' : 'var(--blue)'};text-transform:uppercase;margin-bottom:4px">${m.role}</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.5;word-break:break-word">${esc((m.content||'').substring(0, 500))}</div>
+          </div>
+        `).join('') || '<div class="empty-state"><p>No messages</p></div>'}`;
+      });
+    }
+    async function agentAction(agentId,action){
+      showToast(action+'ing '+agentId.replace(/_/g,' ')+'...');
+      try{
+        await api('/agent/'+agentId+'/'+action,{method:'POST'});
+        showToast(action+' complete');
+      }catch(e){showToast('Error: '+e.message,'error');}
+    }
+
+    // Clients
+    async function openClientsView() {
+      openSubView('Clients', async (body) => {
+        const data = await api('/api/ahb/clients');
+        S.clients = (data && data.clients) || data || [];
+        body.innerHTML = `
+          <div style="margin-bottom:12px">
+            <button class="btn btn-primary btn-sm" onclick="openNewClient()">+ New Client</button>
+          </div>
+          ${S.clients.map(c => `
+            <div class="list-item">
+              <div class="list-item-icon" style="background:rgba(77,166,255,.1);color:var(--blue);font-weight:700">${(c.name||'?')[0]}</div>
+              <div class="list-item-body">
+                <div class="list-item-title">${esc(c.name)}</div>
+                <div class="list-item-sub">${esc(c.phone||'')} ${c.email ? '&mdash; ' + esc(c.email) : ''}</div>
+              </div>
+              <div class="list-item-right">
+                ${c.revenue ? `<div class="list-item-val" style="color:var(--green)">${fmt(c.revenue)}</div>` : ''}
+              </div>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No clients</p></div>'}
+        `;
+      });
+    }
+
+    function openNewClient() {
+      openModal(`
+        <div class="modal-title">New Client</div>
+        <div class="form-group"><label class="form-label">Name</label><input type="text" id="clName" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input type="tel" id="clPhone" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Email</label><input type="email" id="clEmail" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Address</label><input type="text" id="clAddress" class="form-input"></div>
+        <button class="btn btn-primary btn-block" onclick="submitClient()">Create Client</button>
+      `);
+    }
+
+    async function submitClient() {
+      const data = {name:$('clName').value, phone:$('clPhone').value, email:$('clEmail').value, address:$('clAddress').value};
+      if(!data.name) { toast('Name required'); return; }
+      closeModal();
+      await api('/api/ahb/clients', {method:'POST', body:data});
+      toast('Client created');
+      openClientsView();
+    }
+
+    // Employees
+    async function openEmployeesView() {
+      openSubView('Employees', async (body) => {
+        const data = await api('/api/ahb/employees');
+        S.employees = (data && data.employees) || data || [];
+        body.innerHTML = `
+          <div style="margin-bottom:12px">
+            <button class="btn btn-primary btn-sm" onclick="openNewEmployee()">+ New Employee</button>
+          </div>
+          ${S.employees.map(e => `
+            <div class="list-item">
+              <div class="list-item-icon" style="background:rgba(0,208,132,.1);color:var(--green);font-weight:700">${(e.name||'?')[0]}</div>
+              <div class="list-item-body">
+                <div class="list-item-title">${esc(e.name)}</div>
+                <div class="list-item-sub">${esc(e.role||e.position||'')} &mdash; ${e.active ? 'Active' : 'Inactive'}</div>
+              </div>
+              <div class="list-item-right" style="display:flex;gap:6px">
+                <button class="btn btn-sm" style="background:var(--green);color:#000;font-weight:700" onclick="clockPunch('${e.id}','clock_in')">In</button>
+                <button class="btn btn-sm" style="background:var(--red);color:#fff;font-weight:700" onclick="clockPunch('${e.id}','clock_out')">Out</button>
+              </div>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No employees</p></div>'}
+        `;
+      });
+    }
+
+    async function clockPunch(eid, type) {
+      haptic();
+      await api('/api/ahb/timeclock/punch', {method:'POST', body:{employee_id:eid, punch_type:type}});
+      toast(type === 'clock_in' ? 'Clocked in!' : 'Clocked out!');
+    }
+
+    function openNewEmployee() {
+      openModal(`
+        <div class="modal-title">New Employee</div>
+        <div class="form-group"><label class="form-label">Name</label><input type="text" id="empName" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Role</label><input type="text" id="empRole" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input type="tel" id="empPhone" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Rate ($/hr)</label><input type="number" id="empRate" class="form-input"></div>
+        <button class="btn btn-primary btn-block" onclick="submitEmployee()">Create Employee</button>
+      `);
+    }
+
+    async function submitEmployee() {
+      const data = {name:$('empName').value, role:$('empRole').value, phone:$('empPhone').value, rate:parseFloat($('empRate').value)||0, active:1};
+      if(!data.name) { toast('Name required'); return; }
+      closeModal();
+      await api('/api/ahb/employees', {method:'POST', body:data});
+      toast('Employee created');
+      openEmployeesView();
+    }
+
+    // Notes
+    async function openNotesView() {
+      openSubView('Notes', async (body) => {
+        const data = await api('/api/ahb/notes');
+        S.notes = (data && data.notes) || data || [];
+        body.innerHTML = `
+          <div style="margin-bottom:12px">
+            <button class="btn btn-primary btn-sm" onclick="openNewNote()">+ New Note</button>
+          </div>
+          ${S.notes.map(n => `
+            <div class="note-card" onclick="openNoteDetail('${n.id}')">
+              <h4>${esc(n.title||'Untitled')}</h4>
+              <p>${esc(n.content||'')}</p>
+              <div class="note-meta">${dateStr(n.created_at)} ${n.pinned ? '&mdash; Pinned' : ''} ${n.type ? '&mdash; ' + esc(n.type) : ''}</div>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No notes</p></div>'}
+        `;
+      });
+    }
+
+    function openNoteDetail(nid) {
+      const n = S.notes.find(x => x.id === nid);
+      if(!n) return;
+      openSubView(n.title || 'Note', (body) => {
+        body.innerHTML = `
+          <div style="font-size:15px;color:var(--text);line-height:1.7;white-space:pre-wrap">${esc(n.content||'')}</div>
+          <div style="margin-top:20px;font-size:11px;color:var(--text4)">${n.type ? 'Type: ' + esc(n.type) + ' &mdash; ' : ''}Created ${dateStr(n.created_at)}</div>
+          <div style="display:flex;gap:10px;margin-top:20px">
+            <button class="btn btn-secondary" style="flex:1" onclick="editNote('${nid}')">Edit</button>
+            <button class="btn btn-danger" style="flex:1" onclick="if(confirm('Delete note?'))deleteNote('${nid}')">Delete</button>
+          </div>
+        `;
+      });
+    }
+
+    function openNewNote() {
+      openModal(`
+        <div class="modal-title">New Note</div>
+        <div class="form-group"><label class="form-label">Title</label><input type="text" id="noteTitle" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Content</label><textarea id="noteContent" class="form-textarea" rows="5"></textarea></div>
+        <div class="form-group"><label class="form-label">Type</label>
+          <select id="noteType" class="form-select">
+            <option value="note">Note</option><option value="task">Task</option><option value="list">List</option><option value="idea">Idea</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="submitNote()">Save Note</button>
+      `);
+    }
+
+    async function submitNote() {
+      const data = {title:$('noteTitle').value, content:$('noteContent').value, type:$('noteType').value};
+      if(!data.title) { toast('Title required'); return; }
+      closeModal();
+      await api('/api/ahb/notes', {method:'POST', body:data});
+      toast('Note saved');
+      openNotesView();
+    }
+
+    async function editNote(nid) {
+      const n = S.notes.find(x => x.id === nid);
+      if(!n) return;
+      openModal(`
+        <div class="modal-title">Edit Note</div>
+        <div class="form-group"><label class="form-label">Title</label><input type="text" id="noteTitle" class="form-input" value="${esc(n.title||'')}"></div>
+        <div class="form-group"><label class="form-label">Content</label><textarea id="noteContent" class="form-textarea" rows="5">${esc(n.content||'')}</textarea></div>
+        <button class="btn btn-primary btn-block" onclick="updateNote('${nid}')">Update</button>
+      `);
+    }
+
+    async function updateNote(nid) {
+      await api(`/api/ahb/notes/${nid}`, {method:'PUT', body:{title:$('noteTitle').value, content:$('noteContent').value}});
+      closeModal(); toast('Note updated'); openNotesView();
+    }
+
+    async function deleteNote(nid) {
+      await api(`/api/ahb/notes/${nid}`, {method:'DELETE'});
+      toast('Deleted'); closeSubView(); openNotesView();
+    }
+
+    // IPAY (Debts)
+    async function openIPAYView() {
+      openSubView('IPAY - Debt Tracker', async (body) => {
+        const data = await api('/api/ahb/debts');
+        S.debts = (data && data.debts) || data || [];
+        let totalBal = 0, totalMonthly = 0;
+        S.debts.forEach(d => { totalBal += (d.balance||0); totalMonthly += (d.payment_amount||0); });
+
+        body.innerHTML = `
+          <div class="stats-grid" style="padding:0;margin-bottom:16px">
+            <div class="stat-card"><div class="stat-val red">${fmt(totalBal)}</div><div class="stat-lbl">Total Balance</div></div>
+            <div class="stat-card"><div class="stat-val yellow">${fmt(totalMonthly)}</div><div class="stat-lbl">Monthly</div></div>
+          </div>
+          <div style="margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="openNewDebt()">+ Add Debt</button></div>
+          ${S.debts.map(d => `
+            <div class="list-item" onclick="openDebtDetail('${d.id}')">
+              <div class="list-item-body">
+                <div class="list-item-title">${esc(d.name)}</div>
+                <div class="list-item-sub">${esc(d.type||'')} &mdash; ${esc(d.frequency||'')} &mdash; Due ${dateStr(d.due_date)}</div>
+              </div>
+              <div class="list-item-right">
+                <div class="list-item-val" style="color:var(--red)">${fmt(d.balance)}</div>
+                <div class="list-item-meta">${fmt(d.payment_amount)}/mo</div>
+              </div>
+            </div>
+          `).join('')}
+        `;
+      });
+    }
+
+    function openNewDebt() {
+      openModal(`
+        <div class="modal-title">Add Debt</div>
+        <div class="form-group"><label class="form-label">Name</label><input type="text" id="debtName" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Type</label>
+          <select id="debtType" class="form-select"><option>loan</option><option>credit_card</option><option>mortgage</option><option>other</option></select></div>
+        <div class="form-group"><label class="form-label">Balance</label><input type="number" id="debtBal" class="form-input" step="0.01"></div>
+        <div class="form-group"><label class="form-label">Payment Amount</label><input type="number" id="debtPay" class="form-input" step="0.01"></div>
+        <div class="form-group"><label class="form-label">Due Date</label><input type="date" id="debtDue" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Frequency</label>
+          <select id="debtFreq" class="form-select"><option>monthly</option><option>bi-weekly</option><option>weekly</option><option>quarterly</option></select></div>
+        <button class="btn btn-primary btn-block" onclick="submitDebt()">Add</button>
+      `);
+    }
+
+    async function submitDebt() {
+      const data = {name:$('debtName').value,type:$('debtType').value,balance:parseFloat($('debtBal').value)||0,payment_amount:parseFloat($('debtPay').value)||0,due_date:$('debtDue').value,frequency:$('debtFreq').value};
+      if(!data.name) { toast('Name required'); return; }
+      closeModal();
+      await api('/api/ahb/debts', {method:'POST', body:data});
+      toast('Debt added'); openIPAYView();
+    }
+
+    // Files
+    async function openFilesView() {
+      openSubView('Files', async (body) => {
+        const data = await api('/api/ahb/files');
+        S.files = (data && data.files) || data || [];
+        body.innerHTML = `
+          <div style="margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="openUploadFile()">+ Upload File</button></div>
+          ${S.files.map(f => `
+            <div class="list-item" onclick="if('${f.id}')window.open('/api/ahb/files/serve/${f.id}')">
+              <div class="list-item-icon" style="background:rgba(124,58,237,.1);color:var(--accent2);font-weight:700;font-size:10px">${(f.filename||f.name||'').split('.').pop().toUpperCase().substring(0,3)}</div>
+              <div class="list-item-body">
+                <div class="list-item-title">${esc(f.filename||f.name||'File')}</div>
+                <div class="list-item-sub">${esc(f.category||'')} &mdash; ${dateStr(f.created_at)}</div>
+              </div>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No files</p></div>'}
+        `;
+      });
+    }
+
+    function openUploadFile() {
+      openModal(`
+        <div class="modal-title">Upload File</div>
+        <div class="form-group"><label class="form-label">File</label><input type="file" id="fileUpload" class="form-input" style="padding:10px"></div>
+        <div class="form-group"><label class="form-label">Category</label><input type="text" id="fileCat" class="form-input" placeholder="e.g. contract, permit"></div>
+        <button class="btn btn-primary btn-block" onclick="submitFile()">Upload</button>
+      `);
+    }
+
+    async function submitFile() {
+      const file = $('fileUpload').files[0];
+      if(!file) { toast('Select a file'); return; }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('category', $('fileCat').value);
+      closeModal();
+      toast('Uploading...');
+      const r = await apiUpload('/api/ahb/files', fd);
+      if(r && !r.error) { toast('Uploaded'); openFilesView(); }
+      else toast('Upload failed');
+    }
+
+    // Tax Docs
+    async function openTaxView() {
+      openSubView('Tax Documents', async (body) => {
+        const data = await api('/api/ahb/tax');
+        S.tax = (data && data.items) || data || [];
+        body.innerHTML = `
+          <div style="margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="openNewTaxItem()">+ Add Item</button></div>
+          ${(Array.isArray(S.tax) ? S.tax : []).map(t => `
+            <div class="checklist-item">
+              <div class="checklist-check${t.completed ? ' checked' : ''}" onclick="toggleTax('${t.id}', ${!t.completed})">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+              <div class="checklist-text${t.completed ? ' done' : ''}">${esc(t.title||t.name||'')}</div>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No tax items</p></div>'}
+        `;
+      });
+    }
+
+    async function toggleTax(tid, val) {
+      haptic();
+      await api(`/api/ahb/tax/${tid}`, {method:'PUT', body:{completed:val?1:0}});
+      openTaxView();
+    }
+
+    function openNewTaxItem() {
+      openModal(`
+        <div class="modal-title">New Tax Item</div>
+        <div class="form-group"><label class="form-label">Title</label><input type="text" id="taxTitle" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Year</label><input type="number" id="taxYear" class="form-input" value="${new Date().getFullYear()}"></div>
+        <button class="btn btn-primary btn-block" onclick="submitTaxItem()">Add</button>
+      `);
+    }
+
+    async function submitTaxItem() {
+      const data = {title:$('taxTitle').value, year:parseInt($('taxYear').value)||2026};
+      if(!data.title) { toast('Title required'); return; }
+      closeModal();
+      await api('/api/ahb/tax', {method:'POST', body:data});
+      toast('Added'); openTaxView();
+    }
+
+    // Payroll
+    async function openPayrollView() {
+      openSubView('Payroll', async (body) => {
+        const data = await api('/api/ahb/payroll');
+        S.payroll = (data && data.payroll) || data || [];
+        let total = 0;
+        S.payroll.forEach(p => total += (p.total||0));
+
+        body.innerHTML = `
+          <div class="stat-card" style="margin-bottom:16px;text-align:center">
+            <div class="stat-val yellow">${fmt(total)}</div>
+            <div class="stat-lbl">Total Payroll</div>
+          </div>
+          ${S.payroll.map(p => `
+            <div class="list-item">
+              <div class="list-item-body">
+                <div class="list-item-title">${esc(p.employee_name||'')}</div>
+                <div class="list-item-sub">${dateStr(p.period_start)} - ${dateStr(p.period_end)}</div>
+              </div>
+              <div class="list-item-right">
+                <div class="list-item-val">${fmt(p.total)}</div>
+                <div class="list-item-meta">${p.hours||0}h</div>
+              </div>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No payroll records</p></div>'}
+        `;
+      });
+    }
+
+    // Settings
+    function openSettingsView() {
+      openSubView('Settings', (body) => {
+        body.innerHTML = `
+          <div class="detail-section">
+            <h3 style="padding:0">App Info</h3>
+            <div class="detail-row"><span class="label">App</span><span class="value">Baza Empire v3</span></div>
+            <div class="detail-row"><span class="label">Company</span><span class="value">All Home Building Co LLC</span></div>
+            <div class="detail-row"><span class="label">Platform</span><span class="value">Mobile PWA</span></div>
+            <div class="detail-row"><span class="label">Build</span><span class="value">2026.04.01</span></div>
+          </div>
+          <div class="detail-section">
+            <h3 style="padding:0">Actions</h3>
+            <button class="btn btn-secondary btn-block" style="margin-bottom:10px" onclick="window.location.reload()">Refresh App</button>
+            <button class="btn btn-secondary btn-block" style="margin-bottom:10px" onclick="window.open('/')">Open Desktop Dashboard</button>
+            <button class="btn btn-secondary btn-block" onclick="window.open('/ahb123')">Open AHB Business Hub</button>
+          </div>
+        `;
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // BAZA OPERATIONS VIEWS
+    // ══════════════════════════════════════════════════════════════════════
+
+    async function openTasksView(){
+      openSubView('Task Board', async(body)=>{
+        const [tasks,stats]=await Promise.all([api('/api/tasks'),api('/api/tasks/stats')]);
+        const list=Array.isArray(tasks)?tasks:tasks.tasks||[];
+        const st=stats||{};
+        body.innerHTML=`
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+            <div class="stat-card"><div class="stat-val" style="color:var(--yellow)">${st.pending||0}</div><div class="stat-label">Pending</div></div>
+            <div class="stat-card"><div class="stat-val" style="color:var(--blue)">${st.in_progress||0}</div><div class="stat-label">Active</div></div>
+            <div class="stat-card"><div class="stat-val" style="color:var(--green)">${st.completed||0}</div><div class="stat-label">Done</div></div>
+          </div>
+          <div id="tasks-list">${list.length?list.map(t=>`
+            <div class="card" style="border-left:3px solid ${t.status==='completed'?'var(--green)':t.status==='in_progress'?'var(--blue)':'var(--yellow)'}">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="font-weight:600;color:var(--text1)">${esc(t.title||'')}</div>
+                <span class="badge ${t.status==='completed'?'badge-green':t.status==='in_progress'?'badge-blue':'badge-yellow'}">${t.status}</span>
+              </div>
+              <div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(t.assigned_to||'')} &middot; ${t.priority||'normal'} priority</div>
+              ${t.description?'<div style="font-size:12px;color:var(--text4);margin-top:4px">'+esc(t.description).substring(0,100)+'</div>':''}
+            </div>
+          `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No tasks</div>'}</div>
+          <button class="btn btn-primary btn-block" style="margin-top:16px" onclick="runTaskRunner()">Run Task Runner</button>`;
+      });
+    }
+    async function runTaskRunner(){
+      showToast('Running task runner...');
+      try{await api('/api/taskrunner/run',{method:'POST'});showToast('Task runner completed');}catch(e){showToast('Error','error');}
+    }
+
+    async function openInfraView(){
+      openSubView('Infrastructure', async(body)=>{
+        const data=await api('/api/infra/metrics');
+        if(!data){body.innerHTML='<div style="text-align:center;padding:40px;color:var(--text4)">Could not load metrics</div>';return;}
+        body.innerHTML=`
+          <div class="detail-section">
+            <h3 style="padding:0">System</h3>
+            <div class="detail-row"><span class="label">CPU</span><span class="value">${data.cpu_percent||'?'}%</span></div>
+            <div class="detail-row"><span class="label">RAM</span><span class="value">${data.memory_used_gb||'?'} / ${data.memory_total_gb||'?'} GB</span></div>
+            <div class="detail-row"><span class="label">Disk</span><span class="value">${data.disk_used_gb||'?'} / ${data.disk_total_gb||'?'} GB</span></div>
+            <div class="detail-row"><span class="label">Uptime</span><span class="value">${data.uptime||'?'}</span></div>
+          </div>
+          <div class="detail-section">
+            <h3 style="padding:0">GPUs</h3>
+            ${(data.gpus||[]).map(g=>`<div class="detail-row"><span class="label">${esc(g.name||'GPU')}</span><span class="value">${g.temp||'?'}°C &middot; ${g.memory_used||'?'}/${g.memory_total||'?'}MB</span></div>`).join('')||'<div style="color:var(--text4)">No GPU data</div>'}
+          </div>
+          <div class="detail-section">
+            <h3 style="padding:0">Ollama</h3>
+            <div class="detail-row"><span class="label">AMD (11434)</span><span class="value" style="color:${data.ollama_amd?'var(--green)':'var(--red)'}">${data.ollama_amd?'Online':'Offline'}</span></div>
+            <div class="detail-row"><span class="label">NVIDIA (11435)</span><span class="value" style="color:${data.ollama_nvidia?'var(--green)':'var(--red)'}">${data.ollama_nvidia?'Online':'Offline'}</span></div>
+          </div>`;
+      });
+    }
+
+    async function openEmailView(){
+      openSubView('Email Pipeline', async(body)=>{
+        const [queue,stats]=await Promise.all([api('/api/email/queue'),api('/api/email/stats')]);
+        const emails=Array.isArray(queue)?queue:queue.emails||[];
+        const st=stats||{};
+        body.innerHTML=`
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+            <div class="stat-card"><div class="stat-val" style="color:var(--blue)">${st.unread||0}</div><div class="stat-label">Unread</div></div>
+            <div class="stat-card"><div class="stat-val" style="color:var(--green)">${st.processed||0}</div><div class="stat-label">Processed</div></div>
+          </div>
+          <button class="btn btn-primary btn-block" style="margin-bottom:16px" onclick="fetchEmails()">Fetch New Emails</button>
+          ${emails.length?emails.map(e=>`
+            <div class="card">
+              <div style="font-weight:600;color:var(--text1)">${esc(e.subject||e.from||'Email')}</div>
+              <div style="font-size:12px;color:var(--text3)">${esc(e.from||'')} &middot; ${e.date||''}</div>
+              ${e.summary?'<div style="font-size:12px;color:var(--text4);margin-top:4px">'+esc(e.summary).substring(0,120)+'</div>':''}
+            </div>
+          `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No emails in queue</div>'}`;
+      });
+    }
+    async function fetchEmails(){
+      showToast('Fetching emails...');
+      try{await api('/api/email/fetch',{method:'POST'});showToast('Emails fetched');openEmailView();}catch(e){showToast('Error','error');}
+    }
+
+    async function openCronsView(){
+      openSubView('Cron Jobs', async(body)=>{
+        const data=await api('/api/crons');
+        const crons=Array.isArray(data)?data:data.crons||[];
+        body.innerHTML=crons.length?crons.map(c=>`
+          <div class="card" style="border-left:3px solid ${c.enabled!==false?'var(--green)':'var(--text4)'}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-weight:600;color:var(--text1)">${esc(c.name||c.command||'')}</div>
+              <span class="badge ${c.enabled!==false?'badge-green':'badge-yellow'}">${c.enabled!==false?'Active':'Paused'}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(c.schedule||c.cron||'')} &middot; ${esc(c.description||'')}</div>
+          </div>
+        `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No cron jobs configured</div>';
+      });
+    }
+
+    async function openArtifactsView(){
+      openSubView('Artifacts', async(body)=>{
+        const data=await api('/api/artifacts/project-list');
+        const projects=Array.isArray(data)?data:data.projects||[];
+        body.innerHTML=projects.length?projects.map(p=>`
+          <div class="card" onclick="openArtifactProject('${esc(p.project_id||p.id||'')}')">
+            <div style="font-weight:600;color:var(--text1)">${esc(p.project_id||p.name||'')}</div>
+            <div style="font-size:12px;color:var(--text3)">${p.file_count||p.count||0} files</div>
+          </div>
+        `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No artifacts</div>';
+      });
+    }
+    async function openArtifactProject(pid){
+      openSubView('Artifacts: '+pid, async(body)=>{
+        const data=await api('/api/artifacts?project_id='+pid);
+        const files=Array.isArray(data)?data:data.files||[];
+        body.innerHTML=files.length?files.map(f=>`
+          <div class="card" onclick="window.open('/api/artifacts/download/${esc(pid)}/${esc(f.filename||f.name||'')}')">
+            <div style="font-weight:600;color:var(--text1)">${esc(f.filename||f.name||'')}</div>
+            <div style="font-size:12px;color:var(--text3)">${esc(f.agent_id||'')} &middot; ${f.created_at||''}</div>
+          </div>
+        `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No files</div>';
+      });
+    }
+
+    async function openJournalView(){
+      openSubView('Activity Journal', async(body)=>{
+        const data=await api('/api/tasks');
+        // Journal entries from task activity — show recent
+        body.innerHTML=`
+          <div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">Recent agent activity from task journal</div>
+          <button class="btn btn-secondary btn-block" style="margin-bottom:12px" onclick="window.open('/journal')">Full Journal (Desktop)</button>
+          <div id="journal-entries" style="color:var(--text3);font-size:12px;padding:8px">Loading from desktop view...</div>`;
+      });
+    }
+
+    async function openSkillsView(){
+      openSubView('Agent Skills', async(body)=>{
+        const data=await api('/api/skills/list');
+        const skills=Array.isArray(data)?data:data.skills||[];
+        body.innerHTML=skills.length?skills.map(s=>`
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-weight:600;color:var(--accent)">${esc(s.name||s.skill_name||'')}</div>
+              <span style="font-size:11px;color:var(--text4)">${esc(s.agent_id||'shared')}</span>
+            </div>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px">${esc(s.description||'')}</div>
+            ${s.run_count?'<div style="font-size:11px;color:var(--text4);margin-top:2px">Runs: '+s.run_count+'</div>':''}
+          </div>
+        `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No skills registered</div>';
+      });
+    }
+
+    async function openChangeOrdersView(){
+      openSubView('Change Orders', async(body)=>{
+        const data=await api('/api/ahb/invoices?is_change_order=1');
+        const cos=Array.isArray(data)?data:[];
+        body.innerHTML=cos.length?cos.map(c=>`
+          <div class="card" style="border-left:3px solid ${c.status==='Paid'?'var(--green)':c.status==='Approved'?'var(--blue)':'var(--yellow)'}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-weight:600;color:var(--text1)">${esc(c.invoice_number||'CO')}</div>
+              <span class="badge ${c.status==='Paid'?'badge-green':'badge-yellow'}">${c.status}</span>
+            </div>
+            <div style="font-size:14px;font-weight:700;color:var(--green);margin:4px 0">$${(c.total||0).toLocaleString('en',{minimumFractionDigits:2})}</div>
+            <div style="font-size:12px;color:var(--text3)">${esc(c.client_name||'')} ${c.notes?'&middot; '+esc(c.notes).substring(0,60):''}</div>
+          </div>
+        `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No change orders</div>';
+      });
+    }
+
+    async function openEstimatesView(){
+      openSubView('Estimates', async(body)=>{
+        const data=await api('/api/ahb/estimates');
+        const ests=Array.isArray(data)?data:[];
+        body.innerHTML=ests.length?ests.map(e=>`
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-weight:600;color:var(--text1)">${esc(e.title||'Estimate')}</div>
+              <span class="badge ${e.status==='accepted'?'badge-green':'badge-yellow'}">${e.status||'draft'}</span>
+            </div>
+            <div style="font-size:14px;font-weight:700;color:var(--green);margin:4px 0">$${(e.total||0).toLocaleString('en',{minimumFractionDigits:2})}</div>
+            <div style="font-size:12px;color:var(--text3)">${esc(e.description||'').substring(0,80)}</div>
+          </div>
+        `).join(''):'<div style="text-align:center;padding:40px;color:var(--text4)">No estimates</div>';
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // NEW PROJECT / INVOICE FORMS
+    // ══════════════════════════════════════════════════════════════════════
+    async function openNewProject() {
+      // Ensure clients loaded
+      if(!S.clients.length) {
+        const data = await api('/api/ahb/clients');
+        S.clients = (data && data.clients) || data || [];
+      }
+      openModal(`
+        <div class="modal-title">New Project</div>
+        <div class="form-group"><label class="form-label">Title</label><input type="text" id="projTitle" class="form-input" placeholder="Project title"></div>
+        <div class="form-group"><label class="form-label">Client</label>
+          <select id="projClient" class="form-select">
+            <option value="">Select client...</option>
+            ${S.clients.map(c => `<option value="${c.id}" data-name="${esc(c.name)}">${esc(c.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Address</label><input type="text" id="projAddr" class="form-input" placeholder="Job site address"></div>
+        <div class="form-group"><label class="form-label">Value ($)</label><input type="number" id="projVal" class="form-input" step="0.01" placeholder="Contract value"></div>
+        <div class="form-group"><label class="form-label">Start Date</label><input type="date" id="projStart" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Description</label><textarea id="projDesc" class="form-textarea" placeholder="Project description"></textarea></div>
+        <button class="btn btn-primary btn-block" onclick="submitProject()">Create Project</button>
+      `);
+    }
+
+    async function submitProject() {
+      const sel = $('projClient');
+      const clientName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+      const data = {
+        title: $('projTitle').value,
+        client_id: sel.value,
+        client_name: clientName,
+        address: $('projAddr').value,
+        value: parseFloat($('projVal').value) || 0,
+        start_date: $('projStart').value,
+        description: $('projDesc').value,
+        status: 'Lead',
+      };
+      if(!data.title) { toast('Title required'); return; }
+      closeModal();
+      const r = await api('/api/ahb/projects', {method:'POST', body:data});
+      if(r && !r.error) { toast('Project created'); loadProjects(); }
+      else toast('Failed to create project');
+    }
+
+    function openNewInvoice() {
+      openModal(`
+        <div class="modal-title">New Invoice</div>
+        <div class="form-group"><label class="form-label">Title</label><input type="text" id="invTitle" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Client Name</label><input type="text" id="invClient" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Total ($)</label><input type="number" id="invTotal" class="form-input" step="0.01"></div>
+        <div class="form-group"><label class="form-label">Due Date</label><input type="date" id="invDue" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Notes</label><textarea id="invNotes" class="form-textarea"></textarea></div>
+        <button class="btn btn-primary btn-block" onclick="submitInvoice()">Create Invoice</button>
+      `);
+    }
+
+    async function submitInvoice() {
+      const data = {
+        title: $('invTitle').value,
+        client_name: $('invClient').value,
+        total: parseFloat($('invTotal').value) || 0,
+        due_date: $('invDue').value,
+        notes: $('invNotes').value,
+        status: 'draft',
+      };
+      if(!data.title) { toast('Title required'); return; }
+      closeModal();
+      await api('/api/ahb/invoices', {method:'POST', body:data});
+      toast('Invoice created');
+      loadInvoices();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PULL TO REFRESH
+    // ══════════════════════════════════════════════════════════════════════
+    let ptrStart = 0, ptrActive = false;
+    const content = $('appContent');
+    content.addEventListener('touchstart', e => {
+      if(content.scrollTop <= 0) { ptrStart = e.touches[0].clientY; ptrActive = true; }
+    }, {passive:true});
+    content.addEventListener('touchmove', e => {
+      if(!ptrActive) return;
+      const diff = e.touches[0].clientY - ptrStart;
+      if(diff > 60 && content.scrollTop <= 0) {
+        $('ptrIndicator').classList.add('visible');
+        $('ptrIndicator').textContent = 'Release to refresh...';
+      }
+    }, {passive:true});
+    content.addEventListener('touchend', () => {
+      if($('ptrIndicator').classList.contains('visible')) {
+        $('ptrIndicator').textContent = 'Refreshing...';
+        setTimeout(() => {
+          $('ptrIndicator').classList.remove('visible');
+          switchTab(S.tab);
+        }, 500);
+      }
+      ptrActive = false;
+    }, {passive:true});
+
+    // ══════════════════════════════════════════════════════════════════════
+    // SWIPE BETWEEN TABS
+    // ══════════════════════════════════════════════════════════════════════
+    let swipeStartX = 0, swipeStartY = 0;
+    const TABS = ['home','projects','money','schedule','more'];
+    content.addEventListener('touchstart', e => {
+      swipeStartX = e.touches[0].clientX;
+      swipeStartY = e.touches[0].clientY;
+    }, {passive:true});
+    content.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - swipeStartX;
+      const dy = e.changedTouches[0].clientY - swipeStartY;
+      if(Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        const idx = TABS.indexOf(S.tab);
+        if(dx < 0 && idx < TABS.length - 1) switchTab(TABS[idx + 1]);
+        else if(dx > 0 && idx > 0) switchTab(TABS[idx - 1]);
+      }
+    }, {passive:true});
+
+    // ══════════════════════════════════════════════════════════════════════
+    // INIT
+    // ══════════════════════════════════════════════════════════════════════
+    (async function init() {
+      // Handle URL hash
+      const hash = location.hash.replace('#','');
+      if(TABS.includes(hash)) switchTab(hash);
+      else loadHome();
+
+      // Preload some data
+      const cData = await api('/api/ahb/clients');
+      S.clients = (cData && cData.clients) || cData || [];
+    })();
+
+    // Auto-refresh every 60s
+    setInterval(() => {
+      if(S.tab === 'home') loadHome();
+    }, 60000);
+  </script>
+</body>
+</html>

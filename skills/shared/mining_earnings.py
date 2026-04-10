@@ -4,7 +4,11 @@ Baza Empire Skill — mining_earnings
 Calculates mining earnings from XMRig stats + current XMR price.
 Usage: ##SKILL:mining_earnings{}##
 """
-import os, json, urllib.request
+import os, json, socket, urllib.request
+
+# Force IPv6 — IPv4 unreachable on this host
+_orig = socket.getaddrinfo
+socket.getaddrinfo = lambda *a, **k: [r for r in _orig(*a, **k) if r[0] == socket.AF_INET6] or _orig(*a, **k)
 
 args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 XMRIG_API = args.get("api_url", "http://localhost:4067/2/summary")

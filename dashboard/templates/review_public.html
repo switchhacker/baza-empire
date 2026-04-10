@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Leave a Review — {{ company }}</title>
+<link rel="icon" href="data:,">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(180deg,#070712,#0a0a18);color:#e0e0e0;min-height:100vh;padding:20px 16px 60px}
+  .wrap{max-width:520px;margin:0 auto}
+  .brand{text-align:center;margin-bottom:24px}
+  .logo{width:64px;height:64px;margin:0 auto 12px;border-radius:50%;background:linear-gradient(135deg,#00bcd4,#0097a7);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;box-shadow:0 8px 24px rgba(0,188,212,.3)}
+  .brand-name{font-size:18px;font-weight:800;color:#fff;margin-bottom:4px}
+  .brand-sub{font-size:12px;color:#888;letter-spacing:1px;text-transform:uppercase}
+  .nova-card{background:linear-gradient(135deg,#0a1a2a,#0d0d1e);border:1px solid #1a3a5a;border-radius:16px;padding:20px;margin-bottom:24px;display:flex;gap:14px;align-items:flex-start}
+  .nova-av{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#00bcd4,#0097a7);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;flex-shrink:0}
+  .nova-name{font-size:13px;font-weight:700;color:#00bcd4;margin-bottom:4px}
+  .nova-msg{font-size:13px;color:#ccc;line-height:1.6}
+  .stars-wrap{text-align:center;margin-bottom:28px;padding:24px;background:#0a0a16;border:1px solid #1a1a2e;border-radius:16px}
+  .stars-label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:2px;margin-bottom:14px}
+  .stars{display:flex;justify-content:center;gap:6px}
+  .star{font-size:42px;background:none;border:none;cursor:pointer;transition:transform .15s;filter:grayscale(1) brightness(0.4);padding:4px}
+  .star.active{filter:none;transform:scale(1.05)}
+  .star-rating-text{font-size:13px;color:#666;margin-top:10px;min-height:18px}
+  .form{display:none}
+  .form.show{display:block}
+  .field{margin-bottom:18px}
+  .field-label{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  .field-label .opt{color:#333;text-transform:none;letter-spacing:0;margin-left:4px;font-weight:500}
+  textarea,input,select{width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:10px;padding:13px 14px;color:#e0e0e0;font-size:14px;font-family:inherit;outline:none;transition:border-color .2s}
+  textarea{resize:vertical;min-height:96px}
+  textarea:focus,input:focus,select:focus{border-color:#00bcd4}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:420px){.row{grid-template-columns:1fr}}
+  .tag-grid{display:flex;flex-wrap:wrap;gap:8px}
+  .tag{padding:9px 14px;background:#0a0a16;border:1px solid #2a2a4a;border-radius:20px;color:#888;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+  .tag.active{background:#00bcd4;border-color:#00bcd4;color:#fff}
+  .photo-drop{border:2px dashed #1a3a5a;border-radius:12px;padding:24px;text-align:center;cursor:pointer;color:#555;font-size:13px}
+  .photo-drop .icon{font-size:28px;margin-bottom:6px}
+  #photo-preview{margin-top:10px;display:none;text-align:center}
+  #photo-preview img{max-width:100%;max-height:200px;border-radius:10px;border:1px solid #1a3a5a}
+  .submit-btn{width:100%;padding:18px;background:linear-gradient(135deg,#00bcd4,#0097a7);color:#fff;font-size:15px;font-weight:800;border:none;border-radius:14px;cursor:pointer;letter-spacing:.5px;margin-top:8px;box-shadow:0 6px 20px rgba(0,188,212,.25)}
+  .submit-btn:disabled{opacity:.5;cursor:not-allowed}
+  .footer-note{text-align:center;font-size:11px;color:#333;margin-top:12px;line-height:1.5}
+  .success{display:none;text-align:center;padding:40px 20px;background:#0a0a16;border:1px solid #1a3a5a;border-radius:16px}
+  .success.show{display:block}
+  .success-icon{font-size:72px;margin-bottom:14px}
+  .success-title{font-size:24px;font-weight:900;color:#00d084;margin-bottom:8px}
+  .success-msg{font-size:14px;color:#888;line-height:1.6;margin-bottom:24px}
+  .google-btn{display:inline-block;padding:13px 22px;background:#0a1a2a;border:1px solid #2a4a6a;border-radius:10px;color:#4da6ff;font-size:13px;font-weight:700;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="brand">
+    <div class="logo">A</div>
+    <div class="brand-name">{{ company }}</div>
+    <div class="brand-sub">Quality Construction · PA</div>
+  </div>
+
+  <div class="nova-card">
+    <div class="nova-av">N</div>
+    <div>
+      <div class="nova-name">Nova Sterling</div>
+      <div class="nova-msg" id="nova-msg">Hi! Thanks so much for choosing All Home Building. We'd love to hear how it went — just tap a star below to begin. Takes less than 60 seconds.</div>
+    </div>
+  </div>
+
+  <div class="stars-wrap">
+    <div class="stars-label">How was your experience?</div>
+    <div class="stars" id="stars">
+      <button class="star" data-star="1">&#11088;</button>
+      <button class="star" data-star="2">&#11088;</button>
+      <button class="star" data-star="3">&#11088;</button>
+      <button class="star" data-star="4">&#11088;</button>
+      <button class="star" data-star="5">&#11088;</button>
+    </div>
+    <div class="star-rating-text" id="rating-text">Tap a star to start</div>
+  </div>
+
+  <div class="form" id="form">
+    <div class="field">
+      <div class="field-label">What stood out?</div>
+      <div class="tag-grid" id="tag-grid">
+        <button class="tag" type="button">Quality Work</button>
+        <button class="tag" type="button">On Time</button>
+        <button class="tag" type="button">Clean Jobsite</button>
+        <button class="tag" type="button">Great Communication</button>
+        <button class="tag" type="button">Fair Pricing</button>
+        <button class="tag" type="button">Professional Team</button>
+        <button class="tag" type="button">Exceeded Expectations</button>
+        <button class="tag" type="button">Would Recommend</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Tell us more <span class="opt">(optional)</span></div>
+      <textarea id="text" placeholder="What did we do well? Anything we could improve?"></textarea>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <div class="field-label">Your Name</div>
+        <input id="name" type="text" placeholder="John D.">
+      </div>
+      <div class="field">
+        <div class="field-label">Project Type</div>
+        <select id="ptype">
+          <option value="">Select...</option>
+          <option>Kitchen Remodel</option>
+          <option>Bathroom Remodel</option>
+          <option>Basement Finishing</option>
+          <option>General Renovation</option>
+          <option>Flooring</option>
+          <option>Painting</option>
+          <option>Roofing</option>
+          <option>Deck / Patio</option>
+          <option>Plumbing</option>
+          <option>Electrical</option>
+          <option>New Construction</option>
+          <option>Other</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <div class="field-label">Email <span class="opt">(opt)</span></div>
+        <input id="email" type="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <div class="field-label">Phone <span class="opt">(opt)</span></div>
+        <input id="phone" type="tel" placeholder="(555) 123-4567">
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Share a photo of our work <span class="opt">(optional)</span></div>
+      <label for="photo" class="photo-drop">
+        <div class="icon">&#128247;</div>
+        <div>Tap to add a photo</div>
+      </label>
+      <input id="photo" type="file" accept="image/*" style="display:none">
+      <div id="photo-preview"><img id="photo-img"></div>
+    </div>
+
+    <button id="submit" class="submit-btn">Submit Review</button>
+    <div class="footer-note">Your review helps other homeowners find quality contractors.<br>We never share your contact info.</div>
+  </div>
+
+  <div class="success" id="success">
+    <div class="success-icon">&#127881;</div>
+    <div class="success-title">Thank You!</div>
+    <div class="success-msg" id="success-msg">Your review means the world to us. Serge and the whole team appreciate your trust in All Home Building.</div>
+    <a href="https://g.page/r/ahb123/review" target="_blank" class="google-btn">Also leave a Google review &rarr;</a>
+  </div>
+
+</div>
+
+<script>
+let stars = 0;
+let selectedTags = [];
+let photoFile = null;
+
+const RATING_LABELS = {
+  1: "We're really sorry — please tell us what happened.",
+  2: "We let you down somewhere — your feedback helps us fix it.",
+  3: "Thanks — we'd love to know how to make it better.",
+  4: "Glad you had a good experience! What could've been a 5?",
+  5: "Amazing! Thank you so much — please tell us what you loved!"
+};
+
+document.querySelectorAll('.star').forEach(btn => {
+  btn.addEventListener('click', () => {
+    stars = parseInt(btn.dataset.star);
+    document.querySelectorAll('.star').forEach((b, i) => {
+      b.classList.toggle('active', i < stars);
+    });
+    document.getElementById('rating-text').textContent = stars + (stars === 1 ? ' star' : ' stars');
+    document.getElementById('nova-msg').textContent = RATING_LABELS[stars];
+    document.getElementById('form').classList.add('show');
+    document.getElementById('form').scrollIntoView({behavior: 'smooth', block: 'start'});
+  });
+});
+
+document.querySelectorAll('#tag-grid .tag').forEach(t => {
+  t.addEventListener('click', () => {
+    t.classList.toggle('active');
+    selectedTags = [...document.querySelectorAll('#tag-grid .tag.active')].map(el => el.textContent);
+  });
+});
+
+document.getElementById('photo').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  photoFile = f;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('photo-img').src = ev.target.result;
+    document.getElementById('photo-preview').style.display = 'block';
+  };
+  reader.readAsDataURL(f);
+});
+
+document.getElementById('submit').addEventListener('click', async () => {
+  if (!stars) { alert('Please select a star rating'); return; }
+  const btn = document.getElementById('submit');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const fd = new FormData();
+  fd.append('stars', stars);
+  fd.append('name', document.getElementById('name').value);
+  fd.append('text', document.getElementById('text').value);
+  fd.append('project_type', document.getElementById('ptype').value);
+  fd.append('email', document.getElementById('email').value);
+  fd.append('phone', document.getElementById('phone').value);
+  fd.append('tags', selectedTags.join(','));
+  if (photoFile) fd.append('photo', photoFile);
+
+  try {
+    const r = await fetch('/api/review/submit', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!data.success) throw new Error(data.error || 'failed');
+    document.querySelector('.stars-wrap').style.display = 'none';
+    document.querySelector('.nova-card').style.display = 'none';
+    document.getElementById('form').style.display = 'none';
+    document.getElementById('success').classList.add('show');
+    const thanks = {
+      5: "You're amazing! Reviews like yours keep our team motivated every day. Thank you so much!",
+      4: "Thank you! We'll work hard to earn that 5th star next time.",
+      3: "We appreciate your honesty — Serge will personally review your feedback.",
+      2: "Thanks for telling us. Serge will reach out to make this right.",
+      1: "We're truly sorry. Serge will be calling you personally to make this right."
+    };
+    document.getElementById('success-msg').textContent = thanks[stars];
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  } catch (e) {
+    alert('Could not submit. Please try again.');
+    btn.disabled = false; btn.textContent = 'Submit Review';
+  }
+});
+</script>
+</body>
+</html>

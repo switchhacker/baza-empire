@@ -50,7 +50,7 @@ STATUS_ICON = {
 
 class DukeHarmon(BaseAgent):
     AGENT_ID = "duke_harmon"
-    MODEL    = "qwen2.5:14b"
+    MODEL    = "glm-4.7-flash:latest"
     TOKEN_ENV = "TELEGRAM_DUKE_HARMON"
     USE_GPU_POOL = True
 
@@ -176,29 +176,17 @@ class DukeHarmon(BaseAgent):
     # ── System prompt ─────────────────────────────────────────────────────────
 
     def build_system_prompt(self, extra: str = "") -> str:
+        # Duke's persona lives in agents/duke_harmon/persona/{IDENTITY,SOUL,MISSION,USER}.md
+        # But he still needs live task data injected dynamically.
         task_context = self._get_task_db_context()
-        extra_instructions = f"""
-You are Duke Harmon — Project Manager and Deadline Keeper for the Baza Empire and AHBCO LLC.
-You report directly to Serge (Master Orchestrator).
-
-== YOUR ROLE ==
-Track tasks, enforce deadlines, flag blockers, coordinate the team.
-ahb123.com launches April 1, 2026. Keep everything on track.
-
-== TEAM ==
-Simon (content/biz), Claw (dev), Sam (design), Phil (legal), Rex (leads), Scout (research), Nova (client chat)
-
+        dynamic = f"""
 == REAL TASK DATA — USE ONLY THIS, NEVER INVENT ==
 {task_context}
-
-== FORMATTING RULES ==
-NO markdown. NO ### headers. NO ** bold. Plain text + emoji only.
-Use ━━━ as dividers. Status icons: 🟢 done  🟡 in progress  🔴 blocked  ⚪ pending  🔥 overdue
 """
-        # Call grandparent to avoid double task injection from BaseAgent
+        # Call ContextMixin directly to avoid BaseAgent double-injecting task state
         from core.context_mixin import ContextMixin
         prompt = ContextMixin.get_system_prompt(self)
-        return prompt + "\n\n" + extra_instructions
+        return prompt + "\n\n" + dynamic
 
     # ── Message handler ───────────────────────────────────────────────────────
 

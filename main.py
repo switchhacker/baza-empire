@@ -9,6 +9,7 @@ from agents.rex_valor.agent import RexValor
 from agents.duke_harmon.agent import DukeHarmon
 from agents.scout_reeves.agent import ScoutReeves
 from agents.nova_sterling.agent import NovaSterling
+from agents.specter_voss.agent import SpecterVoss
 from core.context_db import init_context_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
@@ -23,6 +24,7 @@ AGENTS = {
     "duke":  DukeHarmon,
     "scout": ScoutReeves,
     "nova":  NovaSterling,
+    "specter": SpecterVoss,
 }
 
 async def run_agent(AgentClass, name):

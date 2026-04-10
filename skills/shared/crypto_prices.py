@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-import os, json, urllib.request
+import os, json, socket, urllib.request
+# Force IPv6 — IPv4 unreachable on this host
+_orig = socket.getaddrinfo
+socket.getaddrinfo = lambda *a, **k: [r for r in _orig(*a, **k) if r[0] == socket.AF_INET6] or _orig(*a, **k)
 args = json.loads(os.environ.get("SKILL_ARGS","{}"))
 coins = args.get("coins",["monero","ravencoin","bitcoin"])
 url = f"https://api.coingecko.com/api/v3/simple/price?ids={','.join(coins)}&vs_currencies=usd&include_24hr_change=true"

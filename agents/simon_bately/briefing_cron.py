@@ -21,7 +21,10 @@ log = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_SIMON_BATELY", "8259565938:AAFCNLSrw096JALxvgmiBCkgByn0uDyGGMo")
 SERGE_CHAT_ID  = os.getenv("SERGE_CHAT_ID", "8551331144")
-OLLAMA_URL     = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_URLS    = [
+    os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+    "http://localhost:11435",
+]
 MODEL          = "mistral-small:22b"
 
 AGENTS = [
@@ -122,40 +125,38 @@ def get_tasks_summary() -> str:
     return "\n".join(lines)
 
 def get_recent_activity() -> str:
-    """Read recent agent messages from SQLite context DB."""
-    db_candidates = [
-        os.path.join(FRAMEWORK_DIR, "data", "context.db"),
-        os.path.join(FRAMEWORK_DIR, "context.db"),
-    ]
-    for db_path in db_candidates:
-        if not os.path.exists(db_path): continue
-        try:
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT agent_id, role, content, timestamp
-                FROM messages
-                WHERE role = 'assistant'
-                ORDER BY timestamp DESC
-                LIMIT 12
-            """)
-            rows = cur.fetchall()
-            conn.close()
-            if not rows: return "RECENT ACTIVITY: no messages found"
-            lines = ["RECENT AGENT ACTIVITY:"]
-            seen = set()
-            for r in rows:
-                agent = r["agent_id"]
-                if agent in seen: continue
-                seen.add(agent)
-                content = (r["content"] or "")[:120].replace("\n"," ")
-                ts = r["timestamp"] or ""
-                lines.append(f"  {agent}: {content} [{ts[:16]}]")
-            return "\n".join(lines)
-        except Exception as e:
-            continue
-    return "RECENT ACTIVITY: context DB unavailable"
+    """Read recent agent messages from the Baza PostgreSQL context DB."""
+    try:
+        from core.context_db import _get_pool
+        pool = _get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT agent_id, content, created_at
+            FROM messages
+            WHERE role = 'assistant'
+            ORDER BY created_at DESC
+            LIMIT 30
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        pool.putconn(conn)
+        if not rows:
+            return "RECENT ACTIVITY: no messages found"
+        lines = ["RECENT AGENT ACTIVITY:"]
+        seen = set()
+        for agent_id, content, created_at in rows:
+            if agent_id in seen:
+                continue
+            seen.add(agent_id)
+            text = (content or "")[:120].replace("\n", " ")
+            ts = str(created_at)[:16] if created_at else ""
+            lines.append(f"  {agent_id}: {text} [{ts}]")
+            if len(seen) >= 8:
+                break
+        return "\n".join(lines)
+    except Exception as e:
+        return f"RECENT ACTIVITY: error reading context DB ({str(e)[:80]})"
 
 def get_artifacts_summary() -> str:
     """Count recent artifacts produced."""
@@ -241,30 +242,38 @@ LIVE DATA:
 """
     prompt = f"Send Serge his 2-hour command briefing for {now}. Be sharp. Own the room."
 
-    try:
-        payload = json.dumps({
-            "model": MODEL, "stream": False,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user",   "content": prompt}
-            ]
-        }).encode()
-        req = urllib.request.Request(
-            f"{OLLAMA_URL}/api/chat", data=payload,
-            headers={"Content-Type":"application/json"}, method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.loads(r.read())["message"]["content"].strip()
-    except Exception as e:
-        log.error(f"LLM error: {e}")
-        return (
-            f"━━━━━━━━━━━━━━━━\n"
-            f"📊 Simon Briefing — {now}\n"
-            f"━━━━━━━━━━━━━━━━\n"
-            f"⚠️ LLM unavailable: {e}\n\n"
-            f"{team_status}\n\n"
-            f"{tasks}"
-        )
+    payload = json.dumps({
+        "model": MODEL, "stream": False,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": prompt}
+        ]
+    }).encode()
+
+    # Try each Ollama instance (AMD then NVIDIA) with generous timeout
+    last_err = None
+    for url in OLLAMA_URLS:
+        try:
+            log.info(f"Trying LLM at {url}...")
+            req = urllib.request.Request(
+                f"{url}/api/chat", data=payload,
+                headers={"Content-Type":"application/json"}, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=300) as r:
+                return json.loads(r.read())["message"]["content"].strip()
+        except Exception as e:
+            log.warning(f"LLM at {url} failed: {e}")
+            last_err = e
+
+    log.error(f"All LLM instances failed: {last_err}")
+    return (
+        f"━━━━━━━━━━━━━━━━\n"
+        f"📊 Simon Briefing — {now}\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"⚠️ LLM unavailable: {last_err}\n\n"
+        f"{team_status}\n\n"
+        f"{tasks}"
+    )
 
 def strip_markdown(text: str) -> str:
     import re

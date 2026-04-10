@@ -14,8 +14,10 @@
     .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
     .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
     .nav-brand span{font-size:22px}
-    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s;white-space:nowrap}
     .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .nav-status{font-size:11px;color:#555;font-family:monospace}
 
     /* LAYOUT */
     .container{max-width:1440px;margin:0 auto;padding:28px 32px 60px}
@@ -28,7 +30,10 @@
     .last-updated{font-size:11px;color:#444}
 
     /* SECTION */
-    .section-head{font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:2.5px;margin:36px 0 16px;padding-bottom:8px;border-bottom:1px solid #151528}
+    .section-head{font-size:12px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:2.5px;margin:36px 0 16px;padding-bottom:8px;border-bottom:1px solid #151528;display:flex;align-items:center;justify-content:space-between}
+    .section-head .sec-actions{display:flex;gap:8px}
+    .sec-btn{background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:opacity .2s}
+    .sec-btn:hover{opacity:.85}
 
     /* STATS ROW */
     .stats-row{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:8px}
@@ -46,6 +51,8 @@
     .bar-yellow{background:linear-gradient(90deg,#ffaa00,#ff8800)}
     .bar-red{background:linear-gradient(90deg,#ff5555,#cc3333)}
     .bar-accent{background:linear-gradient(90deg,#e94560,#7c3aed)}
+    .bar-blue{background:linear-gradient(90deg,#00d2ff,#0088cc)}
+    .bar-purple{background:linear-gradient(90deg,#7c3aed,#5b21b6)}
 
     /* CARDS GRID */
     .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
@@ -67,6 +74,8 @@
     .badge-active{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
     .badge-inactive{background:#1a1a1a;color:#666;border:1px solid #333}
     .badge-accent{background:#2a1a2e;color:#e94560;border:1px solid #e94560}
+    .badge-blue{background:#0a1a2e;color:#00d2ff;border:1px solid #00d2ff}
+    .badge-purple{background:#1a0a2e;color:#7c3aed;border:1px solid #7c3aed}
 
     /* GPU CARDS */
     .gpu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
@@ -104,12 +113,15 @@
     .svc-dot-down{background:#ff5555;box-shadow:0 0 6px rgba(255,85,85,.5)}
 
     /* AGENTS */
-    .agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+    .agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
     .agent-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:border-color .2s,transform .15s}
     .agent-card:hover{border-color:#e94560;transform:translateY(-2px)}
     .agent-icon{font-size:28px;margin-bottom:8px}
     .agent-name{font-size:14px;font-weight:700;color:#fff;margin-bottom:2px}
+    .agent-title{font-size:10px;color:#e94560;margin-bottom:4px;font-weight:600}
     .agent-role{font-size:11px;color:#555;margin-bottom:10px}
+    .agent-meta{display:flex;justify-content:center;gap:10px;margin-bottom:8px;font-size:10px;color:#555}
+    .agent-meta span{background:#0a0a18;padding:2px 8px;border-radius:4px}
     .agent-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
     .agent-dot-active{background:#00d084;box-shadow:0 0 5px #00d084}
     .agent-dot-inactive{background:#555}
@@ -134,24 +146,27 @@
     /* API SECTION */
     .api-count{font-size:56px;font-weight:900;color:#e94560;line-height:1}
     .api-label{font-size:13px;color:#555;margin-top:4px}
-    .api-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:18px}
+    .api-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:18px}
     .api-cat{background:#0a0a18;border-radius:8px;padding:14px}
     .api-cat-name{font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
-    .api-cat-items{font-size:12px;color:#555;line-height:1.8}
+    .api-cat-count{font-size:18px;font-weight:800;color:#fff;margin-bottom:6px}
+    .api-cat-items{font-size:11px;color:#555;line-height:1.8}
 
     /* DB STATS */
-    .db-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+    .db-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
     .db-stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center}
     .db-stat-val{font-size:24px;font-weight:800;color:#fff}
-    .db-stat-name{font-size:11px;color:#555;margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+    .db-stat-name{font-size:10px;color:#555;margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+    .db-stat-type{font-size:9px;color:#333;margin-top:2px}
 
     /* ARCHITECTURE */
     .arch-box{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:28px;overflow-x:auto}
-    .arch-diagram{font-family:'Courier New',monospace;font-size:13px;line-height:1.7;color:#888;white-space:pre;min-width:700px}
+    .arch-diagram{font-family:'Courier New',monospace;font-size:12px;line-height:1.7;color:#888;white-space:pre;min-width:800px}
     .arch-diagram .hl{color:#e94560;font-weight:700}
     .arch-diagram .hl2{color:#7c3aed;font-weight:700}
     .arch-diagram .hl3{color:#00d084;font-weight:700}
     .arch-diagram .hl4{color:#ffaa00;font-weight:700}
+    .arch-diagram .hl5{color:#00d2ff;font-weight:700}
 
     /* ROADMAP */
     .roadmap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
@@ -160,6 +175,34 @@
     .roadmap-title{font-size:14px;font-weight:700;color:#ddd;margin-bottom:6px}
     .roadmap-desc{font-size:12px;color:#555;line-height:1.5}
     .roadmap-tag{display:inline-block;font-size:10px;color:#e94560;background:#1e0e18;border:1px solid #3a1a2a;padding:2px 8px;border-radius:12px;margin-top:10px;text-transform:uppercase;letter-spacing:.5px}
+
+    /* CRONS */
+    .cron-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+    .cron-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px;transition:border-color .2s}
+    .cron-card:hover{border-color:#2a2a4a}
+    .cron-name{font-size:13px;font-weight:700;color:#ddd;margin-bottom:4px}
+    .cron-schedule{font-size:11px;color:#e94560;font-family:monospace;margin-bottom:6px}
+    .cron-agent{font-size:10px;color:#555}
+    .cron-status{display:flex;align-items:center;gap:6px;margin-top:6px}
+
+    /* SKILLS */
+    .skill-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+    .skill-pill{background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;font-size:12px;color:#888;transition:border-color .2s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .skill-pill:hover{border-color:#7c3aed;color:#ccc}
+    .skill-pill .skill-type{font-size:9px;color:#555;display:block;margin-top:2px}
+
+    /* EVENT BUS */
+    .event-channel{display:inline-block;background:#0a0a18;border:1px solid #1a1a2e;border-radius:6px;padding:6px 12px;font-size:11px;color:#888;font-family:monospace;margin:3px}
+    .event-channel:hover{border-color:#00d2ff;color:#00d2ff}
+    .event-log{max-height:200px;overflow-y:auto;background:#0a0a18;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;line-height:1.8;color:#555;margin-top:12px}
+    .event-log::-webkit-scrollbar{width:4px}
+    .event-log::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+    /* MINI STATS ROW */
+    .mini-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+    .mini-stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:8px;padding:14px;text-align:center}
+    .mini-stat-val{font-size:24px;font-weight:800;color:#fff}
+    .mini-stat-label{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-top:4px}
   </style>
 </head>
 <body>
@@ -167,14 +210,23 @@
 <!-- NAV -->
 <nav class="nav">
   <div class="nav-brand"><span>&#9889;</span><h1>BAZA EMPIRE</h1></div>
-  <a class="nav-link" href="/">Dashboard</a>
   <a class="nav-link" href="/">Agents</a>
-  <a class="nav-link" href="/tasks">Tasks</a>
   <a class="nav-link" href="/ahb123">AHB123</a>
+  <a class="nav-link" href="/crons">Crons</a>
+  <a class="nav-link" href="/tasks">Tasks</a>
+  <a class="nav-link" href="/skills">Skills</a>
+  <a class="nav-link" href="/journal">Journal</a>
+  <a class="nav-link" href="/memory">Memory</a>
+  <a class="nav-link" href="/datahub">Data Hub</a>
   <a class="nav-link active" href="/infra">Infra</a>
-  <a class="nav-link" href="/artifacts">Artifacts</a>
+  <a class="nav-link" href="/explore">Explore</a>
+  <a class="nav-link" href="/comms">Comms</a>
   <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/settings">Settings</a>
+  <div class="nav-right">
+    <span class="nav-status" id="nav-clock">&mdash;</span>
+    <span class="nav-status" id="agents-online-count">&mdash; agents online</span>
+  </div>
 </nav>
 
 <div class="container">
@@ -183,7 +235,7 @@
   <div class="page-header">
     <div>
       <div class="page-title">Infrastructure Map</div>
-      <div class="page-subtitle">Live system overview &mdash; auto-refreshes every 30 seconds</div>
+      <div class="page-subtitle">Full system overview &mdash; hardware, services, agents, skills, crons, events &mdash; auto-refreshes every 30s</div>
     </div>
     <div class="header-right">
       <span class="last-updated" id="lastUpdated">Loading...</span>
@@ -192,7 +244,7 @@
   </div>
 
   <!-- 1. SYSTEM OVERVIEW -->
-  <div class="section-head">System Overview</div>
+  <div class="section-head"><span>System Overview</span></div>
   <div class="stats-row">
     <div class="stat-card">
       <div class="stat-label">Hostname</div>
@@ -226,13 +278,84 @@
   </div>
 
   <!-- 2. GPU POOL -->
-  <div class="section-head">GPU Pool</div>
-  <div class="gpu-grid" id="gpuGrid">
-    <!-- filled by JS -->
+  <div class="section-head"><span>GPU Pool</span></div>
+  <div class="gpu-grid" id="gpuGrid"></div>
+
+  <!-- 3. SERVICES GRID -->
+  <div class="section-head"><span>Services</span></div>
+  <div class="svc-grid" id="svcGrid"></div>
+
+  <!-- 4. AGENT FLEET -->
+  <div class="section-head"><span>Agent Fleet</span></div>
+  <div class="agent-grid" id="agentGrid"></div>
+
+  <!-- 5. AGENT TOKEN USAGE -->
+  <div class="section-head">
+    <span>Agent Token Usage</span>
+    <select id="usageDays" onchange="loadUsage()" style="background:#16213e;border:1px solid #333;color:#fff;padding:4px 8px;border-radius:6px;font-size:11px">
+      <option value="1">Today</option><option value="7" selected>7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option>
+    </select>
+  </div>
+  <div class="mini-stats" id="usageStats">
+    <div class="mini-stat"><div class="mini-stat-val" id="uTotalTokens">--</div><div class="mini-stat-label">Total Tokens</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#00d2ff" id="uTotalCalls">--</div><div class="mini-stat-label">LLM Calls</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#7c3aed" id="uTopAgent">--</div><div class="mini-stat-label">Most Active</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#4caf50" id="uOllamaTokens">--</div><div class="mini-stat-label">Ollama (Local)</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#ff9800" id="uLitellmTokens">--</div><div class="mini-stat-label">LiteLLM (Cloud)</div></div>
+  </div>
+  <div class="card" id="usageBarChart" style="min-height:60px">
+    <div style="font-size:12px;color:#666;margin-bottom:10px">Per-Agent Token Usage</div>
+    <div id="usageBars"></div>
   </div>
 
-  <!-- 3. STORAGE ARRAY -->
-  <div class="section-head">Storage Array</div>
+  <!-- 6. CRON JOBS OVERVIEW -->
+  <div class="section-head">
+    <span>Cron Jobs</span>
+    <div class="sec-actions"><a href="/crons" class="sec-btn">Manage Crons</a></div>
+  </div>
+  <div class="mini-stats" id="cronStats">
+    <div class="mini-stat"><div class="mini-stat-val" id="cronTotal">--</div><div class="mini-stat-label">Total Jobs</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#00d084" id="cronEnabled">--</div><div class="mini-stat-label">Enabled</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#ff5555" id="cronDisabled">--</div><div class="mini-stat-label">Disabled</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#00d2ff" id="cronAgentCount">--</div><div class="mini-stat-label">Agents w/ Crons</div></div>
+  </div>
+  <div class="cron-grid" id="cronGrid"></div>
+
+  <!-- 7. SKILLS INVENTORY -->
+  <div class="section-head">
+    <span>Skills Inventory</span>
+    <div class="sec-actions"><a href="/skills" class="sec-btn">Manage Skills</a></div>
+  </div>
+  <div class="mini-stats" id="skillStats">
+    <div class="mini-stat"><div class="mini-stat-val" id="skillTotal">--</div><div class="mini-stat-label">Total Skills</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#7c3aed" id="skillShared">--</div><div class="mini-stat-label">Shared</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#e94560" id="skillAgent">--</div><div class="mini-stat-label">Agent-Specific</div></div>
+  </div>
+  <div class="cards-grid" id="skillBreakdown"></div>
+
+  <!-- 8. EVENT BUS -->
+  <div class="section-head"><span>Event Bus (Redis Pub/Sub)</span></div>
+  <div class="card">
+    <div class="card-title">Active Channels</div>
+    <div id="eventChannels" style="margin-bottom:12px">
+      <span class="event-channel">research_complete</span>
+      <span class="event-channel">task_created</span>
+      <span class="event-channel">task_completed</span>
+      <span class="event-channel">task_blocked</span>
+      <span class="event-channel">knowledge_updated</span>
+      <span class="event-channel">context_invalidated</span>
+      <span class="event-channel">dispatch</span>
+      <span class="event-channel">agent_alert</span>
+      <span class="event-channel">agent_help_request</span>
+      <span class="event-channel">agent_help_response</span>
+      <span class="event-channel">report_generated</span>
+    </div>
+    <div style="font-size:12px;color:#666;margin-bottom:4px">Recent Events</div>
+    <div class="event-log" id="eventLog">Listening for events...</div>
+  </div>
+
+  <!-- 9. STORAGE ARRAY -->
+  <div class="section-head"><span>Storage Array</span></div>
   <div class="card">
     <table class="tbl">
       <thead><tr><th>Device</th><th>Type</th><th>Size</th><th style="min-width:200px">Relative</th></tr></thead>
@@ -241,8 +364,8 @@
     <div class="tbl-footer" id="storageTotalRow">Total: --</div>
   </div>
 
-  <!-- 4. NETWORK & TAILSCALE -->
-  <div class="section-head">Network &amp; Tailscale</div>
+  <!-- 10. NETWORK & TAILSCALE -->
+  <div class="section-head"><span>Network &amp; Tailscale</span></div>
   <div class="cards-grid">
     <div class="card">
       <div class="card-title">Baza Network</div>
@@ -259,34 +382,8 @@
     </div>
   </div>
 
-  <!-- 5. SERVICES GRID -->
-  <div class="section-head">Services</div>
-  <div class="svc-grid" id="svcGrid">
-    <!-- filled by JS -->
-  </div>
-
-  <!-- 6. AGENT FLEET -->
-  <div class="section-head">Agent Fleet</div>
-  <div class="agent-grid" id="agentGrid">
-    <!-- filled by JS -->
-  </div>
-
-  <!-- 6.5 AGENT TOKEN USAGE -->
-  <div class="section-head">Agent Token Usage <select id="usageDays" onchange="loadUsage()" style="float:right;background:#16213e;border:1px solid #333;color:#fff;padding:4px 8px;border-radius:6px;font-size:11px"><option value="1">Today</option><option value="7" selected>7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option></select></div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px" id="usageStats">
-    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#e94560" id="uTotalTokens">--</div><div style="font-size:11px;color:#666">Total Tokens</div></div>
-    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#00d2ff" id="uTotalCalls">--</div><div style="font-size:11px;color:#666">LLM Calls</div></div>
-    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#7c3aed" id="uTopAgent">--</div><div style="font-size:11px;color:#666">Most Active</div></div>
-    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#4caf50" id="uOllamaTokens">--</div><div style="font-size:11px;color:#666">Ollama (Local)</div></div>
-    <div class="card" style="text-align:center"><div style="font-size:22px;font-weight:700;color:#ff9800" id="uLitellmTokens">--</div><div style="font-size:11px;color:#666">LiteLLM (Cloud)</div></div>
-  </div>
-  <div class="card" id="usageBarChart" style="min-height:60px">
-    <div style="font-size:12px;color:#666;margin-bottom:10px">Per-Agent Token Usage</div>
-    <div id="usageBars"></div>
-  </div>
-
-  <!-- 7. API ENDPOINTS -->
-  <div class="section-head">API Endpoints</div>
+  <!-- 11. API ENDPOINTS -->
+  <div class="section-head"><span>API Endpoints</span></div>
   <div class="card">
     <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:10px">
       <div class="api-count" id="apiCount">--</div>
@@ -295,104 +392,124 @@
     <div class="api-cats">
       <div class="api-cat">
         <div class="api-cat-name">AHB Business</div>
-        <div class="api-cat-items">
-          /api/ahb/clients<br>
-          /api/ahb/projects<br>
-          /api/ahb/invoices<br>
-          /api/ahb/receipts<br>
-          /api/ahb/estimates<br>
-          /api/ahb/schedule
-        </div>
+        <div class="api-cat-count">66+</div>
+        <div class="api-cat-items">clients, projects, invoices<br>receipts, estimates, schedule<br>payroll, employees, debts<br>phases, payments, billing<br>events, notes, files, tax<br>timeclock, voice, architect</div>
       </div>
       <div class="api-cat">
         <div class="api-cat-name">Agent Management</div>
-        <div class="api-cat-items">
-          /api/agents<br>
-          /api/agents/start<br>
-          /api/agents/stop<br>
-          /api/status<br>
-          /api/agents/heartbeat<br>
-          /api/agents/memory
-        </div>
+        <div class="api-cat-count">12</div>
+        <div class="api-cat-items">/api/agents &amp; start/stop<br>/api/status &amp; heartbeats<br>/api/agents/memory<br>/api/dispatch<br>/api/journal<br>/api/usage</div>
       </div>
       <div class="api-cat">
-        <div class="api-cat-name">System</div>
-        <div class="api-cat-items">
-          /api/infra/metrics<br>
-          /api/services<br>
-          /api/crons<br>
-          /api/email<br>
-          /api/artifacts<br>
-          /api/settings
-        </div>
+        <div class="api-cat-name">Infrastructure</div>
+        <div class="api-cat-count">14</div>
+        <div class="api-cat-items">/api/infra/metrics<br>/api/infra/notes<br>/api/services<br>/api/crons (CRUD + run)<br>/api/syshealth<br>/api/ollama/models</div>
       </div>
       <div class="api-cat">
-        <div class="api-cat-name">Tasks</div>
-        <div class="api-cat-items">
-          /api/tasks<br>
-          /api/tasks/create<br>
-          /api/tasks/update<br>
-          /api/tasks/complete<br>
-          /api/journal<br>
-          /api/dispatch
-        </div>
+        <div class="api-cat-name">Tasks &amp; Roadmap</div>
+        <div class="api-cat-count">12</div>
+        <div class="api-cat-items">/api/tasks (CRUD + stats)<br>/api/roadmap (CRUD + start)<br>/api/taskrunner/run<br>/api/taskrunner/logs</div>
+      </div>
+      <div class="api-cat">
+        <div class="api-cat-name">Skills &amp; Artifacts</div>
+        <div class="api-cat-count">20+</div>
+        <div class="api-cat-items">/api/skills/list &amp; run<br>/api/skills/save &amp; delete<br>/api/artifacts (CRUD)<br>/api/artifacts/upload<br>/api/dash-links (CRUD)</div>
+      </div>
+      <div class="api-cat">
+        <div class="api-cat-name">Cloud &amp; Chat</div>
+        <div class="api-cat-count">15+</div>
+        <div class="api-cat-items">/api/cloud/* (11 routes)<br>/api/ahb/widget/chat<br>/api/ahb/widget/history<br>/api/email/* (4 routes)<br>/api/explore/*</div>
+      </div>
+      <div class="api-cat">
+        <div class="api-cat-name">Data &amp; Memory</div>
+        <div class="api-cat-count">8</div>
+        <div class="api-cat-items">/api/memory (CRUD)<br>/api/settings (CRUD)<br>/api/models<br>/api/live</div>
       </div>
     </div>
   </div>
 
-  <!-- 8. DATABASE STATS -->
-  <div class="section-head">Database Stats</div>
-  <div class="db-grid" id="dbGrid">
-    <!-- filled by JS -->
+  <!-- 12. DATABASE STATS -->
+  <div class="section-head"><span>Database Stats</span></div>
+  <div class="cards-grid" style="margin-bottom:14px">
+    <div class="card">
+      <div class="card-title">SQLite (baza_projects.db)</div>
+      <div class="db-grid" id="dbGridSqlite"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">PostgreSQL (baza_agents)</div>
+      <div class="db-grid" id="dbGridPg">
+        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">agent memory</div></div>
+        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">summaries</div></div>
+        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">empire knowledge</div></div>
+        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">task journal</div></div>
+        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">agent usage</div></div>
+        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">agent skills</div></div>
+      </div>
+    </div>
   </div>
 
-  <!-- 9. ARCHITECTURE DIAGRAM -->
-  <div class="section-head">Architecture Diagram</div>
+  <!-- 13. ARCHITECTURE DIAGRAM -->
+  <div class="section-head"><span>Architecture Diagram</span></div>
   <div class="arch-box">
-    <div class="arch-diagram"><span class="hl4">Telegram Users (Serge)</span>
-        |
-        v
+    <div class="arch-diagram"><span class="hl4">Telegram Users (Serge)</span>          <span class="hl5">ahb123.com (Nova Chat Widget)</span>
+        |                                     |
+        v                                     v
 +-------<span class="hl">-------</span>-------+      +---<span class="hl2">-----</span>---+      +-------<span class="hl3">-------</span>+
 |  <span class="hl">8 AI Agents</span>        | ---> | <span class="hl2">GPU Pool</span>  | ---> | <span class="hl3">Ollama AMD</span>   |
 |  Simon, Claw, Phil | <--- | asyncio   | ---> | <span class="hl3">Ollama NVIDIA</span> |
 |  Sam, Rex, Duke    |      | lock mgr  |      +---------------+
 |  Scout, Nova       |      +-----------+
 +-------------------+              |
-        |                          v
-        v                  +-<span class="hl2">-----------</span>-+
-+---<span class="hl">-----------</span>---+     | <span class="hl2">LiteLLM Proxy</span> |
-| <span class="hl">Skills Engine</span>  |     | cloud models  |
-| ##SKILL:name##  |     +---------------+
-| subprocess exec |
+    |        |                     v
+    |        |             +-<span class="hl2">-----------</span>-+
+    v        v             | <span class="hl2">LiteLLM Proxy</span> |
++---<span class="hl">-------</span>-+ +---<span class="hl5">------</span>+  | GPT-4o, Claude |
+| <span class="hl">Skills</span>    | | <span class="hl5">Event Bus</span>|  | Gemini, Groq   |
+| Engine   | | Redis    |  +----------------+
+| 160+     | | Pub/Sub  |
+| skills   | | 11 chans |
++----------+ +----------+
+    |              |
+    v              v
++---<span class="hl3">-----------</span>---+     +---<span class="hl4">----------</span>-+     +---<span class="hl5">------</span>---+
+| <span class="hl3">PostgreSQL DB</span>  | <-- | <span class="hl4">Task Runner</span>  | --> | <span class="hl5">11 Cron</span>    |
+| memory, skills  |     | cron / auto   |     | <span class="hl5">Jobs</span>       |
+| journal, usage  |     | Duke manages  |     | per agent  |
++-----------------+     +---------------+     +------------+
+    |
+    v
++---<span class="hl">-----------</span>---+     +---<span class="hl2">----------</span>-+     +---<span class="hl4">------</span>---+
+| <span class="hl">Flask Dashboard</span> | --> | <span class="hl2">Mobile PWA</span>   | --> | <span class="hl4">Baza Cloud</span> |
+| port 8888       |     | /mobile        |     | invite-only|
+| 182+ routes     |     +---------------+     +------------+
 +-----------------+
-        |
-        v
-+---<span class="hl3">-----------</span>---+     +---<span class="hl4">----------</span>-+
-| <span class="hl3">PostgreSQL DB</span>  | <-- | <span class="hl4">Task Runner</span>  |
-| memory, skills  |     | cron / auto   |
-| journal, facts  |     +---------------+
-+-----------------+
-        |
-        v
-+---<span class="hl">-----------</span>---+     +---<span class="hl2">----------</span>-+
-| <span class="hl">Flask Dashboard</span> | --> | <span class="hl2">Mobile App</span>   |
-| port 8888       |     | /mobile        |
-+-----------------+     +---------------+
-        |
-        v
-+---<span class="hl4">-----------</span>---+
-| <span class="hl4">Tool Server</span>   |
-| FastAPI :8000   |
-| SD WebUI :7860  |
-+-----------------+</div>
+    |
+    v
++---<span class="hl4">-----------</span>---+     +---<span class="hl3">----------</span>-+
+| <span class="hl4">Tool Server</span>   | --> | <span class="hl3">SD WebUI</span>     |
+| FastAPI :8000   |     | Juggernaut XL |
+| 30+ imaging     |     | :7860         |
++-----------------+     +---------------+</div>
   </div>
 
-  <!-- 10. DASHBOARD LINKS -->
-  <div class="section-head">Dashboard Links <button onclick="showAddLinkModal()" style="float:right;background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px">+ Add Link</button></div>
+  <!-- 14. DASHBOARD LINKS -->
+  <div class="section-head">
+    <span>Dashboard Links</span>
+    <div class="sec-actions"><button onclick="showAddLinkModal()" class="sec-btn">+ Add Link</button></div>
+  </div>
   <div class="link-grid" id="linkGrid"></div>
 
-  <!-- 11. FUTURE ROADMAP -->
-  <div class="section-head">Baza Roadmap <button onclick="showAddRoadmapModal()" style="float:right;background:#e94560;border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:11px">+ Add Item</button></div>
+  <!-- 15. FUTURE ROADMAP -->
+  <div class="section-head">
+    <span>Baza Roadmap</span>
+    <div class="sec-actions"><button onclick="showAddRoadmapModal()" class="sec-btn">+ Add Item</button></div>
+  </div>
+  <div class="mini-stats" id="roadmapStats">
+    <div class="mini-stat"><div class="mini-stat-val" id="rmTotal">--</div><div class="mini-stat-label">Total Items</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#00d2ff" id="rmInProgress">--</div><div class="mini-stat-label">In Progress</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#e94560" id="rmPlanned">--</div><div class="mini-stat-label">Planned</div></div>
+    <div class="mini-stat"><div class="mini-stat-val" style="color:#4caf50" id="rmCompleted">--</div><div class="mini-stat-label">Completed</div></div>
+  </div>
   <div class="roadmap-grid" id="roadmapGrid"></div>
 
   <!-- Add Link Modal -->
@@ -452,27 +569,27 @@
 
 <script>
 const AGENTS_META = {
-  'simon-bately':  { icon: '\uD83D\uDC54', name: 'Simon Bately',  role: 'Co-CEO & Chief Operating Officer' },
-  'claw-batto':    { icon: '\uD83D\uDEE0\uFE0F', name: 'Claw Batto',    role: 'VP of Engineering & Infrastructure' },
-  'phil-hass':     { icon: '\u2696\uFE0F',  name: 'Phil Hass',     role: 'Director of Finance, Legal & Compliance' },
-  'sam-axe':       { icon: '\uD83C\uDFA8', name: 'Sam Axe',       role: 'VP of Creative & Marketing' },
-  'duke-harmon':   { icon: '\uD83D\uDCCB', name: 'Duke Harmon',   role: 'Director of Project Management' },
-  'rex-valor':     { icon: '\uD83D\uDCDE', name: 'Rex Valor',     role: 'Director of Inbound Sales & Lead Ops' },
-  'scout-reeves':  { icon: '\uD83D\uDD0D', name: 'Scout Reeves',  role: 'Director of Research & Market Intelligence' },
-  'nova-sterling': { icon: '\uD83D\uDCAC', name: 'Nova Sterling',  role: 'Director of Client Relations' }
+  'simon-bately':  { icon: '\uD83D\uDC54', name: 'Simon Bately',   title: 'Co-CEO & COO',                      role: 'Strategy, Coordination',    crons: 1 },
+  'claw-batto':    { icon: '\uD83D\uDEE0\uFE0F', name: 'Claw Batto',     title: 'VP of Engineering',                  role: 'Infrastructure, DevOps',    crons: 2 },
+  'phil-hass':     { icon: '\u2696\uFE0F',  name: 'Phil Hass',      title: 'Dir. Finance & Legal',               role: 'Finance, Compliance',       crons: 2 },
+  'sam-axe':       { icon: '\uD83C\uDFA8', name: 'Sam Axe',        title: 'VP of Creative',                     role: 'Design, Marketing, SD',     crons: 1 },
+  'duke-harmon':   { icon: '\uD83D\uDCCB', name: 'Duke Harmon',    title: 'Dir. Project Mgmt',                  role: 'Tasks, Deadlines',          crons: 2 },
+  'rex-valor':     { icon: '\uD83D\uDCDE', name: 'Rex Valor',      title: 'Dir. Sales & Leads',                 role: 'Sales, Client Intake',      crons: 1 },
+  'scout-reeves':  { icon: '\uD83D\uDD0D', name: 'Scout Reeves',   title: 'Dir. Research & Intel',              role: 'Market Research, Web',      crons: 2 },
+  'nova-sterling': { icon: '\uD83D\uDCAC', name: 'Nova Sterling',  title: 'Dir. Client Relations',              role: 'Chat Widget, Comms',        crons: 1 }
 };
 
 const SVC_META = {
-  'ollama_amd':   { label: 'Ollama AMD',    detail: 'localhost:11434 - RX 6700 XT' },
-  'ollama_nvidia':{ label: 'Ollama NVIDIA',  detail: 'localhost:11435 - RTX 3070' },
-  'dashboard':    { label: 'Dashboard',      detail: 'localhost:8888' },
-  'sdwebui':      { label: 'SD WebUI',       detail: 'localhost:7860' },
-  'litellm':      { label: 'LiteLLM Proxy',  detail: 'localhost:4000' },
-  'tool_server':  { label: 'Tool Server',    detail: 'localhost:8000' },
-  'postgresql':   { label: 'PostgreSQL',     detail: 'localhost:5432' },
-  'redis':        { label: 'Redis',          detail: 'localhost:6379' },
-  'nginx':        { label: 'Nginx',          detail: 'Reverse proxy' },
-  'nextcloud':    { label: 'Nextcloud',      detail: 'localhost:8080' }
+  'ollama_amd':    { label: 'Ollama AMD',     detail: 'localhost:11434 - RX 6700 XT (Vulkan)' },
+  'ollama_nvidia': { label: 'Ollama NVIDIA',   detail: 'localhost:11435 - RTX 3070 (CUDA)' },
+  'dashboard':     { label: 'Dashboard',       detail: 'localhost:8888 - Flask' },
+  'sdwebui':       { label: 'SD WebUI',        detail: 'localhost:7860 - Juggernaut XL' },
+  'litellm':       { label: 'LiteLLM Proxy',   detail: 'localhost:4000 - 7 providers' },
+  'tool_server':   { label: 'Tool Server',     detail: 'localhost:8000 - FastAPI 30+ tools' },
+  'postgresql':    { label: 'PostgreSQL',      detail: 'localhost:5432 - baza_agents' },
+  'redis':         { label: 'Redis',           detail: 'localhost:6379 - event bus + cache' },
+  'nginx':         { label: 'Nginx',           detail: 'Reverse proxy' },
+  'nextcloud':     { label: 'Nextcloud',       detail: 'localhost:8080 - Docker' }
 };
 
 function parsePercent(str) {
@@ -486,6 +603,14 @@ function barClass(pct) {
   return 'bar-green';
 }
 
+function fmtTokens(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toString();
+}
+
+// ── Render functions ──
+
 function renderGPUs(gpus) {
   const el = document.getElementById('gpuGrid');
   if (!gpus || !gpus.length) { el.innerHTML = '<div class="card" style="color:#555">No GPU data available</div>'; return; }
@@ -495,11 +620,15 @@ function renderGPUs(gpus) {
     const badgeCls = isNV ? 'badge-nvidia' : 'badge-amd';
     const memPct = (g.memory_used && g.memory_total) ? Math.round(g.memory_used / g.memory_total * 100) : null;
     const utilPct = g.utilization ? parseInt(g.utilization) : null;
+    const ollamaPort = isNV ? '11435' : '11434';
     return `
       <div class="gpu-card ${cls}">
         <div class="gpu-header">
           <div class="gpu-name">${g.name}</div>
-          <span class="badge ${badgeCls}">${g.type}</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span style="font-size:10px;color:#555;font-family:monospace">:${ollamaPort}</span>
+            <span class="badge ${badgeCls}">${g.type}</span>
+          </div>
         </div>
         <div class="gpu-stat-row">
           <div class="gpu-stat">
@@ -558,30 +687,34 @@ function renderServices(services) {
     const isUp = raw && (raw.includes('up') || raw.includes('active') || raw.includes('Up'));
     return `<div class="svc-card">
       <div class="svc-info"><div class="svc-name">${meta.label}</div><div class="svc-detail">${meta.detail}</div>${raw && !['up','active'].includes(raw) ? '<div class="svc-detail" style="color:#666;margin-top:2px">' + raw + '</div>' : ''}</div>
-      <div class="svc-dot ${isUp ? 'svc-dot-up' : (raw ? 'svc-dot-down' : 'svc-dot-down')}"></div>
+      <div class="svc-dot ${isUp ? 'svc-dot-up' : 'svc-dot-down'}"></div>
     </div>`;
   }).join('');
 }
 
 function renderAgents(agents) {
   const el = document.getElementById('agentGrid');
+  let onlineCount = 0;
   el.innerHTML = Object.keys(AGENTS_META).map(k => {
     const meta = AGENTS_META[k];
     const rawKey = k.replace(/-/g, '_');
     const status = agents ? (agents[k] || agents[rawKey] || 'inactive') : 'inactive';
     const isActive = status === 'active' || status === 'online';
+    if (isActive) onlineCount++;
     return `<a class="agent-card" href="/">
       <div class="agent-icon">${meta.icon}</div>
       <div class="agent-name">${meta.name}</div>
-      <div class="agent-role">${meta.role}</div>
+      <div class="agent-title">${meta.title}</div>
+      <div class="agent-meta"><span>${meta.crons} cron${meta.crons!==1?'s':''}</span><span>${meta.role}</span></div>
       <div><span class="agent-dot ${isActive ? 'agent-dot-active' : 'agent-dot-inactive'}"></span><span class="agent-status-text">${status}</span></div>
     </a>`;
   }).join('');
+  document.getElementById('agents-online-count').textContent = onlineCount + ' agents online';
 }
 
 function renderDBStats(dbStats) {
-  const el = document.getElementById('dbGrid');
-  if (!dbStats || !Object.keys(dbStats).length) { el.innerHTML = '<div class="card" style="color:#555">No database stats available</div>'; return; }
+  const el = document.getElementById('dbGridSqlite');
+  if (!dbStats || !Object.keys(dbStats).length) { el.innerHTML = '<div style="color:#555;font-size:12px">No database stats available</div>'; return; }
   let total = 0;
   const items = Object.entries(dbStats).map(([k, v]) => {
     total += v;
@@ -592,9 +725,10 @@ function renderDBStats(dbStats) {
   el.innerHTML = items.join('');
 }
 
+// ── Load functions ──
+
 function loadAll() {
   fetch('/api/infra/metrics').then(r => r.json()).then(d => {
-    // System overview
     document.getElementById('s-hostname').textContent = d.hostname || '--';
     document.getElementById('s-os').textContent = d.os || '--';
     document.getElementById('s-cpu-cores').textContent = (d.cpu_cores || '--') + ' cores';
@@ -603,18 +737,15 @@ function loadAll() {
     document.getElementById('s-uptime').textContent = d.uptime || '--';
     document.getElementById('s-load').textContent = d.load || '--';
 
-    // Memory bar
     document.getElementById('s-mem-text').textContent = d.mem_usage || '--';
     if (d.mem_used && d.mem_total) {
-      const mUsed = parseFloat(d.mem_used);
-      const mTotal = parseFloat(d.mem_total);
+      const mUsed = parseFloat(d.mem_used), mTotal = parseFloat(d.mem_total);
       const mPct = mTotal > 0 ? Math.round(mUsed / mTotal * 100) : 0;
       const memBar = document.getElementById('s-mem-bar');
       memBar.style.width = mPct + '%';
       memBar.className = 'bar-fill ' + barClass(mPct);
     }
 
-    // Disk bar
     document.getElementById('s-disk-text').textContent = d.disk_root || d.disk_usage || '--';
     const diskPct = parsePercent(d.disk_root || d.disk_usage || '');
     if (diskPct) {
@@ -623,74 +754,49 @@ function loadAll() {
       diskBar.className = 'bar-fill ' + barClass(diskPct);
     }
 
-    // GPUs
     renderGPUs(d.gpus);
-
-    // Storage
     renderStorage(d.storage, d.total_storage_tb);
-
-    // Tailscale
     if (d.tailscale) {
       document.getElementById('n-tsip').textContent = d.tailscale.self_ip || '--';
       document.getElementById('n-tshost').textContent = d.tailscale.hostname || '--';
       renderPeers(d.tailscale.peers);
     }
-
-    // Services
     renderServices(d.services);
-
-    // Agents
     renderAgents(d.agents);
-
-    // API count
     document.getElementById('apiCount').textContent = d.api_routes || '--';
-
-    // DB Stats
     renderDBStats(d.db_stats);
-
-    // Load usage
-    loadUsage();
 
     document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
   }).catch(err => {
-    document.getElementById('lastUpdated').textContent = 'Metrics unavailable - showing static layout';
-    renderGPUs([]);
-    renderServices({});
-    renderAgents({});
-    renderDBStats({});
+    document.getElementById('lastUpdated').textContent = 'Metrics unavailable';
+    renderGPUs([]); renderServices({}); renderAgents({}); renderDBStats({});
   });
 
-  // Load dynamic links + roadmap
+  loadUsage();
+  loadCrons();
+  loadSkills();
   loadLinks();
   loadRoadmap();
+  loadEvents();
 }
 
 // ── Agent Usage ──
-function fmtTokens(n) {
-  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
-  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
-  return n.toString();
-}
-
 function loadUsage() {
   const days = document.getElementById('usageDays').value;
   fetch('/api/usage?days='+days).then(r=>r.json()).then(d => {
     document.getElementById('uTotalTokens').textContent = fmtTokens(d.total_tokens || 0);
     document.getElementById('uTotalCalls').textContent = (d.total_calls || 0).toLocaleString();
-
     const agents = d.by_agent || [];
     document.getElementById('uTopAgent').textContent = agents.length ? agents[0].agent_id.replace(/_/g,' ') : 'None';
-
     const ollama = (d.by_provider||[]).find(p=>p.provider==='ollama');
     const litellm = (d.by_provider||[]).find(p=>p.provider==='litellm');
     document.getElementById('uOllamaTokens').textContent = fmtTokens(ollama ? ollama.total_tokens : 0);
     document.getElementById('uLitellmTokens').textContent = fmtTokens(litellm ? litellm.total_tokens : 0);
 
-    // Bar chart
     const maxTokens = agents.length ? Math.max(...agents.map(a=>a.total_tokens)) : 1;
     const bars = document.getElementById('usageBars');
     if (!agents.length) {
-      bars.innerHTML = '<div style="color:#555;font-size:12px;padding:8px">No usage data yet. Agents will log tokens as they process messages.</div>';
+      bars.innerHTML = '<div style="color:#555;font-size:12px;padding:8px">No usage data yet.</div>';
       return;
     }
     bars.innerHTML = agents.map(a => {
@@ -708,12 +814,198 @@ function loadUsage() {
   });
 }
 
+// ── Cron Jobs ──
+function loadCrons() {
+  fetch('/api/crons').then(r=>r.json()).then(crons => {
+    const enabled = crons.filter(c => c.enabled !== false);
+    const disabled = crons.filter(c => c.enabled === false);
+    const agentSet = new Set();
+    crons.forEach(c => {
+      const m = (c.command || '').match(/agents\/([^/]+)/);
+      if (m) agentSet.add(m[1]);
+    });
+
+    document.getElementById('cronTotal').textContent = crons.length;
+    document.getElementById('cronEnabled').textContent = enabled.length;
+    document.getElementById('cronDisabled').textContent = disabled.length;
+    document.getElementById('cronAgentCount').textContent = agentSet.size;
+
+    const el = document.getElementById('cronGrid');
+    if (!crons.length) {
+      el.innerHTML = '<div style="color:#555;padding:12px">No cron jobs configured.</div>';
+      return;
+    }
+    el.innerHTML = crons.slice(0, 12).map(c => {
+      const agentMatch = (c.command || '').match(/agents\/([^/]+)/);
+      const agent = agentMatch ? agentMatch[1].replace(/_/g, ' ') : 'system';
+      const agentKey = agentMatch ? agentMatch[1].replace(/_/g, '-') : '';
+      const meta = AGENTS_META[agentKey] || {};
+      const isEnabled = c.enabled !== false;
+      return `<div class="cron-card" style="border-left:3px solid ${isEnabled ? '#00d084' : '#333'}">
+        <div class="cron-name">${meta.icon || '\u23F0'} ${c.name || 'Unnamed'}</div>
+        <div class="cron-schedule">${c.schedule || '--'}</div>
+        <div class="cron-agent">${agent}</div>
+        <div class="cron-status">
+          <span class="badge ${isEnabled ? 'badge-active' : 'badge-inactive'}">${isEnabled ? 'Active' : 'Disabled'}</span>
+        </div>
+      </div>`;
+    }).join('') + (crons.length > 12 ? `<div style="color:#555;font-size:12px;padding:16px;text-align:center">+${crons.length-12} more &mdash; <a href="/crons" style="color:#e94560">view all</a></div>` : '');
+  }).catch(()=>{
+    document.getElementById('cronGrid').innerHTML = '<div style="color:#555">Cron data unavailable</div>';
+  });
+}
+
+// ── Skills Inventory ──
+function loadSkills() {
+  fetch('/api/skills/list').then(r=>r.json()).then(skills => {
+    const shared = skills.filter(s => s.type === 'shared' || s.scope === 'shared' || !s.agent_id);
+    const agentSkills = skills.filter(s => s.type !== 'shared' && s.scope !== 'shared' && s.agent_id);
+
+    document.getElementById('skillTotal').textContent = skills.length;
+    document.getElementById('skillShared').textContent = shared.length;
+    document.getElementById('skillAgent').textContent = agentSkills.length;
+
+    // Group agent skills by agent
+    const byAgent = {};
+    agentSkills.forEach(s => {
+      const a = s.agent_id || 'unknown';
+      if (!byAgent[a]) byAgent[a] = [];
+      byAgent[a].push(s);
+    });
+
+    // Categorize shared skills
+    const categories = {
+      'System & Infra': [],
+      'Business & Finance': [],
+      'Communications': [],
+      'Data & AI': [],
+      'Documents & Media': [],
+      'Web & Search': [],
+      'Project & Tasks': [],
+      'Other': []
+    };
+
+    const catMap = {
+      'system_health':'System & Infra','disk_usage':'System & Infra','gpu_status':'System & Infra',
+      'service_check':'System & Infra','docker_status':'System & Infra','network_info':'System & Infra',
+      'process_list':'System & Infra','log_reader':'System & Infra','backup_status':'System & Infra',
+      'restart_service':'System & Infra','uptime_check':'System & Infra','port_scan':'System & Infra',
+      'infra_report':'System & Infra','infra_status':'System & Infra','service_restart':'System & Infra',
+      'infra_note_add':'System & Infra','heartbeat':'System & Infra','agent_status':'System & Infra',
+      'agent_directory':'System & Infra','cron_manage':'System & Infra',
+      'git_status':'System & Infra','git_log':'System & Infra','git_diff':'System & Infra',
+      'run_tests':'System & Infra','lint_code':'System & Infra','run_command':'System & Infra',
+      'pip_install':'System & Infra','pip_list':'System & Infra',
+
+      'invoice_calculator':'Business & Finance','payment_tracker':'Business & Finance',
+      'receipt_summary':'Business & Finance','expense_report':'Business & Finance',
+      'profit_loss':'Business & Finance','debt_calculator':'Business & Finance',
+      'payroll_calculator':'Business & Finance','tax_estimator':'Business & Finance',
+      'material_cost':'Business & Finance','subcontractor_pay':'Business & Finance',
+      'change_order_gen':'Business & Finance','bid_calculator':'Business & Finance',
+      'permit_checker':'Business & Finance','insurance_verify':'Business & Finance',
+      'estimate_project':'Business & Finance','ahb123_query':'Business & Finance',
+
+      'send_telegram':'Communications','daily_report':'Communications',
+      'weekly_report':'Communications','email_draft':'Communications',
+      'sms_format':'Communications','meeting_notes':'Communications',
+      'status_update':'Communications','client_email_template':'Communications',
+      'invoice_reminder':'Communications','project_update_email':'Communications',
+      'empire_announce':'Communications','ask_agent':'Communications',
+
+      'llm_query':'Data & AI','summarize_text':'Data & AI','translate_text':'Data & AI',
+      'classify_text':'Data & AI','extract_entities':'Data & AI','generate_description':'Data & AI',
+      'proofread':'Data & AI','auto_categorize':'Data & AI','sentiment_analysis':'Data & AI',
+      'content_generator':'Data & AI','csv_export':'Data & AI','json_export':'Data & AI',
+      'sql_query':'Data & AI','chart_data':'Data & AI','trend_analysis':'Data & AI',
+      'kpi_dashboard':'Data & AI','forecast':'Data & AI','data_cleanup':'Data & AI',
+
+      'generate_docx':'Documents & Media','generate_xlsx':'Documents & Media',
+      'generate_pdf':'Documents & Media','print_document':'Documents & Media',
+      'edge_tts':'Documents & Media','analyze_image':'Documents & Media',
+      'receipt_ocr':'Documents & Media',
+
+      'web_search':'Web & Search','web_fetch':'Web & Search','scrape_page':'Web & Search',
+      'news':'Web & Search','research_report':'Web & Search',
+
+      'task_create':'Project & Tasks','task_update':'Project & Tasks','task_list':'Project & Tasks',
+      'roadmap_add':'Project & Tasks','roadmap_update':'Project & Tasks',
+      'roadmap_list':'Project & Tasks','roadmap_delete':'Project & Tasks',
+      'dash_link_add':'Project & Tasks','dash_link_remove':'Project & Tasks',
+      'dash_link_list':'Project & Tasks','dash_stats':'Project & Tasks',
+      'schedule_project':'Project & Tasks','project_timeline':'Project & Tasks',
+      'project_summary':'Project & Tasks','project_photos':'Project & Tasks',
+      'client_history':'Project & Tasks','client_lookup':'Project & Tasks',
+      'artifact_save':'Project & Tasks','save_artifact':'Project & Tasks',
+      'list_artifacts':'Project & Tasks','artifact_list':'Project & Tasks',
+      'journal_log':'Project & Tasks','skill_list':'Project & Tasks',
+    };
+
+    shared.forEach(s => {
+      const name = s.name || s.filename || '';
+      const cat = catMap[name.replace('.py','')] || 'Other';
+      categories[cat].push(name);
+    });
+
+    const breakdown = document.getElementById('skillBreakdown');
+    breakdown.innerHTML = Object.entries(categories).filter(([,v])=>v.length).map(([cat, items]) => {
+      return `<div class="card">
+        <div class="card-title" style="font-size:13px">${cat} <span class="badge badge-purple">${items.length}</span></div>
+        <div style="font-size:11px;color:#555;line-height:2">${items.slice(0,10).map(i => `<span style="display:inline-block;background:#0a0a18;padding:2px 8px;border-radius:4px;margin:2px;font-family:monospace">${i.replace('.py','')}</span>`).join('')}${items.length > 10 ? `<span style="color:#666;margin-left:4px">+${items.length-10} more</span>` : ''}</div>
+      </div>`;
+    }).join('');
+
+    // Add agent-specific card
+    if (Object.keys(byAgent).length) {
+      breakdown.innerHTML += `<div class="card">
+        <div class="card-title" style="font-size:13px">Agent-Specific <span class="badge badge-accent">${agentSkills.length}</span></div>
+        <div style="font-size:11px;color:#555;line-height:2">${Object.entries(byAgent).map(([a, s]) => {
+          const key = a.replace(/_/g,'-');
+          const meta = AGENTS_META[key] || {};
+          return `<div style="margin-bottom:4px">${meta.icon||''} <strong style="color:#aaa">${a.replace(/_/g,' ')}</strong>: ${s.map(sk => `<span style="display:inline-block;background:#0a0a18;padding:2px 8px;border-radius:4px;margin:2px;font-family:monospace">${(sk.name||sk.filename||'').replace('.py','')}</span>`).join('')}</div>`;
+        }).join('')}</div>
+      </div>`;
+    }
+  }).catch(()=>{
+    document.getElementById('skillBreakdown').innerHTML = '<div class="card" style="color:#555">Skills data unavailable</div>';
+  });
+}
+
+// ── Event Bus ──
+let eventHistory = [];
+function loadEvents() {
+  // Poll journal for recent cross-agent events
+  fetch('/api/journal?limit=20').then(r=>r.json()).then(entries => {
+    const log = document.getElementById('eventLog');
+    if (!entries || !entries.length) {
+      log.innerHTML = '<span style="color:#333">No recent events. Agents will publish events as they work.</span>';
+      return;
+    }
+    log.innerHTML = entries.slice(0, 15).map(e => {
+      const time = e.created_at ? new Date(e.created_at).toLocaleTimeString() : '';
+      const agent = e.agent_id || 'system';
+      const agentKey = agent.replace(/_/g,'-');
+      const meta = AGENTS_META[agentKey] || {};
+      const action = e.action || e.event_type || 'activity';
+      const detail = e.detail || e.summary || '';
+      return `<div style="border-bottom:1px solid #111;padding:4px 0">
+        <span style="color:#333;min-width:60px;display:inline-block">${time}</span>
+        <span style="color:#e94560;font-weight:600">${meta.icon||''} ${agent.replace(/_/g,' ')}</span>
+        <span style="color:#555"> ${action}</span>
+        ${detail ? `<span style="color:#444"> — ${detail.substring(0,80)}${detail.length>80?'...':''}</span>` : ''}
+      </div>`;
+    }).join('');
+  }).catch(()=>{
+    document.getElementById('eventLog').innerHTML = '<span style="color:#333">Event log unavailable</span>';
+  });
+}
+
 // ── Dashboard Links ──
 function loadLinks() {
   fetch('/api/dash-links').then(r=>r.json()).then(links => {
     const el = document.getElementById('linkGrid');
     if (!links.length) {
-      el.innerHTML = '<div style="color:#555;padding:12px">No links configured. Add one or agents will populate them.</div>';
+      el.innerHTML = '<div style="color:#555;padding:12px">No links configured.</div>';
       return;
     }
     el.innerHTML = links.map(l => `<a class="link-card" href="${l.url}" target="_blank">
@@ -751,9 +1043,15 @@ const PRIORITY_ICONS = { critical:'!!', high:'!', medium:'', low:'' };
 
 function loadRoadmap() {
   fetch('/api/roadmap').then(r=>r.json()).then(items => {
+    // Stats
+    document.getElementById('rmTotal').textContent = items.length;
+    document.getElementById('rmInProgress').textContent = items.filter(i=>i.status==='in_progress').length;
+    document.getElementById('rmPlanned').textContent = items.filter(i=>i.status==='planned').length;
+    document.getElementById('rmCompleted').textContent = items.filter(i=>i.status==='completed').length;
+
     const el = document.getElementById('roadmapGrid');
     if (!items.length) {
-      el.innerHTML = '<div style="color:#555;padding:12px">No roadmap items. Add one or let agents populate them.</div>';
+      el.innerHTML = '<div style="color:#555;padding:12px">No roadmap items.</div>';
       return;
     }
     el.innerHTML = items.map(i => {
@@ -763,11 +1061,11 @@ function loadRoadmap() {
       const pri = i.priority === 'high' || i.priority === 'critical' ? `<span style="color:#e94560;font-weight:bold;margin-left:4px">${PRIORITY_ICONS[i.priority]}</span>` : '';
       const target = i.target_date ? `<div style="font-size:10px;color:#555;margin-top:4px">Target: ${i.target_date}</div>` : '';
       const agent = i.assigned_agent ? `<div style="font-size:10px;color:#666;margin-top:2px">Agent: ${i.assigned_agent}</div>` : '';
-      return `<div class="roadmap-card" style="cursor:pointer" onclick="editRoadmap('${i.id}')">
+      return `<div class="roadmap-card" style="cursor:pointer;border-left-color:${sc}" onclick="editRoadmap('${i.id}')">
         <div class="roadmap-title">${i.title}${pri}${cat}</div>
-        <div class="roadmap-desc">${i.description}</div>
+        <div class="roadmap-desc">${i.description || ''}</div>
         ${target}${agent}
-        <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+        <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">
           <div class="roadmap-tag" style="border-color:${sc};color:${sc};background:${sc}22">${sl}</div>
           ${i.status !== 'in_progress' && i.status !== 'completed' ? `<button onclick="event.stopPropagation();startRoadmap('${i.id}')" style="font-size:9px;padding:2px 8px;background:#00d2ff22;border:1px solid #00d2ff;color:#00d2ff;border-radius:4px;cursor:pointer">Start</button>` : ''}
           ${i.status === 'in_progress' ? `<button onclick="event.stopPropagation();completeRoadmap('${i.id}')" style="font-size:9px;padding:2px 8px;background:#4caf5022;border:1px solid #4caf50;color:#4caf50;border-radius:4px;cursor:pointer">Complete</button>` : ''}
@@ -852,6 +1150,15 @@ function deleteRoadmap(id) {
   fetch('/api/roadmap/'+id, {method:'DELETE'}).then(()=>loadRoadmap());
 }
 
+// ── Nav clock ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('nav-clock').textContent = now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Init ──
 loadAll();
 setInterval(loadAll, 30000);
 </script>

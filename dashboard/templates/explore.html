@@ -232,9 +232,10 @@
     <a class="nav-link" href="/skills">Skills</a>
     <a class="nav-link" href="/journal">Journal</a>
     <a class="nav-link" href="/memory">Memory</a>
-    <a class="nav-link" href="/artifacts">Artifacts</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
     <a class="nav-link" href="/infra">Infra</a>
     <a class="nav-link active" href="/explore">Explore</a>
+    <a class="nav-link" href="/comms">Comms</a>
     <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/settings">Settings</a>
   </nav>
@@ -304,6 +305,7 @@
           <span style="font-size:10px;color:#555">Zoom</span>
           <input type="range" class="zoom-slider" id="zoom-slider" min="15" max="250" value="60" oninput="setZoom(this.value)">
           <span class="zoom-label" id="zoom-label">60%</span>
+          <button class="toolbar-btn" onclick="fitToFrame()" title="Fit device to playground" style="padding:4px 10px;font-size:11px">&#8634; Fit</button>
         </div>
         <div class="toolbar-sep"></div>
 
@@ -503,36 +505,92 @@
 
       // Auto-load from URL params (when agents send content here)
       const params = new URLSearchParams(window.location.search);
-      if (params.get('source') === 'artifact' && params.get('project_id') && params.get('filename')) {
-        const proj = params.get('project_id');
-        const file = params.get('filename');
-        const dev = params.get('device');
 
-        // Set project dropdown and load artifact list
-        const projSelect = document.getElementById('project-select');
-        if (projSelect) {
-          projSelect.value = proj;
-          loadArtifactList(proj);
+      // Support both formats: ?source=artifact&project_id=X&filename=Y  and  ?artifact=proj/file
+      let autoProj = params.get('project_id') || '';
+      let autoFile = params.get('filename') || '';
+      let autoDev = params.get('device') || '';
+
+      // Fallback: ?artifact=proj/filename
+      if (!autoProj && !autoFile && params.get('artifact')) {
+        const parts = params.get('artifact').split('/');
+        if (parts.length >= 2) {
+          autoProj = parts[0];
+          autoFile = parts.slice(1).join('/');
         }
+      }
 
-        // Load preview
-        loadPreview('/api/explore/static/' + encodeURIComponent(proj) + '/' + encodeURIComponent(file));
+      if ((params.get('source') === 'artifact' || params.get('artifact')) && autoProj && autoFile) {
+        // Set project dropdown
+        const projSelect = document.getElementById('project-select');
+        if (projSelect) projSelect.value = autoProj;
 
-        // Select specified device if provided
-        if (dev) {
+        // Pick device: agent-specified > Chrome Desktop for HTML > current
+        const ext = (autoFile.match(/\.\w+$/)||[''])[0].toLowerCase();
+        if (autoDev) {
           for (const [cat, devs] of Object.entries(DEVICES)) {
             for (let i = 0; i < devs.length; i++) {
               const dName = devs[i].name.toLowerCase().replace(/[\s"']/g, '-');
-              if (dName === dev || devs[i].name.toLowerCase().includes(dev.replace('-', ' '))) {
+              if (dName === autoDev || devs[i].name.toLowerCase().includes(autoDev.replace('-', ' '))) {
                 selectDevice(devs[i]);
                 break;
               }
             }
           }
+        } else if (['.html','.htm'].includes(ext)) {
+          // Default to Chrome Desktop browser simulator for HTML files
+          let chromeDevice = null;
+          if (DEVICES.browsers) {
+            chromeDevice = DEVICES.browsers.find(d => d.name.toLowerCase().includes('chrome desktop'))
+                        || DEVICES.browsers.find(d => d.name.toLowerCase().includes('chrome'))
+                        || DEVICES.browsers[0];
+          }
+          if (chromeDevice) {
+            selectDevice(chromeDevice);
+          } else if (DEVICES.desktop && DEVICES.desktop.length > 0) {
+            selectDevice(DEVICES.desktop[0]);
+          }
         }
 
-        // Show toast notification
-        showAgentToast('Loaded from agent: ' + file);
+        // Auto-fit zoom so the device fills the playground
+        fitToFrame();
+
+        // Load the artifact list and wait for it to render, then highlight + load preview
+        loadArtifactList(autoProj);
+        const url = '/api/explore/static/' + encodeURIComponent(autoProj) + '/' + autoFile.split('/').map(p => encodeURIComponent(p)).join('/');
+
+        // Poll for the sidebar item to appear (loadArtifactList is async)
+        let tries = 0;
+        const highlightInterval = setInterval(() => {
+          tries++;
+          const items = document.querySelectorAll('.artifact-item');
+          if (items.length > 0) {
+            // Find the matching item by title attribute (which holds rel_path)
+            let matched = null;
+            items.forEach(it => {
+              const t = (it.getAttribute('title') || it.textContent || '').trim();
+              if (t === autoFile || t.endsWith(autoFile) || autoFile.endsWith(t)) {
+                matched = it;
+              }
+            });
+            // Highlight all matching
+            document.querySelectorAll('.artifact-item').forEach(a => a.classList.remove('active'));
+            if (matched) {
+              matched.classList.add('active');
+              matched.scrollIntoView({block:'nearest', behavior:'smooth'});
+            }
+            clearInterval(highlightInterval);
+          }
+          if (tries > 20) clearInterval(highlightInterval);
+        }, 150);
+
+        // Load the preview
+        setTimeout(() => {
+          loadPreview(url);
+          // Re-apply fit-to-frame after device frame renders
+          fitToFrame();
+          showAgentToast('Loaded: ' + autoFile);
+        }, 250);
       }
 
       if (params.get('source') === 'url' && params.get('url')) {
@@ -633,6 +691,9 @@
 
       // Update info panel
       updateInfoPanel();
+
+      // Auto-fit the new device to fill the playground
+      requestAnimationFrame(() => fitToFrame());
     }
 
     function applyDeviceFrame(frameId, screenId, notchId, d, w, h) {
@@ -845,14 +906,21 @@
     }
 
     /* ===== SCROLL ZOOM ===== */
+    /* Plain scroll on the playground (outside the device screen) zooms the device frame.
+       Scroll inside the iframe content scrolls the page itself. */
     document.getElementById('frame-area').addEventListener('wheel', function(e) {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const slider = document.getElementById('zoom-slider');
-        let val = parseInt(slider.value) + (e.deltaY < 0 ? 5 : -5);
-        val = Math.max(15, Math.min(250, val));
-        setZoom(val);
+      // If the wheel event came from inside an iframe screen, let it scroll the page
+      const screen1 = document.getElementById('screen-1');
+      if (screen1 && screen1.contains(e.target)) {
+        return; // let the iframe handle it
       }
+      // Otherwise, zoom the device frame
+      e.preventDefault();
+      const slider = document.getElementById('zoom-slider');
+      const step = e.ctrlKey || e.metaKey ? 10 : 5;
+      let val = parseInt(slider.value) + (e.deltaY < 0 ? step : -step);
+      val = Math.max(15, Math.min(250, val));
+      setZoom(val);
     }, { passive: false });
 
     /* ===== ZOOM ===== */
@@ -865,6 +933,26 @@
       if (isCompare) {
         document.getElementById('device-frame-2').style.setProperty('--zoom', scale);
       }
+    }
+
+    /* Calculate the best zoom level so the device frame fills the playground */
+    function fitToFrame() {
+      const area = document.getElementById('frame-area');
+      const screen1 = document.getElementById('screen-1');
+      if (!area || !screen1 || !currentDevice) return;
+      // Use device dimensions (not the rendered screen which already has zoom applied)
+      const w = isRotated ? currentDevice.h : currentDevice.w;
+      const h = isRotated ? currentDevice.w : currentDevice.h;
+      // Account for bezel/title bar padding (~80px vertical, ~30px horizontal for browser frames)
+      const isCompareLayout = isCompare;
+      const availW = (area.clientWidth - 60) / (isCompareLayout ? 2 : 1);
+      const availH = area.clientHeight - 60;
+      // Calculate scale that fits both dimensions
+      const scaleW = availW / w;
+      const scaleH = availH / h;
+      const scale = Math.min(scaleW, scaleH);
+      const pct = Math.max(15, Math.min(250, Math.floor(scale * 100)));
+      setZoom(pct);
     }
 
     /* ===== COMPARE ===== */
@@ -1240,20 +1328,8 @@
 
     initTouchSim();
 
-    /* ===== PLAIN SCROLL ZOOM (without Ctrl) on frame area ===== */
-    document.getElementById('frame-area').addEventListener('wheel', function(e) {
-      // Ctrl+wheel = zoom (already handled above)
-      // Plain wheel without Ctrl = forward scroll to iframe
-      if (!e.ctrlKey && !e.metaKey) {
-        const screen = document.getElementById('screen-1');
-        const iframe = screen ? screen.querySelector('iframe') : null;
-        if (iframe) {
-          try {
-            iframe.contentWindow.postMessage({type:'explore-scroll', deltaX: e.deltaX, deltaY: e.deltaY}, '*');
-          } catch(err) {}
-        }
-      }
-    }, { passive: true });
+    /* (legacy scroll-forward handler removed — frame-area wheel now zooms device,
+       and the iframe handles its own page scrolling natively) */
 
     /* ===== ORIENTATION TOGGLE ===== */
     function toggleOrientation() {

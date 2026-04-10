@@ -556,6 +556,101 @@ class BazaAgent(ContextMixin):
 
     # ─── Start ────────────────────────────────────────────────────────────────
 
+    async def handle_attachment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save every photo/document/video/audio sent in chat to the Data Hub
+        under artifacts/<agent_id>-uploads/ with a sidecar meta tag."""
+        import datetime as _dt, re as _re
+        chat_id = update.effective_chat.id
+        msg = update.message
+        if not msg:
+            return
+        try:
+            framework_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            upload_dir = os.path.join(framework_dir, "dashboard", "artifacts",
+                                      f"{self.agent_id}-uploads")
+            os.makedirs(upload_dir, exist_ok=True)
+            file_obj = None
+            orig_name = None
+            kind = "file"
+            caption = (msg.caption or "").strip()
+            if msg.photo:
+                file_obj = await context.bot.get_file(msg.photo[-1].file_id)
+                orig_name = f"photo_{msg.photo[-1].file_unique_id}.jpg"; kind = "photo"
+            elif msg.document:
+                file_obj = await context.bot.get_file(msg.document.file_id)
+                orig_name = msg.document.file_name or f"doc_{msg.document.file_unique_id}"; kind = "document"
+            elif msg.video:
+                file_obj = await context.bot.get_file(msg.video.file_id)
+                orig_name = msg.video.file_name or f"video_{msg.video.file_unique_id}.mp4"; kind = "video"
+            elif msg.audio:
+                file_obj = await context.bot.get_file(msg.audio.file_id)
+                orig_name = msg.audio.file_name or f"audio_{msg.audio.file_unique_id}.mp3"; kind = "audio"
+            elif msg.voice:
+                file_obj = await context.bot.get_file(msg.voice.file_id)
+                orig_name = f"voice_{msg.voice.file_unique_id}.ogg"; kind = "voice"
+            if not file_obj:
+                return
+            safe = _re.sub(r"[^\w.\-_ ()]", "_", orig_name).strip() or "upload"
+            ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = f"{ts}_{safe}"
+            fpath = os.path.join(upload_dir, fname)
+            await file_obj.download_to_drive(fpath)
+            try:
+                with open(fpath + ".meta", "w") as mf:
+                    mf.write(f"agent_id={self.agent_id}\n")
+                    mf.write(f"chat_id={chat_id}\n")
+                    mf.write(f"kind={kind}\n")
+                    mf.write(f"received_at={_dt.datetime.now().isoformat()}\n")
+                    if caption:
+                        mf.write(f"caption={caption[:500]}\n")
+            except Exception:
+                pass
+            logger.info(f"[{self.agent_id}] saved {kind} from chat {chat_id}: {fname}")
+            await context.bot.send_message(chat_id=chat_id,
+                text=f"\u2705 Got your {kind}: {fname}\n\u2026 analyzing with Phil's curator...")
+
+            # Run curator in background
+            async def _curate():
+                try:
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        None, self.skills.run, "curate_document",
+                        {"file_path": fpath, "agent_id": self.agent_id, "chat_id": chat_id}
+                    )
+                    try:
+                        analysis = json.loads(result) if isinstance(result, str) else (result or {})
+                    except Exception:
+                        analysis = {}
+                    if not isinstance(analysis, dict):
+                        analysis = {}
+                    doc_type = (analysis.get("doc_type") or "document").upper()
+                    entity   = analysis.get("entity") or "unknown"
+                    summary  = (analysis.get("summary") or "").strip()
+                    relevance= (analysis.get("relevance") or "").strip()
+                    suggested= analysis.get("suggested_name") or fname
+                    tags     = analysis.get("tags") or []
+                    out = f"✅ Filed: {doc_type}\nEntity: {entity}\n"
+                    if analysis.get("doc_date"):
+                        out += f"Date: {analysis['doc_date']}\n"
+                    if summary:
+                        out += f"\n{summary}\n"
+                    if relevance:
+                        out += f"\n{relevance}\n"
+                    if tags:
+                        out += f"\ntags: {', '.join(tags[:6])}\n"
+                    out += f"\n📁 {suggested}"
+                    await context.bot.send_message(chat_id=chat_id, text=out)
+                except Exception as e:
+                    logger.error(f"[{self.agent_id}] curate failed: {e}")
+            asyncio.ensure_future(_curate())
+        except Exception as e:
+            logger.error(f"[{self.agent_id}] handle_attachment failed: {e}")
+            try:
+                await context.bot.send_message(chat_id=chat_id,
+                                               text=f"Couldn't save that file: {e}")
+            except Exception:
+                pass
+
     def run(self):
         if not self.token:
             logger.error(f"No token for {self.name} (env: {self.config['telegram_token_env']})")
@@ -563,4 +658,9 @@ class BazaAgent(ContextMixin):
         logger.info(f"Starting {self.name}...")
         app = Application.builder().token(self.token).build()
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        # Capture all chat attachments → datahub
+        app.add_handler(MessageHandler(
+            filters.PHOTO | filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE,
+            self.handle_attachment
+        ))
         app.run_polling(drop_pending_updates=True)
