@@ -8,13 +8,12 @@ Usage:
     from skills.shared.artifact_save import save_artifact
     save_artifact(agent_id="claw_batto", project_id="ahb123", file_name="homepage.html", content="...", description="Built homepage")
 """
-import os, json, requests
+import os, json
 from pathlib import Path
 from datetime import datetime
 
 FRAMEWORK_DIR   = Path(__file__).resolve().parent.parent.parent
 ARTIFACTS_DIR   = FRAMEWORK_DIR / "dashboard" / "artifacts"
-DASHBOARD_URL   = os.environ.get("DASHBOARD_URL", "http://localhost:8888")
 
 def save_artifact(
     agent_id:    str,
@@ -59,25 +58,10 @@ def save_artifact(
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-    # Also notify dashboard API (non-blocking)
-    try:
-        requests.post(f"{DASHBOARD_URL}/api/artifacts/save-agent", json={
-            "agent_id":    agent_id,
-            "project_id":  project_id,
-            "file_name":   file_name,
-            "content":     content,
-            "description": description,
-            "tags":        tags,
-            "file_ext":    file_ext,
-            "task_id":     task_id,
-        }, timeout=3)
-    except:
-        pass  # Dashboard offline — file still saved locally
-
     return {
         "success":  True,
         "path":     str(dest_path),
-        "rel":      f"{agent_id}/{project_id}/{file_name}",
+        "rel":      f"{project_id}/{file_name}",
         "ext":      file_ext,
         "size":     len(content.encode('utf-8')),
     }
@@ -91,14 +75,14 @@ def save_binary_artifact(
 ) -> dict:
     """Save binary files (images, ZIPs, etc) as artifacts."""
     file_ext = Path(file_name).suffix.lower()
-    dest_dir = ARTIFACTS_DIR / agent_id / project_id
+    dest_dir = ARTIFACTS_DIR / project_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / file_name
     dest_path.write_bytes(data)
     return {
         "success": True,
         "path":    str(dest_path),
-        "rel":     f"{agent_id}/{project_id}/{file_name}",
+        "rel":     f"{project_id}/{file_name}",
         "ext":     file_ext,
         "size":    len(data),
     }

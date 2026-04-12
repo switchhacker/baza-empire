@@ -1,8 +1,9 @@
 """
-GPU Pool — manages three Ollama instances:
-  - 11434  NVIDIA RTX 3070  (CUDA, 8GB)   — small/fast models
-  - 11435  AMD RX 6700 XT   (Vulkan, 12GB) — medium models
-  - 11436  CPU + 64GB RAM    (no GPU)     — big-model fallback
+GPU Pool — manages four Ollama instances:
+  - 11434  AMD RX 6700 XT   (Vulkan, 12GB) — primary Vulkan
+  - 11435  NVIDIA RTX 3070  (CUDA, 8GB)    — CUDA compute
+  - 11436  CPU + 64GB RAM   (no GPU)       — big-model fallback
+  - 11437  AMD RX 6700 XT   (Vulkan, 12GB) — secondary Vulkan (overflow)
 
 Agents acquire the BEST slot for their model (size + temperature + load
 aware), run inference, then release. Temperature awareness skips a GPU that
@@ -19,9 +20,10 @@ from typing import Optional
 
 
 # ── Backend definitions ───────────────────────────────────────────────────────
-NVIDIA_URL  = "http://127.0.0.1:11434"
-AMD_URL     = "http://127.0.0.1:11435"
+AMD_URL     = "http://127.0.0.1:11434"
+NVIDIA_URL  = "http://127.0.0.1:11435"
 CPU_URL     = "http://127.0.0.1:11436"
+AMD2_URL    = "http://127.0.0.1:11437"
 
 # VRAM budgets (rough — used to decide which slot CAN host a given model)
 NVIDIA_VRAM_MB = 8192    # RTX 3070
@@ -125,11 +127,13 @@ class GPUSlot:
 # ── Pool ──────────────────────────────────────────────────────────────────────
 class GPUPool:
     def __init__(self):
+        # NVIDIA RTX 3070 is RESERVED for SD WebUI — not in Ollama pool.
+        # All LLM inference goes through AMD (Vulkan) or CPU fallback.
         self.slots = [
-            GPUSlot(id=0, url=NVIDIA_URL, name="NVIDIA RTX 3070",
-                    backend="cuda",   vram_mb=NVIDIA_VRAM_MB,
-                    temp_warn=NVIDIA_TEMP_WARN, temp_crit=NVIDIA_TEMP_CRIT),
-            GPUSlot(id=1, url=AMD_URL, name="AMD RX 6700 XT",
+            GPUSlot(id=0, url=AMD_URL, name="AMD RX 6700 XT (primary)",
+                    backend="vulkan", vram_mb=AMD_VRAM_MB,
+                    temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
+            GPUSlot(id=1, url=AMD2_URL, name="AMD RX 6700 XT (overflow)",
                     backend="vulkan", vram_mb=AMD_VRAM_MB,
                     temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
             GPUSlot(id=2, url=CPU_URL, name="CPU + 64GB RAM",

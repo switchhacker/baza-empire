@@ -157,32 +157,59 @@ def _try_openai_compatible(url, api_key, model, messages, timeout=60):
         result = json.loads(resp.read())
         return result.get("choices", [{}])[0].get("message", {}).get("content", ""), result.get("usage", {}), model
 
-def _try_ollama_vision(image_path, prompt, system_prompt, timeout=90):
-    """Send to local Ollama with llava vision model."""
-    ollama_payload = json.dumps({
-        "model": "llava:13b",
-        "stream": False,
-        "options": {"num_predict": 1500, "temperature": 0.3},
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt, "images": [base64.b64encode(open(image_path, "rb").read()).decode("utf-8")]}
-        ]
-    }).encode("utf-8")
-    for port in [11434, 11435]:
+def _try_ollama_vision(image_path, prompt, system_prompt, timeout=120):
+    """Send to local Ollama with a vision model (qwen3-vl or llava)."""
+    img_b64 = base64.b64encode(open(image_path, "rb").read()).decode("utf-8")
+    # Try vision models in preference order
+    vision_models = ["qwen3-vl:latest", "llava:13b"]
+    # Smart port selection: check which port already has a vision model loaded
+    # NVIDIA (11435) is reserved for SD WebUI — only AMD (11434/11437) and CPU (11436)
+    ports = [11434, 11437, 11436]
+    hot_port = None
+    for port in ports:
         try:
-            req = urllib.request.Request(
-                f"http://localhost:{port}/api/chat",
-                data=ollama_payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                result = json.loads(resp.read())
-                content = result.get("message", {}).get("content", "")
-                if content:
-                    return content, {"total_tokens": 0}, f"ollama/llava:13b (port {port})"
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/ps", timeout=2) as r:
+                ps = json.loads(r.read())
+                loaded = [m["name"] for m in ps.get("models", [])]
+                for vm in vision_models:
+                    if vm in loaded:
+                        hot_port = port
+                        break
+            if hot_port:
+                break
         except Exception:
             continue
+    # If a port already has the model, try it first; otherwise default order
+    if hot_port:
+        ports = [hot_port] + [p for p in ports if p != hot_port]
+
+    for model in vision_models:
+        for port in ports:
+            try:
+                # High num_predict because vision models (qwen3-vl) use thinking tokens
+                # before generating content — need 1500+ for thinking + 1000+ for output
+                ollama_payload = json.dumps({
+                    "model": model,
+                    "stream": False,
+                    "options": {"num_predict": 3000, "temperature": 0.3, "num_ctx": 8192},
+                    "messages": [
+                        {"role": "system", "content": system_prompt[:800]},
+                        {"role": "user", "content": prompt, "images": [img_b64]}
+                    ]
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    f"http://localhost:{port}/api/chat",
+                    data=ollama_payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    result = json.loads(resp.read())
+                    content = result.get("message", {}).get("content", "")
+                    if content:
+                        return content, {"total_tokens": result.get("eval_count", 0)}, f"ollama/{model} (port {port})"
+            except Exception:
+                continue
     return None, {}, ""
 
 messages = [
@@ -198,15 +225,23 @@ usage = {}
 model_used = ""
 errors = []
 
-# Strategy 1: LiteLLM proxy
+# Strategy 1: Local Ollama vision FIRST (free, no API key, always available)
 try:
-    content, usage, model_used = _try_openai_compatible(
-        f"{LITELLM_URL}/v1/chat/completions", LITELLM_KEY, VISION_MODEL, messages
-    )
+    content, usage, model_used = _try_ollama_vision(image_path, user_prompt, system_prompt)
 except Exception as e:
-    errors.append(f"LiteLLM: {str(e)[:100]}")
+    errors.append(f"Ollama vision: {str(e)[:100]}")
 
-# Strategy 2: Direct OpenAI (if key available)
+# Strategy 2: LiteLLM proxy (only if Ollama failed AND proxy is healthy)
+if not content:
+    try:
+        urllib.request.urlopen(f"{LITELLM_URL}/health", timeout=2)
+        content, usage, model_used = _try_openai_compatible(
+            f"{LITELLM_URL}/v1/chat/completions", LITELLM_KEY, VISION_MODEL, messages, timeout=30
+        )
+    except Exception as e:
+        errors.append(f"LiteLLM: {str(e)[:80]}")
+
+# Strategy 3: Direct OpenAI (if key available)
 if not content:
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     if openai_key:
@@ -217,7 +252,7 @@ if not content:
         except Exception as e:
             errors.append(f"OpenAI direct: {str(e)[:100]}")
 
-# Strategy 3: Direct Gemini via OpenAI-compat (if key available)
+# Strategy 4: Direct Gemini via OpenAI-compat (if key available)
 if not content:
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     if gemini_key:
@@ -228,13 +263,6 @@ if not content:
             )
         except Exception as e:
             errors.append(f"Gemini direct: {str(e)[:100]}")
-
-# Strategy 4: Local Ollama llava (free, no API key needed)
-if not content:
-    try:
-        content, usage, model_used = _try_ollama_vision(image_path, user_prompt, system_prompt)
-    except Exception as e:
-        errors.append(f"Ollama llava: {str(e)[:100]}")
 
 if content:
     print(f"IMAGE ANALYSIS ({mode}): {os.path.basename(image_path)}")

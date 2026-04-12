@@ -83,8 +83,8 @@ else:
 
 negative  = args.get("negative_prompt", base_negative)
 steps     = int(args.get("steps", default_steps))
-width     = int(args.get("width", 1024))
-height    = int(args.get("height", 1024))
+width     = int(args.get("width", 768))
+height    = int(args.get("height", 768))
 cfg_scale = float(args.get("cfg_scale", default_cfg))
 sampler   = args.get("sampler", "DPM++ 2M Karras")
 
@@ -144,19 +144,79 @@ payload = {
     }
 }
 
-try:
-    r = requests.post(f"{SDWEBUI_URL}/sdapi/v1/txt2img", json=payload, timeout=300)
-    r.raise_for_status()
-    data = r.json()
-except requests.exceptions.Timeout:
-    print(json.dumps({"error": "Image generation timed out (>5 min). Try fewer steps or smaller size."}))
-    sys.exit(1)
-except Exception as e:
-    print(json.dumps({"error": f"Generation failed: {str(e)}"}))
-    sys.exit(1)
+# ── ControlNet — guided generation from reference image ─────────────────────
+reference_image = args.get("reference_image", "")
+controlnet_mode = args.get("controlnet_mode", "canny")
 
-# ── Save image ───────────────────────────────────────────────────────────────
-images = data.get("images", [])
+if reference_image and os.path.exists(reference_image):
+    with open(reference_image, "rb") as rf:
+        ref_b64 = base64.b64encode(rf.read()).decode()
+
+    CN_MAP = {
+        "canny":    ("canny",         "diffusers_xl_canny_full [2b69fca4]"),
+        "depth":    ("depth_midas",   "diffusers_xl_depth_full [2f51180b]"),
+        "openpose": ("openpose_full", "t2i-adapter_diffusers_xl_openpose [adfb64aa]"),
+    }
+    preprocessor, cn_model = CN_MAP.get(controlnet_mode, CN_MAP["canny"])
+
+    payload.setdefault("alwayson_scripts", {})
+    payload["alwayson_scripts"]["controlnet"] = {
+        "args": [{
+            "input_image": ref_b64,
+            "module": preprocessor,
+            "model": cn_model,
+            "weight": float(args.get("controlnet_weight", 0.85)),
+            "resize_mode": 1,
+            "control_mode": 0,
+            "guidance_start": 0.0,
+            "guidance_end": 0.8,
+            "pixel_perfect": True,
+        }]
+    }
+
+# ── ADetailer — automatic face/hand enhancement ────────────────────────────
+if args.get("adetailer", True):
+    payload.setdefault("alwayson_scripts", {})
+    payload["alwayson_scripts"]["ADetailer"] = {
+        "args": [True, False, {
+            "ad_model": "face_yolov8n.pt",
+            "ad_confidence": 0.3,
+            "ad_dilate_erode": 4,
+            "ad_mask_blur": 4,
+            "ad_denoising_strength": 0.4,
+            "ad_inpaint_only_masked": True,
+            "ad_inpaint_only_masked_padding": 32,
+        }]
+    }
+
+# ── Generate variants one at a time (avoids Forge grid stitching) ───────────
+num_variants = int(args.get("n_iter", 1)) or 1
+all_images = []
+plain_payload = {k: v for k, v in payload.items() if k != "alwayson_scripts"}
+
+for vi in range(num_variants):
+    fallbacks = [("full", payload), ("plain", plain_payload)]
+    for label, attempt_payload in fallbacks:
+        try:
+            r = requests.post(f"{SDWEBUI_URL}/sdapi/v1/txt2img", json=attempt_payload, timeout=300)
+            r.raise_for_status()
+            data = r.json()
+            imgs = data.get("images", [])
+            if imgs:
+                all_images.append(imgs[0])
+            if label != "full":
+                print(f"[variant {vi+1}: ran without extensions]", file=sys.stderr)
+            break
+        except requests.exceptions.Timeout:
+            print(json.dumps({"error": "Image generation timed out (>5 min)."}))
+            sys.exit(1)
+        except Exception as e:
+            if "500" in str(e) and label != "plain":
+                continue
+            print(json.dumps({"error": f"Generation failed: {str(e)}"}))
+            sys.exit(1)
+
+images = all_images
 if not images:
     print(json.dumps({"error": "No images returned from SD WebUI."}))
     sys.exit(1)
@@ -166,45 +226,52 @@ timestamp = int(time.time())
 short_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
 safe_name  = "_".join(prompt.lower().split()[:6])
 safe_name  = "".join(c if c.isalnum() or c == "_" else "" for c in safe_name)
-filename   = f"{timestamp}_{safe_name}_{short_hash}.png"
-filepath   = os.path.join(OUTPUT_DIR, filename)
 
-with open(filepath, "wb") as f:
-    f.write(base64.b64decode(images[0]))
+saved_paths = []
+for idx, img_b64 in enumerate(images):
+    variant_label = f"_v{idx+1}" if len(images) > 1 else ""
+    filename = f"{timestamp}_{safe_name}_{short_hash}{variant_label}.png"
+    filepath = os.path.join(OUTPUT_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(base64.b64decode(img_b64))
+    saved_paths.append(filepath)
 
-# ── Register with artifacts dashboard via upload API ─────────────────────────
-try:
-    import urllib.request
-    DASHBOARD_URL = os.environ.get("BAZA_DASHBOARD_URL", "http://localhost:8888")
-    boundary = "bazaartifactboundary"
-    with open(filepath, "rb") as img_f:
-        img_data = img_f.read()
-    # Detect project from prompt content
-    low = prompt.lower()
-    proj = "proj-ahb123" if any(k in low for k in ["ahb", "home", "kitchen", "bath", "room", "house", "reno", "floor", "architect"]) else "proj-ahb123"
-    body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="project_id"\r\n\r\n'
-        f"{proj}\r\n"
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="sam_axe_{filename}"\r\n'
-        f"Content-Type: image/png\r\n\r\n"
-    ).encode("utf-8") + img_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
-    req = urllib.request.Request(
-        f"{DASHBOARD_URL}/api/artifacts/upload",
-        data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=15):
+# ── Register with artifacts dashboard ─────────────────────────────────────────
+for fpath in saved_paths:
+    try:
+        import urllib.request
+        DASHBOARD_URL = os.environ.get("BAZA_DASHBOARD_URL", "http://localhost:8888")
+        boundary = "bazaartifactboundary"
+        with open(fpath, "rb") as img_f:
+            img_data = img_f.read()
+        fname = os.path.basename(fpath)
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="project_id"\r\n\r\nproj-ahb123\r\n'
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="sam_axe_{fname}"\r\n'
+            f"Content-Type: image/png\r\n\r\n"
+        ).encode("utf-8") + img_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        req = urllib.request.Request(
+            f"{DASHBOARD_URL}/api/artifacts/upload",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15):
+            pass
+    except Exception:
         pass
-except Exception:
-    pass
 
 # ── Result ───────────────────────────────────────────────────────────────────
+for i, p in enumerate(saved_paths):
+    label = f"{'1st' if i==0 else '2nd'} try" if len(saved_paths) > 1 else ""
+    print(f"{label}: {p}" if label else p)
+
 print(json.dumps({
-    "image_path": filepath,
-    "filename":   filename,
+    "image_path": saved_paths[0] if saved_paths else "",
+    "image_paths": saved_paths,
+    "variant_count": len(saved_paths),
     "width":      width,
     "height":     height,
     "steps":      steps,

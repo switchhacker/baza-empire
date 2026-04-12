@@ -10,11 +10,12 @@
   body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column}
   a{color:inherit;text-decoration:none}
 
-  .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:100;flex-shrink:0}
-  .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+  .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:100;flex-shrink:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+  .nav::-webkit-scrollbar{height:0;display:none}
+  .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
   .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
   .nav-brand span{font-size:22px}
-  .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s}
+  .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s;white-space:nowrap;flex-shrink:0}
   .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
 
   /* CHAT LAYOUT */
@@ -88,12 +89,47 @@
   .pa-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#aaa;padding:6px 12px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600}
   .pa-btn:hover{color:#fff;border-color:#7c3aed}
 
-  /* SHIMMER OVERLAY (image generation / edit) */
-  .shimmer-wrap{position:relative}
-  .shimmer-wrap.active::after{content:'';position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,rgba(124,58,237,.45) 50%,transparent 65%);background-size:200% 100%;animation:shimmer 1.6s infinite linear;pointer-events:none}
-  .shimmer-wrap.active::before{content:'';position:absolute;inset:0;border:2px solid rgba(124,58,237,.6);border-radius:10px;animation:shimmerPulse 1.6s infinite ease-in-out;pointer-events:none;z-index:2}
-  @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-  @keyframes shimmerPulse{0%,100%{box-shadow:0 0 30px rgba(124,58,237,.3);opacity:1}50%{box-shadow:0 0 60px rgba(233,69,96,.6);opacity:.7}}
+  /* SHIMMER OVERLAY (image generation / edit) — pulse in-place + CCW border */
+  .shimmer-wrap{position:relative;overflow:hidden}
+
+  /* Full-tile pulse shimmer (no left-to-right sweep) */
+  .shimmer-wrap.active::after{
+    content:'';position:absolute;inset:0;
+    background:radial-gradient(ellipse at center, rgba(124,58,237,.35) 0%, transparent 70%);
+    animation:shimmerPulseGlow 2s infinite ease-in-out;
+    pointer-events:none;z-index:1
+  }
+  @keyframes shimmerPulseGlow{
+    0%,100%{opacity:.2;transform:scale(0.95)}
+    50%{opacity:.6;transform:scale(1.02)}
+  }
+
+  /* Counter-clockwise rotating border shimmer */
+  .shimmer-wrap.active::before{
+    content:'';position:absolute;inset:-2px;
+    background:conic-gradient(from 0deg, transparent 0%, #7c3aed 25%, #e94560 50%, #7c3aed 75%, transparent 100%);
+    border-radius:12px;
+    animation:shimmerBorderSpin 2.5s infinite linear reverse;
+    pointer-events:none;z-index:2;
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite:xor;
+    mask-composite:exclude;
+    padding:2px;
+  }
+  @keyframes shimmerBorderSpin{
+    0%{transform:rotate(0deg)}
+    100%{transform:rotate(360deg)}
+  }
+
+  /* Inner glow pulse */
+  .shimmer-wrap.active{
+    box-shadow:0 0 20px rgba(124,58,237,.15), inset 0 0 30px rgba(124,58,237,.08);
+    animation:shimmerInnerGlow 2s infinite ease-in-out;
+  }
+  @keyframes shimmerInnerGlow{
+    0%,100%{box-shadow:0 0 20px rgba(124,58,237,.15), inset 0 0 20px rgba(124,58,237,.05)}
+    50%{box-shadow:0 0 40px rgba(233,69,96,.25), inset 0 0 40px rgba(124,58,237,.12)}
+  }
   .object-marker{position:absolute;border:1.5px dashed #00ff88;border-radius:4px;background:rgba(0,255,136,.06);pointer-events:none;animation:objBlink 1.2s infinite}
   @keyframes objBlink{0%,100%{opacity:.4}50%{opacity:1}}
 
@@ -165,6 +201,7 @@
   <a class="nav-link" href="/explore">Explore</a>
   <a class="nav-link active" href="/comms">Comms</a>
   <a class="nav-link" href="/cloud">Cloud</a>
+  <a class="nav-link" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
   <a class="nav-link" href="/settings">Settings</a>
 </nav>
 
@@ -395,8 +432,15 @@ function renderContent(text){
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   // Headers
   html = html.replace(/^### (.+)$/gm,'<h3>$1</h3>').replace(/^## (.+)$/gm,'<h2>$1</h2>').replace(/^# (.+)$/gm,'<h1>$1</h1>');
-  // Image markdown
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,'<div class="preview-card"><div class="preview-head"><span>🖼 $1</span></div><div class="preview-body"><img src="$2" alt="$1"></div></div>');
+  // Image markdown — rewrite local paths to proxy URL
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(m, alt, src){
+    const url = src.startsWith('/') ? '/api/serve-local' + src : src;
+    return `<div class="preview-card"><div class="preview-head"><span>🖼 ${alt}</span></div><div class="preview-body"><img src="${url}" alt="${alt}"></div></div>`;
+  });
+  // Bare local image paths (e.g. /mnt/empirepool/media/generated/xyz.png on its own line)
+  html = html.replace(/(^|<br>|<p>)(\/(?:mnt|tmp)[^\s<]+\.(?:png|jpg|jpeg|webp|gif))/gim, function(m, pre, path){
+    return `${pre}<div class="preview-card"><div class="preview-head"><span>🖼 Generated</span></div><div class="preview-body"><img src="/api/serve-local${path}"></div></div>`;
+  });
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
   // Paragraph breaks

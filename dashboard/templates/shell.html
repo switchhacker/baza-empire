@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Phantom</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh}
+    a{color:inherit;text-decoration:none}
+
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 16px;display:flex;align-items:center;height:38px;z-index:300;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+    .nav::-webkit-scrollbar{height:0;display:none}
+    .nav-brand{display:flex;align-items:center;gap:6px;padding:8px 12px 8px 0;border-right:1px solid #1a1a3a;margin-right:4px;cursor:pointer;flex-shrink:0}
+    .nav-brand h1{font-size:13px;font-weight:800;color:#7c3aed;letter-spacing:2px}
+    .nl{padding:10px 8px;font-size:10px;font-weight:600;color:#444;border-bottom:2px solid transparent;transition:all .12s;white-space:nowrap;cursor:pointer;flex-shrink:0}
+    .nl:hover,.nl.on{color:#ccc;border-bottom-color:#e94560}
+    .nr{margin-left:auto;display:flex;gap:6px;align-items:center}
+    .mb{padding:3px 8px;font-size:9px;font-weight:700;border-radius:3px;cursor:pointer;border:1px solid #1a1a2e;background:none;color:#444;transition:all .12s}
+    .mb:hover{border-color:#7c3aed;color:#c4b5fd}
+    .mb.on{background:#7c3aed;color:#fff;border-color:#7c3aed}
+
+    .main{display:flex;height:calc(100vh - 38px)}
+    #df{border:none;flex:1}
+    #df.hide{display:none;flex:0}
+    #bp{display:none;flex-direction:column;border-left:1px solid #1a1a2e;background:#07070f;overflow:hidden}
+    #bp.split{display:flex;width:55%;min-width:380px}
+    #bp.full{display:flex;flex:1}
+
+    /* ── PHANTOM BROWSER CHROME ───────────────────────────────────────── */
+    .bt{display:flex;align-items:center;gap:4px;padding:4px 8px;background:#0a0a14;border-bottom:1px solid #111;height:34px}
+    .bb{background:none;border:none;color:#555;padding:2px 6px;font-size:12px;cursor:pointer;border-radius:3px;transition:all .1s}
+    .bb:hover{color:#fff;background:#1a1a2e}
+    .ba{flex:1;background:#070710;border:1px solid #151520;border-radius:14px;padding:4px 12px;color:#ccc;font-size:11px;outline:none;font-family:'SF Mono',monospace;transition:border-color .15s}
+    .ba:focus{border-color:#7c3aed}
+    .bs{font-size:14px;color:#555;cursor:pointer}
+    .bs.marked{color:#f0c040}
+
+    .ts{display:flex;background:#08080f;border-bottom:1px solid #0d0d1a;overflow-x:auto;scrollbar-width:none;height:26px}
+    .ts::-webkit-scrollbar{display:none}
+    .tb{display:flex;align-items:center;gap:3px;padding:3px 8px;font-size:9px;color:#444;cursor:pointer;border-right:1px solid #0a0a10;max-width:150px;min-width:40px;background:#06060c;border-top:2px solid transparent;border-radius:4px 4px 0 0;transition:all .1s}
+    .tb:hover{color:#aaa;background:#0d0d1e}
+    .tb.on{color:#ddd;background:#0d0d1e;border-top-color:#7c3aed}
+    .tb.zz{opacity:.35;font-style:italic}
+    .tb .ti{font-size:6px;display:inline-block}
+    .tb.ld .ti{animation:sp .7s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    .tb .tt{overflow:hidden;text-overflow:ellipsis;flex:1;white-space:nowrap}
+    .tb .tc{font-size:8px;color:#333;padding:0 2px;border-radius:2px}
+    .tb .tc:hover{color:#f66;background:#200808}
+    .ta{color:#333;font-size:13px;min-width:22px;text-align:center;cursor:pointer;background:none;border:none;border-right:none}
+    .ta:hover{color:#7c3aed}
+
+    .bc{flex:1;position:relative;background:#000;overflow:hidden}
+    .bf{width:100%;height:100%;border:none;position:absolute;top:0;left:0;right:0;bottom:0;z-index:1}
+
+    /* New tab page */
+    .nt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#07070f;z-index:0}
+    .nt-logo{font-size:56px;margin-bottom:8px;opacity:.15}
+    .nt-name{font-size:18px;font-weight:800;color:#1a1a2e;letter-spacing:4px}
+    .nt-sub{font-size:10px;color:#151520;margin-top:4px;letter-spacing:2px}
+    .nt-search{margin-top:20px;width:340px;background:#0a0a14;border:1px solid #1a1a2e;border-radius:20px;padding:10px 18px;color:#ccc;font-size:13px;outline:none;text-align:center;font-family:monospace}
+    .nt-search:focus{border-color:#7c3aed}
+    .nt-privacy{margin-top:16px;font-size:9px;color:#1a1a2e;display:flex;gap:12px}
+    .nt-privacy span{display:flex;align-items:center;gap:4px}
+
+    /* Menu */
+    .md{position:absolute;top:34px;right:6px;background:#0d0d1e;border:1px solid #2a2a4a;border-radius:6px;z-index:500;box-shadow:0 6px 20px rgba(0,0,0,.5);min-width:140px;display:none}
+    .md.open{display:block}
+    .mi{padding:7px 12px;font-size:10px;color:#777;cursor:pointer}
+    .mi:hover{background:#1a1a2e;color:#ddd}
+
+    /* Panel */
+    .po{position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:400;display:none;flex-direction:column;align-items:center;padding-top:40px}
+    .po.open{display:flex}
+    .pb{background:#0d0d1e;border:1px solid #2a2a4a;border-radius:8px;width:90%;max-width:440px;max-height:55vh;overflow:hidden;display:flex;flex-direction:column}
+    .ph{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid #1a1a2e}
+    .ph span{font-size:12px;font-weight:700;color:#fff}
+    .pbd{overflow-y:auto;flex:1}
+    .pi{padding:7px 12px;border-bottom:1px solid #08080f;cursor:pointer}
+    .pi:hover{background:#111}
+    .pi-t{font-size:11px;color:#bbb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pi-u{font-size:8px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand" onclick="setMode('full')"><span style="font-size:16px">&#128123;</span><h1>PHANTOM</h1></div>
+  <span class="nl on" data-p="/" onclick="nav(this)">Agents</span>
+  <span class="nl" data-p="/ahb123" onclick="nav(this)">AHB123</span>
+  <span class="nl" data-p="/crons" onclick="nav(this)">Crons</span>
+  <span class="nl" data-p="/datahub" onclick="nav(this)">Data Hub</span>
+  <span class="nl" data-p="/infra" onclick="nav(this)">Infra</span>
+  <span class="nl" data-p="/explore" onclick="nav(this)">Explore</span>
+  <span class="nl" data-p="/comms" onclick="nav(this)">Comms</span>
+  <span class="nl" data-p="/settings" onclick="nav(this)">Settings</span>
+  <div class="nr">
+    <button class="mb" id="m-d" onclick="setMode('dash')">Dashboard</button>
+    <button class="mb" id="m-s" onclick="setMode('split')">Split</button>
+    <button class="mb on" id="m-f" onclick="setMode('full')">Phantom</button>
+  </div>
+</nav>
+
+<div class="main">
+  <iframe id="df" src="/"></iframe>
+  <div id="bp">
+    <div class="bt">
+      <button class="bb" onclick="B.goBack()" title="Back">&#9664;</button>
+      <button class="bb" onclick="B.goForward()" title="Forward">&#9654;</button>
+      <button class="bb" onclick="B.reload()" title="Reload">&#8635;</button>
+      <input class="ba" id="addr" type="text" placeholder="Search or enter URL..." spellcheck="false"
+             onkeydown="if(event.key==='Enter'){B.handleInput(this.value.trim());this.blur()}"
+             onfocus="this.select()">
+      <span class="bs" id="bmark" onclick="B.toggleBookmark()">&#9734;</span>
+      <button class="bb" onclick="B.createTab('')" title="New Tab">+</button>
+      <button class="bb" onclick="toggleMenu()" title="Menu">&#9776;</button>
+    </div>
+    <div class="ts" id="tabs"></div>
+    <div class="bc" id="content">
+      <div class="nt" id="newtab">
+        <div class="nt-logo">&#128123;</div>
+        <div class="nt-name">PHANTOM</div>
+        <div class="nt-sub">PRIVACY-FIRST BROWSER</div>
+        <input class="nt-search" id="nt-search" type="text" placeholder="Search the web privately..."
+               onkeydown="if(event.key==='Enter'){B.handleInput(this.value.trim());this.value=''}">
+        <div class="nt-privacy">
+          <span>&#128274; No tracking</span>
+          <span>&#128123; Anonymous</span>
+          <span>&#128275; No cookies leaked</span>
+          <span>&#9940; Ads blocked</span>
+        </div>
+      </div>
+    </div>
+    <div class="md" id="menu">
+      <div class="mi" onclick="menuAct('bookmarks')">&#9734; Bookmarks</div>
+      <div class="mi" onclick="menuAct('history')">&#9203; History</div>
+      <div class="mi" onclick="menuAct('clear')">&#10005; Clear Data</div>
+    </div>
+    <div class="po" id="panel">
+      <div class="pb">
+        <div class="ph"><span id="ptitle">Panel</span><button class="bb" onclick="closePanel()">&#10005;</button></div>
+        <div class="pbd" id="pbody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// PHANTOM BROWSER — Privacy-First, Zero-Tracking, Built for Baza Empire
+// ═══════════════════════════════════════════════════════════════════════════
+const PROXY = '/api/browser/proxy?url=';
+const SEARCH = 'https://search.brave.com/search?q=';
+const MAX_TABS = 8;
+let tabs = [], activeId = null, counter = 0, bookmarks = [];
+
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+class Tab {
+  constructor(id, url) {
+    this.id = id; this.url = url||''; this.title = url ? 'Loading...' : 'New Tab';
+    this.iframe = null; this.hist = url ? [url] : []; this.hi = url ? 0 : -1;
+    this.suspended = false; this.lastActive = Date.now(); this.loading = false;
+  }
+}
+
+const B = {
+  createTab(url) {
+    if (tabs.length >= MAX_TABS) {
+      const old = tabs.filter(t=>t.id!==activeId).sort((a,b)=>a.lastActive-b.lastActive)[0];
+      if (old) B.suspendTab(old.id);
+    }
+    const id = 'p'+(++counter);
+    const t = new Tab(id, url);
+    tabs.push(t);
+    if (url) B._load(t, url);
+    B.switchTab(id);
+    B._renderTabs();
+    B._save();
+    return t;
+  },
+
+  closeTab(id) {
+    const i = tabs.findIndex(t=>t.id===id);
+    if (i===-1) return;
+    const t = tabs[i];
+    if (t.iframe) t.iframe.remove();
+    tabs.splice(i,1);
+    if (!tabs.length) { B.createTab(''); return; }
+    if (activeId===id) B.switchTab(tabs[Math.min(i,tabs.length-1)].id);
+    B._renderTabs(); B._save();
+  },
+
+  switchTab(id) {
+    const t = tabs.find(x=>x.id===id);
+    if (!t) return;
+    if (t.suspended) B._resume(t);
+    // Hide all iframes, show target
+    tabs.forEach(x => { if(x.iframe) x.iframe.style.display = (x.id === id) ? 'block' : 'none'; });
+    activeId = id;
+    t.lastActive = Date.now();
+    // Show/hide new tab page
+    const nt = $('#newtab');
+    if (nt) nt.style.display = (!t.url && !t.iframe) ? 'flex' : 'none';
+    B._updateAddr(t);
+    B._renderTabs();
+    B._save();
+  },
+
+  handleInput(text) {
+    if (!text) return;
+    $('#newtab').style.display = 'none';
+    let url;
+    if (/^https?:\/\//i.test(text)) url = text;
+    else if (/^localhost/i.test(text)) url = 'http://'+text;
+    else if (/^[a-z0-9][-a-z0-9]*\.[a-z]{2,}/i.test(text)) url = 'https://'+text;
+    else url = SEARCH + encodeURIComponent(text);
+    B.navigate(url);
+  },
+
+  navigate(url) {
+    let t = tabs.find(x=>x.id===activeId);
+    if (!t) t = B.createTab(url);
+    else B._load(t, url);
+    B._save();
+  },
+
+  goBack() {
+    const t = B._active(); if (!t||t.hi<=0) return;
+    t.hi--; B._load(t, t.hist[t.hi], true);
+  },
+  goForward() {
+    const t = B._active(); if (!t||t.hi>=t.hist.length-1) return;
+    t.hi++; B._load(t, t.hist[t.hi], true);
+  },
+  reload() {
+    const t = B._active(); if (!t||!t.iframe) return;
+    t.iframe.src = t.iframe.src;
+  },
+
+  _load(t, url, isNav=false) {
+    if (!t) return;
+    t.url = url; t.loading = true;
+    // Create iframe if needed
+    if (!t.iframe) {
+      const f = document.createElement('iframe');
+      f.className = 'bf'; f.id = t.id;
+      f.style.display = 'block';
+      f.addEventListener('load', () => B._onLoad(t.id));
+      f.addEventListener('error', () => { t.loading = false; B._renderTabs(); });
+      $('#content').appendChild(f);
+      t.iframe = f;
+    }
+    // Hide newtab page FIRST
+    const nt = $('#newtab'); if(nt) nt.style.display = 'none';
+    // Hide all other iframes, show this one
+    tabs.forEach(x => {
+      if (x.iframe) x.iframe.style.display = (x.id === t.id) ? 'block' : 'none';
+    });
+    // Proxy external, direct for local
+    const src = B._shouldProxy(url) ? PROXY+encodeURIComponent(url) : url;
+    console.log('[Phantom] Loading:', url, '→', src);
+    t.iframe.src = src;
+    if (!isNav) {
+      t.hist = t.hist.slice(0, t.hi+1);
+      t.hist.push(url);
+      t.hi = t.hist.length-1;
+    }
+    B._updateAddr(t);
+    B._renderTabs();
+    // Log history
+    fetch('/api/browser/history',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,title:t.title})}).catch(()=>{});
+  },
+
+  _shouldProxy(url) {
+    if (!url) return false;
+    try {
+      const u = new URL(url, location.origin);
+      if (['localhost','127.0.0.1','0.0.0.0'].includes(u.hostname)) return false;
+      if (u.hostname === location.hostname) return false;
+      return true;
+    } catch { return false; }
+  },
+
+  _onLoad(id) {
+    const t = tabs.find(x=>x.id===id);
+    if (!t) return;
+    t.loading = false;
+    try { if(t.iframe.contentDocument?.title) t.title = t.iframe.contentDocument.title.substring(0,35); }
+    catch { try { t.title = new URL(t.url).hostname; } catch{} }
+    B._renderTabs(); B._updateAddr(t);
+  },
+
+  suspendTab(id) {
+    const t = tabs.find(x=>x.id===id);
+    if (!t||t.suspended) return;
+    if (t.iframe) t.iframe.remove();
+    t.iframe = null; t.suspended = true;
+    B._renderTabs(); B._save();
+  },
+
+  _resume(t) {
+    t.suspended = false;
+    if (t.url) B._load(t, t.url, true);
+  },
+
+  async toggleBookmark() {
+    const t = B._active(); if (!t||!t.url) return;
+    const i = bookmarks.findIndex(b=>b.url===t.url);
+    if (i>=0) {
+      await fetch('/api/browser/bookmarks',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:bookmarks[i].id})});
+      bookmarks.splice(i,1);
+    } else {
+      const r = await fetch('/api/browser/bookmarks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:t.url,title:t.title})});
+      bookmarks.push(await r.json());
+    }
+    B._updateAddr(t);
+  },
+
+  _active() { return tabs.find(t=>t.id===activeId); },
+
+  _updateAddr(t) {
+    const a = $('#addr'); if(a&&t) a.value = t.url||'';
+    const s = $('#bmark'); if(s) s.innerHTML = bookmarks.some(b=>b.url===t?.url) ? '&#9733;' : '&#9734;';
+    if(s) s.className = bookmarks.some(b=>b.url===t?.url) ? 'bs marked' : 'bs';
+  },
+
+  _renderTabs() {
+    const el = $('#tabs');
+    el.innerHTML = tabs.map(t => {
+      const on = t.id===activeId ? ' on' : '';
+      const zz = t.suspended ? ' zz' : '';
+      const ld = t.loading ? ' ld' : '';
+      const icon = t.loading ? '&#9678;' : (t.suspended ? '&#9208;' : '&#9679;');
+      return `<div class="tb${on}${zz}${ld}" onclick="B.switchTab('${t.id}')">
+        <span class="ti">${icon}</span>
+        <span class="tt">${esc(t.title||'New Tab')}</span>
+        <span class="tc" onclick="event.stopPropagation();B.closeTab('${t.id}')">&#10005;</span>
+      </div>`;
+    }).join('') + '<div class="ta" onclick="B.createTab(\'\')">+</div>';
+  },
+
+  _save() {
+    try {
+      sessionStorage.setItem('phantom', JSON.stringify({
+        tabs: tabs.map(t=>({id:t.id,url:t.url,title:t.title,hist:t.hist,hi:t.hi,suspended:t.suspended})),
+        activeId, counter
+      }));
+    } catch{}
+  },
+
+  _restore() {
+    try {
+      const s = JSON.parse(sessionStorage.getItem('phantom'));
+      if (!s||!s.tabs?.length) return false;
+      counter = s.counter||0;
+      for (const ts of s.tabs) {
+        const t = new Tab(ts.id, ts.url);
+        t.title = ts.title||'Tab'; t.hist = ts.hist||[]; t.hi = ts.hi??-1;
+        t.suspended = true; tabs.push(t);
+      }
+      if (s.activeId) B.switchTab(s.activeId);
+      else if (tabs.length) B.switchTab(tabs[0].id);
+      B._renderTabs();
+      return true;
+    } catch { return false; }
+  }
+};
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Menu ─────────────────────────────────────────────────────────────────────
+function toggleMenu() { $('#menu').classList.toggle('open'); }
+
+async function menuAct(a) {
+  $('#menu').classList.remove('open');
+  if (a==='bookmarks') {
+    try { bookmarks = await (await fetch('/api/browser/bookmarks')).json(); } catch{ bookmarks=[]; }
+    showPanel('Bookmarks', bookmarks.length ?
+      bookmarks.map(b=>`<div class="pi" onclick="B.navigate('${b.url.replace(/'/g,"\\'")}');closePanel()"><div class="pi-t">${esc(b.title||b.url)}</div><div class="pi-u">${esc(b.url)}</div></div>`).join('') :
+      '<div style="color:#333;padding:20px;text-align:center">No bookmarks</div>');
+  } else if (a==='history') {
+    try {
+      const h = await (await fetch('/api/browser/history?limit=40')).json();
+      showPanel('History', h.length ?
+        h.map(x=>`<div class="pi" onclick="B.navigate('${x.url.replace(/'/g,"\\'")}');closePanel()"><div class="pi-t">${esc(x.title||x.url)}</div><div class="pi-u">${esc(x.url)} &middot; ${x.visited_at||''}</div></div>`).join('') :
+        '<div style="color:#333;padding:20px;text-align:center">No history</div>');
+    } catch { showPanel('History','<div style="color:#555;padding:20px">Error</div>'); }
+  } else if (a==='clear') {
+    if (confirm('Clear all browsing data?')) {
+      await fetch('/api/browser/history',{method:'DELETE'});
+      bookmarks = [];
+    }
+  }
+}
+
+function showPanel(title, html) { $('#ptitle').textContent=title; $('#pbody').innerHTML=html; $('#panel').classList.add('open'); }
+function closePanel() { $('#panel').classList.remove('open'); }
+
+// ── Mode switching ───────────────────────────────────────────────────────────
+let mode = 'full';
+function setMode(m) {
+  mode = m;
+  $$('.mb').forEach(b=>b.classList.remove('on'));
+  $(`#m-${m[0]}`).classList.add('on');
+  const df = $('#df'), bp = $('#bp');
+  if (m==='dash') { df.classList.remove('hide'); df.style.display=''; bp.className=''; bp.style.display='none'; }
+  else if (m==='split') { df.classList.remove('hide'); df.style.display=''; bp.className='split'; bp.style.display=''; }
+  else { df.classList.add('hide'); df.style.display='none'; bp.className='full'; bp.style.display=''; }
+  sessionStorage.setItem('phantomMode', m);
+}
+
+function nav(el) {
+  const p = el.dataset.p;
+  $('#df').src = p;
+  $$('.nl').forEach(l=>l.classList.remove('on'));
+  el.classList.add('on');
+  if (mode==='full') setMode('split');
+}
+
+// ── Keyboard shortcuts ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key==='t') { e.preventDefault(); B.createTab(''); }
+  if (e.ctrlKey && e.key==='w') { e.preventDefault(); if(activeId) B.closeTab(activeId); }
+  if (e.ctrlKey && e.key==='l') { e.preventDefault(); $('#addr')?.focus(); }
+  if (e.ctrlKey && e.key==='r') { e.preventDefault(); B.reload(); }
+  if (e.altKey && e.key==='ArrowLeft') { e.preventDefault(); B.goBack(); }
+  if (e.altKey && e.key==='ArrowRight') { e.preventDefault(); B.goForward(); }
+  if (e.ctrlKey && e.key>='1' && e.key<='9') { e.preventDefault(); const i=+e.key-1; if(i<tabs.length) B.switchTab(tabs[i].id); }
+});
+
+// ── Auto-suspend idle tabs ───────────────────────────────────────────────────
+setInterval(() => {
+  const now = Date.now();
+  tabs.forEach(t => {
+    if (t.id!==activeId && !t.suspended && now-t.lastActive > 600000) B.suspendTab(t.id);
+  });
+}, 60000);
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+(async () => {
+  try { bookmarks = await (await fetch('/api/browser/bookmarks')).json(); } catch{ bookmarks=[]; }
+  if (!B._restore()) B.createTab('');
+  setMode(sessionStorage.getItem('phantomMode') || 'full');
+})();
+</script>
+</body>
+</html>

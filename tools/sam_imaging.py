@@ -136,6 +136,109 @@ def _enhance_prompt_consistency(prompt: str, neg: str, cfg: float, steps: int):
     return prompt, neg, cfg, steps
 
 
+# ─── Model Selection ────────────────────────────────────────────────────────
+
+def _pick_model(prompt: str) -> str | None:
+    """Select best SD checkpoint based on prompt content."""
+    try:
+        r = httpx.get(f"{SD_API}/sdapi/v1/sd-models", timeout=5)
+        models = r.json()
+    except Exception:
+        return None
+    low = prompt.lower()
+    if any(kw in low for kw in ("logo", "icon", "vector", "brand", "fantasy", "anime")):
+        preference = ["dreamshaper", "sdxl"]
+    else:
+        preference = ["juggernaut", "realvis", "dreamshaper", "sdxl"]
+    for kw in preference:
+        for m in models:
+            if kw in m.get("model_name", "").lower():
+                return m["title"]
+    return models[0]["title"] if models else None
+
+
+async def _set_model(model_title: str | None):
+    """Switch SD checkpoint only if different from current (avoids 10-20s swap)."""
+    if not model_title:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.get(f"{SD_API}/sdapi/v1/options")
+            current = r.json().get("sd_model_checkpoint", "")
+        if current == model_title:
+            return
+        async with httpx.AsyncClient(timeout=60) as c:
+            await c.post(f"{SD_API}/sdapi/v1/options",
+                         json={"sd_model_checkpoint": model_title})
+    except Exception:
+        pass
+
+
+# ─── ControlNet Helper ──────────────────────────────────────────────────────
+
+_CN_MAP = {
+    "canny":    ("canny",         "diffusers_xl_canny_full [2b69fca4]"),
+    "depth":    ("depth_midas",   "diffusers_xl_depth_full [2f51180b]"),
+    "openpose": ("openpose_full", "t2i-adapter_diffusers_xl_openpose [adfb64aa]"),
+}
+
+
+def _build_controlnet_args(
+    image_b64: str,
+    mode: str = "canny",
+    weight: float = 0.85,
+    guidance_end: float = 0.8,
+) -> dict:
+    """Build ControlNet alwayson_scripts block."""
+    preprocessor, cn_model = _CN_MAP.get(mode, _CN_MAP["canny"])
+    return {
+        "controlnet": {
+            "args": [{
+                "input_image": image_b64,
+                "module": preprocessor,
+                "model": cn_model,
+                "weight": weight,
+                "resize_mode": 1,
+                "control_mode": 0,
+                "guidance_start": 0.0,
+                "guidance_end": guidance_end,
+                "pixel_perfect": True,
+            }]
+        }
+    }
+
+
+# ─── ADetailer Helper ──────────────────────────────────────────────────────
+
+def _build_adetailer_args(enabled: bool = True) -> dict:
+    """ADetailer alwayson_scripts block for automatic face/hand enhancement."""
+    if not enabled:
+        return {}
+    return {
+        "ADetailer": {
+            "args": [
+                True,
+                False,
+                {
+                    "ad_model": "face_yolov8n.pt",
+                    "ad_confidence": 0.3,
+                    "ad_dilate_erode": 4,
+                    "ad_mask_blur": 4,
+                    "ad_denoising_strength": 0.4,
+                    "ad_inpaint_only_masked": True,
+                    "ad_inpaint_only_masked_padding": 32,
+                    "ad_use_steps": True,
+                    "ad_steps": 28,
+                    "ad_use_cfg_scale": True,
+                    "ad_cfg_scale": 7.0,
+                    "ad_use_sampler": True,
+                    "ad_sampler": "DPM++ 2M Karras",
+                }
+            ]
+        }
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # GENERATION (8 tools)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -166,14 +269,31 @@ async def generate_image(req: ToolRequest):
         payload = {
             "prompt": enhanced_prompt,
             "negative_prompt": neg,
-            "width":  inp.get("width", 1024),
-            "height": inp.get("height", 1024),
+            "width":  inp.get("width", 768),
+            "height": inp.get("height", 768),
             "steps":  steps,
             "cfg_scale": cfg,
             "seed":   inp.get("seed", -1),
             "sampler_name": "DPM++ SDE Karras",
             "batch_size": inp.get("batch_size", 1),
         }
+
+        # ControlNet — guided generation from reference image
+        alwayson = {}
+        ref_path = inp.get("reference_image", "")
+        cn_mode = inp.get("controlnet_mode", "")
+        if ref_path and cn_mode:
+            alwayson.update(_build_controlnet_args(
+                to_b64(ref_path), cn_mode,
+                weight=float(inp.get("controlnet_weight", 0.85)),
+            ))
+
+        # ADetailer — automatic face/hand enhancement
+        alwayson.update(_build_adetailer_args(inp.get("adetailer", True)))
+
+        if alwayson:
+            payload["alwayson_scripts"] = alwayson
+
         async with httpx.AsyncClient(timeout=180) as c:
             r = await c.post(f"{SD_API}/sdapi/v1/txt2img", json=payload)
             r.raise_for_status()
@@ -1132,13 +1252,19 @@ async def regen_image(req: ToolRequest):
         payload = {
             "prompt": enhanced_prompt,
             "negative_prompt": neg,
-            "width":  inp.get("width", 1024),
-            "height": inp.get("height", 1024),
+            "width":  inp.get("width", 768),
+            "height": inp.get("height", 768),
             "steps":  steps,
             "cfg_scale": cfg,
             "seed":   inp.get("seed", -1),
             "sampler_name": "DPM++ SDE Karras",
         }
+
+        # ADetailer for regen
+        alwayson = _build_adetailer_args(inp.get("adetailer", True))
+        if alwayson:
+            payload["alwayson_scripts"] = alwayson
+
         async with httpx.AsyncClient(timeout=240) as c:
             r = await c.post(f"{SD_API}/sdapi/v1/txt2img", json=payload)
             r.raise_for_status()

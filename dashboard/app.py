@@ -761,6 +761,226 @@ def all_artifacts() -> list:
         return []
     return scan_artifacts_dir(ARTIFACTS_DIR)
 
+# ── Routes — SPA Shell & Browser ──────────────────────────────────────────────
+
+@app.route('/shell')
+def shell_page():
+    """SPA shell — single-page wrapper with persistent browser panel."""
+    return render_template('shell.html')
+
+@app.route('/api/browser/proxy')
+def browser_proxy():
+    """PHANTOM PROXY — Privacy-first server-side proxy.
+    - Strips ALL tracking cookies, analytics, fingerprinting
+    - Randomizes User-Agent per request
+    - Blocks known tracker domains
+    - No referrer sent
+    - No client IP forwarded
+    - All requests go through baza server — client IP never touches target"""
+    import urllib.request as _ur, urllib.parse as _up
+    import random, re as _re
+
+    target = request.args.get('url', '')
+    if not target:
+        return 'No URL provided', 400
+
+    try:
+        parsed = _up.urlparse(target)
+        if parsed.scheme not in ('http', 'https'):
+            return 'Only HTTP/HTTPS allowed', 400
+        if parsed.hostname in ('localhost', '127.0.0.1', '0.0.0.0'):
+            return redirect(target)
+    except Exception:
+        return 'Invalid URL', 400
+
+    # ── PRIVACY: Randomized User-Agents ──────────────────────────────────────
+    UA_POOL = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+        'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+    ]
+
+    # ── PRIVACY: Known tracker domains to block ──────────────────────────────
+    TRACKER_DOMAINS = {
+        'google-analytics.com', 'googletagmanager.com', 'doubleclick.net',
+        'facebook.net', 'fbcdn.net', 'connect.facebook.net',
+        'analytics.google.com', 'adservice.google.com',
+        'hotjar.com', 'clarity.ms', 'mixpanel.com', 'segment.io',
+        'newrelic.com', 'nr-data.net', 'sentry.io',
+        'ads-twitter.com', 'static.ads-twitter.com',
+        'pixel.quantserve.com', 'mc.yandex.ru',
+    }
+
+    # Block requests to known trackers
+    if parsed.hostname and any(parsed.hostname.endswith(t) for t in TRACKER_DOMAINS):
+        return '', 204  # silent block
+
+    try:
+        headers = {
+            'User-Agent': random.choice(UA_POOL),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'DNT': '1',
+            'Sec-GPC': '1',
+        }
+        req = _ur.Request(target, headers=headers)
+        # Try default first, fallback to IPv6 if it fails
+        try:
+            with _ur.urlopen(req, timeout=12) as resp:
+                content = resp.read()
+                ct = resp.headers.get('Content-Type', 'text/html')
+        except Exception:
+            # Retry with IPv6 preference for sites unreachable via IPv4
+            import socket as _sock
+            _orig_gai = _sock.getaddrinfo
+            _sock.getaddrinfo = lambda *a, **k: [r for r in _orig_gai(*a, **k) if r[0] == _sock.AF_INET6] or _orig_gai(*a, **k)
+            try:
+                req2 = _ur.Request(target, headers=headers)
+                with _ur.urlopen(req2, timeout=12) as resp:
+                    content = resp.read()
+                    ct = resp.headers.get('Content-Type', 'text/html')
+            finally:
+                _sock.getaddrinfo = _orig_gai
+
+        if 'text/html' in ct:
+            html = content.decode('utf-8', errors='replace')
+
+            # Inject <base href> so CSS/JS/images load directly from origin
+            # (only the HTML page itself goes through proxy — sub-resources load direct)
+            base_tag = f'<base href="{target}">'
+            if '<head>' in html.lower():
+                html = _re.sub(r'<head[^>]*>', lambda m: m.group(0) + base_tag, html, count=1, flags=_re.IGNORECASE)
+            else:
+                html = base_tag + html
+
+            # Rewrite ONLY <a href> links to go through proxy
+            # Skip <base>, <link>, and non-navigation hrefs
+            from urllib.parse import urljoin
+            def _proxy_link(match):
+                full = match.group(0)
+                tag_before = match.group(1)
+                quote = match.group(2)
+                url = match.group(3)
+                # Only proxy <a> tag hrefs, skip <base>, <link>, etc.
+                tag_lower = tag_before.lower().strip()
+                if not tag_lower.endswith('<a') and 'area' not in tag_lower:
+                    return full
+                if url.startswith(('#', 'javascript:', 'data:', 'mailto:', 'tel:', '/api/browser')):
+                    return full
+                abs_url = urljoin(target, url)
+                if abs_url.startswith(('http://', 'https://')):
+                    return f'{tag_before} href={quote}/api/browser/proxy?url={_up.quote(abs_url, safe="")}{quote}'
+                return full
+            html = _re.sub(r'(<[^>]*?)\s+href\s*=\s*(["\'])([^"\']*?)\2', _proxy_link, html)
+
+            # ── PRIVACY: Strip tracking scripts ──────────────────────────────
+            # Remove Google Analytics
+            html = _re.sub(r'<script[^>]*google-analytics\.com[^>]*>.*?</script>', '', html, flags=_re.DOTALL|_re.IGNORECASE)
+            html = _re.sub(r'<script[^>]*googletagmanager\.com[^>]*>.*?</script>', '', html, flags=_re.DOTALL|_re.IGNORECASE)
+            # Remove Facebook pixel
+            html = _re.sub(r'<script[^>]*facebook\.net[^>]*>.*?</script>', '', html, flags=_re.DOTALL|_re.IGNORECASE)
+            html = _re.sub(r'<noscript[^>]*><img[^>]*facebook[^>]*></noscript>', '', html, flags=_re.IGNORECASE)
+            # Remove Hotjar, Clarity, Mixpanel
+            html = _re.sub(r'<script[^>]*hotjar\.com[^>]*>.*?</script>', '', html, flags=_re.DOTALL|_re.IGNORECASE)
+            html = _re.sub(r'<script[^>]*clarity\.ms[^>]*>.*?</script>', '', html, flags=_re.DOTALL|_re.IGNORECASE)
+            # Remove common tracking pixels
+            html = _re.sub(r'<img[^>]*(?:pixel|tracking|beacon|analytics)[^>]*/?>', '', html, flags=_re.IGNORECASE)
+            # Remove inline gtag/ga scripts
+            html = _re.sub(r"<script[^>]*>\s*(?:window\.dataLayer|gtag|ga\s*\(|fbq\s*\(|_hmt\.push).*?</script>", '', html, flags=_re.DOTALL|_re.IGNORECASE)
+            # Remove CSP meta tags that block iframe embedding
+            html = _re.sub(r'<meta[^>]*content-security-policy[^>]*>', '', html, flags=_re.IGNORECASE)
+            html = _re.sub(r'<meta[^>]*x-frame-options[^>]*>', '', html, flags=_re.IGNORECASE)
+
+            resp_obj = make_response(html)
+            resp_obj.headers['Content-Type'] = 'text/html; charset=utf-8'
+        else:
+            resp_obj = make_response(content)
+            resp_obj.headers['Content-Type'] = ct
+
+        # ── PRIVACY: Strip headers that block iframe embedding + tracking ──
+        resp_obj.headers['Referrer-Policy'] = 'no-referrer'
+        resp_obj.headers['X-Content-Type-Options'] = 'nosniff'
+        resp_obj.headers.pop('Set-Cookie', None)       # block tracking cookies
+        resp_obj.headers.pop('X-Frame-Options', None)  # allow iframe embedding
+        resp_obj.headers.pop('Content-Security-Policy', None)  # remove CSP frame-ancestors
+        resp_obj.headers.pop('Cross-Origin-Opener-Policy', None)
+        resp_obj.headers.pop('Cross-Origin-Embedder-Policy', None)
+        return resp_obj
+
+    except Exception as e:
+        return f'''<html><body style="background:#07070f;color:#e94560;font-family:monospace;padding:40px">
+        <h2>Phantom Proxy Error</h2><p>{str(e)[:300]}</p>
+        <p style="color:#555;font-size:12px">Your IP was never exposed to the target server.</p>
+        </body></html>''', 502
+
+@app.route('/api/browser/bookmarks', methods=['GET', 'POST', 'DELETE'])
+def api_browser_bookmarks():
+    """CRUD for browser bookmarks."""
+    import sqlite3
+    db = os.path.join(DASHBOARD_DIR, 'baza_projects.db')
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE IF NOT EXISTS browser_bookmarks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, title TEXT DEFAULT '',
+        favicon TEXT DEFAULT '', folder TEXT DEFAULT 'default',
+        created_at TEXT DEFAULT (datetime('now')))""")
+    conn.commit()
+
+    if request.method == 'GET':
+        rows = conn.execute("SELECT id, url, title, favicon, folder, created_at FROM browser_bookmarks ORDER BY created_at DESC").fetchall()
+        conn.close()
+        return jsonify([{"id":r[0],"url":r[1],"title":r[2],"favicon":r[3],"folder":r[4],"created_at":r[5]} for r in rows])
+    elif request.method == 'POST':
+        data = request.json or {}
+        conn.execute("INSERT INTO browser_bookmarks (url, title, favicon, folder) VALUES (?,?,?,?)",
+                     (data.get('url',''), data.get('title',''), data.get('favicon',''), data.get('folder','default')))
+        conn.commit()
+        bm_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.close()
+        return jsonify({"id": bm_id, "url": data.get('url'), "title": data.get('title')})
+    elif request.method == 'DELETE':
+        data = request.json or {}
+        bm_id = data.get('id')
+        if bm_id:
+            conn.execute("DELETE FROM browser_bookmarks WHERE id=?", (bm_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+
+@app.route('/api/browser/history', methods=['GET', 'POST', 'DELETE'])
+def api_browser_history():
+    """Browse history storage."""
+    import sqlite3
+    db = os.path.join(DASHBOARD_DIR, 'baza_projects.db')
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE IF NOT EXISTS browser_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, title TEXT DEFAULT '',
+        visited_at TEXT DEFAULT (datetime('now')))""")
+    conn.commit()
+
+    if request.method == 'GET':
+        limit = int(request.args.get('limit', 50))
+        rows = conn.execute("SELECT id, url, title, visited_at FROM browser_history ORDER BY visited_at DESC LIMIT ?", (limit,)).fetchall()
+        conn.close()
+        return jsonify([{"id":r[0],"url":r[1],"title":r[2],"visited_at":r[3]} for r in rows])
+    elif request.method == 'POST':
+        data = request.json or {}
+        url = data.get('url', '')
+        if url and url != 'about:blank':
+            conn.execute("INSERT INTO browser_history (url, title) VALUES (?,?)", (url, data.get('title','')))
+            conn.commit()
+            # Keep only last 500 entries
+            conn.execute("DELETE FROM browser_history WHERE id NOT IN (SELECT id FROM browser_history ORDER BY visited_at DESC LIMIT 500)")
+            conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    elif request.method == 'DELETE':
+        conn.execute("DELETE FROM browser_history")
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+
+
 # ── Routes — Pages ────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -1061,6 +1281,8 @@ def api_live():
             "ollama_vulkan": _port("localhost", 11434),
             "ollama_amd":   _port("localhost", 11434),
             "ollama_gpu":   _port("localhost", 11435),
+            "ollama_cpu":   _port("localhost", 11436),
+            "ollama_amd2":  _port("localhost", 11437),
             "litellm":      _port("localhost", 4000),
             "printer":      _run("lpstat -p 2>/dev/null | head -1 | grep -q 'idle\\|printing' && echo 'online' || echo 'offline'") or "offline",
             "printer_name": _run("lpstat -p 2>/dev/null | head -1 | awk '{print $2}'") or "—",
@@ -1138,6 +1360,8 @@ def api_models():
     return jsonify({
         "vulkan":  {"label": "Ollama Vulkan (RX 6700 XT)", "url": "localhost:11434", "up": _port("localhost",11434), "models": _ollama_models("http://localhost:11434")},
         "cuda":    {"label": "Ollama CUDA (RTX 3070)",      "url": "localhost:11435", "up": _port("localhost",11435), "models": _ollama_models("http://localhost:11435")},
+        "cpu":     {"label": "Ollama CPU (64GB RAM)",       "url": "localhost:11436", "up": _port("localhost",11436), "models": _ollama_models("http://localhost:11436")},
+        "vulkan2": {"label": "Ollama Vulkan 2 (overflow)",  "url": "localhost:11437", "up": _port("localhost",11437), "models": _ollama_models("http://localhost:11437")},
         "cloud":   {"label": "LiteLLM Cloud Models",        "url": "localhost:4000",  "up": _port("localhost",4000),  "models": _litellm_models() or _litellm_config_models()},
         "library": {"label": "Ollama Library (pullable)",    "url": "ollama.com",      "up": True,                     "models": _ollama_library()},
     })
@@ -1897,7 +2121,7 @@ def api_infra_metrics():
     except Exception:
         pass
 
-    # DB stats
+    # DB stats — SQLite
     db_stats = {}
     try:
         conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
@@ -1905,6 +2129,26 @@ def api_infra_metrics():
                      'ahb_events','ahb_debts','ahb_payroll','ahb_notes','ahb_files']:
             db_stats[tbl] = conn.execute(f"SELECT count(*) FROM {tbl}").fetchone()[0]
         conn.close()
+    except Exception:
+        pass
+
+    # DB stats — PostgreSQL
+    pg_stats = {}
+    try:
+        from core.context_db import get_conn, release_conn
+        pgc = get_conn()
+        cur = pgc.cursor()
+        for tbl, label in [('agent_memory','agent memory'),('agent_summaries','summaries'),
+                           ('empire_knowledge','empire knowledge'),('task_journal','task journal'),
+                           ('agent_usage','agent usage'),('agent_skills','agent skills')]:
+            try:
+                cur.execute(f"SELECT count(*) FROM {tbl}")
+                pg_stats[label] = cur.fetchone()[0]
+            except Exception:
+                pgc.rollback()
+                pg_stats[label] = 0
+        cur.close()
+        release_conn(pgc)
     except Exception:
         pass
 
@@ -1928,9 +2172,12 @@ def api_infra_metrics():
         "tailscale": tailscale,
         "api_routes": api_count,
         "db_stats": db_stats,
+        "pg_stats": pg_stats,
         "services": {
             "ollama_amd": _port("localhost", 11434),
             "ollama_nvidia": _port("localhost", 11435),
+            "ollama_cpu": _port("localhost", 11436),
+            "ollama_amd2": _port("localhost", 11437),
             "dashboard": "up",
             "sdwebui": _port("localhost", 7860),
             "litellm": _port("localhost", 4000),
@@ -9174,6 +9421,24 @@ def api_comms_upload():
 def api_comms_file(sid, fname):
     folder = os.path.join(COMMS_UPLOAD_DIR, sid)
     return send_from_directory(folder, fname)
+
+@app.route('/api/serve-local/<path:filepath>')
+def api_serve_local(filepath):
+    """Serve local files from known safe directories (generated images, artifacts)."""
+    full = '/' + filepath
+    SAFE_PREFIXES = (
+        '/mnt/empirepool/media/generated/',
+        '/mnt/empirepool/media/',
+        os.path.join(DASHBOARD_DIR, 'artifacts') + '/',
+        '/tmp/',
+    )
+    if not any(full.startswith(p) for p in SAFE_PREFIXES):
+        return 'Forbidden', 403
+    if not os.path.isfile(full):
+        return 'Not found', 404
+    directory = os.path.dirname(full)
+    filename = os.path.basename(full)
+    return send_from_directory(directory, filename)
 
 @app.route('/api/comms/voice', methods=['POST'])
 def api_comms_voice():

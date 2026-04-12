@@ -10,11 +10,12 @@
     a{color:inherit;text-decoration:none}
 
     /* NAV */
-    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:100}
-    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:100;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+    .nav::-webkit-scrollbar{height:0;display:none}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
     .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
     .nav-brand span{font-size:22px}
-    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s;white-space:nowrap}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s;white-space:nowrap;flex-shrink:0}
     .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
     .nav-right{margin-left:auto;display:flex;align-items:center;gap:14px}
     .nav-status{font-size:11px;color:#555;font-family:monospace}
@@ -222,6 +223,7 @@
   <a class="nav-link" href="/explore">Explore</a>
   <a class="nav-link" href="/comms">Comms</a>
   <a class="nav-link" href="/cloud">Cloud</a>
+  <a class="nav-link" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
   <a class="nav-link" href="/settings">Settings</a>
   <div class="nav-right">
     <span class="nav-status" id="nav-clock">&mdash;</span>
@@ -437,14 +439,7 @@
     </div>
     <div class="card">
       <div class="card-title">PostgreSQL (baza_agents)</div>
-      <div class="db-grid" id="dbGridPg">
-        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">agent memory</div></div>
-        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">summaries</div></div>
-        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">empire knowledge</div></div>
-        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">task journal</div></div>
-        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">agent usage</div></div>
-        <div class="db-stat"><div class="db-stat-val">--</div><div class="db-stat-name">agent skills</div></div>
-      </div>
+      <div class="db-grid" id="dbGridPg"><div style="color:#555;font-size:12px">Loading...</div></div>
     </div>
   </div>
 
@@ -725,6 +720,18 @@ function renderDBStats(dbStats) {
   el.innerHTML = items.join('');
 }
 
+function renderPGStats(pgStats) {
+  const el = document.getElementById('dbGridPg');
+  if (!pgStats || !Object.keys(pgStats).length) { el.innerHTML = '<div style="color:#555;font-size:12px">PostgreSQL unavailable</div>'; return; }
+  let total = 0;
+  const items = Object.entries(pgStats).map(([k, v]) => {
+    total += v;
+    return `<div class="db-stat"><div class="db-stat-val">${v.toLocaleString()}</div><div class="db-stat-name">${k}</div></div>`;
+  });
+  items.push(`<div class="db-stat" style="border-color:#7c3aed"><div class="db-stat-val" style="color:#7c3aed">${total.toLocaleString()}</div><div class="db-stat-name">Total Records</div></div>`);
+  el.innerHTML = items.join('');
+}
+
 // ── Load functions ──
 
 function loadAll() {
@@ -765,11 +772,12 @@ function loadAll() {
     renderAgents(d.agents);
     document.getElementById('apiCount').textContent = d.api_routes || '--';
     renderDBStats(d.db_stats);
+    renderPGStats(d.pg_stats);
 
     document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
   }).catch(err => {
     document.getElementById('lastUpdated').textContent = 'Metrics unavailable';
-    renderGPUs([]); renderServices({}); renderAgents({}); renderDBStats({});
+    renderGPUs([]); renderServices({}); renderAgents({}); renderDBStats({}); renderPGStats({});
   });
 
   loadUsage();
