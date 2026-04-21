@@ -349,6 +349,26 @@ def init_ahb_tables():
             agent_notes TEXT,
             created_at TEXT DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS ahb_blueprints (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT 'Untitled Blueprint',
+            project_id TEXT DEFAULT '',
+            units TEXT DEFAULT 'imperial',
+            data TEXT NOT NULL DEFAULT '{}',
+            thumbnail_path TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS ahb_blueprint_renders (
+            id TEXT PRIMARY KEY,
+            blueprint_id TEXT NOT NULL,
+            floor_level INTEGER DEFAULT 1,
+            mode TEXT DEFAULT 'photorealistic',
+            prompt TEXT DEFAULT '',
+            image_path TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
     """)
     conn.commit()
     # Add new columns to existing tables (idempotent)
@@ -394,6 +414,9 @@ def init_ahb_tables():
         "ALTER TABLE ahb_files ADD COLUMN document_type TEXT DEFAULT ''",
         "ALTER TABLE ahb_invoices ADD COLUMN year TEXT DEFAULT ''",
         "ALTER TABLE ahb_projects ADD COLUMN year TEXT DEFAULT ''",
+        "ALTER TABLE ahb_projects ADD COLUMN commission_pct REAL DEFAULT 10",
+        "ALTER TABLE ahb_projects ADD COLUMN commission_value REAL DEFAULT 0",
+        "ALTER TABLE ahb_projects ADD COLUMN commission_beneficiary TEXT DEFAULT ''",
     ]
     for stmt in alter_stmts:
         try:
@@ -702,7 +725,13 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
             rel   = os.path.relpath(fpath, base_dir)
             # Determine project_id from relative path structure: {project}/{file}
             parts = rel.split(os.sep)
-            proj  = project_id or (parts[0] if len(parts) > 1 else "shared")
+            if project_id:
+                proj     = project_id
+                sub_path = rel  # base_dir is already the project dir
+            else:
+                proj     = parts[0] if len(parts) > 1 else "shared"
+                sub_path = os.sep.join(parts[1:]) if len(parts) > 1 else fname
+            sub_path = sub_path.replace(os.sep, '/')  # URL-safe
 
             # Determine agent_id: sidecar meta > filename inference > directory hint > simon_bately fallback
             meta  = _read_artifact_meta(fpath)
@@ -722,7 +751,8 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
             stat = os.stat(fpath)
             ext  = os.path.splitext(fname)[1].lower()
             files.append({
-                "name":       fname,
+                "name":       sub_path,
+                "basename":   fname,
                 "rel_path":   rel,
                 "abs_path":   fpath,
                 "size":       stat.st_size,
@@ -732,8 +762,68 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
                 "task_id":    meta.get('task_id', ''),
                 "ext":        ext,
                 "file_type":  _ext_to_type(ext),
+                "subcategory": _classify_subcategory(fname, rel, ext, agent),
             })
     return files
+
+def _classify_subcategory(fname: str, rel_path: str, ext: str, agent_id: str = "") -> str:
+    """Fine-grained subcategory for Data Hub sub-tabs.
+
+    Returns one of:
+      audio, video,
+      img_inbound, img_generated, img_edited, img_logos, img_marketing,
+        img_blueprints, img_receipts, img_project,
+      doc_pdf, doc_md, doc_text, doc_spreadsheet, doc_word,
+      code_html, code_python, code_jsts, code_shell, code_config,
+        code_css, code_sql, code_other,
+      archive, other
+    """
+    low  = fname.lower()
+    pth  = rel_path.lower().replace('\\', '/')
+
+    audio_ext = {'.mp3','.wav','.ogg','.flac','.aac','.m4a','.wma','.opus'}
+    video_ext = {'.mp4','.mkv','.avi','.mov','.webm','.flv','.wmv','.m4v'}
+    img_ext   = {'.png','.jpg','.jpeg','.gif','.webp','.svg','.bmp','.tiff','.tif','.ico'}
+    arc_ext   = {'.zip','.tar','.gz','.tgz','.bz2','.7z','.rar'}
+
+    if ext in audio_ext: return 'audio'
+    if ext in video_ext: return 'video'
+    if ext in arc_ext:   return 'archive'
+
+    if ext == '.pdf':  return 'doc_pdf'
+    if ext in ('.md','.rst'):        return 'doc_md'
+    if ext in ('.txt','.log'):       return 'doc_text'
+    if ext in ('.csv','.xlsx','.xls','.ods'): return 'doc_spreadsheet'
+    if ext in ('.docx','.doc','.odt','.rtf'): return 'doc_word'
+
+    if ext in ('.html','.htm'):      return 'code_html'
+    if ext == '.py':                  return 'code_python'
+    if ext in ('.js','.ts','.jsx','.tsx','.mjs','.cjs'): return 'code_jsts'
+    if ext in ('.sh','.bash','.zsh'): return 'code_shell'
+    if ext in ('.json','.yaml','.yml','.toml','.ini','.cfg','.conf','.env','.xml'): return 'code_config'
+    if ext == '.css':                 return 'code_css'
+    if ext == '.sql':                 return 'code_sql'
+    if ext in ('.go','.rs','.rb','.php','.c','.cpp','.cc','.h','.hpp','.java','.kt','.swift','.lua'): return 'code_other'
+
+    if ext in img_ext:
+        if 'receipt' in low or '/ahb_receipts' in pth or '/receipts' in pth:
+            return 'img_receipts'
+        if 'blueprint' in low or 'schematic' in low or 'floor_plan' in low or 'floorplan' in low or '/blueprint' in pth:
+            return 'img_blueprints'
+        if low.startswith('logo') or '_logo' in low or 'logo_' in low:
+            return 'img_logos'
+        if low.startswith('gallery_') or '/gallery' in pth or '/marketing' in pth:
+            return 'img_marketing'
+        if '_inpaint_' in low or '_img2img_' in low or '_edited' in low or '_edit.' in low or '/edited' in pth:
+            return 'img_edited'
+        if '_gen_' in low or re.match(r'^\d{10}_', low) or re.match(r'^[a-z_]+_\d{8}_\d{4}_[a-f0-9]+\.', low) or re.match(r'^[a-z_]+_\d{10}_', low):
+            return 'img_generated'
+        if low.startswith('upload_') or '-uploads/' in pth + '/' or '-chat/' in pth + '/':
+            return 'img_inbound'
+        return 'img_project'
+
+    return 'other'
+
 
 def _ext_to_type(ext: str) -> str:
     img   = {'.png','.jpg','.jpeg','.gif','.svg','.webp','.ico','.bmp','.tiff','.tif'}
@@ -1541,6 +1631,158 @@ def api_artifact_view(project_id, filename):
         'content': None, 'name': base, 'type': 'binary',
         'serve_url': f'/api/artifacts/serve/{project_id}/{filename}'
     })
+
+_GREP_TEXT_EXTS = {'.md','.txt','.py','.js','.ts','.jsx','.tsx','.html','.htm','.css',
+                   '.json','.yaml','.yml','.toml','.ini','.cfg','.conf','.sql','.log',
+                   '.env','.csv','.rst','.xml','.sh','.bash','.go','.rs','.rb','.php',
+                   '.c','.cpp','.h'}
+IMAGE_CAPTIONS_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'image_captions.db')
+
+
+def _grep_image_captions(q_low: str, limit: int = 40):
+    """Match live-search query against stored image captions + tags."""
+    if not os.path.exists(IMAGE_CAPTIONS_DB):
+        return []
+    out = []
+    try:
+        con = sqlite3.connect(IMAGE_CAPTIONS_DB, timeout=5)
+        con.row_factory = sqlite3.Row
+        cur = con.execute("""
+            SELECT project_id, sub_path, caption, tags
+              FROM image_captions
+             WHERE status = 'ok'
+               AND (LOWER(caption) LIKE ? OR LOWER(tags) LIKE ?)
+             LIMIT ?
+        """, (f'%{q_low}%', f'%{q_low}%', limit))
+        for r in cur:
+            base = (r['sub_path'] or '').rsplit('/', 1)[-1]
+            ext  = os.path.splitext(base)[1].lower()
+            snippet = (r['caption'] or r['tags'] or '')[:240]
+            out.append({
+                'project_id': r['project_id'], 'name': r['sub_path'],
+                'basename':   base, 'snippet': snippet,
+                'match_count': 1, 'ext': ext, 'match_type': 'image',
+            })
+        con.close()
+    except Exception:
+        pass
+    return out
+
+
+@app.route('/api/artifacts/reindex-images', methods=['POST'])
+def api_artifact_reindex_images():
+    """Fire-and-forget: spawn image_indexer.py as a detached subprocess."""
+    script = os.path.join(DASHBOARD_DIR, 'image_indexer.py')
+    if not os.path.exists(script):
+        return jsonify({'ok': False, 'error': 'indexer not installed'}), 500
+    payload = (request.json or {}) if request.is_json else {}
+    venv_py = os.path.join(FRAMEWORK_DIR, 'venv', 'bin', 'python')
+    py = venv_py if os.path.exists(venv_py) else 'python3'
+    cmd = [py, script]
+    if payload.get('force'):        cmd.append('--force')
+    if payload.get('retry_failed'): cmd.append('--retry-failed')
+    if payload.get('limit'):        cmd += ['--limit', str(int(payload['limit']))]
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'started': True})
+
+
+@app.route('/api/artifacts/image-index-status')
+def api_artifact_image_index_status():
+    """Progress/summary for the image caption index."""
+    img_ext = {'.png','.jpg','.jpeg','.gif','.webp','.bmp','.tiff','.tif'}
+    total = 0
+    if os.path.isdir(ARTIFACTS_DIR):
+        for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for fn in fnames:
+                if os.path.splitext(fn)[1].lower() in img_ext:
+                    try:
+                        if os.path.getsize(os.path.join(root, fn)) >= 20*1024:
+                            total += 1
+                    except OSError:
+                        pass
+    captioned = failed = 0
+    last_at   = None
+    if os.path.exists(IMAGE_CAPTIONS_DB):
+        try:
+            con = sqlite3.connect(IMAGE_CAPTIONS_DB, timeout=3)
+            captioned = con.execute("SELECT COUNT(*) FROM image_captions WHERE status='ok'").fetchone()[0]
+            failed    = con.execute("SELECT COUNT(*) FROM image_captions WHERE status='failed'").fetchone()[0]
+            last_at   = con.execute("SELECT MAX(indexed_at) FROM image_captions").fetchone()[0]
+            con.close()
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+    return jsonify({
+        'ok': True, 'total_images': total, 'captioned': captioned,
+        'failed': failed, 'pending': max(0, total - captioned - failed),
+        'last_indexed_at': last_at, 'ever_indexed': (captioned + failed) > 0,
+    })
+
+
+@app.route('/api/artifacts/grep')
+def api_artifact_grep():
+    """Live keyword search across text artifacts. Returns matches with snippets."""
+    q = (request.args.get('q','') or '').strip()
+    if len(q) < 2:
+        return jsonify({'results': [], 'query': q})
+    q_low = q.lower()
+    max_file_size = 2 * 1024 * 1024
+    max_results   = 60
+    results = []
+    if not os.path.exists(ARTIFACTS_DIR):
+        return jsonify({'results': [], 'query': q})
+    for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        for fname in fnames:
+            if fname.endswith('.meta'):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in _GREP_TEXT_EXTS:
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                if os.path.getsize(fpath) > max_file_size:
+                    continue
+                with open(fpath, 'r', errors='replace') as fh:
+                    content = fh.read()
+                idx = content.lower().find(q_low)
+                if idx < 0:
+                    continue
+                match_count = content.lower().count(q_low)
+                start = max(0, idx - 40)
+                end   = min(len(content), idx + len(q) + 80)
+                snippet = content[start:end].replace('\n', ' ').replace('\r', ' ').strip()
+                rel = os.path.relpath(fpath, ARTIFACTS_DIR)
+                parts = rel.replace('\\','/').split('/')
+                proj = parts[0] if len(parts) > 1 else 'shared'
+                sub  = '/'.join(parts[1:]) if len(parts) > 1 else fname
+                results.append({
+                    'project_id': proj, 'name': sub, 'basename': fname,
+                    'snippet': snippet, 'match_count': match_count, 'ext': ext,
+                })
+                if len(results) >= max_results:
+                    break
+            except Exception:
+                continue
+        if len(results) >= max_results:
+            break
+    # Merge image-caption hits (semantic object match) under the same search
+    img_hits = _grep_image_captions(q_low, limit=40)
+    # De-dup on (project_id, name)
+    seen = {(r['project_id'], r['name']) for r in results}
+    for h in img_hits:
+        key = (h['project_id'], h['name'])
+        if key not in seen:
+            results.append(h)
+            seen.add(key)
+    return jsonify({'results': results, 'query': q,
+                    'truncated': len(results) >= max_results,
+                    'image_matches': len(img_hits)})
+
 
 @app.route('/api/artifacts/serve/<project_id>/<path:filename>')
 def api_artifact_serve(project_id, filename):
@@ -2629,6 +2871,55 @@ def api_journal():
         return jsonify({'error': str(e), 'rows': []})
 
 
+# ── Routes — Activity Feed (live agent activity from task_journal) ────────────
+
+AGENT_DISPLAY_NAMES = {
+    'simon_bately': 'Simon Bately', 'claw_batto': 'Claw Batto',
+    'phil_hass': 'Phil Hass', 'sam_axe': 'Sam Axe',
+    'duke_harmon': 'Duke Harmon', 'rex_valor': 'Rex Valor',
+    'scout_reeves': 'Scout Reeves', 'nova_sterling': 'Nova Sterling',
+    'specter_voss': 'Specter Voss',
+}
+
+@app.route('/api/ahb/activity-feed')
+def api_ahb_activity_feed():
+    """Live activity feed — all agent actions for AHB123."""
+    agent_id = request.args.get('agent_id', '')
+    status = request.args.get('status', '')
+    since = request.args.get('since', '')
+    limit = min(int(request.args.get('limit', 50)), 200)
+    try:
+        import psycopg2, psycopg2.extras
+        conn = psycopg2.connect(
+            host="localhost", port=5432, dbname="baza_agents",
+            user="switchhacker", password=os.environ.get("DB_PASSWORD","baza2026")
+        )
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        sql = "SELECT id, agent_id, task_type, task_description, result, success, created_at, requested_by, status, action_summary FROM task_journal WHERE 1=1"
+        params = []
+        if agent_id:
+            sql += " AND agent_id=%s"; params.append(agent_id)
+        if status:
+            sql += " AND status=%s"; params.append(status)
+        if since:
+            sql += " AND created_at > %s"; params.append(since)
+        sql += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        for r in rows:
+            for k, v in r.items():
+                if hasattr(v, 'isoformat'):
+                    r[k] = v.isoformat()
+            r['agent_name'] = AGENT_DISPLAY_NAMES.get(r.get('agent_id',''), r.get('agent_id',''))
+            if not r.get('action_summary'):
+                r['action_summary'] = r.get('task_description') or r.get('task_type') or ''
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({'error': str(e), 'rows': []})
+
+
 # ── Routes — Agent Memory (PostgreSQL agent_memory) ───────────────────────────
 
 @app.route('/memory')
@@ -2899,7 +3190,10 @@ def ahb123_page(tab='dashboard'):
 
 @app.route('/mobile')
 def mobile_page():
-    return render_template('mobile.html')
+    resp = make_response(render_template('mobile.html'))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 @app.route('/mobile/manifest.json')
@@ -2908,6 +3202,7 @@ def mobile_manifest():
         "name": "Baza Empire",
         "short_name": "Baza",
         "start_url": "/mobile",
+        "scope": "/",
         "display": "standalone",
         "background_color": "#07070f",
         "theme_color": "#07070f",
@@ -2918,6 +3213,30 @@ def mobile_manifest():
         ]
     }
     return jsonify(manifest)
+
+
+@app.route('/mobile/sw.js')
+@app.route('/sw.js')
+def mobile_sw():
+    """Self-destructing service worker — unregisters itself and clears all caches.
+    Prior versions interfered with Safari loading. This replacement purges SWs and bails."""
+    sw = """
+self.addEventListener('install', e => { self.skipWaiting(); });
+self.addEventListener('activate', e => {
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    await self.registration.unregister();
+    const clients = await self.clients.matchAll({ type: 'window' });
+    clients.forEach(c => c.navigate(c.url));
+  })());
+});
+"""
+    resp = make_response(sw)
+    resp.headers['Content-Type'] = 'application/javascript'
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    return resp
 
 
 @app.route('/portal')
@@ -3090,7 +3409,7 @@ def api_ahb_projects_create():
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (iid, data.get('client_id', ''), pid, inv_num,
              json.dumps(line_items), subtotal, 0, total, 'draft',
-             f"Auto-generated from project: {data.get('title', '')}",
+             '',
              data.get('client_name', ''), data.get('title', ''), 'Net 30',
              'All Home Building Co', 'Sergey Tkach',
              data.get('address', ''), data.get('client_email', ''),
@@ -3113,7 +3432,8 @@ def api_ahb_projects_update(pid):
                    'budget_low', 'budget_high', 'status', 'start_date',
                    'end_date', 'assigned_agents', 'notes', 'value',
                    'client_name', 'client_email', 'contact_info', 'location',
-                   'acquisition_type'):
+                   'acquisition_type', 'commission_pct', 'commission_value',
+                   'commission_beneficiary'):
             if k in data:
                 fields.append(f"{k} = ?")
                 vals.append(data[k])
@@ -3243,11 +3563,16 @@ def api_ahb_project_quotes(pid):
              json.dumps(d.get('breakdown') or {}),
              d.get('notes', ''), 1 if d.get('make_active') else 0))
         qid = c.lastrowid
-        # If marked active, demote others and update project value
+        # If marked active, demote others, update project value, and sync invoice total
         if d.get('make_active'):
             c.execute("UPDATE ahb_quotes SET is_active=0 WHERE project_id=? AND id<>?", (pid, qid))
             c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                       (total, total, datetime.datetime.now().isoformat(), pid))
+            # Sync linked invoice total (keep descriptions intact)
+            inv = c.execute("SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1", (pid,)).fetchone()
+            if inv:
+                c.execute("UPDATE ahb_invoices SET total=?, subtotal=?, updated_at=? WHERE id=?",
+                          (total, total, datetime.datetime.now().isoformat(), inv['id']))
         conn.commit()
         row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
         conn.close()
@@ -3277,6 +3602,19 @@ def api_ahb_quote_modify(qid):
         c.execute("UPDATE ahb_quotes SET is_active=1 WHERE id=?", (qid,))
         c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                   (row['total'], row['total'], datetime.datetime.now().isoformat(), pid))
+        # Sync linked invoice total (keep descriptions intact)
+        inv = c.execute("SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1", (pid,)).fetchone()
+        if inv:
+            c.execute("UPDATE ahb_invoices SET total=?, subtotal=?, updated_at=? WHERE id=?",
+                      (row['total'], row['total'], datetime.datetime.now().isoformat(), inv['id']))
+    if d.get('deactivate'):
+        c.execute("UPDATE ahb_quotes SET is_active=0 WHERE id=?", (qid,))
+    if d.get('apply_to_invoice'):
+        # Apply active quote total to the linked invoice
+        inv = c.execute("SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1", (pid,)).fetchone()
+        if inv:
+            c.execute("UPDATE ahb_invoices SET total=?, subtotal=?, updated_at=? WHERE id=?",
+                      (row['total'], row['total'], datetime.datetime.now().isoformat(), inv['id']))
     if 'notes' in d:
         c.execute("UPDATE ahb_quotes SET notes=? WHERE id=?", (d['notes'], qid))
     conn.commit()
@@ -3469,6 +3807,21 @@ def api_ahb_invoices_update(iid):
         conn.execute(f"UPDATE ahb_invoices SET {', '.join(fields)} WHERE id = ?", vals)
         conn.commit()
         conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/invoices/<iid>', methods=['DELETE'])
+def api_ahb_invoices_delete(iid):
+    try:
+        conn = _ahb_db()
+        cur = conn.execute("DELETE FROM ahb_invoices WHERE id = ?", (iid,))
+        conn.commit()
+        deleted = cur.rowcount
+        conn.close()
+        if not deleted:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -4280,6 +4633,631 @@ def api_ahb_architect_images(filename):
     return send_from_directory(arch_dir, filename)
 
 
+# ── AHB123 — Blueprint Builder ──────────────────────────────────────────────────
+# Full 2D blueprint editor: rooms, walls, objects, dimensions; multi-floor; Sam
+# render + LLM description→layout + photo→layout suggestions.
+
+def _blueprint_default_data(units='imperial'):
+    return {
+        'units': units,
+        'scale': 24 if units == 'imperial' else 50,  # px per foot OR px per meter
+        'grid': 1,
+        'floors': [{
+            'level': 1, 'name': 'Ground Floor',
+            'rooms': [], 'walls': [], 'objects': [], 'dims': [], 'notes': []
+        }],
+    }
+
+
+@app.route('/api/ahb/blueprints', methods=['GET'])
+def api_ahb_blueprints_list():
+    try:
+        conn = _ahb_db()
+        q = "SELECT id, name, project_id, units, thumbnail_path, notes, created_at, updated_at FROM ahb_blueprints WHERE 1=1"
+        params = []
+        if request.args.get('project_id'):
+            q += " AND project_id = ?"; params.append(request.args['project_id'])
+        rows = conn.execute(q + " ORDER BY updated_at DESC", params).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints/<bid>', methods=['GET'])
+def api_ahb_blueprints_get(bid):
+    try:
+        conn = _ahb_db()
+        row = conn.execute("SELECT * FROM ahb_blueprints WHERE id = ?", (bid,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'Not found'}), 404
+        out = dict(row)
+        try:
+            out['data'] = json.loads(out.get('data') or '{}')
+        except Exception:
+            out['data'] = _blueprint_default_data(out.get('units') or 'imperial')
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints', methods=['POST'])
+def api_ahb_blueprints_create():
+    try:
+        body = request.json or {}
+        bid = body.get('id') or str(uuid.uuid4())
+        name = body.get('name') or 'Untitled Blueprint'
+        project_id = body.get('project_id') or ''
+        units = body.get('units') or 'imperial'
+        data = body.get('data') or _blueprint_default_data(units)
+        notes = body.get('notes') or ''
+        conn = _ahb_db()
+        conn.execute(
+            "INSERT INTO ahb_blueprints (id, name, project_id, units, data, notes) VALUES (?,?,?,?,?,?)",
+            (bid, name, project_id, units, json.dumps(data), notes))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': bid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints/<bid>', methods=['PUT'])
+def api_ahb_blueprints_update(bid):
+    try:
+        body = request.json or {}
+        fields = []; vals = []
+        for k in ('name', 'project_id', 'units', 'notes'):
+            if k in body:
+                fields.append(f"{k} = ?"); vals.append(body[k])
+        if 'data' in body:
+            fields.append("data = ?")
+            vals.append(json.dumps(body['data']) if not isinstance(body['data'], str) else body['data'])
+        if 'thumbnail_path' in body:
+            fields.append("thumbnail_path = ?"); vals.append(body['thumbnail_path'])
+        if not fields:
+            return jsonify({'success': False, 'error': 'No fields'}), 400
+        fields.append("updated_at = ?"); vals.append(datetime.datetime.now().isoformat())
+        vals.append(bid)
+        conn = _ahb_db()
+        conn.execute(f"UPDATE ahb_blueprints SET {', '.join(fields)} WHERE id = ?", vals)
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints/<bid>', methods=['DELETE'])
+def api_ahb_blueprints_delete(bid):
+    try:
+        conn = _ahb_db()
+        cur = conn.execute("DELETE FROM ahb_blueprints WHERE id = ?", (bid,))
+        conn.execute("DELETE FROM ahb_blueprint_renders WHERE blueprint_id = ?", (bid,))
+        conn.commit()
+        conn.close()
+        if not cur.rowcount:
+            return jsonify({'success': False, 'error': 'Not found'}), 404
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints/<bid>/thumbnail', methods=['POST'])
+def api_ahb_blueprints_thumbnail(bid):
+    """Accept a PNG blob (base64) and save as the blueprint thumbnail."""
+    try:
+        import base64
+        body = request.json or {}
+        png_b64 = body.get('png_base64') or ''
+        if png_b64.startswith('data:image'):
+            png_b64 = png_b64.split(',', 1)[1]
+        if not png_b64:
+            return jsonify({'success': False, 'error': 'No image'}), 400
+        out_dir = os.path.join(ARTIFACTS_DIR, 'proj-ahb123', 'blueprints')
+        os.makedirs(out_dir, exist_ok=True)
+        fname = f"bp_{bid}.png"
+        fpath = os.path.join(out_dir, fname)
+        with open(fpath, 'wb') as fp:
+            fp.write(base64.b64decode(png_b64))
+        rel = f'/api/artifacts/serve/proj-ahb123/blueprints/{fname}'
+        conn = _ahb_db()
+        conn.execute("UPDATE ahb_blueprints SET thumbnail_path = ?, updated_at = ? WHERE id = ?",
+                     (rel, datetime.datetime.now().isoformat(), bid))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'thumbnail_path': rel})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _blueprint_to_prompt(data, floor_level=1, style='photorealistic architectural render'):
+    """Serialize a blueprint floor into a prompt for Stable Diffusion."""
+    try:
+        units = data.get('units', 'imperial')
+        u = 'ft' if units == 'imperial' else 'm'
+        floor = next((f for f in data.get('floors', []) if int(f.get('level', 1)) == int(floor_level)),
+                     (data.get('floors') or [{}])[0])
+        rooms = floor.get('rooms', [])
+        objs = floor.get('objects', [])
+        parts = [style + ', floor plan of a home,']
+        if rooms:
+            room_strs = []
+            for r in rooms:
+                w = round(r.get('w', 0), 1); h = round(r.get('h', 0), 1)
+                t = r.get('type', 'room')
+                lbl = r.get('label') or t
+                room_strs.append(f"{lbl} ({w}x{h}{u})")
+            parts.append("rooms: " + ", ".join(room_strs) + ".")
+        if objs:
+            counts = {}
+            for o in objs:
+                k = o.get('kind', 'object')
+                counts[k] = counts.get(k, 0) + 1
+            parts.append("features: " + ", ".join(f"{n} {k}{'s' if n>1 else ''}" for k,n in counts.items()) + ".")
+        parts.append("clean, high-quality, realistic lighting, wide-angle, no people, no text overlays.")
+        return " ".join(parts)
+    except Exception as e:
+        return f"floor plan render ({e})"
+
+
+@app.route('/api/ahb/blueprints/<bid>/render', methods=['POST'])
+def api_ahb_blueprints_render(bid):
+    """Render the blueprint as a photorealistic image via Stable Diffusion."""
+    try:
+        import requests as _req
+        import base64
+        body = request.json or {}
+        floor_level = int(body.get('floor_level', 1))
+        mode = body.get('mode', 'photorealistic')  # photorealistic | isometric | topdown
+        user_prompt = (body.get('prompt') or '').strip()
+
+        conn = _ahb_db()
+        row = conn.execute("SELECT data FROM ahb_blueprints WHERE id = ?", (bid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Blueprint not found'}), 404
+        try:
+            data = json.loads(row['data'] or '{}')
+        except Exception:
+            data = {}
+
+        style_map = {
+            'photorealistic': 'photorealistic architectural interior render',
+            'isometric': 'isometric 3D cutaway floor plan, architectural illustration',
+            'topdown': 'top-down architectural floor plan drawing, clean technical lines',
+        }
+        style = style_map.get(mode, style_map['photorealistic'])
+        auto_prompt = _blueprint_to_prompt(data, floor_level, style)
+        prompt = (user_prompt + '. ' + auto_prompt) if user_prompt else auto_prompt
+
+        try:
+            resp = _req.post('http://localhost:7860/sdapi/v1/txt2img', json={
+                'prompt': prompt,
+                'width': int(body.get('width', 1024)),
+                'height': int(body.get('height', 1024)),
+                'steps': int(body.get('steps', 30)),
+                'cfg_scale': float(body.get('cfg_scale', 7)),
+                'sampler_name': 'DPM++ 2M Karras',
+                'negative_prompt': body.get('negative_prompt', 'blurry, distorted, text, watermark, low quality'),
+            }, timeout=240)
+        except Exception as e:
+            conn.close()
+            return jsonify({'success': False, 'error': f'Stable Diffusion unavailable: {e}'}), 502
+
+        result = resp.json()
+        images = result.get('images', [])
+        if not images:
+            conn.close()
+            return jsonify({'success': False, 'error': 'No image returned from SD'}), 502
+
+        out_dir = os.path.join(ARTIFACTS_DIR, 'proj-ahb123', 'blueprints')
+        os.makedirs(out_dir, exist_ok=True)
+        saved = []
+        for ib64 in images:
+            rid = str(uuid.uuid4())
+            fname = f"bp_render_{bid}_{rid[:8]}.png"
+            fpath = os.path.join(out_dir, fname)
+            with open(fpath, 'wb') as fp:
+                fp.write(base64.b64decode(ib64))
+            try:
+                with open(fpath + '.meta', 'w') as mf:
+                    json.dump({'agent_id': 'sam_axe', 'task_id': '',
+                               'blueprint_id': bid,
+                               'created_at': datetime.datetime.now().isoformat()}, mf)
+            except Exception:
+                pass
+            url = f'/api/artifacts/serve/proj-ahb123/blueprints/{fname}'
+            saved.append(url)
+            conn.execute(
+                "INSERT INTO ahb_blueprint_renders (id, blueprint_id, floor_level, mode, prompt, image_path) VALUES (?,?,?,?,?,?)",
+                (rid, bid, floor_level, mode, prompt, url))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'images': saved, 'image_url': saved[0], 'prompt_used': prompt})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints/<bid>/renders', methods=['GET'])
+def api_ahb_blueprints_renders_list(bid):
+    try:
+        conn = _ahb_db()
+        rows = conn.execute(
+            "SELECT id, blueprint_id, floor_level, mode, prompt, image_path, created_at "
+            "FROM ahb_blueprint_renders WHERE blueprint_id = ? ORDER BY created_at DESC",
+            (bid,)).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def _call_local_llm(system_prompt, user_prompt, model='qwen2.5:14b', max_tokens=1200, timeout=180):
+    """Call local Ollama, iterating across healthy instances."""
+    import urllib.request as _ur
+    urls = ['http://localhost:11434', 'http://localhost:11437', 'http://localhost:11436']
+    payload = json.dumps({
+        'model': model, 'stream': False,
+        'messages': [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ],
+        'options': {'num_predict': max_tokens, 'num_ctx': 8192, 'temperature': 0.6}
+    }).encode()
+    last = None
+    for url in urls:
+        try:
+            req = _ur.Request(f"{url}/api/chat", data=payload,
+                              headers={'Content-Type': 'application/json'}, method='POST')
+            with _ur.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())['message']['content'].strip(), None
+        except Exception as e:
+            last = e
+            continue
+    return '', str(last)
+
+
+def _extract_json(text):
+    """Pull first JSON object/array out of a blob of text."""
+    import re as _re
+    text = text or ''
+    text = _re.sub(r'```(?:json)?', '', text).strip().strip('`').strip()
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    # Find first { or [ and parse balanced
+    for opener, closer in (('{', '}'), ('[', ']')):
+        start = text.find(opener)
+        if start < 0:
+            continue
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == opener:
+                depth += 1
+            elif text[i] == closer:
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:i+1]
+                    try:
+                        return json.loads(candidate)
+                    except Exception:
+                        break
+    return None
+
+
+@app.route('/api/ahb/blueprints/from-description', methods=['POST'])
+def api_ahb_blueprints_from_description():
+    """Use the local LLM to convert a natural-language description into a blueprint layout."""
+    try:
+        body = request.json or {}
+        description = (body.get('description') or '').strip()
+        units = body.get('units') or 'imperial'
+        if not description:
+            return jsonify({'success': False, 'error': 'description is required'}), 400
+
+        u = 'feet' if units == 'imperial' else 'meters'
+        system = (
+            "You are an architectural layout assistant. Given a natural-language description of a home or room, "
+            "produce a single JSON object describing a 2D floor plan. Coordinate origin is top-left. "
+            f"All distances are in {u}. Use reasonable residential proportions. DO NOT wrap the JSON in backticks or prose.\n\n"
+            "Schema:\n"
+            "{\n"
+            '  "units": "imperial"|"metric",\n'
+            '  "name": "string",\n'
+            '  "floors": [\n'
+            '    {\n'
+            '      "level": 1, "name": "Ground Floor",\n'
+            '      "rooms": [{"type":"kitchen|bedroom|bathroom|living|dining|garage|hallway|office|closet|laundry|other","label":"string","x":number,"y":number,"w":number,"h":number}],\n'
+            '      "objects": [{"kind":"door|window|sink|toilet|bathtub|shower|range|fridge|dishwasher|bed|sofa|table|chair|island|stairs|fireplace","x":number,"y":number,"w":number,"h":number,"rotation":number,"label":"string"}]\n'
+            '    }\n'
+            '  ]\n'
+            "}\n"
+            "Rules: rooms must not overlap. Place doors on shared walls. Typical room sizes: bedroom 10-14, bathroom 5-8, "
+            "kitchen 10-14, living 14-20. Rotations in degrees (0/90/180/270)."
+        )
+
+        content, err = _call_local_llm(system, f"Description:\n{description}\n\nReturn ONLY the JSON object.",
+                                        max_tokens=1500)
+        if not content:
+            return jsonify({'success': False, 'error': f'LLM unavailable: {err}'}), 502
+
+        layout = _extract_json(content)
+        if not isinstance(layout, dict):
+            return jsonify({'success': False, 'error': 'LLM did not return valid JSON',
+                             'raw': content[:500]}), 502
+
+        # Normalize + sanity-check
+        layout.setdefault('units', units)
+        layout.setdefault('scale', 24 if layout['units'] == 'imperial' else 50)
+        layout.setdefault('grid', 1)
+        floors = layout.get('floors') or []
+        if not floors:
+            return jsonify({'success': False, 'error': 'No floors in LLM output', 'raw': content[:500]}), 502
+        for f_idx, f in enumerate(floors, 1):
+            f.setdefault('level', f_idx); f.setdefault('name', f'Floor {f_idx}')
+            for coll in ('rooms', 'objects', 'walls', 'dims', 'notes'):
+                f.setdefault(coll, [])
+            for r in f['rooms']:
+                r['id'] = r.get('id') or str(uuid.uuid4())
+                r.setdefault('notes', '')
+            for o in f['objects']:
+                o['id'] = o.get('id') or str(uuid.uuid4())
+                o.setdefault('rotation', 0)
+        return jsonify({'success': True, 'layout': layout, 'raw': content[:2000]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# In-memory job store for async photo imports. A single Flask worker is enough
+# for this dashboard (one user, one session) so module-level dict + lock works.
+import threading as _bp_threading
+_bp_photo_jobs = {}
+_bp_photo_jobs_lock = _bp_threading.Lock()
+
+
+def _bp_photo_worker(job_id, file_path, source_url, units, sys_msg):
+    def _update(**patch):
+        with _bp_photo_jobs_lock:
+            if job_id in _bp_photo_jobs:
+                _bp_photo_jobs[job_id].update(patch)
+                _bp_photo_jobs[job_id]['updated_at'] = datetime.datetime.now().isoformat()
+
+    try:
+        # ── Phase 1: vision via analyze_image skill ─────────────────────────
+        _update(phase='vision', progress='Analyzing photo (vision model, can take 1-3 min if cold)…')
+        prompt = (
+            'Analyze this image as an architectural reference. If it is a floor plan or sketch, '
+            'identify rooms (type, approximate dimensions in feet), walls, doors, windows, and furniture. '
+            'If it is a room photo, identify the room type, dimensions (estimate), and objects with positions. '
+            'Return a concise description that can be used to generate a 2D blueprint.'
+        )
+        skill_path = os.path.join(os.path.dirname(DASHBOARD_DIR), 'skills', 'shared', 'analyze_image.py')
+        env = os.environ.copy()
+        env['SKILL_ARGS'] = json.dumps({'image_path': file_path, 'prompt': prompt,
+                                         'mode': 'describe_for_agents'})
+        try:
+            result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True, text=True,
+                                    timeout=360, env=env)
+        except subprocess.TimeoutExpired:
+            _update(status='error', phase='vision',
+                    error='Vision model timed out after 6 minutes. A vision model (qwen3-vl:latest or llava:13b) '
+                          'may not be loaded on any Ollama instance. Pre-warm with `ollama run qwen3-vl:latest "hi"` '
+                          'or use the "From Text" flow with a typed description.',
+                    source_url=source_url)
+            return
+
+        stdout = (result.stdout or '').strip()
+        stderr = (result.stderr or '').strip()
+        description = ''
+        skill_error = ''
+        for line in reversed(stdout.split('\n')):
+            line = line.strip()
+            if line.startswith('{') and line.endswith('}'):
+                try:
+                    parsed = json.loads(line)
+                    if parsed.get('success'):
+                        description = parsed.get('analysis') or ''
+                    else:
+                        skill_error = parsed.get('error') or ''
+                    break
+                except Exception:
+                    pass
+        if not description:
+            description = stdout
+
+        if not description:
+            _update(status='error', phase='vision',
+                    error=skill_error or stderr[:500] or f'Photo analysis failed (exit {result.returncode})',
+                    source_url=source_url)
+            return
+
+        _update(phase='layout', progress='Vision done — generating layout from description…',
+                description=description, source_url=source_url)
+
+        # ── Phase 2: description → JSON layout via local LLM ────────────────
+        u = 'feet' if units == 'imperial' else 'meters'
+        layout_system = (
+            "You are an architectural layout assistant. Read the vision description below and produce a single "
+            f"JSON object describing a 2D floor plan with distances in {u}. Schema:\n"
+            '{"units":"imperial|metric","name":"string","floors":[{"level":1,"name":"Ground Floor",'
+            '"rooms":[{"type":"kitchen|bedroom|bathroom|living|dining|garage|hallway|office|closet|laundry|other",'
+            '"label":"string","x":number,"y":number,"w":number,"h":number}],'
+            '"objects":[{"kind":"door|window|sink|toilet|bathtub|shower|range|fridge|dishwasher|bed|sofa|table|chair|island|stairs|fireplace",'
+            '"x":number,"y":number,"w":number,"h":number,"rotation":number,"label":"string"}]}]}\n'
+            "Rooms must not overlap. Place doors on shared walls. Output ONLY the JSON, no prose, no code fences."
+            + (f"\n\n{sys_msg}" if sys_msg else "")
+        )
+        content, err = _call_local_llm(layout_system, f"Vision description:\n{description[:4000]}",
+                                        max_tokens=1500, timeout=240)
+        layout = None
+        if content:
+            parsed = _extract_json(content)
+            if isinstance(parsed, dict) and parsed.get('floors'):
+                for fl_idx, fl in enumerate(parsed.get('floors') or [], 1):
+                    fl.setdefault('level', fl_idx); fl.setdefault('name', f'Floor {fl_idx}')
+                    for coll in ('rooms', 'objects', 'walls', 'dims', 'notes'):
+                        fl.setdefault(coll, [])
+                    for r in fl['rooms']:
+                        r['id'] = r.get('id') or str(uuid.uuid4()); r.setdefault('notes', '')
+                    for o in fl['objects']:
+                        o['id'] = o.get('id') or str(uuid.uuid4()); o.setdefault('rotation', 0)
+                parsed.setdefault('units', units)
+                parsed.setdefault('scale', 24 if units == 'imperial' else 50)
+                parsed.setdefault('grid', 1)
+                layout = parsed
+
+        _update(status='done', phase='done', progress='Complete',
+                description=description, layout=layout,
+                llm_error=err, llm_raw=(content or '')[:2000],
+                source_url=source_url)
+    except Exception as e:
+        _update(status='error', phase='unknown', error=f'Worker crashed: {e}')
+
+
+@app.route('/api/ahb/blueprints/from-photo', methods=['POST'])
+def api_ahb_blueprints_from_photo():
+    """Kick off an async photo→layout job. Returns a job_id immediately.
+
+    The actual vision + layout work runs in a background thread — the HTTP call
+    returns in under a second so browsers and proxies never time out. Poll
+    /api/ahb/blueprints/photo-jobs/<id> to get status, progress and final result.
+    """
+    try:
+        f = request.files.get('image') or request.files.get('file')
+        if not f:
+            return jsonify({'success': False, 'error': 'No image uploaded'}), 400
+
+        upload_dir = os.path.join(ARTIFACTS_DIR, 'proj-ahb123', 'blueprints')
+        os.makedirs(upload_dir, exist_ok=True)
+        safe_name = re.sub(r'[^\w.\-]', '_', f.filename or 'source.jpg')
+        file_path = os.path.join(upload_dir, f"bp_source_{uuid.uuid4().hex[:8]}_{safe_name}")
+        f.save(file_path)
+        source_url = f'/api/artifacts/serve/proj-ahb123/blueprints/{os.path.basename(file_path)}'
+
+        units = (request.form.get('units') or 'imperial')
+        sys_msg = request.form.get('system_extra', '')
+
+        job_id = str(uuid.uuid4())
+        with _bp_photo_jobs_lock:
+            # GC jobs older than 1 hour to keep the dict bounded
+            now = datetime.datetime.now()
+            for stale in [k for k, v in _bp_photo_jobs.items()
+                           if (now - datetime.datetime.fromisoformat(v.get('created_at', now.isoformat()))).total_seconds() > 3600]:
+                _bp_photo_jobs.pop(stale, None)
+            _bp_photo_jobs[job_id] = {
+                'job_id': job_id, 'status': 'running', 'phase': 'queued',
+                'progress': 'Queued — upload received', 'source_url': source_url,
+                'created_at': now.isoformat(), 'updated_at': now.isoformat(),
+            }
+        t = _bp_threading.Thread(target=_bp_photo_worker,
+                                   args=(job_id, file_path, source_url, units, sys_msg),
+                                   daemon=True)
+        t.start()
+        return jsonify({'success': True, 'job_id': job_id, 'status': 'running', 'source_url': source_url})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/blueprints/photo-jobs/<job_id>', methods=['GET'])
+def api_ahb_blueprints_photo_job_status(job_id):
+    with _bp_photo_jobs_lock:
+        job = _bp_photo_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Unknown or expired job_id'}), 404
+    return jsonify(job)
+
+
+@app.route('/api/ahb/blueprints/<bid>/inpaint-room', methods=['POST'])
+def api_ahb_blueprints_inpaint_room(bid):
+    """Re-render a single room within an existing SD render using a mask rectangle (normalized 0..1)."""
+    try:
+        import requests as _req
+        import base64
+        body = request.json or {}
+        source_url = body.get('source_url') or ''
+        prompt = body.get('prompt') or ''
+        mask_rect = body.get('mask_rect') or {}  # {x, y, w, h} in 0..1
+        denoising = float(body.get('denoising_strength', 0.75))
+        if not source_url or not prompt:
+            return jsonify({'success': False, 'error': 'source_url and prompt required'}), 400
+
+        # Resolve source image path
+        if source_url.startswith('/api/artifacts/serve/'):
+            rel = source_url.replace('/api/artifacts/serve/', '', 1)
+            src_path = os.path.join(ARTIFACTS_DIR, rel)
+        elif source_url.startswith('http'):
+            with _req.get(source_url, timeout=30) as r:
+                src_path = os.path.join(ARTIFACTS_DIR, 'proj-ahb123', 'blueprints', f'src_{uuid.uuid4().hex[:8]}.png')
+                os.makedirs(os.path.dirname(src_path), exist_ok=True)
+                with open(src_path, 'wb') as fp:
+                    fp.write(r.content)
+        else:
+            src_path = source_url
+        if not os.path.exists(src_path):
+            return jsonify({'success': False, 'error': f'source image not found: {src_path}'}), 404
+
+        # Build mask PNG (same size as source) — white inside rect, black outside
+        try:
+            from PIL import Image, ImageDraw
+        except Exception:
+            return jsonify({'success': False, 'error': 'Pillow is required for mask building'}), 500
+        src = Image.open(src_path).convert('RGB')
+        sw, sh = src.size
+        mask = Image.new('L', (sw, sh), 0)
+        draw = ImageDraw.Draw(mask)
+        mx = int(float(mask_rect.get('x', 0)) * sw)
+        my = int(float(mask_rect.get('y', 0)) * sh)
+        mw = max(1, int(float(mask_rect.get('w', 1)) * sw))
+        mh = max(1, int(float(mask_rect.get('h', 1)) * sh))
+        draw.rectangle([mx, my, mx + mw, my + mh], fill=255)
+
+        import io as _io
+        src_buf = _io.BytesIO(); src.save(src_buf, format='PNG')
+        mask_buf = _io.BytesIO(); mask.save(mask_buf, format='PNG')
+        img_b64 = base64.b64encode(src_buf.getvalue()).decode('utf-8')
+        mask_b64 = base64.b64encode(mask_buf.getvalue()).decode('utf-8')
+
+        resp = _req.post('http://localhost:7860/sdapi/v1/img2img', json={
+            'init_images': [img_b64],
+            'mask': mask_b64,
+            'prompt': prompt,
+            'width': sw, 'height': sh,
+            'steps': int(body.get('steps', 30)),
+            'cfg_scale': float(body.get('cfg_scale', 7)),
+            'denoising_strength': denoising,
+            'inpainting_fill': 1, 'inpaint_full_res': True, 'inpaint_full_res_padding': 32,
+            'sampler_name': 'DPM++ 2M Karras',
+        }, timeout=240)
+        result = resp.json()
+        images = result.get('images', [])
+        if not images:
+            return jsonify({'success': False, 'error': 'No image returned from SD'}), 502
+        out_dir = os.path.join(ARTIFACTS_DIR, 'proj-ahb123', 'blueprints')
+        os.makedirs(out_dir, exist_ok=True)
+        saved = []
+        conn = _ahb_db()
+        for ib64 in images:
+            rid = str(uuid.uuid4())
+            fname = f"bp_inpaint_{bid}_{rid[:8]}.png"
+            fpath = os.path.join(out_dir, fname)
+            with open(fpath, 'wb') as fp:
+                fp.write(base64.b64decode(ib64))
+            url = f'/api/artifacts/serve/proj-ahb123/blueprints/{fname}'
+            saved.append(url)
+            conn.execute(
+                "INSERT INTO ahb_blueprint_renders (id, blueprint_id, floor_level, mode, prompt, image_path) VALUES (?,?,?,?,?,?)",
+                (rid, bid, int(body.get('floor_level', 1)), 'inpaint', prompt, url))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'images': saved, 'image_url': saved[0]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # ── AHB123 — Employees ─────────────────────────────────────────────────────────
 
 @app.route('/api/ahb/employees', methods=['GET'])
@@ -4641,14 +5619,22 @@ def api_ahb_files_create():
             file_path = os.path.join(upload_dir, f"{fid}_{safe_name}")
             f.save(file_path)
         data = request.form if f else (request.json or {})
+        # Allow linking existing file by absolute path (agents uploading via Telegram)
+        if not file_path and data.get('file_path'):
+            file_path = data.get('file_path')
+        size = data.get('size', 0)
+        if not size and file_path and os.path.exists(file_path):
+            try: size = os.path.getsize(file_path)
+            except Exception: pass
+        name = data.get('name') or (f.filename if f else (os.path.basename(file_path) if file_path else ''))
         conn.execute(
             """INSERT INTO ahb_files (id, name, file_type, file_path, size, tags, category, year, project_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (fid, data.get('name', f.filename if f else ''), data.get('file_type',''),
-             file_path, data.get('size',0), data.get('tags',''), data.get('category',''),
+            (fid, name, data.get('file_type',''),
+             file_path, size, data.get('tags',''), data.get('category',''),
              data.get('year',''), data.get('project_id','')))
         conn.commit(); conn.close()
-        return jsonify({'success': True, 'id': fid})
+        return jsonify({'success': True, 'id': fid, 'file_path': file_path})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -5085,15 +6071,25 @@ def api_ahb_invoice_from_project(pid):
 
         inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
         iid = str(uuid.uuid4())
+        # Build notes with project description for invoice attachment
+        proj_desc = project.get('description', '')
+        proj_scope = project.get('scope', '')
+        notes_parts = []
+        if proj_desc:
+            notes_parts.append(f"Project Description: {proj_desc}")
+        if proj_scope:
+            notes_parts.append(f"Scope: {proj_scope}")
+        notes = '\n'.join(notes_parts) if notes_parts else ''
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
-               subtotal, tax, total, status, notes, client_name, project_name, terms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               subtotal, tax, total, status, notes, client_name, project_name, terms,
+               project_address)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (iid, project.get('client_id', ''), pid, inv_num,
              json.dumps(line_items), subtotal, 0, subtotal, 'draft',
-             f"Generated from project: {project.get('title', '')}",
+             notes,
              project.get('client_name', ''), project.get('title', ''),
-             'Net 30'))
+             'Net 30', project.get('address', '')))
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num,
@@ -5312,6 +6308,12 @@ def api_ahb_project_detail(pid):
         result['events'] = [dict(r) for r in conn.execute(
             "SELECT * FROM ahb_events WHERE project_id = ? ORDER BY date", (pid,)).fetchall()]
 
+        # Curated documents (permits, COIs, licenses, etc. filed by Phil)
+        result['documents'] = [dict(r) for r in conn.execute(
+            "SELECT id, file_path, original_name, suggested_name, doc_type, entity, "
+            "       doc_date, summary, tags, confidence, curated_at "
+            "FROM ahb_documents WHERE project_id = ? ORDER BY curated_at DESC", (pid,)).fetchall()]
+
         # Linked invoice (first invoice for this project)
         linked_inv = conn.execute(
             "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY created_at ASC LIMIT 1", (pid,)
@@ -5454,6 +6456,18 @@ def api_ahb_invoice_pdf(iid):
                 <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
             </tr>'''
 
+        # Build scope of work section for PDF
+        scope_of_work_html = ''
+        if project and project.get('description'):
+            proj_desc = project.get('description', '').replace('<', '&lt;').replace('>', '&gt;')
+            proj_scope = project.get('scope', '').replace('<', '&lt;').replace('>', '&gt;')
+            scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope}</div>' if proj_scope else ''
+            scope_of_work_html = f'''<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #2563eb;">
+    <div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Scope of Work</div>
+    <div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{proj_desc}</div>
+    {scope_line}
+</div>'''
+
         subtotal = inv.get('subtotal') or inv.get('total') or 0
         tax = inv.get('tax') or 0
         total = inv.get('total') or 0
@@ -5481,13 +6495,12 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
 <body>
 <!-- PAGE 1: INVOICE -->
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
-    <div style="display:flex;align-items:center;gap:12px;">
-        {f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:50px;height:50px;object-fit:contain;">' if logo_b64 else '<div style="width:50px;height:50px;background:#2563eb;border-radius:8px;"></div>'}
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+        {f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:50px;height:50px;object-fit:contain;margin-top:2px;">' if logo_b64 else '<div style="width:50px;height:50px;background:#2563eb;border-radius:8px;margin-top:2px;"></div>'}
         <div>
-            <div style="font-size:20px;font-weight:700;color:#1a1a1a;">All Home Building CO LLC</div>
-            <div style="font-size:12px;color:#888;">2725 Colmar ave</div>
-            <div style="font-size:12px;color:#888;">800-484-6404</div>
-            <div style="font-size:12px;color:#888;">AHB123.com</div>
+            <div style="font-size:20px;font-weight:700;color:#1a1a1a;white-space:nowrap;">All Home Building CO LLC</div>
+            <div style="font-size:12px;color:#888;">2725 Colmar Ave, Bensalem, PA 19020</div>
+            <div style="font-size:12px;color:#888;">800-484-6404 · AHB123.com</div>
         </div>
     </div>
     <div style="text-align:right;">
@@ -5513,6 +6526,8 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
     </div>
 </div>
 
+{scope_of_work_html}
+
 <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
     <thead>
         <tr style="background:#f8fafc;">
@@ -5534,7 +6549,6 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
     </div>
 </div>
 
-{f'<p style="margin-top:20px;font-size:12px;color:#888;font-style:italic;">{inv.get("notes","")}</p>' if inv.get('notes') else ''}
 
 <!-- PAGE 2: CONTRACTOR AGREEMENT -->
 <div class="page-break"></div>
@@ -5550,9 +6564,8 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
             <div style="font-size:12px;color:#999;font-weight:700;">Contractor:</div>
             <div style="font-weight:600;">Sergey Tkach</div>
             <div>All Home Building CO LLC</div>
-            <div style="color:#666;font-size:13px;">2725 Colmar ave</div>
-            <div style="color:#666;font-size:13px;">800-484-6404</div>
-            <div style="color:#666;font-size:13px;">AHB123.com</div>
+            <div style="color:#666;font-size:13px;">2725 Colmar Ave, Bensalem, PA 19020</div>
+            <div style="color:#666;font-size:13px;">800-484-6404 · AHB123.com</div>
         </div>
         <div style="text-align:right;">
             <div style="font-size:12px;color:#999;font-weight:700;">Client:</div>
@@ -5570,6 +6583,8 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
         <strong>Project Location:</strong> {project_location}
     </div>
 </div>
+
+{scope_of_work_html}
 
 <div style="margin-bottom:24px;">
     <h3 style="font-size:14px;color:#333;margin:0 0 12px;">Terms & Conditions</h3>
@@ -5659,25 +6674,38 @@ def api_ahb_payments_create():
 @app.route('/api/ahb/billing/summary', methods=['GET'])
 def api_ahb_billing_summary():
     try:
+        year = (request.args.get('year') or '').strip()
+        unpaid_only = (request.args.get('unpaid_only', 'true').lower() != 'false')
+        # Year filter: prefer `year` column; fall back to date/created_at prefix for rows where year is blank.
+        year_expr = "COALESCE(NULLIF(year,''), substr(COALESCE(date, created_at, ''),1,4))"
+        year_clause = f" AND {year_expr} = ?" if year else ""
+        year_params = (year,) if year else ()
+
         conn = _ahb_db()
-        stats = {}
-        # Unpaid invoices
+        stats = {'year': year or 'all', 'unpaid_only': unpaid_only}
+        # Unpaid invoices — case-insensitive status match
         for status in ['Sent', 'Approved', 'In Progress', 'Overdue']:
             row = conn.execute(
-                "SELECT count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices WHERE status = ? AND is_change_order = 0",
-                (status,)).fetchone()
+                f"SELECT count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices WHERE LOWER(status) = LOWER(?) AND is_change_order = 0{year_clause}",
+                (status,) + year_params).fetchone()
             stats[status.lower().replace(' ','_')] = {'count': row['cnt'], 'total': row['total']}
         # Paid
-        row = conn.execute("SELECT count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices WHERE status = 'Paid' AND is_change_order = 0").fetchone()
+        row = conn.execute(
+            f"SELECT count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices WHERE LOWER(status) = 'paid' AND is_change_order = 0{year_clause}",
+            year_params).fetchone()
         stats['paid'] = {'count': row['cnt'], 'total': row['total']}
         # Total receivable (all non-paid)
-        row = conn.execute("SELECT COALESCE(sum(total),0) as total FROM ahb_invoices WHERE status != 'Paid' AND is_change_order = 0").fetchone()
+        row = conn.execute(
+            f"SELECT COALESCE(sum(total),0) as total FROM ahb_invoices WHERE LOWER(status) != 'paid' AND is_change_order = 0{year_clause}",
+            year_params).fetchone()
         stats['total_receivable'] = row['total']
-        # Total payments received
+        # Total payments received (not year-filtered — ahb_payments has no year context here)
         row = conn.execute("SELECT COALESCE(sum(amount),0) as total FROM ahb_payments").fetchone()
         stats['total_payments'] = row['total']
         # Overdue invoices with interest
-        overdue = conn.execute("SELECT * FROM ahb_invoices WHERE status = 'Overdue' AND is_change_order = 0").fetchall()
+        overdue = conn.execute(
+            f"SELECT * FROM ahb_invoices WHERE LOWER(status) = 'overdue' AND is_change_order = 0{year_clause}",
+            year_params).fetchall()
         overdue_details = []
         for inv in overdue:
             inv = dict(inv)
@@ -5695,13 +6723,16 @@ def api_ahb_billing_summary():
             inv['total_with_interest'] = (inv.get('total') or 0) + interest
             overdue_details.append(inv)
         stats['overdue_details'] = overdue_details
-        # Active billing items (unpaid invoices)
+        # Active billing items — unpaid_only toggle flips between "unpaid only" (default) and "all invoices"
+        status_clause = " AND LOWER(status) != 'paid'" if unpaid_only else ""
         active = conn.execute(
-            "SELECT * FROM ahb_invoices WHERE status != 'Paid' AND is_change_order = 0 ORDER BY status, created_at DESC"
-        ).fetchall()
+            f"SELECT * FROM ahb_invoices WHERE is_change_order = 0{status_clause}{year_clause} ORDER BY status, created_at DESC",
+            year_params).fetchall()
         stats['active_items'] = [dict(r) for r in active]
         # Change orders summary
-        row = conn.execute("SELECT count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices WHERE is_change_order = 1").fetchone()
+        row = conn.execute(
+            f"SELECT count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices WHERE is_change_order = 1{year_clause}",
+            year_params).fetchone()
         stats['change_orders'] = {'count': row['cnt'], 'total': row['total']}
         conn.close()
         return jsonify(stats)
@@ -6470,45 +7501,18 @@ def ahb_chat_widget_js():
 
 if CLOUD_ENABLED:
     app.secret_key = os.environ.get('FLASK_SECRET', 'baza-cloud-secret-change-me')
-    login_manager = LoginManager()
-    login_manager.init_app(app)
-    login_manager.login_view = 'cloud_login_page'
 
-    class CloudUser(UserMixin):
-        def __init__(self, id, email, display_name, storage_quota_mb, storage_used_mb, is_admin):
-            self.id = id
-            self.email = email
-            self.display_name = display_name
-            self.storage_quota_mb = storage_quota_mb
-            self.storage_used_mb = storage_used_mb
-            self.is_admin = is_admin
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        try:
-            from core.context_db import get_pool
-            pool = get_pool()
-            conn = pool.getconn()
-            cur = conn.cursor()
-            cur.execute("SELECT id, email, display_name, storage_quota_mb, storage_used_mb, is_admin FROM cloud_users WHERE id=%s AND is_active=TRUE", (int(user_id),))
-            row = cur.fetchone()
-            cur.close()
-            pool.putconn(conn)
-            if row:
-                return CloudUser(*row)
-        except Exception:
-            pass
-        return None
+    # ── Family mode: no auth, fixed user_id=1 (Serge) ──
+    FAMILY_USER_ID = 1
+    FAMILY_STORAGE_QUOTA = 5242880  # 5 TB
 
     @app.route('/cloud')
     def cloud_page():
-        if not current_user.is_authenticated:
-            return redirect('/cloud/login')
-        return render_template('cloud.html', user=current_user)
+        return render_template('cloud.html')
 
     @app.route('/cloud/login')
     def cloud_login_page():
-        return render_template('cloud_login.html')
+        return redirect('/cloud')
 
     @app.route('/api/cloud/register', methods=['POST'])
     def api_cloud_register():
@@ -6574,18 +7578,17 @@ if CLOUD_ENABLED:
         return jsonify({'success': True})
 
     @app.route('/api/cloud/me')
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_me():
-        u = current_user
-        return jsonify({'id': u.id, 'email': u.email, 'name': u.display_name,
-                        'storage_quota_mb': u.storage_quota_mb, 'storage_used_mb': u.storage_used_mb,
-                        'is_admin': u.is_admin})
+        return jsonify({'id': FAMILY_USER_ID, 'email': 'serge@ahb123.com', 'name': 'Serge Tkach',
+                        'storage_quota_mb': FAMILY_STORAGE_QUOTA, 'storage_used_mb': 0,
+                        'is_admin': True})
 
     # ── Cloud File Manager ──
     @app.route('/api/cloud/files')
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_files():
-        user_dir = os.path.join(CLOUD_STORAGE, str(current_user.id))
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
         os.makedirs(user_dir, exist_ok=True)
         subdir = request.args.get('path', '')
         target = os.path.realpath(os.path.join(user_dir, subdir))
@@ -6603,9 +7606,9 @@ if CLOUD_ENABLED:
         return jsonify({'path': subdir, 'items': items})
 
     @app.route('/api/cloud/files/upload', methods=['POST'])
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_upload():
-        user_dir = os.path.join(CLOUD_STORAGE, str(current_user.id))
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
         subdir = request.form.get('path', '')
         target = os.path.realpath(os.path.join(user_dir, subdir))
         if not target.startswith(os.path.realpath(user_dir)):
@@ -6619,19 +7622,19 @@ if CLOUD_ENABLED:
         return jsonify({'success': True, 'files': saved})
 
     @app.route('/api/cloud/files/download/<path:filepath>')
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_download(filepath):
-        user_dir = os.path.join(CLOUD_STORAGE, str(current_user.id))
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
         target = os.path.realpath(os.path.join(user_dir, filepath))
         if not target.startswith(os.path.realpath(user_dir)):
             return jsonify({'error': 'Invalid path'}), 403
         return send_from_directory(os.path.dirname(target), os.path.basename(target), as_attachment=True)
 
     @app.route('/api/cloud/files/mkdir', methods=['POST'])
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_mkdir():
         data = request.json or {}
-        user_dir = os.path.join(CLOUD_STORAGE, str(current_user.id))
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
         new_dir = os.path.realpath(os.path.join(user_dir, data.get('path', '')))
         if not new_dir.startswith(os.path.realpath(user_dir)):
             return jsonify({'error': 'Invalid path'}), 403
@@ -6639,10 +7642,10 @@ if CLOUD_ENABLED:
         return jsonify({'success': True})
 
     @app.route('/api/cloud/files/delete', methods=['POST'])
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_delete():
         data = request.json or {}
-        user_dir = os.path.join(CLOUD_STORAGE, str(current_user.id))
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
         target = os.path.realpath(os.path.join(user_dir, data.get('path', '')))
         if not target.startswith(os.path.realpath(user_dir)):
             return jsonify({'error': 'Invalid path'}), 403
@@ -6654,7 +7657,7 @@ if CLOUD_ENABLED:
 
     # ── Cloud Agent Chat ──
     @app.route('/api/cloud/chat/<agent_id>', methods=['POST'])
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_chat(agent_id):
         """Per-user agent chat -- runs inference via Ollama, stores in per-user context."""
         data = request.json or {}
@@ -6668,7 +7671,7 @@ if CLOUD_ENABLED:
         if not agent_cfg:
             return jsonify({'error': f'Unknown agent: {agent_id}'}), 404
 
-        user_id = current_user.id
+        user_id = FAMILY_USER_ID
 
         try:
             from core.context_db import get_pool
@@ -6740,14 +7743,14 @@ if CLOUD_ENABLED:
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/cloud/chat/<agent_id>/history')
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_chat_history(agent_id):
         try:
             from core.context_db import get_pool
             pool = get_pool()
             conn = pool.getconn()
             cur = conn.cursor()
-            cur.execute("SELECT role, content, created_at FROM cloud_conversations WHERE user_id=%s AND agent_id=%s ORDER BY created_at ASC LIMIT 100", (current_user.id, agent_id))
+            cur.execute("SELECT role, content, created_at FROM cloud_conversations WHERE user_id=%s AND agent_id=%s ORDER BY created_at ASC LIMIT 100", (FAMILY_USER_ID, agent_id))
             msgs = [{'role': r[0], 'content': r[1], 'created_at': str(r[2])} for r in cur.fetchall()]
             cur.close()
             pool.putconn(conn)
@@ -6756,14 +7759,14 @@ if CLOUD_ENABLED:
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/cloud/chat/<agent_id>/clear', methods=['POST'])
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_chat_clear(agent_id):
         try:
             from core.context_db import get_pool
             pool = get_pool()
             conn = pool.getconn()
             cur = conn.cursor()
-            cur.execute("DELETE FROM cloud_conversations WHERE user_id=%s AND agent_id=%s", (current_user.id, agent_id))
+            cur.execute("DELETE FROM cloud_conversations WHERE user_id=%s AND agent_id=%s", (FAMILY_USER_ID, agent_id))
             conn.commit()
             cur.close()
             pool.putconn(conn)
@@ -6772,7 +7775,7 @@ if CLOUD_ENABLED:
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/cloud/memory/<agent_id>', methods=['POST'])
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_memory_set(agent_id):
         data = request.json or {}
         key = data.get('key', '')
@@ -6786,7 +7789,7 @@ if CLOUD_ENABLED:
             cur = conn.cursor()
             cur.execute("""INSERT INTO cloud_agent_memory (user_id, agent_id, key, value, category, updated_at)
                 VALUES (%s,%s,%s,%s,%s,NOW()) ON CONFLICT (user_id, agent_id, key) DO UPDATE SET value=%s, updated_at=NOW()""",
-                (current_user.id, agent_id, key, value, data.get('category','general'), value))
+                (FAMILY_USER_ID, agent_id, key, value, data.get('category','general'), value))
             conn.commit()
             cur.close()
             pool.putconn(conn)
@@ -6796,10 +7799,9 @@ if CLOUD_ENABLED:
 
     # ── Admin: user management ──
     @app.route('/api/cloud/admin/users')
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_admin_users():
-        if not current_user.is_admin:
-            return jsonify({'error': 'Admin only'}), 403
+        # Family mode — all access
         try:
             from core.context_db import get_pool
             pool = get_pool()
@@ -6814,18 +7816,307 @@ if CLOUD_ENABLED:
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/cloud/storage/usage')
-    @login_required
+    # @login_required  # family mode — no auth
     def api_cloud_storage_usage():
-        user_dir = os.path.join(CLOUD_STORAGE, str(current_user.id))
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
         if not os.path.isdir(user_dir):
-            return jsonify({'used_mb': 0, 'quota_mb': current_user.storage_quota_mb, 'percent': 0})
+            return jsonify({'used_mb': 0, 'quota_mb': FAMILY_STORAGE_QUOTA, 'used_gb': 0, 'total_gb': round(FAMILY_STORAGE_QUOTA / 1024), 'percent': 0})
         total = 0
         for root, dirs, files in os.walk(user_dir):
             for f in files:
                 total += os.path.getsize(os.path.join(root, f))
         used_mb = round(total / 1024 / 1024, 1)
-        return jsonify({'used_mb': used_mb, 'quota_mb': current_user.storage_quota_mb,
-                        'percent': round(used_mb / current_user.storage_quota_mb * 100, 1) if current_user.storage_quota_mb else 0})
+        used_gb = round(used_mb / 1024, 2)
+        total_gb = round(FAMILY_STORAGE_QUOTA / 1024)
+        return jsonify({'used_mb': used_mb, 'quota_mb': FAMILY_STORAGE_QUOTA,
+                        'used_gb': used_gb, 'total_gb': total_gb,
+                        'percent': round(used_mb / FAMILY_STORAGE_QUOTA * 100, 1) if FAMILY_STORAGE_QUOTA else 0})
+
+    # ── Cloud Asset Management: Memories + Documents ─────────────────────────
+
+    CLOUD_MEDIA_DIRS = [
+        (os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID)), 'cloud'),
+        ('/mnt/empirepool/media/icloud',  'icloud'),
+        ('/mnt/empirepool/media/generated', 'generated'),
+    ]
+    CLOUD_IMG_EXTS = {'.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.webp','.gif','.bmp'}
+    CLOUD_VID_EXTS = {'.mov','.mp4','.m4v','.avi','.mkv','.webm'}
+    CLOUD_DOC_EXTS = {'.pdf','.doc','.docx','.txt','.csv','.xlsx','.xls','.md','.rtf'}
+    THUMB_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.thumbnails')
+    os.makedirs(THUMB_DIR, exist_ok=True)
+
+    def _init_media_index():
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("""CREATE TABLE IF NOT EXISTS cloud_media_index (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filepath TEXT UNIQUE,
+            filename TEXT,
+            media_type TEXT,
+            source TEXT,
+            date_taken TEXT,
+            time_taken TEXT,
+            latitude REAL,
+            longitude REAL,
+            size INTEGER,
+            favorite INTEGER DEFAULT 0,
+            category TEXT DEFAULT '',
+            indexed_at TEXT DEFAULT (datetime('now'))
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cmi_date ON cloud_media_index(date_taken)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cmi_type ON cloud_media_index(media_type)")
+        conn.commit(); conn.close()
+    _init_media_index()
+
+    def _resolve_media_path(relpath):
+        """Resolve a relative media path to an absolute path across all media dirs."""
+        for base, src in CLOUD_MEDIA_DIRS:
+            full = os.path.realpath(os.path.join(base, relpath))
+            if full.startswith(os.path.realpath(base)) and os.path.exists(full):
+                return full, src
+        return None, None
+
+    def _scan_media_dirs():
+        """Walk all media directories and index files into cloud_media_index."""
+        import hashlib
+        from core.icloud_ingest import extract_exif
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        existing = {r['filepath'] for r in conn.execute("SELECT filepath FROM cloud_media_index").fetchall()}
+        added = 0
+        for base_dir, source in CLOUD_MEDIA_DIRS:
+            if not os.path.isdir(base_dir):
+                continue
+            for root, dirs, files in os.walk(base_dir):
+                dirs[:] = [d for d in dirs if d != '.thumbnails']
+                for fname in files:
+                    full = os.path.join(root, fname)
+                    rel = os.path.relpath(full, base_dir)
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext in CLOUD_IMG_EXTS:
+                        mtype = 'photo'
+                    elif ext in CLOUD_VID_EXTS:
+                        mtype = 'video'
+                    elif ext in CLOUD_DOC_EXTS:
+                        mtype = 'document'
+                    else:
+                        continue
+                    key = f"{source}/{rel}"
+                    if key in existing:
+                        continue
+                    try:
+                        size = os.path.getsize(full)
+                    except Exception:
+                        size = 0
+                    exif = {}
+                    if mtype == 'photo':
+                        try:
+                            exif = extract_exif(full)
+                        except Exception:
+                            pass
+                    date_taken = exif.get('photo_date') or ''
+                    time_taken = exif.get('photo_time') or ''
+                    if not date_taken:
+                        try:
+                            mt = os.path.getmtime(full)
+                            import datetime as _dt
+                            d = _dt.datetime.fromtimestamp(mt)
+                            date_taken = d.strftime('%Y-%m-%d')
+                            time_taken = time_taken or d.strftime('%H:%M')
+                        except Exception:
+                            pass
+                    lat = exif.get('latitude')
+                    lon = exif.get('longitude')
+                    cat = ''
+                    if mtype == 'document':
+                        fl = fname.lower()
+                        if 'permit' in fl: cat = 'permit'
+                        elif 'invoice' in fl or 'inv-' in fl or 'inv_' in fl: cat = 'invoice'
+                        elif 'contract' in fl or 'agreement' in fl: cat = 'contract'
+                        elif 'receipt' in fl: cat = 'receipt'
+                        elif 'estimate' in fl: cat = 'estimate'
+                        elif 'coi' in fl or 'certificate' in fl: cat = 'coi'
+                        else: cat = 'other'
+                    try:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO cloud_media_index "
+                            "(filepath,filename,media_type,source,date_taken,time_taken,"
+                            "latitude,longitude,size,category) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                            (key, fname, mtype, source, date_taken, time_taken, lat, lon, size, cat))
+                        added += 1
+                    except Exception:
+                        pass
+        conn.commit(); conn.close()
+        return added
+
+    @app.route('/api/cloud/thumb/<path:filepath>')
+    def api_cloud_thumb(filepath):
+        """Generate and serve a thumbnail for a media file."""
+        import hashlib
+        size = int(request.args.get('size', 200))
+        size = min(max(size, 50), 600)
+        full, src = _resolve_media_path(filepath)
+        if not full:
+            # Try with source prefix
+            parts = filepath.split('/', 1)
+            if len(parts) == 2:
+                for base, s in CLOUD_MEDIA_DIRS:
+                    if s == parts[0]:
+                        full = os.path.realpath(os.path.join(base, parts[1]))
+                        if full.startswith(os.path.realpath(base)) and os.path.exists(full):
+                            src = s; break
+            if not full:
+                return '', 404
+        ext = os.path.splitext(full)[1].lower()
+        mtime = str(os.path.getmtime(full))
+        cache_key = hashlib.md5((full + mtime).encode()).hexdigest()[:16] + f'_{size}.jpg'
+        cached = os.path.join(THUMB_DIR, cache_key)
+        if os.path.exists(cached):
+            return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
+                                       max_age=86400)
+        if ext in CLOUD_IMG_EXTS:
+            try:
+                try:
+                    import pillow_heif; pillow_heif.register_heif_opener()
+                except ImportError:
+                    pass
+                from PIL import Image
+                img = Image.open(full)
+                img.thumbnail((size, size), Image.LANCZOS)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img.save(cached, 'JPEG', quality=80)
+                return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
+                                           max_age=86400)
+            except Exception:
+                pass
+        # Fallback: 1x1 transparent pixel
+        import base64
+        pixel = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
+        from flask import Response
+        return Response(pixel, mimetype='image/gif')
+
+    @app.route('/api/cloud/media')
+    def api_cloud_media():
+        """Memories-style media listing grouped by date."""
+        refresh = request.args.get('refresh', '') == 'true'
+        source_filter = request.args.get('source', '')
+        fav_only = request.args.get('favorites', '') == 'true'
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        count = conn.execute("SELECT COUNT(*) FROM cloud_media_index WHERE media_type IN ('photo','video')").fetchone()[0]
+        if count == 0 or refresh:
+            conn.close()
+            _scan_media_dirs()
+            conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+            conn.row_factory = sqlite3.Row
+        sql = "SELECT * FROM cloud_media_index WHERE media_type IN ('photo','video')"
+        params = []
+        if source_filter:
+            sql += " AND source=?"; params.append(source_filter)
+        if fav_only:
+            sql += " AND favorite=1"
+        sql += " ORDER BY date_taken DESC, time_taken DESC"
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        conn.close()
+        # Group by year → month → day
+        years = {}
+        for r in rows:
+            dt = r.get('date_taken') or '0000-00-00'
+            parts = dt.split('-')
+            y = parts[0] if len(parts) > 0 else '0000'
+            m = parts[1] if len(parts) > 1 else '00'
+            d = parts[2] if len(parts) > 2 else '00'
+            years.setdefault(y, {'months': {}, 'count': 0, 'cover': None})
+            years[y]['count'] += 1
+            if not years[y]['cover']:
+                years[y]['cover'] = r['filepath']
+            years[y]['months'].setdefault(m, {'days': {}, 'count': 0, 'cover': None})
+            years[y]['months'][m]['count'] += 1
+            if not years[y]['months'][m]['cover']:
+                years[y]['months'][m]['cover'] = r['filepath']
+            years[y]['months'][m]['days'].setdefault(d, [])
+            years[y]['months'][m]['days'][d].append({
+                'path': r['filepath'], 'name': r['filename'], 'date': dt,
+                'time': r.get('time_taken') or '', 'size': r.get('size') or 0,
+                'type': r['media_type'], 'favorite': bool(r.get('favorite')),
+                'has_gps': bool(r.get('latitude')), 'source': r.get('source',''),
+            })
+        return jsonify({'years': years, 'total': len(rows)})
+
+    @app.route('/api/cloud/media/serve/<path:filepath>')
+    def api_cloud_media_serve(filepath):
+        """Serve original media file inline (for lightbox)."""
+        full, src = _resolve_media_path(filepath)
+        if not full:
+            parts = filepath.split('/', 1)
+            if len(parts) == 2:
+                for base, s in CLOUD_MEDIA_DIRS:
+                    if s == parts[0]:
+                        full = os.path.realpath(os.path.join(base, parts[1]))
+                        if full.startswith(os.path.realpath(base)) and os.path.exists(full):
+                            src = s; break
+            if not full:
+                return '', 404
+        return send_from_directory(os.path.dirname(full), os.path.basename(full),
+                                   as_attachment=False)
+
+    @app.route('/api/cloud/media/favorite', methods=['POST'])
+    def api_cloud_media_favorite():
+        data = request.json or {}
+        path = data.get('path', '')
+        fav = 1 if data.get('favorite', True) else 0
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("UPDATE cloud_media_index SET favorite=? WHERE filepath=?", (fav, path))
+        conn.commit(); conn.close()
+        return jsonify({'success': True})
+
+    @app.route('/api/cloud/media/reindex', methods=['POST'])
+    def api_cloud_media_reindex():
+        added = _scan_media_dirs()
+        return jsonify({'success': True, 'added': added})
+
+    @app.route('/api/cloud/documents')
+    def api_cloud_documents():
+        cat = request.args.get('category', '')
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        count = conn.execute("SELECT COUNT(*) FROM cloud_media_index WHERE media_type='document'").fetchone()[0]
+        if count == 0:
+            conn.close(); _scan_media_dirs()
+            conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+            conn.row_factory = sqlite3.Row
+        sql = "SELECT * FROM cloud_media_index WHERE media_type='document'"
+        params = []
+        if cat and cat != 'all':
+            sql += " AND category=?"; params.append(cat)
+        sql += " ORDER BY date_taken DESC, filename"
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        conn.close()
+        return jsonify(rows)
+
+    @app.route('/api/cloud/documents/categorize', methods=['POST'])
+    def api_cloud_documents_categorize():
+        data = request.json or {}
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("UPDATE cloud_media_index SET category=? WHERE filepath=?",
+                     (data.get('category','other'), data.get('path','')))
+        conn.commit(); conn.close()
+        return jsonify({'success': True})
+
+    @app.route('/api/cloud/files/rename', methods=['POST'])
+    def api_cloud_rename():
+        data = request.json or {}
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
+        old = os.path.realpath(os.path.join(user_dir, data.get('path', '')))
+        if not old.startswith(os.path.realpath(user_dir)) or not os.path.exists(old):
+            return jsonify({'error': 'Invalid path'}), 403
+        new_name = re.sub(r'[^\w.\-]', '_', data.get('new_name', ''))
+        if not new_name:
+            return jsonify({'error': 'Name required'}), 400
+        new = os.path.join(os.path.dirname(old), new_name)
+        os.rename(old, new)
+        return jsonify({'success': True, 'new_name': new_name})
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Public Review Page + QR Code + AHB123 Project Photos
@@ -9109,14 +10400,8 @@ def api_geocode_run():
 # ── iCloud Ingest Pipeline (admin + multi-tenant) ────────────────────────────
 
 def _icloud_user_id():
-    """Return cloud user_id if logged in, else None (admin/Serge mode)."""
-    if CLOUD_ENABLED:
-        try:
-            if current_user and current_user.is_authenticated:
-                return current_user.id
-        except Exception:
-            pass
-    return None
+    """Return cloud user_id — family mode always returns Serge."""
+    return FAMILY_USER_ID if CLOUD_ENABLED else None
 
 @app.route('/api/icloud/accounts', methods=['GET'])
 def api_icloud_accounts():

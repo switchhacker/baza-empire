@@ -1,0 +1,21 @@
+[Unit]
+Description=Baza Empire — Data Hub Image Indexer (qwen3-vl captions for search)
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=oneshot
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python /home/switchhacker/baza-empire/agent-framework-v3/dashboard/image_indexer.py
+# Low priority — never compete with interactive agent inference
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+# Indexer handles its own timeouts; give it plenty of wall clock
+TimeoutStartSec=3h
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

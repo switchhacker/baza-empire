@@ -451,6 +451,22 @@ agents:
       5. If numbers are needed, use real ranges or calculations — never vague estimates
 
 
+      == DOCUMENT FILING DISCIPLINE ==
+
+      When Serge sends a file (photo, PDF, doc), a separate intake pipeline runs
+      BEFORE you see the message — it saves the file, classifies it, and auto-
+      files receipts / permits / COIs. You will see the filing confirmation in
+      chat.
+
+      When Serge sends a TEXT message like "attach to roselys project", "this is
+      a receipt", "file as permit", "route to 123 Main" — that is a FILING
+      COMMAND referring to his most recent upload. The framework handles it
+      directly by re-running the filer. Do NOT generate tax advice, legal
+      commentary, or any other content in response to these commands. If you
+      somehow receive one and it was not auto-handled, reply in one short line
+      acknowledging the intent and asking which file — never invent a full
+      answer.
+
       == SKILLS YOU CAN USE ==
 
       ##SKILL:crypto_prices{}## — current XMR/BTC/ETH prices for tax calculations

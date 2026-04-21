@@ -97,31 +97,76 @@ FIXTURE_KEYWORDS = ["light", "lamp", "pendant", "chandelier", "sconce", "faucet"
 ADD_KEYWORDS = ["add", "install", "put", "place", "build", "create", "island"]
 REMOVE_KEYWORDS = ["remove", "demolish", "take out", "tear out", "clear", "empty"]
 
-# Higher strength = more creative freedom in masked area
-# For inpainting: 0.75-0.95 is typical (we're only changing the masked region)
+# Denoising strength: controls how much SD can change.
+# ControlNet depth locks geometry — strength controls CONTENT freedom.
+# Objects (cabinets, appliances) NEED high strength to appear.
 if any(k in edit_lower for k in REMOVE_KEYWORDS):
-    strength = 0.95  # Full reimagine of masked area
-elif any(k in edit_lower for k in ADD_KEYWORDS):
-    strength = 0.85  # Need room to add new objects
+    strength = 0.80  # Need freedom to fill removed area
+elif any(k in edit_lower for k in ADD_KEYWORDS + CABINET_KEYWORDS):
+    strength = 0.80  # Objects MUST have room to appear
+elif any(k in edit_lower for k in COUNTER_KEYWORDS + FIXTURE_KEYWORDS):
+    strength = 0.75  # Counters/fixtures need moderate freedom
 elif any(k in edit_lower for k in WALL_KEYWORDS):
-    strength = 0.80  # Walls need full repaint
+    strength = 0.65  # Walls are surface changes
 elif any(k in edit_lower for k in FLOOR_KEYWORDS):
-    strength = 0.85  # Floors need full replacement
-elif any(k in edit_lower for k in CABINET_KEYWORDS + COUNTER_KEYWORDS):
-    strength = 0.85  # Cabinets/counters are major changes
+    strength = 0.70  # Floors need moderate change
 else:
-    strength = 0.80  # Default for mixed edits
+    strength = 0.75  # Default
+
+# ── Persistent room spec ────────────────────────────────────────────────────
+# These are the BASE conditions of the room that NEVER change unless the user
+# explicitly asks to change them. Every prompt includes this as ground truth.
+# The context file can override these if the user has set custom values.
+DEFAULT_ROOM_SPEC = {
+    "walls": "white painted walls, clean flat white paint, eggshell finish",
+    "ceiling": "white ceiling, flat white paint",
+    "floor": "natural pine plank flooring, 4 inch wide planks, clear polyurethane finish, warm wood tone",
+    "lighting": "natural lighting from existing windows",
+}
+
+# Load any user-customized room spec from context, or use defaults
+room_spec = context.get("room_spec", {})
+for k, v in DEFAULT_ROOM_SPEC.items():
+    if k not in room_spec:
+        room_spec[k] = v
+
+# Check if the edit explicitly changes a base element — if so, update the spec
+for key, keywords in [
+    ("walls", WALL_KEYWORDS),
+    ("floor", FLOOR_KEYWORDS),
+    ("ceiling", ["ceiling"]),
+]:
+    if any(k in edit_lower for k in keywords):
+        # User is changing this element — let the edit override the spec
+        room_spec[key] = edit_request
+
+# Save updated room spec to context for future edits
+context["room_spec"] = room_spec
 
 # ── Build prompt ────────────────────────────────────────────────────────────
-# For inpainting: prompt describes ONLY what goes in the masked area
-# Not the whole room — just the replacement content
-prompt_parts = [edit_request]
+# Prompt = persistent room base + specific edit + quality tags
+# This ensures walls/floors/ceiling ALWAYS match the spec unless user changes them
+
+# Build the room base description from spec
+room_base = ", ".join([
+    room_spec["walls"],
+    room_spec["ceiling"],
+    room_spec["floor"],
+    room_spec["lighting"],
+])
+
+# EDIT REQUEST FIRST — SD heavily weights the start of the prompt.
+# Room spec comes second as the environment context.
+prompt_parts = [
+    edit_request,
+    f"in a room with {room_base}",
+]
 if ref_data:
     prompt_parts.append(ref_data)
 prompt_parts.append(
-    "photorealistic, professional interior photography, natural lighting, "
+    "photorealistic, professional interior photography, "
     "8k quality, sharp focus, architecturally accurate proportions, "
-    "seamless integration with existing room, matching perspective"
+    "same room same camera angle same perspective"
 )
 prompt = ", ".join(prompt_parts)
 
@@ -129,8 +174,19 @@ negative = (
     ARCHITECTURE_NEGATIVE + ", "
     "mismatched perspective, floating objects, impossible architecture, "
     "wrong proportions, oversized, undersized, warped, bent walls, "
-    "different camera angle, different viewpoint, rotated view"
+    "different camera angle, different viewpoint, rotated view, "
+    "different wall color, colored walls, textured walls, wallpaper, "
+    "different floor, carpet, tile floor, concrete floor, "
+    "different ceiling, colored ceiling, drop ceiling"
 )
+
+# Only negate wall/floor/ceiling changes if we're NOT changing them
+if any(k in edit_lower for k in WALL_KEYWORDS):
+    negative = negative.replace("different wall color, colored walls, textured walls, wallpaper, ", "")
+if any(k in edit_lower for k in FLOOR_KEYWORDS):
+    negative = negative.replace("different floor, carpet, tile floor, concrete floor, ", "")
+if "ceiling" in edit_lower:
+    negative = negative.replace("different ceiling, colored ceiling, drop ceiling", "")
 
 # ── Check SD WebUI ───────��──────────────────────────────────────────────────
 try:
@@ -217,31 +273,20 @@ if mask_b64:
 # - Depth locks spatial relationships (walls stay at correct distances)
 # - Canny locks structural edges (window frames, door frames, wall corners)
 # Together they create an immovable skeleton that inpainting fills around.
+# Single ControlNet: depth_anything_v2 — preserves room geometry
+# (dual CN OOMs on 8GB NVIDIA — depth alone is the most critical)
 payload.setdefault("alwayson_scripts", {})
 payload["alwayson_scripts"]["controlnet"] = {
     "args": [
         {
-            # ControlNet Unit 0: Depth — preserves room spatial layout
             "input_image": img_b64,
             "module": "depth_anything_v2",
             "model": "diffusers_xl_depth_full [2f51180b]",
-            "weight": 0.9,            # High weight — room geometry is sacred
+            "weight": 0.9,
             "resize_mode": 1,
-            "control_mode": 0,         # Balanced
+            "control_mode": 0,         # Balanced — depth guides but prompt can add objects
             "guidance_start": 0.0,
-            "guidance_end": 0.85,      # Hold depth through most of generation
-            "pixel_perfect": True,
-        },
-        {
-            # ControlNet Unit 1: Canny — preserves structural edges
-            "input_image": img_b64,
-            "module": "canny",
-            "model": "diffusers_xl_canny_full [2b69fca4]",
-            "weight": 0.5,            # Medium weight — edges guide but don't dominate
-            "resize_mode": 1,
-            "control_mode": 0,
-            "guidance_start": 0.0,
-            "guidance_end": 0.6,       # Release edges earlier to allow material changes
+            "guidance_end": 0.85,
             "pixel_perfect": True,
         },
     ]
@@ -261,17 +306,10 @@ for variant_idx in range(num_variants):
     if "alwayson_scripts" in payload:
         variant_payload["alwayson_scripts"] = json.loads(json.dumps(payload["alwayson_scripts"]))
 
-    # OOM fallback chain
+    # OOM fallback chain: depth CN → plain img2img
     fallbacks = [
-        ("full (depth+canny)", variant_payload),
+        ("depth controlnet", variant_payload),
     ]
-    # Fallback: depth only (drop canny)
-    depth_only = json.loads(json.dumps(variant_payload))
-    if "controlnet" in depth_only.get("alwayson_scripts", {}):
-        cn_args = depth_only["alwayson_scripts"]["controlnet"]["args"]
-        depth_only["alwayson_scripts"]["controlnet"]["args"] = cn_args[:1]  # Keep only depth
-    fallbacks.append(("depth only", depth_only))
-    # Fallback: plain img2img
     plain = {k: v for k, v in variant_payload.items() if k != "alwayson_scripts"}
     fallbacks.append(("plain", plain))
 

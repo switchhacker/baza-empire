@@ -116,6 +116,18 @@ def get_pg():
                             password=os.environ.get("DB_PASSWORD", "baza2026"))
 
 
+def log_activity(agent_id: str, summary: str, task_type: str = "cron_task",
+                 requested_by: str = "cron", status: str = "completed", **kwargs):
+    """Log an entry to the activity feed (task_journal in PostgreSQL)."""
+    try:
+        from core.context_db import journal_log
+        journal_log(agent_id=agent_id, task_type=task_type,
+                    task_description=summary, action_summary=summary,
+                    requested_by=requested_by, status=status, **kwargs)
+    except Exception as e:
+        log.warning(f"log_activity failed: {e}")
+
+
 def today():
     return datetime.date.today().isoformat()
 

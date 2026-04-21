@@ -22,8 +22,26 @@
     /* ── LAYOUT ── */
     .cloud-body{display:flex;flex:1;overflow:hidden}
 
+    /* ── DRAWER TOGGLE (mobile) ── */
+    .drawer-toggle{display:none;background:#111;color:#e0e0e0;border:1px solid #1a1a3a;padding:8px 12px;border-radius:6px;font-size:20px;cursor:pointer;line-height:1;margin-right:4px}
+    .drawer-toggle:active{background:#1a1a2e}
+    .drawer-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:98;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+    .drawer-backdrop.open{display:block;animation:fadeIn .2s}
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
     /* ── SIDEBAR ── */
     .sidebar{width:260px;flex-shrink:0;background:#0a0a16;border-right:1px solid #1a1a2e;display:flex;flex-direction:column;overflow:hidden}
+
+    @media (max-width:768px){
+      .cloud-nav{padding:0 12px;gap:10px}
+      .nav-user{display:none}
+      .drawer-toggle{display:inline-flex;align-items:center;justify-content:center}
+      .sidebar{position:fixed;top:0;left:0;bottom:0;width:280px;max-width:85vw;z-index:99;transform:translateX(-100%);transition:transform .28s cubic-bezier(.32,.72,0,1);box-shadow:0 0 40px rgba(0,0,0,.7);padding-top:env(safe-area-inset-top)}
+      .sidebar.open{transform:translateX(0)}
+      .chat-messages{padding:14px 12px}
+      .chat-header{padding:12px 14px}
+      .chat-input-area{padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+    }
     .sidebar-title{font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:2px;padding:18px 18px 10px}
 
     .agent-list{flex:1;overflow-y:auto;padding:0 10px 10px}
@@ -109,6 +127,8 @@
     /* ── FILES VIEW ── */
     .files-view{flex:1;display:flex;flex-direction:column;overflow:hidden}
     .files-view.hidden{display:none}
+    .memories-view.hidden{display:none}
+    .documents-view.hidden{display:none}
 
     .files-toolbar{padding:14px 24px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:12px;flex-shrink:0;background:#0a0a16;flex-wrap:wrap}
     .breadcrumb{display:flex;align-items:center;gap:4px;font-size:13px;flex:1}
@@ -185,18 +205,95 @@
     .modal-btns{display:flex;gap:8px;justify-content:flex-end}
     .btn-modal-cancel{background:#111;color:#888;border:1px solid #1a1a2e;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
     .btn-modal-ok{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+
+    /* ── MEMORIES ── */
+    .memories-view{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .memories-toolbar{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid #1a1a2e;flex-shrink:0;background:#0a0a16}
+    .mem-crumb{display:flex;align-items:center;gap:6px;flex:1;font-size:13px}
+    .mem-crumb-item{color:#888;cursor:pointer;font-weight:600;transition:color .15s}
+    .mem-crumb-item:hover{color:#fff}
+    .mem-crumb-item.active{color:#fff;cursor:default}
+    .mem-crumb-sep{color:#333;font-size:10px}
+    .mem-zoom{display:flex;align-items:center;gap:4px}
+    .mem-zoom button{width:28px;height:28px;border-radius:6px;background:#111;border:1px solid #1a1a2e;color:#888;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+    .mem-zoom button:hover{background:#1a1a2e;color:#fff}
+    .mem-filter-btn{padding:5px 12px;border-radius:16px;background:#111;border:1px solid #1a1a2e;color:#888;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}
+    .mem-filter-btn:hover,.mem-filter-btn.active{background:#7c3aed22;border-color:#7c3aed;color:#c4b5fd}
+    .memories-area{flex:1;overflow-y:auto;padding:16px 20px}
+    .memories-area::-webkit-scrollbar{width:5px}
+    .memories-area::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:4px}
+    .mem-year-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+    .mem-year-card{position:relative;border-radius:12px;overflow:hidden;cursor:pointer;aspect-ratio:16/10;background:#111}
+    .mem-year-card img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
+    .mem-year-card:hover img{transform:scale(1.05)}
+    .mem-year-overlay{position:absolute;inset:0;background:linear-gradient(transparent 40%,rgba(0,0,0,.8));display:flex;flex-direction:column;justify-content:flex-end;padding:16px}
+    .mem-year-label{font-size:28px;font-weight:900;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+    .mem-year-count{font-size:12px;color:#aaa}
+    .mem-month-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+    .mem-month-card{position:relative;border-radius:10px;overflow:hidden;cursor:pointer;aspect-ratio:4/3;background:#111}
+    .mem-month-card img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
+    .mem-month-card:hover img{transform:scale(1.05)}
+    .mem-day-section{margin-bottom:24px}
+    .mem-day-header{font-size:14px;font-weight:800;color:#fff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #1a1a2e}
+    .mem-day-header span{color:#555;font-weight:400;font-size:12px;margin-left:8px}
+    .mem-photo-grid{display:grid;gap:3px}
+    .mem-thumb{position:relative;overflow:hidden;cursor:pointer;border-radius:4px;aspect-ratio:1;background:#111}
+    .mem-thumb img{width:100%;height:100%;object-fit:cover;transition:transform .2s}
+    .mem-thumb:hover img{transform:scale(1.08)}
+    .mem-thumb .fav-dot{position:absolute;top:4px;right:4px;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.8);display:none}
+    .mem-thumb.is-fav .fav-dot{display:block}
+    .mem-thumb .vid-badge{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700}
+
+    /* ── LIGHTBOX ── */
+    .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:500;display:none;flex-direction:column;align-items:center;justify-content:center}
+    .lightbox.open{display:flex}
+    .lb-close{position:absolute;top:16px;right:20px;font-size:28px;color:#888;cursor:pointer;z-index:510;transition:color .15s;background:none;border:none}
+    .lb-close:hover{color:#fff}
+    .lb-nav{position:absolute;top:50%;transform:translateY(-50%);font-size:36px;color:#555;cursor:pointer;z-index:510;padding:20px;transition:color .15s;background:none;border:none;user-select:none}
+    .lb-nav:hover{color:#fff}
+    .lb-prev{left:8px}
+    .lb-next{right:8px}
+    .lb-content{max-width:92vw;max-height:80vh;display:flex;align-items:center;justify-content:center}
+    .lb-content img{max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px}
+    .lb-content video{max-width:92vw;max-height:80vh;border-radius:4px}
+    .lb-info{text-align:center;padding:12px;font-size:12px;color:#888}
+    .lb-info .lb-name{color:#ddd;font-weight:700;font-size:13px}
+    .lb-actions{display:flex;gap:12px;padding:8px}
+    .lb-actions button{background:#1a1a2e;border:1px solid #2a2a4a;color:#aaa;width:40px;height:40px;border-radius:50%;font-size:18px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center}
+    .lb-actions button:hover{background:#2a2a5a;color:#fff}
+    .lb-actions button.fav-active{color:#e94560;border-color:#e94560}
+
+    /* ── DOCUMENTS VIEW ── */
+    .documents-view{flex:1;display:flex;flex-direction:column;overflow:hidden}
+    .docs-toolbar{display:flex;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid #1a1a2e;flex-shrink:0;background:#0a0a16;flex-wrap:wrap}
+    .docs-title{font-size:16px;font-weight:800;color:#fff;margin-right:12px}
+    .docs-cats{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+    .doc-cat-btn{padding:5px 12px;border-radius:16px;background:#111;border:1px solid #1a1a2e;color:#888;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s}
+    .doc-cat-btn:hover,.doc-cat-btn.active{background:#e9456022;border-color:#e94560;color:#ff8a9e}
+    .docs-area{flex:1;overflow-y:auto;padding:16px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;align-content:start}
+    .docs-area::-webkit-scrollbar{width:5px}
+    .docs-area::-webkit-scrollbar-thumb{background:#1a1a2e;border-radius:4px}
+    .doc-card{background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:14px;display:flex;gap:12px;cursor:pointer;transition:border-color .15s}
+    .doc-card:hover{border-color:#2a2a5a}
+    .doc-icon{width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+    .doc-meta{flex:1;min-width:0}
+    .doc-name{font-size:13px;font-weight:700;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .doc-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;margin-top:4px}
+    .doc-detail{font-size:10px;color:#555;margin-top:4px}
   </style>
 </head>
 <body>
 
 <!-- NAV -->
 <nav class="cloud-nav">
-  <div class="cloud-brand"><span>&#9729;</span> BAZA CLOUD</div>
+  <button class="drawer-toggle" onclick="toggleDrawer()" aria-label="Menu">&#9776;</button>
+  <a href="/" class="cloud-brand"><span>&#9729;</span> BAZA CLOUD</a>
+  <a href="/ahb123" style="color:#555;font-size:12px;font-weight:600">AHB123</a>
   <div class="nav-spacer"></div>
-  <span class="nav-user" id="nav-display-name">{{ user.display_name }}</span>
-  <span class="nav-storage" id="nav-storage">-- / 200 GB</span>
-  <button class="btn-logout" onclick="logout()">Logout</button>
+  <span class="nav-user">Tkach Family</span>
+  <span class="nav-storage" id="nav-storage">-- / 5000 GB</span>
 </nav>
+<div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
 
 <!-- BODY -->
 <div class="cloud-body">
@@ -249,8 +346,17 @@
     </div>
 
     <div class="sidebar-divider"></div>
+    <button class="sidebar-btn" onclick="showMemories()" id="btn-memories">
+      <span>&#128248;</span> Memories
+    </button>
+    <button class="sidebar-btn" onclick="showDocuments()" id="btn-documents">
+      <span>&#128196;</span> Documents
+    </button>
     <button class="sidebar-btn" onclick="showFiles()" id="btn-my-files">
       <span>&#128193;</span> My Files
+    </button>
+    <button class="sidebar-btn" onclick="showICloud()" id="btn-icloud">
+      <span>&#9729;</span> iCloud Import
     </button>
   </div>
 
@@ -317,6 +423,98 @@
       </div>
     </div>
 
+    <!-- iCloud Import view -->
+    <div class="files-view hidden" id="icloud-view" style="padding:24px;overflow-y:auto">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <span style="font-size:28px">&#9729;</span>
+        <div>
+          <h2 style="font-size:18px;font-weight:800;color:#fff;margin:0">iCloud Import</h2>
+          <div style="font-size:12px;color:#555">Sync iCloud photos to Baza Cloud. Jobsite photos auto-file to AHB123 projects.</div>
+        </div>
+      </div>
+
+      <!-- Connected accounts -->
+      <div style="margin-bottom:20px">
+        <h3 style="font-size:13px;color:#888;font-weight:700;margin-bottom:10px">Connected Accounts</h3>
+        <div id="icloud-accounts" style="display:flex;flex-direction:column;gap:8px">
+          <div style="color:#444;font-size:12px;padding:20px;text-align:center">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Add account -->
+      <div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px">
+        <h3 style="font-size:13px;color:#888;font-weight:700;margin-bottom:12px">Add iCloud Account</h3>
+        <div style="font-size:11px;color:#555;margin-bottom:12px">Use an app-specific password (not your main Apple password). Generate one at appleid.apple.com &gt; Sign-In and Security &gt; App-Specific Passwords.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:180px">
+            <label style="font-size:10px;color:#555;display:block;margin-bottom:4px">Apple ID (email)</label>
+            <input type="email" id="ic-apple-id" placeholder="serge@icloud.com" style="width:100%;background:#07070f;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:12px">
+          </div>
+          <div style="flex:1;min-width:180px">
+            <label style="font-size:10px;color:#555;display:block;margin-bottom:4px">App-Specific Password</label>
+            <input type="password" id="ic-app-pwd" placeholder="xxxx-xxxx-xxxx-xxxx" style="width:100%;background:#07070f;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:12px">
+          </div>
+          <button onclick="addICloudAccount()" style="background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Connect</button>
+        </div>
+        <div id="ic-add-status" style="font-size:11px;margin-top:8px;min-height:16px"></div>
+      </div>
+
+      <!-- Sync status -->
+      <div style="margin-top:20px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px">
+        <h3 style="font-size:13px;color:#888;font-weight:700;margin-bottom:10px">Sync Status</h3>
+        <div id="icloud-status" style="font-size:12px;color:#555">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Memories view -->
+    <div class="memories-view hidden" id="memories-view">
+      <div class="memories-toolbar">
+        <div class="mem-crumb" id="mem-crumb"></div>
+        <div class="mem-zoom">
+          <button onclick="memZoom(-1)">&#8722;</button>
+          <button onclick="memZoom(1)">&#43;</button>
+        </div>
+        <button class="mem-filter-btn" id="mem-fav-btn" onclick="toggleMemFav()">&#9829; Favorites</button>
+        <button class="mem-filter-btn" onclick="reindexMedia()">&#8635; Scan</button>
+      </div>
+      <div class="memories-area" id="memories-area">
+        <div style="text-align:center;padding:60px;color:#333">Loading memories...</div>
+      </div>
+    </div>
+
+    <!-- Documents view -->
+    <div class="documents-view hidden" id="documents-view">
+      <div class="docs-toolbar">
+        <div class="docs-title">Documents</div>
+        <div class="docs-cats" id="docs-cats">
+          <button class="doc-cat-btn active" data-cat="all" onclick="filterDocs('all')">All</button>
+          <button class="doc-cat-btn" data-cat="permit" onclick="filterDocs('permit')">Permits</button>
+          <button class="doc-cat-btn" data-cat="contract" onclick="filterDocs('contract')">Contracts</button>
+          <button class="doc-cat-btn" data-cat="invoice" onclick="filterDocs('invoice')">Invoices</button>
+          <button class="doc-cat-btn" data-cat="receipt" onclick="filterDocs('receipt')">Receipts</button>
+          <button class="doc-cat-btn" data-cat="estimate" onclick="filterDocs('estimate')">Estimates</button>
+          <button class="doc-cat-btn" data-cat="coi" onclick="filterDocs('coi')">COI</button>
+          <button class="doc-cat-btn" data-cat="other" onclick="filterDocs('other')">Other</button>
+        </div>
+      </div>
+      <div class="docs-area" id="docs-area">
+        <div style="text-align:center;padding:60px;color:#333;grid-column:1/-1">Loading documents...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+  <button class="lb-close" onclick="closeLightbox()">&#10005;</button>
+  <button class="lb-nav lb-prev" onclick="lbNav(-1)">&#10094;</button>
+  <button class="lb-nav lb-next" onclick="lbNav(1)">&#10095;</button>
+  <div class="lb-content" id="lb-content"></div>
+  <div class="lb-info" id="lb-info"></div>
+  <div class="lb-actions">
+    <button id="lb-fav-btn" onclick="lbToggleFav()">&#9829;</button>
+    <button onclick="lbDownload()">&#8681;</button>
   </div>
 </div>
 
@@ -344,6 +542,17 @@
 </div>
 
 <script>
+/* ── DRAWER (mobile) ── */
+function toggleDrawer(){ document.querySelector('.sidebar').classList.toggle('open'); document.getElementById('drawerBackdrop').classList.toggle('open'); }
+function closeDrawer(){ document.querySelector('.sidebar').classList.remove('open'); document.getElementById('drawerBackdrop').classList.remove('open'); }
+document.addEventListener('DOMContentLoaded', () => {
+  // Close drawer when tapping any sidebar item (only on narrow screens)
+  const sb = document.querySelector('.sidebar');
+  if (sb) sb.addEventListener('click', e => {
+    if (window.innerWidth <= 768 && (e.target.closest('.agent-item') || e.target.closest('.sidebar-btn'))) closeDrawer();
+  });
+});
+
 /* ── STATE ── */
 let currentAgent = null;
 let currentPath = '';
@@ -369,25 +578,16 @@ document.addEventListener('DOMContentLoaded', () => {
   setupDragDrop();
 });
 
-/* ── AUTH ── */
-async function logout() {
-  await fetch('/api/cloud/logout', {method:'POST'});
-  window.location.href = '/cloud/login';
-}
+/* ── AUTH removed — family mode ── */
 
 /* ── AGENT CHAT ── */
 function selectAgent(agentId) {
   currentAgent = agentId;
 
-  // Update sidebar active state
+  _hideAllViews();
   document.querySelectorAll('.agent-item').forEach(el => {
     el.classList.toggle('active', el.dataset.agent === agentId);
   });
-  document.getElementById('btn-my-files').classList.remove('active');
-
-  // Show chat view
-  document.getElementById('no-agent-view').classList.add('hidden');
-  document.getElementById('files-view').classList.add('hidden');
   document.getElementById('chat-view').classList.remove('hidden');
 
   // Set header
@@ -518,16 +718,31 @@ function setupTextarea() {
 }
 
 /* ── FILES ── */
+function _hideAllViews(){
+  ['no-agent-view','chat-view','files-view','icloud-view','memories-view','documents-view'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.classList.add('hidden');
+  });
+  document.querySelectorAll('.agent-item').forEach(el=>el.classList.remove('active'));
+  ['btn-my-files','btn-icloud','btn-memories','btn-documents'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.classList.remove('active');
+  });
+}
+
 function showFiles() {
   currentAgent = null;
-  document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
+  _hideAllViews();
   document.getElementById('btn-my-files').classList.add('active');
-
-  document.getElementById('no-agent-view').classList.add('hidden');
-  document.getElementById('chat-view').classList.add('hidden');
   document.getElementById('files-view').classList.remove('hidden');
-
   loadFiles('');
+}
+
+function showICloud() {
+  currentAgent = null;
+  _hideAllViews();
+  document.getElementById('btn-icloud').classList.add('active');
+  document.getElementById('icloud-view').classList.remove('hidden');
+  loadICloudAccounts();
+  loadICloudStatus();
 }
 
 async function loadFiles(path) {
@@ -777,12 +992,14 @@ async function loadStorageUsage() {
     const res = await fetch('/api/cloud/storage/usage');
     const data = await res.json();
     const usedGB = data.used_gb || 0;
-    const totalGB = data.total_gb || 200;
+    const totalGB = data.total_gb || 5000;
     const pct = totalGB > 0 ? ((usedGB / totalGB) * 100).toFixed(1) : 0;
+    const fmtTotal = totalGB >= 1000 ? (totalGB/1024).toFixed(0)+' TB' : totalGB+' GB';
+    const fmtUsed = usedGB >= 1024 ? (usedGB/1024).toFixed(1)+' TB' : usedGB.toFixed(1)+' GB';
 
     document.getElementById('storage-fill').style.width = pct + '%';
-    document.getElementById('storage-text').textContent = `${usedGB.toFixed(1)} GB / ${totalGB} GB (${pct}%)`;
-    document.getElementById('nav-storage').textContent = `${usedGB.toFixed(1)} / ${totalGB} GB`;
+    document.getElementById('storage-text').textContent = `${fmtUsed} / ${fmtTotal} (${pct}%)`;
+    document.getElementById('nav-storage').textContent = `${fmtUsed} / ${fmtTotal}`;
   } catch (e) {
     document.getElementById('storage-text').textContent = 'Unable to load storage info';
   }
@@ -836,6 +1053,387 @@ document.addEventListener('keydown', e => {
     createFolder();
   }
 });
+
+/* ===================== MEMORIES ===================== */
+const ZOOM_SIZES=[80,120,160,220,280];
+const MONTHS_LABEL=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let memData=null, memLevel='years', memYear=null, memMonth=null, memZoomIdx=2, memFavOnly=false;
+let lbItems=[], lbIdx=0;
+
+function showMemories(){
+  _hideAllViews();
+  document.getElementById('btn-memories').classList.add('active');
+  document.getElementById('memories-view').classList.remove('hidden');
+  if(!memData)loadMemData();
+  else renderMem();
+}
+
+async function loadMemData(){
+  const area=document.getElementById('memories-area');
+  area.innerHTML='<div style="text-align:center;padding:60px;color:#555">Scanning media...</div>';
+  try{
+    const r=await fetch('/api/cloud/media'+(memFavOnly?'?favorites=true':''));
+    memData=await r.json();
+    renderMem();
+  }catch(e){area.innerHTML='<div style="color:#ff4444;padding:40px;text-align:center">'+e.message+'</div>';}
+}
+
+function renderMem(){
+  renderMemCrumb();
+  const area=document.getElementById('memories-area');
+  if(!memData||!memData.total){
+    area.innerHTML='<div style="text-align:center;padding:80px;color:#444"><div style="font-size:48px;margin-bottom:16px">&#128248;</div><div style="font-size:16px;font-weight:700;color:#555">No memories yet</div><div style="font-size:12px;margin-top:8px">Upload photos or connect iCloud to get started</div></div>';
+    return;
+  }
+  if(memLevel==='years')renderMemYears(area);
+  else if(memLevel==='months')renderMemMonths(area);
+  else if(memLevel==='days')renderMemDays(area);
+}
+
+function renderMemCrumb(){
+  const el=document.getElementById('mem-crumb');
+  let html='<span class="mem-crumb-item'+(memLevel==='years'?' active':'')+'" onclick="memDrill(\'years\')">All Years</span>';
+  if(memYear){
+    html+='<span class="mem-crumb-sep">&#10095;</span>';
+    html+='<span class="mem-crumb-item'+(memLevel==='months'?' active':'')+'" onclick="memDrill(\'months\')">'+memYear+'</span>';
+  }
+  if(memMonth){
+    html+='<span class="mem-crumb-sep">&#10095;</span>';
+    html+='<span class="mem-crumb-item active">'+MONTHS_LABEL[parseInt(memMonth)]+'</span>';
+  }
+  html+='<span style="margin-left:auto;font-size:11px;color:#444">'+memData.total+' items</span>';
+  el.innerHTML=html;
+}
+
+function renderMemYears(area){
+  const yrs=Object.keys(memData.years).sort().reverse();
+  area.innerHTML='<div class="mem-year-grid">'+yrs.map(y=>{
+    const yd=memData.years[y];
+    const cover=yd.cover?'/api/cloud/thumb/'+encodeURIComponent(yd.cover)+'?size=400':'';
+    return `<div class="mem-year-card" onclick="memDrill('months','${y}')">
+      ${cover?`<img src="${cover}" loading="lazy" onerror="this.style.display='none'">`:''}
+      <div class="mem-year-overlay"><div class="mem-year-label">${y}</div><div class="mem-year-count">${yd.count} photos</div></div>
+    </div>`;
+  }).join('')+'</div>';
+}
+
+function renderMemMonths(area){
+  const months=Object.keys(memData.years[memYear]?.months||{}).sort().reverse();
+  area.innerHTML='<div class="mem-month-grid">'+months.map(m=>{
+    const md=memData.years[memYear].months[m];
+    const cover=md.cover?'/api/cloud/thumb/'+encodeURIComponent(md.cover)+'?size=300':'';
+    return `<div class="mem-month-card" onclick="memDrill('days','${memYear}','${m}')">
+      ${cover?`<img src="${cover}" loading="lazy" onerror="this.style.display='none'">`:''}
+      <div class="mem-year-overlay"><div class="mem-year-label">${MONTHS_LABEL[parseInt(m)]}</div><div class="mem-year-count">${md.count} photos</div></div>
+    </div>`;
+  }).join('')+'</div>';
+}
+
+function renderMemDays(area){
+  const md=memData.years[memYear] && memData.years[memYear].months[memMonth];
+  const days=Object.keys((md && md.days)||{}).sort().reverse();
+  const sz=ZOOM_SIZES[memZoomIdx];
+  let html='';
+  let allItems=[];
+  days.forEach(function(d){
+    const items=md.days[d];
+    const startIdx=allItems.length;
+    items.forEach(function(it){allItems.push(it);});
+    const dateStr=memYear+'-'+memMonth+'-'+d;
+    const dateObj=new Date(dateStr+'T12:00:00');
+    const nice=dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+    html+='<div class="mem-day-section">';
+    html+='<div class="mem-day-header">'+nice+'<span>'+items.length+' items</span></div>';
+    html+='<div class="mem-photo-grid" style="grid-template-columns:repeat(auto-fill,minmax('+sz+'px,1fr))">';
+    items.forEach(function(it,idx){
+      var thumb='/api/cloud/thumb/'+encodeURIComponent(it.path)+'?size='+Math.min(sz*2,400);
+      var isVid=it.type==='video';
+      var globalIdx=startIdx+idx;
+      html+='<div class="mem-thumb'+(it.favorite?' is-fav':'')+'" data-lb-idx="'+globalIdx+'">';
+      html+='<img src="'+thumb+'" loading="lazy" alt="'+escapeHtml(it.name)+'">';
+      html+='<span class="fav-dot">&#9829;</span>';
+      if(isVid)html+='<span class="vid-badge">VIDEO</span>';
+      html+='</div>';
+    });
+    html+='</div></div>';
+  });
+  window._memLbItems=allItems;
+  area.innerHTML=html;
+  // Attach click handlers via delegation
+  area.querySelectorAll('.mem-thumb[data-lb-idx]').forEach(function(el){
+    el.addEventListener('click',function(){
+      openLightbox(window._memLbItems, parseInt(el.dataset.lbIdx));
+    });
+  });
+}
+
+function memDrill(level,y,m){
+  memLevel=level;
+  if(y!==undefined)memYear=y;
+  if(m!==undefined)memMonth=m;
+  if(level==='years'){memYear=null;memMonth=null;}
+  if(level==='months'){memMonth=null;}
+  renderMem();
+  document.getElementById('memories-area').scrollTop=0;
+}
+
+function memZoom(dir){
+  memZoomIdx=Math.max(0,Math.min(ZOOM_SIZES.length-1,memZoomIdx+dir));
+  if(memLevel==='days')renderMem();
+}
+
+function toggleMemFav(){
+  memFavOnly=!memFavOnly;
+  document.getElementById('mem-fav-btn').classList.toggle('active',memFavOnly);
+  memData=null;loadMemData();
+}
+
+async function reindexMedia(){
+  const area=document.getElementById('memories-area');
+  area.innerHTML='<div style="text-align:center;padding:60px;color:#f59e0b">Scanning all media directories...</div>';
+  try{
+    const r=await fetch('/api/cloud/media/reindex',{method:'POST'});
+    const d=await r.json();
+    memData=null;loadMemData();
+  }catch(e){area.innerHTML='Error: '+e.message;}
+}
+
+/* ── LIGHTBOX ── */
+function openLightbox(items,idx){
+  if(!items||!items.length)return;
+  lbItems=items;lbIdx=idx||0;
+  renderLb();
+  document.getElementById('lightbox').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+
+function closeLightbox(){
+  document.getElementById('lightbox').classList.remove('open');
+  document.body.style.overflow='';
+  const c=document.getElementById('lb-content');
+  c.innerHTML='';
+}
+
+function lbNav(dir){
+  lbIdx=(lbIdx+dir+lbItems.length)%lbItems.length;
+  renderLb();
+}
+
+function renderLb(){
+  const it=lbItems[lbIdx];if(!it)return;
+  const c=document.getElementById('lb-content');
+  const url='/api/cloud/media/serve/'+encodeURIComponent(it.path);
+  if(it.type==='video'){
+    c.innerHTML=`<video src="${url}" controls autoplay style="max-width:92vw;max-height:80vh;border-radius:4px"></video>`;
+  }else{
+    c.innerHTML=`<img src="${url}" style="max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px">`;
+  }
+  const info=document.getElementById('lb-info');
+  info.innerHTML=`<div class="lb-name">${escapeHtml(it.name)}</div>
+    <div>${it.date||''} ${it.time||''} &middot; ${fmtSize(it.size)} &middot; ${it.source||''}</div>`;
+  const favBtn=document.getElementById('lb-fav-btn');
+  favBtn.classList.toggle('fav-active',!!it.favorite);
+}
+
+async function lbToggleFav(){
+  const it=lbItems[lbIdx];if(!it)return;
+  it.favorite=!it.favorite;
+  await fetch('/api/cloud/media/favorite',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({path:it.path,favorite:it.favorite})});
+  document.getElementById('lb-fav-btn').classList.toggle('fav-active',it.favorite);
+}
+
+function lbDownload(){
+  const it=lbItems[lbIdx];if(!it)return;
+  window.open('/api/cloud/media/serve/'+encodeURIComponent(it.path),'_blank');
+}
+
+// Keyboard + touch
+document.addEventListener('keydown',e=>{
+  if(!document.getElementById('lightbox').classList.contains('open'))return;
+  if(e.key==='ArrowLeft')lbNav(-1);
+  else if(e.key==='ArrowRight')lbNav(1);
+  else if(e.key==='Escape')closeLightbox();
+});
+(function(){
+  let tx=0;
+  const lb=document.getElementById('lightbox');
+  lb.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;},{passive:true});
+  lb.addEventListener('touchend',e=>{
+    const dx=e.changedTouches[0].clientX-tx;
+    if(Math.abs(dx)>50){lbNav(dx<0?1:-1);}
+  },{passive:true});
+})();
+
+function fmtSize(b){
+  if(!b)return '';
+  if(b>1073741824)return (b/1073741824).toFixed(1)+' GB';
+  if(b>1048576)return (b/1048576).toFixed(1)+' MB';
+  if(b>1024)return (b/1024).toFixed(0)+' KB';
+  return b+' B';
+}
+
+/* ===================== DOCUMENTS ===================== */
+let docsData=[], docsCat='all';
+
+function showDocuments(){
+  _hideAllViews();
+  document.getElementById('btn-documents').classList.add('active');
+  document.getElementById('documents-view').classList.remove('hidden');
+  loadDocs();
+}
+
+async function loadDocs(){
+  const area=document.getElementById('docs-area');
+  area.innerHTML='<div style="text-align:center;padding:60px;color:#555;grid-column:1/-1">Loading documents...</div>';
+  try{
+    const url='/api/cloud/documents'+(docsCat&&docsCat!=='all'?'?category='+docsCat:'');
+    const r=await fetch(url);
+    docsData=await r.json();
+    renderDocs();
+  }catch(e){area.innerHTML='<div style="color:#ff4444;grid-column:1/-1">'+e.message+'</div>';}
+}
+
+function filterDocs(cat){
+  docsCat=cat;
+  document.querySelectorAll('.doc-cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
+  loadDocs();
+}
+
+const DOC_COLORS={permit:'#f59e0b',contract:'#7c3aed',invoice:'#00d084',receipt:'#e94560',estimate:'#4da6ff',coi:'#06b6d4',other:'#555'};
+const DOC_ICONS={pdf:'&#128196;',doc:'&#128209;',docx:'&#128209;',txt:'&#128196;',csv:'&#128202;',xlsx:'&#128202;',xls:'&#128202;',md:'&#128221;',rtf:'&#128196;'};
+
+function renderDocs(){
+  const area=document.getElementById('docs-area');
+  if(!docsData.length){
+    area.innerHTML='<div style="text-align:center;padding:80px;color:#444;grid-column:1/-1"><div style="font-size:48px;margin-bottom:16px">&#128196;</div><div style="font-size:16px;font-weight:700;color:#555">No documents found</div><div style="font-size:12px;margin-top:8px">Upload documents or connect iCloud</div></div>';
+    return;
+  }
+  area.innerHTML=docsData.map(d=>{
+    const ext=(d.filename||'').split('.').pop().toLowerCase();
+    const icon=DOC_ICONS[ext]||'&#128196;';
+    const cat=(d.category||'other').toLowerCase();
+    const color=DOC_COLORS[cat]||'#555';
+    const url='/api/cloud/media/serve/'+encodeURIComponent(d.filepath);
+    return `<div class="doc-card" onclick="window.open('${url}','_blank')">
+      <div class="doc-icon" style="background:${color}15;color:${color}">${icon}</div>
+      <div class="doc-meta">
+        <div class="doc-name" title="${escapeHtml(d.filename)}">${escapeHtml(d.filename)}</div>
+        <span class="doc-badge" style="background:${color}22;color:${color}">${cat.toUpperCase()}</span>
+        <div class="doc-detail">${d.date_taken||''} &middot; ${fmtSize(d.size)} &middot; ${d.source||''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ── ICLOUD IMPORT ── */
+async function loadICloudAccounts(){
+  const el=document.getElementById('icloud-accounts');
+  try{
+    const r=await fetch('/api/icloud/accounts');
+    const accs=await r.json();
+    if(!Array.isArray(accs)||!accs.length){
+      el.innerHTML='<div style="color:#444;font-size:12px;padding:16px;text-align:center;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px">No iCloud accounts connected yet</div>';
+      return;
+    }
+    el.innerHTML=accs.map(a=>{
+      const synced=a.total_synced||0;
+      const jobsite=a.total_jobsite||0;
+      const personal=a.total_personal||0;
+      const lastSync=a.last_sync?new Date(a.last_sync).toLocaleString():'Never';
+      const status=a.last_status||'unknown';
+      const statusColor=status==='ok'?'#00d084':status==='syncing'?'#f59e0b':'#ff4444';
+      return `<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:14px;display:flex;align-items:center;gap:14px">
+        <div style="width:36px;height:36px;border-radius:50%;background:#1a1a3a;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">&#9729;</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;color:#e0e0e0">${a.apple_id}</div>
+          <div style="font-size:11px;color:#555;margin-top:2px">
+            <span style="color:${statusColor}">${status}</span> &middot;
+            Last: ${lastSync} &middot;
+            ${synced} synced &middot; ${jobsite} jobsite &middot; ${personal} personal
+          </div>
+        </div>
+        <button onclick="syncICloudAccount(${a.id})" style="background:#1a1a3a;color:#4da6ff;border:1px solid #2a2a4a;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">Sync Now</button>
+        <button onclick="removeICloudAccount(${a.id})" style="background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">Remove</button>
+      </div>`;
+    }).join('');
+  }catch(e){
+    el.innerHTML='<div style="color:#ff4444;font-size:12px">Failed to load: '+e.message+'</div>';
+  }
+}
+
+async function loadICloudStatus(){
+  const el=document.getElementById('icloud-status');
+  try{
+    const r=await fetch('/api/icloud/status');
+    const s=await r.json();
+    if(s.error){el.innerHTML='<span style="color:#ff4444">'+s.error+'</span>';return;}
+    el.innerHTML=`
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+        <div style="background:#07070f;border:1px solid #1a1a2e;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#4da6ff">${s.accounts||0}</div>
+          <div style="font-size:10px;color:#555;margin-top:2px">Accounts</div>
+        </div>
+        <div style="background:#07070f;border:1px solid #1a1a2e;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#00d084">${s.total_synced||0}</div>
+          <div style="font-size:10px;color:#555;margin-top:2px">Total Synced</div>
+        </div>
+        <div style="background:#07070f;border:1px solid #1a1a2e;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#f59e0b">${s.total_jobsite||0}</div>
+          <div style="font-size:10px;color:#555;margin-top:2px">Jobsite Photos</div>
+        </div>
+        <div style="background:#07070f;border:1px solid #1a1a2e;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:22px;font-weight:800;color:#ec4899">${s.total_personal||0}</div>
+          <div style="font-size:10px;color:#555;margin-top:2px">Personal</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:#444">Last sync: ${s.last_sync?new Date(s.last_sync).toLocaleString():'Never'} &middot; Auto-syncs every 6 hours via Claw's cron</div>
+    `;
+  }catch(e){el.innerHTML='Error: '+e.message;}
+}
+
+async function addICloudAccount(){
+  const appleId=document.getElementById('ic-apple-id').value.trim();
+  const appPwd=document.getElementById('ic-app-pwd').value.trim();
+  const status=document.getElementById('ic-add-status');
+  if(!appleId||!appPwd){status.innerHTML='<span style="color:#ff4444">Apple ID and app-specific password required</span>';return;}
+  status.innerHTML='<span style="color:#f59e0b">Connecting...</span>';
+  try{
+    const r=await fetch('/api/icloud/accounts',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({apple_id:appleId,app_password:appPwd})});
+    const d=await r.json();
+    if(d.success||d.id){
+      status.innerHTML='<span style="color:#00d084">Connected! Running first sync...</span>';
+      document.getElementById('ic-apple-id').value='';
+      document.getElementById('ic-app-pwd').value='';
+      loadICloudAccounts();
+      // Trigger first sync
+      if(d.id)syncICloudAccount(d.id);
+    }else{
+      status.innerHTML='<span style="color:#ff4444">'+(d.error||'Failed')+'</span>';
+    }
+  }catch(e){status.innerHTML='<span style="color:#ff4444">'+e.message+'</span>';}
+}
+
+async function syncICloudAccount(aid){
+  try{
+    const r=await fetch('/api/icloud/sync',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({account_id:aid})});
+    const d=await r.json();
+    if(d.success){alert('Sync started. Check back in a few minutes.');}
+    else{alert('Sync failed: '+(d.error||'unknown error'));}
+    setTimeout(()=>{loadICloudAccounts();loadICloudStatus();},5000);
+  }catch(e){alert('Error: '+e.message);}
+}
+
+async function removeICloudAccount(aid){
+  if(!confirm('Remove this iCloud account? Photos already synced will remain.'))return;
+  try{
+    await fetch('/api/icloud/accounts/'+aid,{method:'DELETE'});
+    loadICloudAccounts();
+    loadICloudStatus();
+  }catch(e){alert('Error: '+e.message);}
+}
 </script>
 
 </body>

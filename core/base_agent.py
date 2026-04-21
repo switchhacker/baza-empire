@@ -646,7 +646,17 @@ class BaseAgent(ContextMixin):
             return None
 
         action = None
-        if any(v in t for v in self._DOC_BUILD_VERBS) and any(
+        # Create-project intent: detect before build/find to take priority on "create" verbs
+        create_project_phrases = (
+            "create a new project", "create new project", "create a project", "create project",
+            "start a new project", "start new project", "start a project",
+            "new project from", "new project for", "make a new project",
+            "set up a project", "set up a new project", "new job from",
+            "scan this for context", "scan this for contexts",  # common in Serge's phrasing
+        )
+        if any(p in t for p in create_project_phrases):
+            action = "create_project"
+        elif any(v in t for v in self._DOC_BUILD_VERBS) and any(
             kw in t for kw in ("package", "application", "permit application", "coi request")
         ):
             action = "build"
@@ -706,6 +716,24 @@ class BaseAgent(ContextMixin):
                 return _j.loads(r.read())
 
         try:
+            if action == "create_project":
+                # Stash the pending intent so the next photo from this chat triggers
+                # the full create-project-from-photo flow (see handle_attachment).
+                import time as _time
+                if not hasattr(self, "_pending_intents"):
+                    self._pending_intents = {}
+                self._pending_intents[chat_id] = {
+                    "action": "create_project", "text": text, "ts": _time.time(),
+                }
+                return (prefix +
+                        "🏗️ Got it — send me photo(s) of the space and I'll:\n\n"
+                        "  1. Create a new project (status: Planning)\n"
+                        "  2. Analyze the scope from the photo\n"
+                        "  3. Run an estimate via AHBCO's pricing tables\n"
+                        "  4. Save the estimate as an active quote on the project\n\n"
+                        "Add a client name, address, or dimensions in the caption if you have them "
+                        "and I'll bake that into the project title and estimate.")
+
             if action in ("find", "list"):
                 query_parts = []
                 if doc_type:    query_parts.append(doc_type)
@@ -805,6 +833,9 @@ class BaseAgent(ContextMixin):
             orig_name = None
             kind = "file"
             caption = (msg.caption or "").strip()
+            media_group_id = getattr(msg, "media_group_id", None)
+            logger.info(f"[{self.AGENT_ID}] attachment caption={caption!r} "
+                        f"media_group_id={media_group_id}")
 
             if msg.photo:
                 file_obj = await context.bot.get_file(msg.photo[-1].file_id)
@@ -862,17 +893,183 @@ class BaseAgent(ContextMixin):
             except Exception:
                 pass
 
+            # Track recent photo so the create-project flow can pair text+photo order-independently
+            import time as _time
+            if kind == "photo":
+                if not hasattr(self, "_recent_photos"):
+                    self._recent_photos = {}
+                self._recent_photos[chat_id] = {"fpath": fpath, "ts": _time.time(), "caption": caption}
+                try:
+                    self.set_memory("last_uploaded_photo", fpath, category="recent_files")
+                except Exception:
+                    pass
+
+            # Check if this attachment should trigger the create-project flow.
+            # Four signals, in priority order:
+            #   (a) caption on THIS photo has create-project intent
+            #   (b) this photo is part of a media group whose first photo already
+            #       triggered the flow (link to same project)
+            #   (c) pending intent stored from a recent standalone text message
+            #   (d) chat history contains a create-project message within last 3 min
+            is_create_project = False
+            link_to_existing_project = None  # if media group follow-up
+            pending_text = ""
+            detection_reason = "none"
+
+            if not hasattr(self, "_media_groups"):
+                self._media_groups = {}  # {media_group_id: {project_id, ts, chat_id}}
+
+            if kind == "photo":
+                # (a) caption intent
+                if caption:
+                    cap_intent = self._detect_doc_intent(caption)
+                    if cap_intent and cap_intent.get("action") == "create_project":
+                        is_create_project = True
+                        pending_text = caption
+                        detection_reason = "caption"
+                # (b) media group follow-up
+                if not is_create_project and media_group_id:
+                    mg = self._media_groups.get(media_group_id)
+                    if mg and (_time.time() - mg.get("ts", 0)) < 300:
+                        link_to_existing_project = mg.get("project_id")
+                        detection_reason = "media_group_followup"
+                # (c) pending intent
+                if not is_create_project and not link_to_existing_project \
+                        and hasattr(self, "_pending_intents"):
+                    pending = self._pending_intents.get(chat_id)
+                    if pending and pending.get("action") == "create_project" \
+                            and (_time.time() - pending.get("ts", 0)) < 600:
+                        is_create_project = True
+                        pending_text = pending.get("text", "")
+                        detection_reason = "pending_intent"
+                # (d) chat history fallback — last 3 min
+                if not is_create_project and not link_to_existing_project:
+                    try:
+                        from core.memory import get_history
+                        recent = get_history(chat_id, self.AGENT_ID, limit=10) or []
+                        for h in reversed(recent):
+                            if h.get("role") != "user":
+                                continue
+                            content = h.get("content") or ""
+                            hi = self._detect_doc_intent(content)
+                            if hi and hi.get("action") == "create_project":
+                                is_create_project = True
+                                pending_text = content
+                                detection_reason = "chat_history_scan"
+                                break
+                    except Exception as e:
+                        logger.debug(f"[{self.AGENT_ID}] history scan failed: {e}")
+
+            logger.info(f"[{self.AGENT_ID}] attach-branch kind={kind} "
+                        f"create_project={is_create_project} link_to={link_to_existing_project} "
+                        f"reason={detection_reason} caption_present={bool(caption)}")
+
+            # Branch A: follow-up photo in a media group whose first photo already created a project
+            if link_to_existing_project:
+                try:
+                    async def _link_photo():
+                        import urllib.request as _ur, json as _j
+                        loop2 = asyncio.get_event_loop()
+                        def _api(method, path, body=None):
+                            url = f"http://localhost:8888{path}"
+                            data = _j.dumps(body).encode() if body is not None else None
+                            req = _ur.Request(url, data=data, method=method,
+                                              headers={"Content-Type": "application/json"})
+                            with _ur.urlopen(req, timeout=30) as r:
+                                return _j.loads(r.read())
+                        try:
+                            await loop2.run_in_executor(None, lambda: _api("POST", "/api/ahb/files", {
+                                "name": os.path.basename(fpath),
+                                "file_type": "image",
+                                "file_path": fpath,
+                                "project_id": link_to_existing_project,
+                                "category": "project_photo",
+                                "tags": f"{self.AGENT_ID},auto,media_group",
+                            }))
+                            await context.bot.send_message(
+                                chat_id=chat_id,
+                                text=f"📎 Linked additional photo to project <code>{link_to_existing_project}</code>",
+                                parse_mode="HTML"
+                            )
+                        except Exception as e:
+                            logger.warning(f"[{self.AGENT_ID}] link follow-up photo failed: {e}")
+                    asyncio.ensure_future(_link_photo())
+                except Exception as e:
+                    logger.error(f"[{self.AGENT_ID}] media-group follow-up failed: {e}")
+                return
+
+            # Branch B: create project flow (curator + project + estimate all inside)
+            if is_create_project:
+                # Clear pending so the next photo doesn't re-create the project
+                if hasattr(self, "_pending_intents"):
+                    self._pending_intents.pop(chat_id, None)
+                init_ack = f"\u2705 Got your {kind}: {fname}\n🏗️ Creating project + running estimator..."
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text=init_ack)
+                except Exception:
+                    pass
+
+                # Record this media group so subsequent photos in the album link to the new project
+                async def _flow():
+                    try:
+                        pid = await self._create_project_from_photo(
+                            fpath=fpath, caption=pending_text or caption, chat_id=chat_id,
+                            context=context, kind=kind
+                        )
+                        if pid and media_group_id:
+                            self._media_groups[media_group_id] = {
+                                "project_id": pid, "ts": _time.time(), "chat_id": chat_id,
+                            }
+                    except Exception as e:
+                        logger.error(f"[{self.AGENT_ID}] create-project flow crashed: {e}")
+                asyncio.ensure_future(_flow())
+                return
+
+            # Branch C: print request — user sent a photo/doc with "print this" caption
+            if caption and self._is_print_request(caption):
+                try:
+                    await context.bot.send_message(chat_id=chat_id,
+                        text=f"🖨️ Sending {fname} to printer...")
+                except Exception:
+                    pass
+                async def _print_and_reply():
+                    try:
+                        loop2 = asyncio.get_event_loop()
+                        # Build print options from caption
+                        opts = {"file_path": fpath}
+                        cap_lower = caption.lower()
+                        if "fit to page" in cap_lower or "fit-to-page" in cap_lower:
+                            opts["fit_to_page"] = True
+                        if "landscape" in cap_lower:
+                            opts["orientation"] = "landscape"
+                        if "color" in cap_lower:
+                            opts["color"] = True
+                        if "duplex" in cap_lower or "double" in cap_lower or "both sides" in cap_lower:
+                            opts["duplex"] = True
+                        result = await loop2.run_in_executor(
+                            None, self.skills.run, "print_document", opts, chat_id
+                        )
+                        if result.get("success"):
+                            reply = f"✅ Printed: {os.path.basename(fpath)}"
+                        else:
+                            reply = f"❌ Print failed: {result.get('error', 'unknown error')}"
+                        await context.bot.send_message(chat_id=chat_id, text=reply)
+                    except Exception as e:
+                        logger.error(f"[{self.AGENT_ID}] print-from-attachment failed: {e}")
+                        try:
+                            await context.bot.send_message(chat_id=chat_id,
+                                text=f"❌ Print error: {e}")
+                        except Exception:
+                            pass
+                asyncio.ensure_future(_print_and_reply())
+                return
+
             # Send a fast initial ack so the user knows it landed
             init_ack = f"\u2705 Got your {kind}: {fname}\n\u2026 analyzing with Phil's curator..."
             try:
                 ack_msg = await context.bot.send_message(chat_id=chat_id, text=init_ack)
             except Exception:
                 ack_msg = None
-            if kind == "photo":
-                try:
-                    self.set_memory("last_uploaded_photo", fpath, category="recent_files")
-                except Exception:
-                    pass
 
             # Run the curator skill in the background — doesn't block the chat handler
             async def _curate_and_reply():
@@ -928,6 +1125,305 @@ class BaseAgent(ContextMixin):
                                                text=f"Couldn't save that file: {e}")
             except Exception:
                 pass
+
+    async def _create_project_from_photo(self, fpath, caption, chat_id, context, kind="photo"):
+        """End-to-end: photo → curator scope → create ahb_projects row → run estimator
+        → save as active quote → link photo → rich reply with deep link.
+
+        Any stage can fail and the flow degrades gracefully — the project still gets
+        created even if the estimator returns nothing.
+        """
+        import urllib.request as _ur
+        import urllib.error as _ue
+        import json as _j
+        import datetime as _dt
+        import re as _re
+        loop = asyncio.get_event_loop()
+
+        def _api(method, path, body=None):
+            url = f"http://localhost:8888{path}"
+            data = _j.dumps(body).encode() if body is not None else None
+            req = _ur.Request(url, data=data, method=method,
+                              headers={"Content-Type": "application/json"})
+            with _ur.urlopen(req, timeout=60) as r:
+                return _j.loads(r.read())
+
+        def _extract_trailing_json(text):
+            """Pull the first top-level JSON object from text. Skills print prose
+            followed by a JSON dump; we locate the first `{` at column 0 and parse
+            with balanced-brace scanning so nested objects don't trip us up."""
+            if not text:
+                return None
+            lines = text.split("\n")
+            start_idx = None
+            for i, ln in enumerate(lines):
+                if ln.startswith("{"):
+                    start_idx = i; break
+            if start_idx is None:
+                return None
+            blob = "\n".join(lines[start_idx:])
+            # Balanced-brace extract (respect strings)
+            depth = 0; in_str = False; esc = False
+            for i, ch in enumerate(blob):
+                if esc: esc = False; continue
+                if ch == "\\" and in_str: esc = True; continue
+                if ch == '"': in_str = not in_str; continue
+                if in_str: continue
+                if ch == "{": depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try: return _j.loads(blob[:i+1])
+                        except Exception: return None
+            return None
+
+        async def _send(text, parse_mode="HTML"):
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+            except Exception:
+                # Retry without HTML parse mode if Telegram rejects formatting
+                try:
+                    plain = _re.sub(r"<[^>]+>", "", text)
+                    await context.bot.send_message(chat_id=chat_id, text=plain)
+                except Exception as e:
+                    logger.error(f"[{self.AGENT_ID}] send failed in create_project: {e}")
+
+        try:
+            # ── Stage 1: vision via curator ────────────────────────────────
+            await _send("📸 <i>Analyzing photo for scope of work…</i>")
+            def _run_curator():
+                return self.skills.run("curate_document",
+                    {"file_path": fpath, "agent_id": self.AGENT_ID, "chat_id": chat_id})
+            curator_result = await loop.run_in_executor(None, _run_curator)
+            analysis = {}
+            try:
+                if isinstance(curator_result, dict):
+                    if "output" in curator_result:
+                        analysis = _extract_trailing_json(curator_result["output"]) or {}
+                    else:
+                        analysis = curator_result
+                elif isinstance(curator_result, str):
+                    analysis = _extract_trailing_json(curator_result) or {}
+            except Exception:
+                analysis = {}
+            if not isinstance(analysis, dict):
+                analysis = {}
+
+            summary = (analysis.get("summary") or "").strip()
+            relevance = (analysis.get("relevance") or "").strip()
+            entity_hint = (analysis.get("entity") or "").strip()
+            project_hint = (analysis.get("project_hint") or "").strip()
+            doc_type = (analysis.get("doc_type") or "").strip()
+            description_blob = "\n\n".join(filter(None, [summary, relevance])) \
+                or caption or f"Project photo {os.path.basename(fpath)}"
+
+            # ── Stage 2: infer scope + sqft ────────────────────────────────
+            combined = f"{caption} {summary} {relevance} {project_hint}".lower()
+            scope_map = [
+                ("kitchen",  ["kitchen", "cabinets", "countertop", "range", "stove"]),
+                ("bathroom", ["bathroom", "bath", "shower", "toilet", "vanity", "tub"]),
+                ("basement", ["basement", "cellar", "egress"]),
+                ("addition", ["addition", "extension", "add-on", "expansion"]),
+                ("deck",     ["deck", "patio", "porch"]),
+                ("full-reno",["gut renovation", "full reno", "whole house", "complete renovation"]),
+            ]
+            scope = "other"
+            for s, kws in scope_map:
+                if any(kw in combined for kw in kws):
+                    scope = s; break
+
+            sqft = 0
+            m = _re.search(r"(\d{2,5})\s*(?:sq\s*ft|sqft|square\s*feet)", combined)
+            if m:
+                try: sqft = int(m.group(1))
+                except: sqft = 0
+            if not sqft:
+                m = _re.search(r"(\d{1,3})\s*(?:x|×|by)\s*(\d{1,3})", combined)
+                if m:
+                    try: sqft = int(m.group(1)) * int(m.group(2))
+                    except: sqft = 0
+
+            # ── Stage 3: derive title + address ────────────────────────────
+            address_match = _re.search(r"\b(\d{2,5}\s+[A-Za-z][\w\s]{2,40}(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Way|Ct|Court|Pl|Place))\b", caption + " " + summary, _re.IGNORECASE)
+            address = address_match.group(1).strip() if address_match else ""
+            today_str = _dt.date.today().strftime("%b %d %Y")
+            if project_hint:
+                title = f"{scope.title() if scope != 'other' else 'Project'} — {project_hint[:60]}"
+            elif address:
+                title = f"{scope.title() if scope != 'other' else 'Project'} — {address}"
+            elif caption and len(caption) < 80:
+                title = caption
+            else:
+                title = f"New {scope.title() if scope != 'other' else 'Project'} — {today_str}"
+            title = title[:120]
+
+            # ── Stage 4: create project ────────────────────────────────────
+            proj_payload = {
+                "title": title,
+                "description": description_blob[:2000],
+                "scope": scope,
+                "status": "Planning",
+                "start_date": _dt.date.today().isoformat(),
+                "address": address,
+                "location": address,
+                "client_name": entity_hint if entity_hint and entity_hint.lower() not in ("unknown", "unknown entity") else "",
+                "assigned_agents": self.AGENT_ID,
+                "notes": f"Created from photo by {self.AGENT_ID} on {_dt.datetime.now().isoformat()}\n"
+                         f"Source: {os.path.basename(fpath)}\n"
+                         f"Caption: {caption}" if caption else
+                         f"Created from photo by {self.AGENT_ID} on {_dt.datetime.now().isoformat()}\n"
+                         f"Source: {os.path.basename(fpath)}",
+            }
+            try:
+                proj_resp = await loop.run_in_executor(None,
+                    lambda: _api("POST", "/api/ahb/projects", proj_payload))
+            except Exception as e:
+                await _send(f"❌ Couldn't create project: {e}")
+                return
+            if not proj_resp.get("success"):
+                await _send(f"❌ Couldn't create project: {proj_resp.get('error','unknown')}")
+                return
+            project_id = proj_resp.get("id")
+            project_url = f"http://localhost:8888/ahb123?project={project_id}"
+
+            await _send(
+                f"📋 <b>Project created:</b> {title}\n"
+                f"Status: Planning · Scope: {scope}"
+                + (f" · ~{sqft} sqft" if sqft else "")
+                + (f"\nAddress: {address}" if address else "")
+                + f"\nID: <code>{project_id}</code>\n\n"
+                f"💰 <i>Running AHBCO estimator…</i>"
+            )
+
+            # ── Stage 5: estimator ─────────────────────────────────────────
+            def _run_est():
+                args = {"description": description_blob + (f"\n\nCaption: {caption}" if caption else ""),
+                        "scope": scope}
+                if sqft: args["sqft"] = sqft
+                return self.skills.run("estimate_project", args)
+            est_result = await loop.run_in_executor(None, _run_est)
+            estimate = None
+            est_text = ""
+            if isinstance(est_result, dict):
+                if "grand_total_low" in est_result:
+                    estimate = est_result
+                else:
+                    est_text = est_result.get("output", "") or ""
+            elif isinstance(est_result, str):
+                est_text = est_result
+            if not estimate and est_text:
+                parsed = _extract_trailing_json(est_text)
+                if isinstance(parsed, dict) and "grand_total_low" in parsed:
+                    estimate = parsed
+
+            # ── Stage 6: save quote + link photo ───────────────────────────
+            quote_saved = False
+            if estimate and estimate.get("grand_total_mid"):
+                quote_payload = {
+                    "method": "photo_estimator",
+                    "scope": scope,
+                    "description": f"Auto-generated by {self.AGENT_ID} from photo. {description_blob[:400]}",
+                    "total": estimate["grand_total_mid"],
+                    "breakdown": {
+                        "line_items": estimate.get("line_items", []),
+                        "subtotal_low": estimate.get("subtotal_low"),
+                        "subtotal_high": estimate.get("subtotal_high"),
+                        "grand_total_low": estimate.get("grand_total_low"),
+                        "grand_total_high": estimate.get("grand_total_high"),
+                        "grand_total_mid": estimate.get("grand_total_mid"),
+                        "markup_pct": estimate.get("markup_pct"),
+                        "sqft": estimate.get("sqft"),
+                        "location": estimate.get("location"),
+                    },
+                    "notes": f"Source photo: {os.path.basename(fpath)} · Agent: {self.AGENT_ID}",
+                    "make_active": True,
+                }
+                try:
+                    q_resp = await loop.run_in_executor(None,
+                        lambda: _api("POST", f"/api/ahb/projects/{project_id}/quotes", quote_payload))
+                    quote_saved = bool(q_resp.get("success"))
+                except Exception as e:
+                    logger.warning(f"[{self.AGENT_ID}] save quote failed: {e}")
+
+            # Link the source photo as a project file
+            try:
+                await loop.run_in_executor(None, lambda: _api("POST", "/api/ahb/files", {
+                    "name": os.path.basename(fpath),
+                    "file_type": "image",
+                    "file_path": fpath,
+                    "project_id": project_id,
+                    "category": "project_photo",
+                    "tags": f"{self.AGENT_ID},auto,scope_{scope}",
+                }))
+            except Exception as e:
+                logger.warning(f"[{self.AGENT_ID}] link photo failed: {e}")
+
+            # ── Stage 7: rich final reply ─────────────────────────────────
+            lines = [
+                "🏗️ <b>PROJECT CREATED + ESTIMATE READY</b>",
+                "━━━━━━━━━━━━━━━━━━━",
+                f"📋 <b>{title}</b>",
+                f"Status: Planning · Scope: <b>{scope}</b>" + (f" · ~{sqft} sqft" if sqft else ""),
+            ]
+            if address:
+                lines.append(f"📍 {address}")
+            if entity_hint and entity_hint.lower() not in ("unknown", "unknown entity"):
+                lines.append(f"👤 Client hint: {entity_hint}")
+            lines.append(f"🆔 <code>{project_id}</code>")
+            lines.append("")
+            lines.append("📸 <b>SCOPE ANALYSIS</b>")
+            if summary:
+                lines.append(summary[:600])
+            if relevance and relevance != summary:
+                lines.append(f"<i>{relevance[:300]}</i>")
+            lines.append("")
+
+            if estimate and estimate.get("grand_total_mid"):
+                low = estimate["grand_total_low"]; high = estimate["grand_total_high"]; mid = estimate["grand_total_mid"]
+                lines.append("💰 <b>ESTIMATED COST</b>")
+                lines.append(f"Range: <b>${low:,} – ${high:,}</b>")
+                lines.append(f"Mid-point: ${mid:,} · Saved as active quote" if quote_saved else
+                              f"Mid-point: ${mid:,}")
+                lines.append("")
+                top_items = sorted(estimate.get("line_items", []),
+                                    key=lambda x: x.get("total_mid", 0), reverse=True)[:8]
+                if top_items:
+                    lines.append("<b>Top line items:</b>")
+                    for it in top_items:
+                        lines.append(f"  • {it.get('category','?')}: ${it.get('total_low',0):,} – ${it.get('total_high',0):,}")
+                    lines.append("")
+                markup = estimate.get("markup_pct", 15)
+                lines.append(f"<i>Includes 10% contingency + {markup}% GC markup. Philadelphia-area 2026 rates.</i>")
+            else:
+                lines.append("⚠️ <i>Estimator couldn't produce numbers from this photo alone — "
+                             "reply with scope details (sqft, finishes, demo yes/no) and I'll re-run it.</i>")
+            lines.append("")
+            lines.append(f"📂 <a href=\"{project_url}\">Open project in dashboard</a>")
+            lines.append("")
+            lines.append("<i>Reply with more details to refine the estimate (client name, address, "
+                         "finishes, sqft, demo scope, timeline).</i>")
+
+            await _send("\n".join(lines))
+
+            # Journal + memory
+            self.journal("project_created",
+                         f"Created project {project_id} ({scope}, {title[:60]}) from photo",
+                         chat_id=chat_id)
+            if hasattr(self, "set_memory"):
+                try:
+                    self.set_memory("last_project_created",
+                                    f"{project_id}|{title}", category="projects")
+                except Exception:
+                    pass
+            return project_id
+        except Exception as e:
+            logger.error(f"[{self.AGENT_ID}] _create_project_from_photo crashed: {e}")
+            try:
+                await context.bot.send_message(chat_id=chat_id,
+                    text=f"❌ Project creation crashed: {e}\n\nThe photo is still saved in your Data Hub.")
+            except Exception:
+                pass
+            return None
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id

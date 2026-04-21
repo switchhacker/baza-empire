@@ -12,7 +12,7 @@
     a{color:inherit;text-decoration:none}
 
     /* Nav */
-    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200;flex-wrap:nowrap;overflow:visible}
     .nav::-webkit-scrollbar{height:0;display:none}
     .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
     .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
@@ -24,6 +24,7 @@
 
     /* Sub Nav */
     .sub-nav{background:#0a0a18;border-bottom:1px solid #1a1a2e;padding:10px 32px;display:flex;gap:6px;flex-wrap:wrap;position:sticky;top:60px;z-index:190}
+    @media(max-width:768px){.sub-nav{display:none}}
     .sub-tab{padding:8px 16px;border-radius:20px;font-size:12px;font-weight:700;color:#666;cursor:pointer;border:1px solid transparent;transition:all .2s;background:transparent;display:inline-flex;align-items:center;gap:6px}
     .sub-tab:hover{color:#ccc;background:#1a1a2e}
     .sub-tab.active{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border-color:transparent}
@@ -121,6 +122,7 @@
     .badge-active{background:#001a10;color:#00d084;border:1px solid #00d084}
     .badge-past{background:#1a1a1a;color:#555;border:1px solid #333}
     .badge-estimate{background:#1a0a3a;color:#c4b5fd;border:1px solid #7c3aed}
+    .badge-planning{background:#2a1a00;color:#f59e0b;border:1px solid #f59e0b}
     .badge-proposal{background:#2a1a00;color:#f59e0b;border:1px solid #f59e0b}
     .badge-signed{background:#001a3a;color:#4da6ff;border:1px solid #4da6ff}
     .badge-in_progress,.badge-progress{background:#001a3a;color:#4da6ff;border:1px solid #4da6ff}
@@ -354,19 +356,174 @@
       .split-layout{flex-direction:column}
       .split-left{flex:auto}
     }
+  /* Activity Feed Sidebar */
+  .activity-sidebar{position:fixed;right:-400px;top:0;bottom:0;width:390px;background:#0d0d1e;border-left:1px solid #1a1a3a;z-index:300;transition:right .3s ease;display:flex;flex-direction:column;box-shadow:-4px 0 20px rgba(0,0,0,.5)}
+  .activity-sidebar.open{right:0}
+  .activity-header{padding:14px 16px;border-bottom:1px solid #1a1a3a;display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .activity-header h3{margin:0;font-size:14px;color:#fff;flex:1}
+  .activity-feed{flex:1;overflow-y:auto;padding:8px 12px}
+  .activity-card{background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12px;border-left:3px solid #333;animation:afSlideIn .3s ease}
+  .activity-card.completed{border-left-color:#00d084}
+  .activity-card.in_progress{border-left-color:#f59e0b}
+  .activity-card.blocked,.activity-card.failed{border-left-color:#ff4444}
+  .activity-agent{display:inline-flex;align-items:center;gap:6px;margin-bottom:4px}
+  .activity-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0}
+  .activity-summary{color:#ddd;line-height:1.4}
+  .activity-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:#555}
+  .activity-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700}
+  .activity-btn{position:relative;cursor:pointer;padding:4px 10px;border-radius:6px;background:#1a1a3a;color:#aaa;font-size:11px;font-weight:600;border:1px solid #2a2a4a;transition:all .2s}
+  .activity-btn:hover{background:#2a2a5a;color:#fff}
+  .activity-btn .pulse{position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#00d084;animation:afPulse 2s infinite}
+  @keyframes afPulse{0%,100%{opacity:1}50%{opacity:.3}}
+  @keyframes afSlideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+  .nav-dropdown{position:relative;flex-shrink:0}
+  .nav-dropdown>.nav-link{display:flex;align-items:center;gap:4px}
+  .nav-dropdown>.nav-link::after{content:"\25be";font-size:9px;color:#555}
+  .nav-submenu{display:none;position:absolute;top:100%;left:0;background:#0d0d1e;border:1px solid #1a1a3a;border-radius:0 0 8px 8px;min-width:160px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.6);padding:4px 0}
+  .nav-dropdown:hover>.nav-submenu,.nav-dropdown.open>.nav-submenu{display:block}
+  .nav-submenu a{display:block;padding:10px 18px;font-size:12px;font-weight:600;color:#888;transition:all .15s;white-space:nowrap}
+  .nav-submenu a:hover{color:#e0e0e0;background:#1a1a2e}
+  .nav-submenu a.active{color:#e94560;font-weight:700}
+  @media(max-width:768px){
+    .nav{padding:0 10px;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .nav-brand h1{font-size:13px;letter-spacing:1px}
+    .nav-link{padding:14px 8px;font-size:11px}
+    .nav-submenu{position:fixed;top:56px;left:0;right:0;min-width:0;max-height:70vh;overflow-y:auto;border-radius:0}
+    .nav-submenu a{padding:14px 18px;font-size:14px}
+    .nav-right{display:none}
+  }
+
+  /* ===== Blueprint Builder ===== */
+  .bp-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:linear-gradient(135deg,#0e0e1e,#0a0a16);border:1px solid #1a1a2e;border-radius:10px;padding:10px 12px;margin-bottom:12px}
+  .bp-tbr-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .bp-btn{background:#0a0a16;border:1px solid #1a1a2e;color:#ccc;padding:7px 10px;font-size:12px;border-radius:6px;cursor:pointer;transition:background .15s,border-color .15s,color .15s;font-family:inherit}
+  .bp-btn:hover{background:#14142a;border-color:#2a2a4a;color:#fff}
+  .bp-btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);border-color:#7c3aed;color:#fff;font-weight:700}
+  .bp-btn-primary:hover{filter:brightness(1.15)}
+  .bp-btn-accent{background:#1a3a5a;border-color:#2a5a8a;color:#9cd}
+  .bp-btn-accent:hover{background:#244870;color:#fff}
+  .bp-btn-sam{background:linear-gradient(135deg,#f59e0b,#e94560);border-color:#e94560;color:#fff;font-weight:700}
+  .bp-btn-sam:hover{filter:brightness(1.15)}
+  .bp-input,.bp-select{background:#070712;border:1px solid #1a1a2e;color:#ccc;border-radius:5px;padding:6px 9px;font-size:12px;font-family:inherit;outline:none}
+  .bp-input:focus,.bp-select:focus{border-color:#7c3aed}
+  .bp-minilabel{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px}
+  .bp-hint{font-size:10px;color:#444;margin-top:6px}
+
+  .bp-editor{display:grid;grid-template-columns:230px 1fr 250px;gap:12px;height:calc(100vh - 280px);min-height:560px}
+  .bp-sidebar{background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;overflow-y:auto;overflow-x:hidden}
+  .bp-section{border-bottom:1px solid #131327;padding:10px 12px}
+  .bp-section:last-child{border-bottom:none}
+  .bp-section-title{font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:8px}
+  .bp-tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .bp-tool{background:#070712;border:1px solid #1a1a2e;color:#888;padding:10px 0;font-size:16px;border-radius:6px;cursor:pointer;transition:all .15s}
+  .bp-tool:hover{background:#14142a;color:#fff;border-color:#2a2a4a}
+  .bp-tool.active{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border-color:#7c3aed}
+  .bp-lib{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;max-height:260px;overflow-y:auto}
+  .bp-lib-item{background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:8px 4px;text-align:center;cursor:grab;transition:all .12s;display:flex;flex-direction:column;align-items:center;gap:3px}
+  .bp-lib-item:hover{background:#14142a;border-color:#2a2a4a}
+  .bp-lib-item:active{cursor:grabbing}
+  .bp-lib-item svg{width:26px;height:26px;color:#bbb}
+  .bp-lib-item-label{font-size:9px;color:#888;text-transform:capitalize;line-height:1}
+  .bp-floor-row{display:flex;align-items:center;gap:6px;padding:6px 8px;background:#070712;border:1px solid #1a1a2e;border-radius:5px;margin-bottom:4px;font-size:11px;color:#aaa;cursor:pointer}
+  .bp-floor-row.active{background:linear-gradient(135deg,#14142a,#0e0e1e);border-color:#7c3aed;color:#fff}
+  .bp-floor-row .bp-floor-del{margin-left:auto;color:#555;cursor:pointer;font-size:14px}
+  .bp-floor-row .bp-floor-del:hover{color:#ff5555}
+
+  .bp-canvas-wrap{position:relative;background:#060612;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden}
+  #bp-svg{display:block;width:100%;height:100%;cursor:default;background:#060612}
+  #bp-svg.tool-pan{cursor:grab}
+  #bp-svg.panning{cursor:grabbing}
+  #bp-svg.tool-room{cursor:crosshair}
+  #bp-svg.tool-wall,#bp-svg.tool-dim{cursor:crosshair}
+  #bp-svg.tool-note{cursor:text}
+  .bp-hud{position:absolute;bottom:8px;left:8px;right:8px;background:rgba(10,10,22,.85);border:1px solid #1a1a2e;border-radius:6px;padding:5px 10px;font-size:10px;color:#888;pointer-events:none}
+  .bp-hud kbd{background:#14142a;border:1px solid #2a2a4a;border-radius:3px;padding:1px 5px;font-size:10px;color:#ccc}
+  .bp-renders-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .bp-renders-grid img{width:100%;height:80px;object-fit:cover;border-radius:5px;border:1px solid #1a1a2e;cursor:pointer;transition:transform .15s}
+  .bp-renders-grid img:hover{transform:scale(1.04);border-color:#7c3aed}
+  .bp-browse-card:hover{border-color:#7c3aed!important;transform:translateY(-2px);box-shadow:0 6px 18px rgba(124,58,237,.25)}
+  .bp-wall.partition{stroke:#ddd;stroke-opacity:.8}
+
+  /* Canvas elements */
+  .bp-grid-line{stroke:#121224;stroke-width:.5}
+  .bp-grid-line.major{stroke:#1a1a34;stroke-width:1}
+  .bp-room{stroke:#fff;stroke-width:2;stroke-opacity:.8;cursor:pointer;transition:opacity .12s}
+  .bp-room:hover{stroke-opacity:1;filter:brightness(1.1)}
+  .bp-room.selected{stroke:#fcba03;stroke-width:3;stroke-opacity:1}
+  .bp-room-label{fill:#fff;font-size:13px;font-weight:700;text-anchor:middle;pointer-events:none;font-family:system-ui}
+  .bp-room-dim{fill:#fff;fill-opacity:.6;font-size:10px;text-anchor:middle;pointer-events:none;font-family:system-ui}
+  .bp-wall{stroke:#fff;stroke-linecap:round;cursor:pointer}
+  .bp-wall:hover{stroke:#fcba03}
+  .bp-wall.selected{stroke:#fcba03}
+  .bp-object{cursor:pointer}
+  .bp-object.selected rect,.bp-object.selected path,.bp-object.selected circle,.bp-object.selected line{stroke:#fcba03!important}
+  .bp-dim{stroke:#4da6ff;stroke-width:1;fill:none}
+  .bp-dim-text{fill:#4da6ff;font-size:11px;text-anchor:middle;font-family:system-ui;pointer-events:none}
+  .bp-note{fill:#fcba03;font-size:13px;font-weight:600;font-family:system-ui;cursor:pointer}
+  .bp-handle{fill:#fcba03;stroke:#fff;stroke-width:1.5;cursor:nwse-resize}
+  .bp-handle.h-ne,.bp-handle.h-sw{cursor:nesw-resize}
+  .bp-handle.h-n,.bp-handle.h-s{cursor:ns-resize}
+  .bp-handle.h-e,.bp-handle.h-w{cursor:ew-resize}
+  .bp-ghost{stroke:#fcba03;stroke-dasharray:4 3;fill:#fcba03;fill-opacity:.12;pointer-events:none}
+  .bp-ghost-line{stroke:#fcba03;stroke-width:2;stroke-dasharray:4 3;fill:none;pointer-events:none}
+
+  .bp-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center}
+  .bp-modal-inner{background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;padding:20px;max-width:540px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .bp-modal-inner h3{font-size:16px}
+  .bp-modal-inner .form-group{margin-bottom:10px}
+  .bp-modal-inner label{display:block;font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+
+  .bp-props-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .bp-props-row label{flex:0 0 60px;font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px}
+  .bp-props-row input,.bp-props-row select{flex:1;background:#070712;border:1px solid #1a1a2e;color:#ccc;border-radius:4px;padding:5px 7px;font-size:11px;font-family:inherit;outline:none}
+  .bp-props-row input:focus,.bp-props-row select:focus{border-color:#7c3aed}
+
+  @media (max-width:900px){
+    .bp-editor{grid-template-columns:1fr;height:auto}
+    .bp-sidebar{max-height:260px}
+    .bp-canvas-wrap{height:60vh}
+  }
   </style>
 </head>
 <body>
 
 <nav class="nav">
   <div class="nav-brand"><span>&#9889;</span><h1>BAZA EMPIRE</h1></div>
-  <a class="nav-link" href="/">Agents</a>
-  <a class="nav-link" href="/ahb123" style="color:#e94560;border-bottom-color:#e94560">AHB123</a>
-  <a class="nav-link" href="/crons">Crons</a>
-  <a class="nav-link" href="/tasks">Tasks</a>
-  <a class="nav-link" href="/skills">Skills</a>
-  <a class="nav-link" href="/journal">Journal</a>
-  <a class="nav-link" href="/memory">Memory</a>
+  <div class="nav-dropdown">
+    <a class="nav-link" href="/">Agents</a>
+    <div class="nav-submenu">
+      <a href="/crons">Crons</a>
+      <a href="/tasks">Tasks</a>
+      <a href="/skills">Skills</a>
+      <a href="/journal">Journal</a>
+      <a href="/memory">Memory</a>
+    </div>
+  </div>
+  <div class="nav-dropdown">
+    <a class="nav-link" href="/ahb123" style="color:#e94560;border-bottom-color:#e94560">AHB123</a>
+    <div class="nav-submenu">
+      <a href="#" onclick="switchTab('dashboard');return false">Dashboard</a>
+      <a href="#" onclick="switchTab('clients');return false">Clients</a>
+      <a href="#" onclick="switchTab('projects');return false">Projects</a>
+      <a href="#" onclick="switchTab('architect');return false">ArchiteCT</a>
+      <a href="#" onclick="switchTab('invoices');return false">InvoiceIT</a>
+      <a href="#" onclick="switchTab('docprep');return false">DocPrep</a>
+      <a href="#" onclick="switchTab('changeorders');return false">Change Orders</a>
+      <a href="#" onclick="switchTab('billing');return false">Billing</a>
+      <a href="#" onclick="switchTab('receipts');return false">QuickRF</a>
+      <a href="#" onclick="switchTab('payroll');return false">Payrolling</a>
+      <a href="#" onclick="switchTab('taxdocs');return false">Uncle Sam</a>
+      <a href="#" onclick="switchTab('ipay');return false">Debt</a>
+      <a href="#" onclick="switchTab('employees');return false">Employees</a>
+      <a href="#" onclick="switchTab('estimator');return false">EstimatOR</a>
+      <a href="#" onclick="switchTab('schedule');return false">Schedule</a>
+      <a href="#" onclick="switchTab('noted');return false">NoteD</a>
+      <a href="#" onclick="switchTab('voice');return false">Voice</a>
+      <a href="#" onclick="switchTab('chatdept');return false">Chat Dept</a>
+      <a href="#" onclick="switchTab('photos');return false">Photos</a>
+      <a href="#" onclick="switchTab('reviews');return false">Reviews</a>
+    </div>
+  </div>
   <a class="nav-link" href="/datahub">Data Hub</a>
   <a class="nav-link" href="/infra">Infra</a>
   <a class="nav-link" href="/explore">Explore</a>
@@ -375,6 +532,7 @@
   <a class="nav-link" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
   <a class="nav-link" href="/settings">Settings</a>
   <div class="nav-right">
+    <span class="activity-btn" onclick="toggleActivityFeed()">Activity <span class="pulse" id="af-pulse" style="display:none"></span></span>
     <span class="nav-status" id="nav-clock">&mdash;</span>
   </div>
 </nav>
@@ -548,10 +706,10 @@
     <select class="filter-select" id="project-status-filter" onchange="filterProjects()">
       <option value="">All Statuses</option>
       <option value="estimate">Estimate</option>
-      <option value="proposal">Proposal</option>
+      <option value="planning">Planning</option>
       <option value="signed">Signed</option>
       <option value="in_progress">In Progress</option>
-      <option value="complete">Complete</option>
+      <option value="completed">Completed</option>
     </select>
     <select class="filter-select" id="project-client-filter" onchange="filterProjects()">
       <option value="">All Clients</option>
@@ -1025,6 +1183,7 @@
     <button class="mode-btn active" data-mode="analyze" onclick="switchArchMode('analyze')">Analyze</button>
     <button class="mode-btn" data-mode="generate" onclick="switchArchMode('generate')">Generate</button>
     <button class="mode-btn" data-mode="transform" onclick="switchArchMode('transform')">Transform</button>
+    <button class="mode-btn" data-mode="blueprint" onclick="switchArchMode('blueprint')">Blueprint</button>
   </div>
 
   <!-- Analyze mode — Scan for Description + Edit as Described workflow -->
@@ -1211,6 +1370,185 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== Blueprint Builder mode ===== -->
+  <div id="arch-blueprint" class="arch-mode" style="display:none">
+    <div class="bp-toolbar">
+      <div class="bp-tbr-group">
+        <button class="bp-btn" onclick="bpNewBlueprint()" title="New blueprint">&#128196; New</button>
+        <button class="bp-btn" onclick="bpOpenBrowser()" title="Browse blueprints (visual)">&#128194; Browse</button>
+        <select class="bp-select" id="bp-open-select" onchange="bpOpenBlueprint(this.value)" title="Open by name">
+          <option value="">Open…</option>
+        </select>
+        <input type="text" id="bp-name" class="bp-input" placeholder="Blueprint name" style="width:180px">
+        <select class="bp-select" id="bp-units" onchange="bpSetUnits(this.value)" title="Units">
+          <option value="imperial">Imperial (ft)</option>
+          <option value="metric">Metric (m)</option>
+        </select>
+      </div>
+      <div class="bp-tbr-group">
+        <button class="bp-btn bp-btn-primary" onclick="bpSave()" title="Save to DB (⌘S)">&#128190; Save</button>
+        <button class="bp-btn" onclick="bpExportSVG()" title="Export SVG">SVG</button>
+        <button class="bp-btn" onclick="bpExportPNG()" title="Export PNG">PNG</button>
+        <button class="bp-btn" onclick="bpDeleteBlueprint()" title="Delete" style="color:#ff5555">&#128465;</button>
+      </div>
+      <div class="bp-tbr-group">
+        <button class="bp-btn bp-btn-accent" onclick="bpOpenDescriptionModal()" title="Generate from description">&#128172; From Text</button>
+        <button class="bp-btn bp-btn-accent" onclick="document.getElementById('bp-photo-input').click()" title="Import from photo">&#128247; From Photo</button>
+        <input type="file" id="bp-photo-input" accept="image/*" style="display:none" onchange="bpImportFromPhoto(this.files)">
+        <button class="bp-btn bp-btn-sam" onclick="bpOpenRenderModal()" title="Render with Sam (Stable Diffusion)">&#10024; Render with Sam</button>
+      </div>
+      <div class="bp-tbr-group" style="margin-left:auto">
+        <button class="bp-btn" onclick="bpUndo()" title="Undo (⌘Z)">&#8630;</button>
+        <button class="bp-btn" onclick="bpRedo()" title="Redo (⌘⇧Z)">&#8631;</button>
+        <button class="bp-btn" onclick="bpZoomOut()" title="Zoom out">&minus;</button>
+        <span id="bp-zoom-label" style="font-size:11px;color:#666;min-width:38px;text-align:center">100%</span>
+        <button class="bp-btn" onclick="bpZoomIn()" title="Zoom in">+</button>
+        <button class="bp-btn" onclick="bpZoomFit()" title="Fit to canvas">Fit</button>
+      </div>
+    </div>
+
+    <div class="bp-editor">
+      <!-- Left: tool palette + object library -->
+      <div class="bp-sidebar bp-sidebar-left">
+        <div class="bp-section">
+          <div class="bp-section-title">Tools</div>
+          <div class="bp-tool-grid">
+            <button class="bp-tool active" data-tool="select" onclick="bpSetTool('select')" title="Select (V)">&#10137;</button>
+            <button class="bp-tool" data-tool="pan" onclick="bpSetTool('pan')" title="Pan (H)">&#9995;</button>
+            <button class="bp-tool" data-tool="room" onclick="bpSetTool('room')" title="Room (R)">&#9634;</button>
+            <button class="bp-tool" data-tool="wall" onclick="bpSetTool('wall')" title="Wall (W)">&#9585;</button>
+            <button class="bp-tool" data-tool="dim" onclick="bpSetTool('dim')" title="Dimension (D)">&#8596;</button>
+            <button class="bp-tool" data-tool="note" onclick="bpSetTool('note')" title="Text note (T)">T</button>
+          </div>
+        </div>
+        <div class="bp-section">
+          <div class="bp-section-title">Room Type</div>
+          <select id="bp-room-type" class="bp-select" style="width:100%">
+            <option value="kitchen">Kitchen</option>
+            <option value="bedroom">Bedroom</option>
+            <option value="bathroom">Bathroom</option>
+            <option value="living">Living Room</option>
+            <option value="dining">Dining Room</option>
+            <option value="garage">Garage</option>
+            <option value="hallway">Hallway</option>
+            <option value="office">Office</option>
+            <option value="closet">Closet</option>
+            <option value="laundry">Laundry</option>
+            <option value="other">Other</option>
+          </select>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <div style="flex:1">
+              <div class="bp-minilabel">W</div>
+              <input type="number" id="bp-room-w" class="bp-input" value="12" step="0.5" min="1">
+            </div>
+            <div style="flex:1">
+              <div class="bp-minilabel">H</div>
+              <input type="number" id="bp-room-h" class="bp-input" value="10" step="0.5" min="1">
+            </div>
+          </div>
+          <div class="bp-hint">Select Room tool then click to place</div>
+        </div>
+        <div class="bp-section">
+          <div class="bp-section-title">Object Library</div>
+          <div class="bp-lib" id="bp-lib"></div>
+        </div>
+        <div class="bp-section">
+          <div class="bp-section-title">Floors</div>
+          <div id="bp-floors-list"></div>
+          <button class="bp-btn" style="width:100%;margin-top:8px" onclick="bpAddFloor()">+ Add Floor</button>
+        </div>
+      </div>
+
+      <!-- Center: canvas -->
+      <div class="bp-canvas-wrap" id="bp-canvas-wrap">
+        <svg id="bp-svg" xmlns="http://www.w3.org/2000/svg">
+          <defs id="bp-defs"></defs>
+          <g id="bp-viewport">
+            <g id="bp-grid-layer"></g>
+            <g id="bp-rooms-layer"></g>
+            <g id="bp-walls-layer"></g>
+            <g id="bp-objects-layer"></g>
+            <g id="bp-dims-layer"></g>
+            <g id="bp-notes-layer"></g>
+            <g id="bp-ghost-layer"></g>
+            <g id="bp-handles-layer"></g>
+          </g>
+        </svg>
+        <div class="bp-hud" id="bp-hud">Select a tool · drag to pan with <kbd>Space</kbd> · scroll to zoom</div>
+      </div>
+
+      <!-- Right: properties + renders -->
+      <div class="bp-sidebar bp-sidebar-right">
+        <div class="bp-section">
+          <div class="bp-section-title">Properties</div>
+          <div id="bp-props">
+            <div style="font-size:11px;color:#444;padding:10px;text-align:center">Nothing selected</div>
+          </div>
+        </div>
+        <div class="bp-section">
+          <div class="bp-section-title">Sam Renders</div>
+          <div id="bp-renders" class="bp-renders-grid">
+            <div style="font-size:11px;color:#444;padding:10px;text-align:center">No renders yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <div id="bp-desc-modal" class="bp-modal" style="display:none">
+    <div class="bp-modal-inner">
+      <h3 style="margin:0 0 10px 0;color:#fff">Generate from Description</h3>
+      <div style="font-size:11px;color:#666;margin-bottom:8px">Describe the home or room in natural language. The local LLM will propose a layout you can edit.</div>
+      <textarea id="bp-desc-input" rows="7" class="bp-input" style="width:100%;resize:vertical" placeholder="e.g. Small 2-bedroom single-floor bungalow. Open kitchen/living area, 10x14 master bedroom with en-suite bath, 10x10 second bedroom, laundry closet off the hallway."></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
+        <button class="bp-btn" onclick="document.getElementById('bp-desc-modal').style.display='none'">Cancel</button>
+        <button class="bp-btn bp-btn-primary" onclick="bpGenerateFromDescription()">Generate</button>
+      </div>
+      <div id="bp-desc-status" style="font-size:11px;color:#666;margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div id="bp-browse-modal" class="bp-modal" style="display:none">
+    <div class="bp-modal-inner" style="max-width:860px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <h3 style="margin:0;color:#fff;flex:1">Browse Blueprints</h3>
+        <input id="bp-browse-search" class="bp-input" placeholder="Search by name…" style="width:200px" oninput="bpRenderBrowse()">
+        <button class="bp-btn" onclick="document.getElementById('bp-browse-modal').style.display='none'">Close</button>
+      </div>
+      <div id="bp-browse-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;max-height:65vh;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <div id="bp-render-modal" class="bp-modal" style="display:none">
+    <div class="bp-modal-inner">
+      <h3 style="margin:0 0 10px 0;color:#fff">Render with Sam</h3>
+      <div style="font-size:11px;color:#666;margin-bottom:8px">Sends the current blueprint as a prompt to Stable Diffusion. Takes 30-90 seconds.</div>
+      <div class="form-group">
+        <label>Render mode</label>
+        <select id="bp-render-mode" class="bp-select" style="width:100%">
+          <option value="photorealistic">Photorealistic interior</option>
+          <option value="isometric">Isometric 3D cutaway</option>
+          <option value="topdown">Top-down floor plan drawing</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Extra prompt (optional)</label>
+        <textarea id="bp-render-extra" rows="3" class="bp-input" style="width:100%;resize:vertical" placeholder="e.g. modern scandinavian style, natural oak floors, large windows"></textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1"><div class="bp-minilabel">Width</div><input type="number" id="bp-render-w" class="bp-input" value="1024" step="64"></div>
+        <div style="flex:1"><div class="bp-minilabel">Height</div><input type="number" id="bp-render-h" class="bp-input" value="1024" step="64"></div>
+        <div style="flex:1"><div class="bp-minilabel">Steps</div><input type="number" id="bp-render-steps" class="bp-input" value="30" min="10" max="80"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
+        <button class="bp-btn" onclick="document.getElementById('bp-render-modal').style.display='none'">Cancel</button>
+        <button class="bp-btn bp-btn-sam" onclick="bpRunRender()">&#10024; Render</button>
+      </div>
+      <div id="bp-render-status" style="font-size:11px;color:#666;margin-top:10px"></div>
     </div>
   </div>
 
@@ -1830,6 +2168,18 @@
     <div>
       <div class="page-title">Billing</div>
       <div class="page-sub">Payments, receivables, and financial tracking</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <select class="filter-select" id="billing-year-filter" onchange="loadBilling()">
+        <option value="" selected>All Time</option>
+        <option value="2026">2026</option>
+        <option value="2025">2025</option>
+        <option value="2024">2024</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;cursor:pointer;user-select:none">
+        <input type="checkbox" id="billing-unpaid-toggle" checked onchange="loadBilling()" style="accent-color:#e94560">
+        Unpaid only
+      </label>
     </div>
   </div>
   <div class="stats-row" id="bill-stats">
@@ -2487,6 +2837,16 @@
         </select>
       </div>
     </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="project-modal-status">
+        <option value="Estimate">Estimate</option>
+        <option value="Planning" selected>Planning</option>
+        <option value="Signed">Signed</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Completed">Completed</option>
+      </select>
+    </div>
     <div class="form-group" id="project-scope-other-wrap" style="display:none">
       <label>Describe Scope</label>
       <input type="text" id="project-scope-other" placeholder="e.g. driveway repair, brick repointing, garage build...">
@@ -2984,6 +3344,21 @@
         </div>
         <div id="pd-quotes-list" style="font-size:12px;margin-bottom:10px"></div>
         <div id="pd-quote-estimator" style="display:none;background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:14px;margin-top:8px">
+          <!-- Quote Basis — project description & scope context -->
+          <div id="pd-quote-basis" style="background:#0a0a20;border:1px solid #2a2a4a;border-radius:8px;padding:12px;margin-bottom:12px">
+            <div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Quote Basis</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <label style="font-size:10px;color:#666">Project Description</label>
+                <textarea id="pd-quote-desc" rows="3" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:11px;resize:vertical" placeholder="Describe the project scope for accurate estimates..."></textarea>
+              </div>
+              <div>
+                <label style="font-size:10px;color:#666">Scope / Trade</label>
+                <textarea id="pd-quote-scope" rows="3" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:11px;resize:vertical" placeholder="kitchen, bathroom, addition, etc."></textarea>
+              </div>
+            </div>
+            <div style="font-size:9px;color:#555;margin-top:4px">This description and scope are sent to the estimator and saved with the quote for reference.</div>
+          </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
             <button class="est-method-btn pd-est-method active" data-m="1" onclick="pdSwitchEstMethod(1)" style="padding:10px">
               <div style="font-size:18px">⏱</div>
@@ -3041,6 +3416,34 @@
         </div>
         <div id="pd-invoice-info" style="font-size:13px;color:#888"></div>
       </div>
+      <!-- Scheduling -->
+      <div class="panel" style="border-color:#4da6ff">
+        <div class="panel-header">
+          <h3 style="color:#4da6ff">Schedule</h3>
+          <button class="btn btn-sm btn-primary" onclick="pdAddScheduleEvent()">+ Add Event</button>
+        </div>
+        <div id="pd-schedule-list" style="font-size:12px"></div>
+        <div id="pd-schedule-form" style="display:none;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:12px;margin-top:8px">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label style="font-size:10px;color:#666">Title</label><input id="pd-sched-title" placeholder="Crew on-site, inspection, delivery..." style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px"></div>
+            <div><label style="font-size:10px;color:#666">Date</label><input id="pd-sched-date" type="date" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px"></div>
+            <div><label style="font-size:10px;color:#666">Time</label><input id="pd-sched-time" type="time" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label style="font-size:10px;color:#666">Category</label>
+              <select id="pd-sched-cat" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px">
+                <option value="work">Work Day</option><option value="inspection">Inspection</option><option value="delivery">Delivery</option>
+                <option value="meeting">Meeting</option><option value="deadline">Deadline</option><option value="permit">Permit</option>
+              </select>
+            </div>
+            <div><label style="font-size:10px;color:#666">Details</label><input id="pd-sched-details" placeholder="Optional notes..." style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px"></div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-primary" onclick="pdSaveScheduleEvent()">Save</button>
+            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('pd-schedule-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
       <!-- Photos: Before / During / After -->
       <div class="panel">
         <div class="panel-header">
@@ -3074,6 +3477,8 @@
           <button class="btn btn-sm btn-secondary pd-doc-filter" onclick="filterProjectDocs('Other')">Other</button>
         </div>
         <div id="pd-docs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        <!-- Phil's curated documents (from ahb_documents via Telegram intake) -->
+        <div id="pd-curated-docs" style="margin-top:12px"></div>
       </div>
       <!-- Receipts -->
       <div class="panel">
@@ -3152,6 +3557,24 @@
 <div class="footer">Baza Empire Agent Framework v3 &mdash; All Home Building Co LLC</div>
 
 <script>
+/* Nav dropdown — tap to toggle on touch devices */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-dropdown > .nav-link').forEach(link => {
+    link.addEventListener('click', e => {
+      if (window.innerWidth <= 768) {
+        e.preventDefault();
+        const dd = link.parentElement;
+        document.querySelectorAll('.nav-dropdown.open').forEach(d => { if (d !== dd) d.classList.remove('open'); });
+        dd.classList.toggle('open');
+      }
+    });
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.nav-dropdown')) document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+  });
+  document.querySelectorAll('.nav-submenu a').forEach(a => a.addEventListener('click', () => document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'))));
+});
+
 /* ===================== GLOBALS ===================== */
 let allClients = [];
 let allProjects = [];
@@ -3512,7 +3935,7 @@ function filterProjects(){
   // In By-Year view picking a year leaves only that year's section visible.
   const filtered=allProjects.filter(p=>{
     if(q && !(p.title||'').toLowerCase().includes(q) && !((p.description||'')+'').toLowerCase().includes(q) && !((p.client_name||'')+'').toLowerCase().includes(q) && !((p.address||'')+'').toLowerCase().includes(q)) return false;
-    if(s && p.status!==s) return false;
+    if(s && _normalizeStatus(p.status)!==s) return false;
     if(c && String(p.client_id)!==String(c)) return false;
     if(y && (p.year||p.start_date||p.created_at||'').substring(0,4)!==y) return false;
     return true;
@@ -3520,7 +3943,7 @@ function filterProjects(){
   renderProjectStats(filtered);
   renderProjects(filtered);
   if(projectViewMode==='byyear') renderProjectByYear(filtered);
-  if(projectViewMode==='kanban') renderProjectKanban();
+  if(projectViewMode==='kanban') renderProjectKanban(filtered);
 }
 
 let projectStagedDocs = [];   // pending uploads for new project
@@ -3537,6 +3960,7 @@ async function openProjectModal(){
   document.getElementById('project-scope').value='kitchen';
   document.getElementById('project-scope-other').value='';
   document.getElementById('project-scope-other-wrap').style.display='none';
+  document.getElementById('project-modal-status').value='Planning';
   document.getElementById('project-address').value='';
   document.getElementById('project-description').value='';
   document.getElementById('project-budget-low').value='';
@@ -3585,6 +4009,7 @@ async function editProject(id){
     document.getElementById('project-scope-other').value='';
   }
   onScopeChange();
+  document.getElementById('project-modal-status').value=p.status||'Planning';
   document.getElementById('project-address').value=p.address||'';
   document.getElementById('project-description').value=p.description||'';
   document.getElementById('project-budget-low').value=p.budget_low||'';
@@ -3725,7 +4150,8 @@ async function saveProject(){
     budget_low:document.getElementById('project-budget-low').value||null,
     budget_high:document.getElementById('project-budget-high').value||null,
     start_date:document.getElementById('project-start').value||null,
-    end_date:document.getElementById('project-end').value||null
+    end_date:document.getElementById('project-end').value||null,
+    status:document.getElementById('project-modal-status').value
   };
   if(!data.title){showToast('Title is required','error');return;}
   try{
@@ -4280,6 +4706,16 @@ const PROJECT_STATUS_META = {
   'cancelled':   {color:'#ff6b6b', icon:'✗'},
 };
 
+function _normalizeStatus(s){
+  if(!s) return '';
+  const lc=s.toLowerCase().replace(/\s+/g,'_');
+  if(lc==='estimate'||lc==='proposal') return 'estimate';
+  if(lc==='planning') return 'planning';
+  if(lc==='signed') return 'signed';
+  if(lc==='in_progress') return 'in_progress';
+  if(lc==='completed'||lc==='complete') return 'completed';
+  return lc;
+}
 function _projectYear(p){
   // Match Shaski's logic: prefer start_date, fall back to year column, then created_at
   const sd = p.start_date || p.year || p.created_at || '';
@@ -4301,7 +4737,7 @@ function renderProjectByYear(preFiltered){
     const yf = document.getElementById('project-year-filter').value;
     list = allProjects.filter(p=>{
       if(q && !(p.title||'').toLowerCase().includes(q) && !((p.description||'')+'').toLowerCase().includes(q) && !((p.client_name||'')+'').toLowerCase().includes(q) && !((p.address||'')+'').toLowerCase().includes(q)) return false;
-      if(s && p.status!==s) return false;
+      if(s && _normalizeStatus(p.status)!==s) return false;
       if(cf && String(p.client_id)!==String(cf)) return false;
       if(yf && (p.year||p.start_date||p.created_at||'').substring(0,4)!==yf) return false;
       return true;
@@ -4424,11 +4860,13 @@ async function moveInvoiceToYear(iid, label){
   }catch(e){ showToast('Move failed','error'); }
 }
 
-function renderProjectKanban(){
+function renderProjectKanban(filtered){
   const board=document.getElementById('projects-kanban');
-  const statuses=['Planning','In Progress','Completed'];
-  board.innerHTML=statuses.map(st=>{
-    const cards=allProjects.filter(p=>p.status===st);
+  const src=Array.isArray(filtered)?filtered:allProjects;
+  const columns=[{label:'Estimate',keys:['estimate']},{label:'Planning',keys:['planning']},{label:'Signed',keys:['signed']},{label:'In Progress',keys:['in_progress']},{label:'Completed',keys:['completed']}];
+  board.innerHTML=columns.map(col=>{
+    const cards=src.filter(p=>col.keys.includes(_normalizeStatus(p.status)));
+    const st=col.label;
     return `<div class="kanban-col">
       <div class="kanban-col-header"><span>${st}</span><span class="col-count">${cards.length}</span></div>
       <div class="kanban-col-body">${cards.length?cards.map(p=>`
@@ -5195,6 +5633,13 @@ function pdToggleQuoteEstimator(){
   const open=el.style.display==='none';
   el.style.display=open?'block':'none';
   btn.textContent=open?'× Hide Estimator':'+ Add Quote';
+  // Pre-fill quote basis from project details
+  if(open && currentProjectDetail){
+    const d=document.getElementById('pd-quote-desc');
+    const s=document.getElementById('pd-quote-scope');
+    if(d) d.value=currentProjectDetail.description||'';
+    if(s) s.value=currentProjectDetail.scope||'';
+  }
 }
 
 function pdSwitchEstMethod(m){
@@ -5211,31 +5656,47 @@ async function pdLoadQuotes(pid){
     if(!quotes.length){el.innerHTML='<div style="color:#444;padding:8px 0">No quotes yet — click + Add Quote to run the estimator.</div>';return;}
     el.innerHTML=quotes.map(q=>{
       const isActive=q.is_active==1;
+      const toggleColor=isActive?'#00d084':'#555';
+      const toggleBg=isActive?'#00d08433':'#1a1a2e';
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#0a0a18;border:1px solid ${isActive?'#00d084':'#1a1a2e'};border-radius:7px;margin-bottom:6px">
         <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="color:#fff;font-weight:700">${fmtCurrency(q.total)}</span>
             <span style="font-size:10px;color:#888;background:#1a1a2e;padding:2px 7px;border-radius:10px">${escHtml((q.method||'').toUpperCase())}</span>
-            ${isActive?'<span style="font-size:10px;color:#00d084;font-weight:700">★ ACTIVE</span>':''}
+            <button onclick="pdToggleQuoteActive(${q.id},'${pid}',${isActive?'false':'true'})" style="cursor:pointer;background:${toggleBg};border:1px solid ${toggleColor};border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700;color:${toggleColor}">${isActive?'CHOSEN':'INACTIVE'}</button>
+            ${isActive?'<button class="btn btn-sm" style="padding:1px 8px;font-size:9px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" onclick="pdApplyQuoteToInvoice(${q.id},\'${pid}\')">Apply to Invoice</button>':''}
             <span style="font-size:10px;color:#444">${fmtDate(q.created_at)}</span>
           </div>
           ${q.notes?'<div style="font-size:10px;color:#666;margin-top:3px">'+escHtml(q.notes)+'</div>':''}
+          ${q.description?'<div style="font-size:10px;color:#555;margin-top:2px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(q.description)+'">Basis: '+escHtml(q.description).substring(0,80)+(q.description.length>80?'...':'')+'</div>':''}
         </div>
         <div style="display:flex;gap:4px">
-          ${isActive?'':'<button class="btn-icon" title="Make active" onclick="pdMakeQuoteActive('+q.id+',\''+pid+'\')">★</button>'}
-          <button class="btn-icon del" title="Delete" onclick="pdDeleteQuote('+q.id+',\''+pid+'\')">&#10005;</button>
+          <button class="btn-icon del" title="Delete" onclick="pdDeleteQuote(${q.id},'${pid}')">&#10005;</button>
         </div>
       </div>`;
     }).join('');
   }catch(e){el.innerHTML='<div style="color:#ff6b6b">Error loading quotes</div>';}
 }
 
-async function pdMakeQuoteActive(qid, pid){
-  await fetch('/api/ahb/quotes/'+qid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({make_active:true})});
-  showToast('Quote set as active — project value updated');
+async function pdToggleQuoteActive(qid, pid, activate){
+  if(activate){
+    await fetch('/api/ahb/quotes/'+qid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({make_active:true})});
+    showToast('Quote set as CHOSEN — project value updated');
+  } else {
+    await fetch('/api/ahb/quotes/'+qid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deactivate:true})});
+    showToast('Quote deactivated');
+  }
   pdLoadQuotes(pid);
   openProjectDetail(pid);
   loadProjects();
+}
+async function pdMakeQuoteActive(qid, pid){pdToggleQuoteActive(qid,pid,true);}
+async function pdApplyQuoteToInvoice(qid, pid){
+  if(!confirm('Apply this quote total to the linked invoice?'))return;
+  await fetch('/api/ahb/quotes/'+qid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({make_active:true, apply_to_invoice:true})});
+  showToast('Quote applied to invoice');
+  openProjectDetail(pid);
+  loadInvoices();
 }
 
 async function pdDeleteQuote(qid, pid){
@@ -5265,6 +5726,9 @@ async function pdAddManualQuote(){
 async function pdRunMethod(m){
   const pid=document.getElementById('pd-id').value;
   const p=currentProjectDetail||{};
+  // Use quote basis fields (user-editable) over raw project data
+  const qDesc=(document.getElementById('pd-quote-desc')||{}).value||p.description||'';
+  const qScope=(document.getElementById('pd-quote-scope')||{}).value||p.scope||'kitchen';
   const out=document.getElementById('pd-est-results');
   out.innerHTML='<div style="text-align:center;padding:20px;color:#666">'+(m===1?'Calculating…':'🔮 Researching market rates… (10-30s)')+'</div>';
   let body, url;
@@ -5282,15 +5746,15 @@ async function pdRunMethod(m){
     url='/api/ahb/estimator/method1';
   } else if(m===2){
     body={
-      description:p.description||'',scope:p.scope||'kitchen',
+      description:qDesc,scope:qScope,
       address:document.getElementById('pd-m2-address').value||p.address||'',
       sqft:parseFloat(document.getElementById('pd-m2-sqft').value)||null,
     };
-    if(!body.description){showToast('Project has no description — edit it first','error');out.innerHTML='';return;}
+    if(!body.description){showToast('Fill in the project description in Quote Basis above','error');out.innerHTML='';return;}
     url='/api/ahb/estimator/method2';
   } else {
-    body={description:p.description||'',scope:p.scope||'kitchen'};
-    if(!body.description){showToast('Project has no description — edit it first','error');out.innerHTML='';return;}
+    body={description:qDesc,scope:qScope};
+    if(!body.description){showToast('Fill in the project description in Quote Basis above','error');out.innerHTML='';return;}
     url='/api/ahb/estimator/method3';
   }
   try{
@@ -5319,8 +5783,8 @@ async function pdRunMethod(m){
       if(typeof v==='number'){rows.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>'+k.replace(/_/g,' ')+'</span><span style="color:#aaa">'+fmtCurrency(v)+'</span></div>');}
     }
     det.innerHTML=rows.join('') || '<span style="color:#444">No numeric breakdown</span>';
-    // Stash for save
-    window._pdLastQuote={total,method:methodLabel,breakdown,scope:p.scope,description:p.description};
+    // Stash for save — use quote basis fields
+    window._pdLastQuote={total,method:methodLabel,breakdown,scope:qScope,description:qDesc};
   }catch(e){
     out.innerHTML='<div style="color:#ff6b6b;padding:12px">Error: '+escHtml(e.message)+'</div>';
   }
@@ -5365,6 +5829,8 @@ function switchArchMode(mode){
   document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('arch-'+mode).style.display='block';
   document.querySelector(`.mode-btn[data-mode="${mode}"]`).classList.add('active');
+  if(mode==='blueprint' && typeof bpInit==='function' && !window._bpInited){ window._bpInited=true; bpInit(); }
+  if(mode==='blueprint' && typeof bpRefreshList==='function') bpRefreshList();
 }
 
 function handleArchAnalyzeDrop(e){
@@ -7534,6 +8000,8 @@ async function openProjectDetail(pid){
     renderPhaseManager(p.phases||[]);
     // Quotes
     pdLoadQuotes(pid);
+    // Schedule
+    pdRenderSchedule(p.events||[]);
     // Pre-fill estimator address from project
     setTimeout(()=>{const a=document.getElementById('pd-m2-address');if(a)a.value=p.address||'';},50);
     // Reset estimator UI
@@ -7545,10 +8013,12 @@ async function openProjectDetail(pid){
     ['before','during','after'].forEach(sec=>{
       const el=document.getElementById('pd-photos-'+sec);
       const imgs=files.filter(f=>(f.photo_section||'')==sec);
-      el.innerHTML=imgs.length?imgs.map(f=>`<img src="/api/ahb/files/serve/${f.id}" style="width:90px;height:70px;object-fit:cover;border-radius:6px;border:2px solid #2a2a4a;cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')" onerror="this.style.display='none'">`).join(''):'<span style="color:#444;font-size:11px">No photos yet</span>';
+      el.innerHTML=imgs.length?imgs.map(f=>`<div style="position:relative;display:inline-block"><img src="/api/ahb/files/serve/${f.id}" style="width:90px;height:70px;object-fit:cover;border-radius:6px;border:2px solid #2a2a4a;cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')" onerror="this.parentElement.style.display='none'"><button onclick="event.stopPropagation();pdDeleteFile('${f.id}')" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:#ff4444;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:18px;padding:0">&times;</button></div>`).join(''):'<span style="color:#444;font-size:11px">No photos yet</span>';
     });
-    // Documents
+    // Documents (from ahb_files)
     renderProjectDocs(files.filter(f=>f.document_type),'');
+    // Curated documents (from ahb_documents — Phil's Telegram intake)
+    renderCuratedDocs(p.documents||[]);
     // Receipts
     const rcpEl=document.getElementById('pd-receipts');
     rcpEl.innerHTML=(p.receipts||[]).length?(p.receipts).map(r=>`<div class="dash-breakdown-row" style="cursor:pointer" onclick="closeModal('projectDetailModal');switchTab('receipts');setTimeout(()=>openReceiptDetail('${r.id}'),500)"><span style="color:#ddd">${r.image_path?'&#128247; ':''}${escHtml(r.store_name||r.vendor||'Unknown')}</span><span style="color:#00d084">${fmtCurrency(r.total||r.amount)} &middot; ${fmtDate(r.receipt_date)}</span></div>`).join(''):'<span style="color:#444">No receipts linked to this project</span>';
@@ -7562,12 +8032,42 @@ async function openProjectDetail(pid){
         <div class="form-group" style="margin:0"><label>Notes</label><textarea id="pd-notes" rows="2" style="font-size:12px">${escHtml(p.notes||'')}</textarea></div>
         <div class="form-group" style="margin:0"><label>Acquisition</label><input type="text" id="pd-acquisition" value="${escHtml(p.acquisition_type||'')}" style="font-size:12px"></div>
       </div>
+      <div style="background:#0a0a20;border:1px solid #f59e0b44;border-radius:8px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:#f59e0b">Commission</span>
+          <span style="font-size:10px;color:#666">(on top of project cost)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="pd-commission-pct" value="${p.commission_pct!=null?p.commission_pct:10}" min="0" max="100" step="0.5" style="width:70px;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px 8px;color:#f59e0b;font-size:13px;font-weight:700;text-align:center" oninput="pdCalcCommission()">
+            <span style="color:#888;font-size:12px">%</span>
+          </div>
+          <span style="color:#555;font-size:14px">=</span>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="color:#888;font-size:12px">$</span>
+            <input type="number" id="pd-commission-val" value="${(p.commission_value||0).toFixed(2)}" min="0" step="0.01" style="width:110px;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px 8px;color:#f59e0b;font-size:13px;font-weight:700;text-align:center" oninput="pdCalcCommissionPct()">
+          </div>
+          <div style="flex:1;text-align:right">
+            <span style="font-size:11px;color:#666">Project: ${fmtCurrency(p.value||0)}</span>
+            <span style="font-size:13px;font-weight:800;color:#00d084;margin-left:8px">Total: <span id="pd-commission-total">${fmtCurrency((p.value||0)+(p.commission_value||0))}</span></span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <span style="font-size:10px;color:#666;white-space:nowrap">Beneficiary:</span>
+          <input type="text" id="pd-commission-beneficiary" list="pd-beneficiary-list" value="${escHtml(p.commission_beneficiary||'')}" placeholder="Name or select..." style="flex:1;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px 8px;color:#e0e0e0;font-size:12px">
+          <datalist id="pd-beneficiary-list"></datalist>
+        </div>
+      </div>
       <div class="form-row">
         <div class="form-group" style="margin:0"><label>Start Date</label><input type="date" id="pd-start" value="${p.start_date||''}"></div>
         <div class="form-group" style="margin:0"><label>End Date</label><input type="date" id="pd-end" value="${p.end_date||''}"></div>
       </div>
       <button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="saveProjectDetails()">Save Details</button>
     `;
+    // Auto-calc commission if not yet set but project has value
+    if(p.value && !p.commission_value){pdCalcCommission();}
+    // Populate beneficiary suggestions from clients + employees
+    pdLoadBeneficiaryList();
     document.getElementById('projectDetailModal').classList.add('open');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
@@ -7637,13 +8137,40 @@ async function syncInvoiceFromPhases(){
     showToast('Invoice synced from phases');openProjectDetail(pid);
   }catch(e){showToast('Error','error');}
 }
+function pdCalcCommission(){
+  const pct=parseFloat(document.getElementById('pd-commission-pct').value)||0;
+  const projVal=(currentProjectDetail||{}).value||0;
+  const val=Math.round(projVal*pct/100*100)/100;
+  document.getElementById('pd-commission-val').value=val.toFixed(2);
+  document.getElementById('pd-commission-total').textContent=fmtCurrency(projVal+val);
+}
+async function pdLoadBeneficiaryList(){
+  const dl=document.getElementById('pd-beneficiary-list');if(!dl)return;
+  const names=new Set();
+  try{
+    const [cl,em]=await Promise.all([fetch('/api/ahb/clients').then(r=>r.json()),fetch('/api/ahb/employees').then(r=>r.json())]);
+    (cl||[]).forEach(c=>{ if(c.name)names.add(c.name); });
+    (em||[]).forEach(e=>{ if(e.name)names.add(e.name); });
+  }catch(e){}
+  dl.innerHTML=[...names].sort().map(n=>`<option value="${escHtml(n)}">`).join('');
+}
+function pdCalcCommissionPct(){
+  const val=parseFloat(document.getElementById('pd-commission-val').value)||0;
+  const projVal=(currentProjectDetail||{}).value||0;
+  const pct=projVal>0?Math.round(val/projVal*10000)/100:0;
+  document.getElementById('pd-commission-pct').value=pct;
+  document.getElementById('pd-commission-total').textContent=fmtCurrency(projVal+val);
+}
 async function saveProjectDetails(){
   const pid=document.getElementById('pd-id').value;
   try{
     await fetch('/api/ahb/projects/'+pid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       description:document.getElementById('pd-desc').value,scope:document.getElementById('pd-scope').value,
       notes:document.getElementById('pd-notes').value,acquisition_type:document.getElementById('pd-acquisition').value,
-      start_date:document.getElementById('pd-start').value,end_date:document.getElementById('pd-end').value
+      start_date:document.getElementById('pd-start').value,end_date:document.getElementById('pd-end').value,
+      commission_pct:parseFloat(document.getElementById('pd-commission-pct').value)||0,
+      commission_value:parseFloat(document.getElementById('pd-commission-val').value)||0,
+      commission_beneficiary:document.getElementById('pd-commission-beneficiary').value
     })});
     showToast('Details saved — invoice synced');
     loadProjects();
@@ -7654,12 +8181,39 @@ async function saveProjectDetails(){
 function renderProjectDocs(docs,filter){
   const el=document.getElementById('pd-docs');
   const filtered=filter?docs.filter(d=>d.document_type===filter):docs;
-  el.innerHTML=filtered.length?filtered.map(f=>`<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;font-size:12px;cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')"><div style="color:#c4b5fd;font-weight:700">${escHtml(f.document_type)}</div><div style="color:#ddd">${escHtml(f.name)}</div><div style="color:#555;font-size:10px">${fmtDate(f.created_at)}</div></div>`).join(''):'<span style="color:#444">No documents</span>';
+  el.innerHTML=filtered.length?filtered.map(f=>`<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;font-size:12px;position:relative"><div style="cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')"><div style="color:#c4b5fd;font-weight:700">${escHtml(f.document_type)}</div><div style="color:#ddd">${escHtml(f.name)}</div><div style="color:#555;font-size:10px">${fmtDate(f.created_at)}</div></div><button onclick="pdDeleteFile('${f.id}')" style="position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:#ff4444;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:18px;padding:0">&times;</button></div>`).join(''):'<span style="color:#444">No documents</span>';
   document.querySelectorAll('.pd-doc-filter').forEach(b=>b.classList.remove('active'));
 }
 function filterProjectDocs(type){
   const files=currentProjectDetail?currentProjectDetail.files||[]:[];
   renderProjectDocs(files.filter(f=>f.document_type),type);
+}
+function renderCuratedDocs(docs){
+  const el=document.getElementById('pd-curated-docs');
+  if(!el)return;
+  if(!docs||!docs.length){el.innerHTML='';return;}
+  const typeColors={permit:'#f59e0b',coi:'#4da6ff',license:'#00d084',w9:'#c4b5fd',
+    contract:'#ff6b6b',invoice:'#00d084',receipt:'#f59e0b',estimate:'#4da6ff',
+    blueprint:'#7c3aed',tax_document:'#ff6b6b'};
+  el.innerHTML=`<div style="font-size:11px;color:#888;margin-bottom:6px;border-top:1px solid #1a1a2e;padding-top:8px">Filed via Telegram (${docs.length})</div>`+
+    docs.map(d=>{
+      const dt=(d.doc_type||'doc').toUpperCase();
+      const color=typeColors[(d.doc_type||'').toLowerCase()]||'#888';
+      const fname=d.suggested_name||d.original_name||'document';
+      const fileUrl=d.file_path?'/api/ahb/documents/file/'+d.id:'#';
+      return `<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="flex:1;cursor:pointer" onclick="window.open('${fileUrl}','_blank')">
+            <span style="display:inline-block;padding:2px 8px;border-radius:6px;background:${color}22;color:${color};font-size:10px;font-weight:700;margin-bottom:4px">${escHtml(dt)}</span>
+            <div style="color:#ddd;font-weight:600">${escHtml(fname)}</div>
+            ${d.entity?`<div style="color:#888;font-size:11px">${escHtml(d.entity)}</div>`:''}
+            ${d.doc_date?`<div style="color:#555;font-size:10px">${fmtDate(d.doc_date)}</div>`:''}
+            ${d.summary?`<div style="color:#666;font-size:10px;margin-top:4px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(d.summary)}</div>`:''}
+          </div>
+          <div style="font-size:9px;color:#444;white-space:nowrap;margin-left:8px">${fmtDate(d.curated_at)}</div>
+        </div>
+      </div>`;
+    }).join('');
 }
 async function uploadProjectPhotos(files,section){
   const pid=document.getElementById('pd-id').value;if(!pid||!files.length)return;
@@ -7679,6 +8233,13 @@ async function uploadProjectDoc(files){
     await fetch('/api/ahb/projects/'+pid+'/files',{method:'POST',body:fd});
   }
   showToast(files.length+' document(s) uploaded');openProjectDetail(pid);
+}
+async function pdDeleteFile(fid){
+  if(!confirm('Delete this file?'))return;
+  const pid=document.getElementById('pd-id').value;
+  await fetch('/api/ahb/files/'+fid,{method:'DELETE'});
+  showToast('File deleted');
+  openProjectDetail(pid);
 }
 function viewProjectInvoicePDF(){
   const invId=document.getElementById('pd-invoice-id').value;
@@ -7700,6 +8261,61 @@ async function invoiceFromProjectDetail(){
     if(data.success){showToast('Invoice '+data.invoice_number+' created');openProjectDetail(pid);loadInvoices();}
     else showToast(data.error||'Failed','error');
   }catch(e){showToast('Error','error');}
+}
+
+/* ===================== PROJECT SCHEDULE ===================== */
+function pdRenderSchedule(events){
+  const el=document.getElementById('pd-schedule-list');
+  if(!el)return;
+  if(!events||!events.length){el.innerHTML='<div style="color:#444;padding:8px 0">No events scheduled — click + Add Event</div>';return;}
+  const catColors={work:'#4da6ff',inspection:'#f59e0b',delivery:'#00d084',meeting:'#c4b5fd',deadline:'#ff6b6b',permit:'#f59e0b'};
+  const sorted=[...events].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  el.innerHTML=sorted.map(ev=>{
+    const c=catColors[ev.category]||'#888';
+    const dt=ev.date?(new Date(ev.date+'T00:00')).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:6px;margin-bottom:4px;border-left:3px solid ${c}">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px"><span style="color:#fff;font-weight:600;font-size:12px">${escHtml(ev.title||'')}</span><span style="font-size:9px;padding:1px 6px;border-radius:8px;background:${c}22;color:${c};font-weight:700;text-transform:uppercase">${escHtml(ev.category||'')}</span></div>
+        <div style="font-size:10px;color:#666;margin-top:2px">${dt}${ev.time?' at '+ev.time:''}${ev.details?' — '+escHtml(ev.details):''}</div>
+      </div>
+      <button class="btn-icon del" title="Delete" onclick="pdDeleteScheduleEvent('${ev.id}')">&#10005;</button>
+    </div>`;
+  }).join('');
+}
+function pdAddScheduleEvent(){
+  const form=document.getElementById('pd-schedule-form');
+  form.style.display=form.style.display==='none'?'block':'none';
+  // Pre-fill date with project start or today
+  const p=currentProjectDetail||{};
+  document.getElementById('pd-sched-date').value=p.start_date||new Date().toISOString().slice(0,10);
+  document.getElementById('pd-sched-title').value='';
+  document.getElementById('pd-sched-time').value='';
+  document.getElementById('pd-sched-details').value='';
+}
+async function pdSaveScheduleEvent(){
+  const pid=document.getElementById('pd-id').value;
+  const title=document.getElementById('pd-sched-title').value.trim();
+  if(!title){showToast('Enter event title','error');return;}
+  try{
+    await fetch('/api/ahb/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      title,
+      date:document.getElementById('pd-sched-date').value,
+      time:document.getElementById('pd-sched-time').value,
+      category:document.getElementById('pd-sched-cat').value,
+      details:document.getElementById('pd-sched-details').value,
+      project_id:pid
+    })});
+    showToast('Event added');
+    document.getElementById('pd-schedule-form').style.display='none';
+    openProjectDetail(pid);
+  }catch(e){showToast('Error','error');}
+}
+async function pdDeleteScheduleEvent(eid){
+  if(!confirm('Delete this event?'))return;
+  const pid=document.getElementById('pd-id').value;
+  await fetch('/api/ahb/events/'+eid,{method:'DELETE'});
+  showToast('Event deleted');
+  openProjectDetail(pid);
 }
 
 /* ===================== CHANGE ORDERS ===================== */
@@ -7770,11 +8386,16 @@ async function createChangeOrder(){
 /* ===================== BILLING ===================== */
 async function loadBilling(){
   try{
-    const res=await fetch('/api/ahb/billing/summary');
+    const year=(document.getElementById('billing-year-filter')||{}).value||'';
+    const unpaidOnly=(document.getElementById('billing-unpaid-toggle')||{}).checked!==false;
+    const qs=new URLSearchParams();
+    if(year)qs.set('year',year);
+    qs.set('unpaid_only',unpaidOnly?'true':'false');
+    const res=await fetch('/api/ahb/billing/summary?'+qs.toString());
     const s=await res.json();
     document.getElementById('bl-due').textContent=fmtCurrency((s.sent||{}).total||0);
     document.getElementById('bl-overdue').textContent=fmtCurrency((s.overdue||{}).total||0);
-    document.getElementById('bl-progress').textContent=fmtCurrency((s.in_progress||{}).total||0+(s.approved||{}).total||0);
+    document.getElementById('bl-progress').textContent=fmtCurrency(((s.in_progress||{}).total||0)+((s.approved||{}).total||0));
     document.getElementById('bl-paid').textContent=fmtCurrency((s.paid||{}).total||0);
     document.getElementById('bl-receivable').textContent=fmtCurrency(s.total_receivable||0);
     // Overdue details with interest
@@ -7788,17 +8409,25 @@ async function loadBilling(){
     const tb=document.getElementById('billing-tbody');
     const items=s.active_items||[];
     tb.innerHTML=items.length?items.map(i=>{
-      const isOverdue=i.status==='Overdue';
+      const st=(i.status||'').toLowerCase();
+      const isOverdue=st==='overdue';
+      const isPaid=st==='paid';
       return `<tr>
         <td style="font-weight:600;color:#ddd">${escHtml(i.invoice_number)}</td>
         <td style="font-size:12px;color:#888">${escHtml(i.client_name||'')}</td>
         <td style="color:#00d084;font-weight:700">${fmtCurrency(i.total)}</td>
-        <td><span class="badge badge-${(i.status||'').toLowerCase().replace(' ','_')}">${i.status}</span></td>
+        <td><span class="badge badge-${st.replace(' ','_')}">${i.status}</span></td>
         <td style="color:${isOverdue?'#f59e0b':'#333'}">${isOverdue?'Accruing':'—'}</td>
         <td style="font-weight:700;color:#ddd">${fmtCurrency(i.total)}</td>
-        <td><div class="row-actions"><button class="btn-icon" onclick="markInvoicePaid('${i.id}')" title="Mark Paid" style="color:#00d084;border-color:#00d084">&#10003;</button></div></td>
+        <td><div class="row-actions">
+          <button class="btn-icon" onclick="editInvoice('${i.id}')" title="Edit" style="color:#4da6ff;border-color:#4da6ff">&#9998;</button>
+          <button class="btn-icon" onclick="deleteInvoice('${i.id}','${escHtml(i.invoice_number||i.id)}')" title="Delete" style="color:#ff5555;border-color:#ff5555">&#128465;</button>
+          ${isPaid
+            ?`<button class="btn-icon" onclick="markInvoiceUnpaid('${i.id}')" title="Mark Unpaid" style="color:#f59e0b;border-color:#f59e0b">&#10003;</button>`
+            :`<button class="btn-icon" onclick="markInvoicePaid('${i.id}')" title="Mark Paid" style="color:#00d084;border-color:#00d084">&#10003;</button>`}
+        </div></td>
       </tr>`;
-    }).join(''):'<tr><td colspan="7" style="text-align:center;padding:40px;color:#333">All invoices paid</td></tr>';
+    }).join(''):`<tr><td colspan="7" style="text-align:center;padding:40px;color:#333">${unpaidOnly?'All invoices paid':'No invoices'}</td></tr>`;
   }catch(e){console.error('loadBilling',e);}
 }
 async function markInvoicePaid(id){
@@ -7806,6 +8435,22 @@ async function markInvoicePaid(id){
   try{
     await fetch('/api/ahb/invoices/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Paid'})});
     showToast('Marked as paid');loadBilling();
+  }catch(e){showToast('Error','error');}
+}
+async function markInvoiceUnpaid(id){
+  if(!confirm('Mark this invoice as Unpaid (revert to Sent)?'))return;
+  try{
+    await fetch('/api/ahb/invoices/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Sent',paid_date:''})});
+    showToast('Marked as unpaid');loadBilling();
+  }catch(e){showToast('Error','error');}
+}
+async function deleteInvoice(id,label){
+  if(!confirm(`Delete invoice ${label||id}? This cannot be undone.`))return;
+  try{
+    const r=await fetch('/api/ahb/invoices/'+id,{method:'DELETE'});
+    const d=await r.json();
+    if(d.success){showToast('Invoice deleted');loadBilling();}
+    else showToast(d.error||'Delete failed','error');
   }catch(e){showToast('Error','error');}
 }
 
@@ -9160,6 +9805,1394 @@ function contactReviewer(reviewId){
   if(!rev.email&&!rev.phone) msg+='(no contact info provided)';
   alert(msg);
 }
+/* ===================== ACTIVITY FEED SIDEBAR ===================== */
+
+const AF_AGENT_COLORS={simon_bately:'#7c3aed',claw_batto:'#00d084',phil_hass:'#f59e0b',
+  sam_axe:'#4da6ff',duke_harmon:'#ff6b6b',rex_valor:'#c084fc',scout_reeves:'#22d3ee',
+  nova_sterling:'#f472b6',specter_voss:'#94a3b8'};
+const AF_AGENT_INITIALS={simon_bately:'SB',claw_batto:'CB',phil_hass:'PH',
+  sam_axe:'SA',duke_harmon:'DH',rex_valor:'RV',scout_reeves:'SR',
+  nova_sterling:'NS',specter_voss:'SV'};
+const AF_REQ_COLORS={serge:'#00d084',simon:'#7c3aed',cron:'#f59e0b',
+  task_runner:'#4da6ff',duty:'#c084fc',unknown:'#555'};
+
+let afOpen=false, afLastTs='', afPollTimer=null, afEntries=[];
+
+function toggleActivityFeed(){
+  afOpen=!afOpen;
+  document.getElementById('activity-sidebar').classList.toggle('open',afOpen);
+  if(afOpen){loadActivityFeed();startAfPoll();document.getElementById('af-pulse').style.display='none';}
+  else{stopAfPoll();}
+}
+
+async function loadActivityFeed(append=false){
+  const agent=document.getElementById('af-agent-filter').value;
+  let url='/api/ahb/activity-feed?limit=60';
+  if(agent)url+='&agent_id='+agent;
+  if(append&&afLastTs)url+='&since='+encodeURIComponent(afLastTs);
+  try{
+    const r=await fetch(url);
+    const rows=await r.json();
+    if(Array.isArray(rows)&&rows.length){
+      if(!append){afEntries=rows;}
+      else{
+        const ids=new Set(afEntries.map(e=>e.id));
+        const fresh=rows.filter(e=>!ids.has(e.id));
+        if(fresh.length){afEntries=[...fresh,...afEntries];}
+        else return;
+      }
+      if(afEntries.length)afLastTs=afEntries[0].date||'';
+    }
+    renderActivityFeed();
+  }catch(e){console.error('af load',e);}
+}
+
+function renderActivityFeed(){
+  const el=document.getElementById('af-feed');
+  if(!afEntries.length){el.innerHTML='<div style="text-align:center;padding:40px;color:#444">No activity yet</div>';return;}
+  el.innerHTML=afEntries.map(e=>{
+    const color=AF_AGENT_COLORS[e.agent_id]||'#555';
+    const initials=AF_AGENT_INITIALS[e.agent_id]||(e.agent_name||'?').substring(0,2).toUpperCase();
+    const st=(e.status||'completed').toLowerCase();
+    const reqBy=e.requested_by||'unknown';
+    const reqColor=AF_REQ_COLORS[reqBy]||'#555';
+    const summary=escHtml(e.action_summary||e.description||e.type||'').substring(0,200);
+    const ago=relTime(e.date);
+    return `<div class="activity-card ${st}">
+      <div class="activity-agent">
+        <div class="activity-avatar" style="background:${color}">${initials}</div>
+        <span style="color:${color};font-weight:700;font-size:11px">${escHtml(e.agent_name||e.agent_id)}</span>
+      </div>
+      <div class="activity-summary">${summary}</div>
+      <div class="activity-meta">
+        <span>${ago}</span>
+        <span>
+          <span class="activity-badge" style="background:${reqColor}22;color:${reqColor}">${reqBy}</span>
+          <span class="activity-badge" style="background:${st==='completed'?'#00d08422':st==='in_progress'?'#f59e0b22':'#ff444422'};color:${st==='completed'?'#00d084':st==='in_progress'?'#f59e0b':'#ff4444'}">${st}</span>
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function relTime(iso){
+  if(!iso)return '';
+  const d=new Date(iso.replace(' ','T')+(iso.includes('T')?'':'Z'));
+  const now=new Date();
+  const diff=Math.max(0,Math.floor((now-d)/1000));
+  if(diff<60)return 'just now';
+  if(diff<3600)return Math.floor(diff/60)+'m ago';
+  if(diff<86400)return Math.floor(diff/3600)+'h ago';
+  return Math.floor(diff/86400)+'d ago';
+}
+
+function startAfPoll(){stopAfPoll();afPollTimer=setInterval(()=>{
+  if(afOpen)loadActivityFeed(true).then(()=>{});
+},10000);}
+function stopAfPoll(){if(afPollTimer){clearInterval(afPollTimer);afPollTimer=null;}}
+
+// Kick off background poll to show pulse dot for new activity
+setInterval(async()=>{
+  if(afOpen)return;
+  try{
+    const r=await fetch('/api/ahb/activity-feed?limit=1'+(afLastTs?'&since='+encodeURIComponent(afLastTs):''));
+    const rows=await r.json();
+    if(Array.isArray(rows)&&rows.length){
+      document.getElementById('af-pulse').style.display='block';
+    }
+  }catch(e){}
+},30000);
+
+/* ========================================================================== */
+/* ===================== BLUEPRINT BUILDER ================================== */
+/* ========================================================================== */
+
+const BP_ROOM_COLORS = {
+  kitchen:  '#d98b4a', bedroom:  '#4a7bb8', bathroom: '#3fb5ac', living:   '#6abf6a',
+  dining:   '#a877d9', garage:   '#6b7680', hallway:  '#bfb280', office:   '#e0c24a',
+  closet:   '#9c8a6a', laundry:  '#e06b9e', other:    '#888'
+};
+/* Object library — simple blueprint-style symbols, sized in world units (feet by default) */
+/* Items with createAs:'wall' or 'partition' become walls (not objects) when dropped. */
+const BP_OBJECTS = [
+  /* ── STRUCTURAL ── */
+  { kind:'wall_8',      cat:'Structural', label:'Wall 8ft',    w:8,   h:0.5, createAs:'wall',      svg:'<rect x="0" y="0.15" width="8" height="0.2" fill="currentColor"/>' },
+  { kind:'wall_10',     cat:'Structural', label:'Wall 10ft',   w:10,  h:0.5, createAs:'wall',      svg:'<rect x="0" y="0.15" width="10" height="0.2" fill="currentColor"/>' },
+  { kind:'wall_12',     cat:'Structural', label:'Wall 12ft',   w:12,  h:0.5, createAs:'wall',      svg:'<rect x="0" y="0.15" width="12" height="0.2" fill="currentColor"/>' },
+  { kind:'wall_16',     cat:'Structural', label:'Wall 16ft',   w:16,  h:0.5, createAs:'wall',      svg:'<rect x="0" y="0.15" width="16" height="0.2" fill="currentColor"/>' },
+  { kind:'partition_6', cat:'Structural', label:'Partition 6', w:6,   h:0.3, createAs:'partition', svg:'<rect x="0" y="0.1" width="6" height="0.1" fill="currentColor" fill-opacity="0.7"/>' },
+  { kind:'partition_8', cat:'Structural', label:'Partition 8', w:8,   h:0.3, createAs:'partition', svg:'<rect x="0" y="0.1" width="8" height="0.1" fill="currentColor" fill-opacity="0.7"/>' },
+  { kind:'half_wall',   cat:'Structural', label:'Half Wall',   w:6,   h:0.4, createAs:'partition', svg:'<rect x="0" y="0.12" width="6" height="0.16" fill="currentColor" fill-opacity="0.5" stroke="currentColor" stroke-width="0.03" stroke-dasharray="0.3 0.15"/>' },
+  { kind:'column',      cat:'Structural', label:'Column',      w:1,   h:1,   svg:'<rect x="0" y="0" width="1" height="1" fill="currentColor" fill-opacity="0.35" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="0" x2="1" y2="1" stroke="currentColor" stroke-width="0.03"/><line x1="1" y1="0" x2="0" y2="1" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'beam',        cat:'Structural', label:'Beam',        w:8,   h:0.6, svg:'<rect x="0" y="0.1" width="8" height="0.4" fill="none" stroke="currentColor" stroke-width="0.05" stroke-dasharray="0.4 0.2"/>' },
+  { kind:'stairs',      cat:'Structural', label:'Stairs Up',   w:3,   h:8,   svg:'<rect x="0" y="0" width="3" height="8" fill="none" stroke="currentColor" stroke-width="0.08"/><line x1="0" y1="1" x2="3" y2="1" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="2" x2="3" y2="2" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="3" x2="3" y2="3" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="4" x2="3" y2="4" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="5" x2="3" y2="5" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="6" x2="3" y2="6" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="7" x2="3" y2="7" stroke="currentColor" stroke-width="0.05"/><path d="M 1.5 0 L 2.2 0.5 L 1.5 1 Z" fill="currentColor"/>' },
+  { kind:'spiral_stairs',cat:'Structural',label:'Spiral Stairs',w:4,  h:4,   svg:'<circle cx="2" cy="2" r="1.9" fill="none" stroke="currentColor" stroke-width="0.07"/><circle cx="2" cy="2" r="0.5" fill="currentColor" fill-opacity="0.5"/><line x1="2" y1="0.1" x2="2" y2="3.9" stroke="currentColor" stroke-width="0.04"/><line x1="0.1" y1="2" x2="3.9" y2="2" stroke="currentColor" stroke-width="0.04"/><line x1="0.7" y1="0.7" x2="3.3" y2="3.3" stroke="currentColor" stroke-width="0.04"/><line x1="3.3" y1="0.7" x2="0.7" y2="3.3" stroke="currentColor" stroke-width="0.04"/>' },
+
+  /* ── DOORS ── */
+  { kind:'door',          cat:'Doors', label:'Door 36"',     w:3,   h:3,   svg:'<rect x="0" y="2.8" width="3" height="0.15" fill="currentColor"/><path d="M 0 2.9 A 3 3 0 0 1 3 2.9" stroke="currentColor" stroke-width="0.06" fill="none"/><line x1="0" y1="2.85" x2="0" y2="0" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'door_30',       cat:'Doors', label:'Door 30"',     w:2.5, h:2.5, svg:'<rect x="0" y="2.35" width="2.5" height="0.13" fill="currentColor"/><path d="M 0 2.4 A 2.5 2.5 0 0 1 2.5 2.4" stroke="currentColor" stroke-width="0.06" fill="none"/>' },
+  { kind:'double_door',   cat:'Doors', label:'Double Door',  w:6,   h:3,   svg:'<rect x="0" y="2.8" width="6" height="0.15" fill="currentColor"/><path d="M 0 2.9 A 3 3 0 0 1 3 2.9" stroke="currentColor" stroke-width="0.06" fill="none"/><path d="M 6 2.9 A 3 3 0 0 0 3 2.9" stroke="currentColor" stroke-width="0.06" fill="none"/>' },
+  { kind:'sliding_door',  cat:'Doors', label:'Sliding',      w:6,   h:0.5, svg:'<rect x="0" y="0" width="6" height="0.5" fill="none" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="0.25" x2="6" y2="0.25" stroke="currentColor" stroke-width="0.03"/><rect x="0.3" y="0.08" width="2.7" height="0.34" fill="currentColor" fill-opacity="0.3"/><path d="M 3 0.25 L 5.7 0.25" stroke="currentColor" stroke-width="0.08" marker-end="url(#arrow)"/>' },
+  { kind:'french_doors',  cat:'Doors', label:'French Doors', w:6,   h:3,   svg:'<path d="M 0 2.9 A 3 3 0 0 1 3 2.9" stroke="currentColor" stroke-width="0.06" fill="none"/><path d="M 6 2.9 A 3 3 0 0 0 3 2.9" stroke="currentColor" stroke-width="0.06" fill="none"/><rect x="0" y="2.75" width="3" height="0.1" fill="currentColor" fill-opacity="0.5"/><rect x="3" y="2.75" width="3" height="0.1" fill="currentColor" fill-opacity="0.5"/><line x1="0.3" y1="2.85" x2="2.7" y2="2.85" stroke="currentColor" stroke-width="0.02" stroke-dasharray="0.1 0.1"/><line x1="3.3" y1="2.85" x2="5.7" y2="2.85" stroke="currentColor" stroke-width="0.02" stroke-dasharray="0.1 0.1"/>' },
+  { kind:'pocket_door',   cat:'Doors', label:'Pocket',       w:3,   h:0.5, svg:'<rect x="0" y="0" width="3" height="0.5" fill="none" stroke="currentColor" stroke-width="0.04" stroke-dasharray="0.3 0.15"/><rect x="0.1" y="0.1" width="2.8" height="0.3" fill="currentColor" fill-opacity="0.3"/>' },
+  { kind:'barn_door',     cat:'Doors', label:'Barn',         w:4,   h:0.5, svg:'<rect x="0" y="0" width="4" height="0.3" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="0.04"/><line x1="0" y1="-0.1" x2="5" y2="-0.1" stroke="currentColor" stroke-width="0.03"/><rect x="3.6" y="-0.05" width="0.8" height="0.4" fill="currentColor" fill-opacity="0.5"/>' },
+  { kind:'garage_door',   cat:'Doors', label:'Garage Door',  w:16,  h:0.5, svg:'<rect x="0" y="0.05" width="16" height="0.4" fill="none" stroke="currentColor" stroke-width="0.06"/><line x1="0" y1="0.15" x2="16" y2="0.15" stroke="currentColor" stroke-width="0.03"/><line x1="0" y1="0.25" x2="16" y2="0.25" stroke="currentColor" stroke-width="0.03"/><line x1="0" y1="0.35" x2="16" y2="0.35" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'opening',       cat:'Doors', label:'Opening',      w:4,   h:0.5, svg:'<line x1="0" y1="0.25" x2="4" y2="0.25" stroke="currentColor" stroke-width="0.06" stroke-dasharray="0.3 0.2"/>' },
+
+  /* ── WINDOWS ── */
+  { kind:'window',         cat:'Windows', label:'Window',        w:4,  h:0.5, svg:'<rect x="0" y="0" width="4" height="0.5" fill="none" stroke="currentColor" stroke-width="0.05"/><line x1="0" y1="0.25" x2="4" y2="0.25" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'picture_window', cat:'Windows', label:'Picture',       w:6,  h:0.5, svg:'<rect x="0" y="0" width="6" height="0.5" fill="none" stroke="currentColor" stroke-width="0.08"/><line x1="0.2" y1="0.1" x2="5.8" y2="0.1" stroke="currentColor" stroke-width="0.03"/><line x1="0.2" y1="0.4" x2="5.8" y2="0.4" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'bay_window',     cat:'Windows', label:'Bay',           w:6,  h:2,   svg:'<path d="M 0 2 L 1.5 0.5 L 4.5 0.5 L 6 2 Z" fill="none" stroke="currentColor" stroke-width="0.07"/><line x1="1.5" y1="0.5" x2="4.5" y2="0.5" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'casement_window',cat:'Windows', label:'Casement',      w:3,  h:0.5, svg:'<rect x="0" y="0" width="3" height="0.5" fill="none" stroke="currentColor" stroke-width="0.05"/><line x1="1.5" y1="0" x2="1.5" y2="0.5" stroke="currentColor" stroke-width="0.04"/><line x1="0" y1="0" x2="1.5" y2="0.25" stroke="currentColor" stroke-width="0.03"/><line x1="3" y1="0" x2="1.5" y2="0.25" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'sliding_window', cat:'Windows', label:'Sliding Win',   w:5,  h:0.5, svg:'<rect x="0" y="0" width="5" height="0.5" fill="none" stroke="currentColor" stroke-width="0.05"/><rect x="0.2" y="0.08" width="2.2" height="0.34" fill="currentColor" fill-opacity="0.25"/>' },
+  { kind:'arched_window',  cat:'Windows', label:'Arched',        w:3,  h:0.7, svg:'<rect x="0" y="0.2" width="3" height="0.5" fill="none" stroke="currentColor" stroke-width="0.05"/><path d="M 0 0.2 A 1.5 0.4 0 0 1 3 0.2" fill="none" stroke="currentColor" stroke-width="0.05"/>' },
+  { kind:'skylight',       cat:'Windows', label:'Skylight',      w:4,  h:2,   svg:'<rect x="0" y="0" width="4" height="2" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.05" stroke-dasharray="0.3 0.15"/><line x1="2" y1="0" x2="2" y2="2" stroke="currentColor" stroke-width="0.04" stroke-dasharray="0.3 0.15"/><line x1="0" y1="1" x2="4" y2="1" stroke="currentColor" stroke-width="0.04" stroke-dasharray="0.3 0.15"/>' },
+
+  /* ── KITCHEN ── */
+  { kind:'sink',          cat:'Kitchen', label:'Sink',       w:2,   h:1.5, svg:'<rect x="0" y="0" width="2" height="1.5" rx="0.15" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="0.2" y="0.2" width="1.6" height="1.1" rx="0.1" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="1" cy="0.75" r="0.08" fill="currentColor"/>' },
+  { kind:'double_sink',   cat:'Kitchen', label:'Dbl Sink',   w:3,   h:1.75,svg:'<rect x="0" y="0" width="3" height="1.75" rx="0.15" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="0.2" y="0.2" width="1.25" height="1.35" rx="0.08" fill="none" stroke="currentColor" stroke-width="0.04"/><rect x="1.55" y="0.2" width="1.25" height="1.35" rx="0.08" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'range',         cat:'Kitchen', label:'Range',      w:2.5, h:2.5, svg:'<rect x="0" y="0" width="2.5" height="2.5" fill="none" stroke="currentColor" stroke-width="0.07"/><circle cx="0.7" cy="0.7" r="0.3" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="1.8" cy="0.7" r="0.3" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="0.7" cy="1.8" r="0.3" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="1.8" cy="1.8" r="0.3" fill="none" stroke="currentColor" stroke-width="0.05"/>' },
+  { kind:'cooktop',       cat:'Kitchen', label:'Cooktop',    w:3,   h:2,   svg:'<rect x="0" y="0" width="3" height="2" fill="none" stroke="currentColor" stroke-width="0.06"/><circle cx="0.7" cy="0.6" r="0.25" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="2.3" cy="0.6" r="0.25" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="0.7" cy="1.4" r="0.25" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="2.3" cy="1.4" r="0.25" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="1.5" cy="1" r="0.2" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'wall_oven',     cat:'Kitchen', label:'Wall Oven',  w:2.5, h:2,   svg:'<rect x="0" y="0" width="2.5" height="2" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0.2" y="0.3" width="2.1" height="1.5" fill="none" stroke="currentColor" stroke-width="0.04"/><rect x="0.2" y="0" width="2.1" height="0.25" fill="currentColor" fill-opacity="0.3"/>' },
+  { kind:'fridge',        cat:'Kitchen', label:'Fridge',     w:3,   h:2.5, svg:'<rect x="0" y="0" width="3" height="2.5" fill="none" stroke="currentColor" stroke-width="0.08"/><line x1="0" y1="1.25" x2="3" y2="1.25" stroke="currentColor" stroke-width="0.05"/><line x1="2.7" y1="0.3" x2="2.7" y2="1" stroke="currentColor" stroke-width="0.06"/><line x1="2.7" y1="1.5" x2="2.7" y2="2.2" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'dishwasher',    cat:'Kitchen', label:'Dishwasher', w:2,   h:2,   svg:'<rect x="0" y="0" width="2" height="2" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0.15" y="0.3" width="1.7" height="1.5" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'microwave',     cat:'Kitchen', label:'Microwave',  w:2,   h:1.3, svg:'<rect x="0" y="0" width="2" height="1.3" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="0.1" y="0.1" width="1.3" height="1.1" fill="none" stroke="currentColor" stroke-width="0.04"/><line x1="1.5" y1="0.3" x2="1.9" y2="0.3" stroke="currentColor" stroke-width="0.03"/><line x1="1.5" y1="0.5" x2="1.9" y2="0.5" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'range_hood',    cat:'Kitchen', label:'Range Hood', w:3,   h:1.5, svg:'<path d="M 0 1.5 L 0.5 0 L 2.5 0 L 3 1.5 Z" fill="none" stroke="currentColor" stroke-width="0.06" stroke-dasharray="0.2 0.1"/>' },
+  { kind:'island',        cat:'Kitchen', label:'Island',     w:6,   h:3,   svg:'<rect x="0" y="0" width="6" height="3" rx="0.15" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="0.07"/>' },
+  { kind:'base_cabinet',  cat:'Kitchen', label:'Base Cab',   w:3,   h:2,   svg:'<rect x="0" y="0" width="3" height="2" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.06"/><line x1="1.5" y1="0" x2="1.5" y2="2" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'wall_cabinet',  cat:'Kitchen', label:'Wall Cab',   w:3,   h:1,   svg:'<rect x="0" y="0" width="3" height="1" fill="none" stroke="currentColor" stroke-width="0.06" stroke-dasharray="0.3 0.15"/><line x1="1.5" y1="0" x2="1.5" y2="1" stroke="currentColor" stroke-width="0.03" stroke-dasharray="0.2 0.1"/>' },
+  { kind:'pantry',        cat:'Kitchen', label:'Pantry',     w:3,   h:2,   svg:'<rect x="0" y="0" width="3" height="2" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.07"/><line x1="0" y1="1" x2="3" y2="1" stroke="currentColor" stroke-width="0.04"/><line x1="1.5" y1="0" x2="1.5" y2="2" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'bar_stool',     cat:'Kitchen', label:'Bar Stool',  w:1.2, h:1.2, svg:'<circle cx="0.6" cy="0.6" r="0.5" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.05"/><circle cx="0.6" cy="0.6" r="0.15" fill="currentColor"/>' },
+
+  /* ── BATH ── */
+  { kind:'toilet',        cat:'Bath', label:'Toilet',       w:2,   h:2.5, svg:'<rect x="0.5" y="0" width="1" height="0.5" fill="none" stroke="currentColor" stroke-width="0.06"/><ellipse cx="1" cy="1.5" rx="0.85" ry="1" fill="none" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'bathtub',       cat:'Bath', label:'Bathtub',      w:5,   h:2.5, svg:'<rect x="0" y="0" width="5" height="2.5" rx="0.3" fill="none" stroke="currentColor" stroke-width="0.08"/><rect x="0.2" y="0.2" width="4.6" height="2.1" rx="0.25" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="4.6" cy="1.25" r="0.12" fill="currentColor"/>' },
+  { kind:'shower',        cat:'Bath', label:'Shower',       w:3,   h:3,   svg:'<rect x="0" y="0" width="3" height="3" fill="none" stroke="currentColor" stroke-width="0.08"/><line x1="0" y1="0" x2="3" y2="3" stroke="currentColor" stroke-width="0.04"/><line x1="0" y1="3" x2="3" y2="0" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'walkin_shower', cat:'Bath', label:'Walk-in Shwr', w:4,   h:4,   svg:'<rect x="0" y="0" width="4" height="4" fill="none" stroke="currentColor" stroke-width="0.08"/><circle cx="2" cy="2" r="0.3" fill="currentColor" fill-opacity="0.3"/><line x1="0.3" y1="0.3" x2="3.7" y2="3.7" stroke="currentColor" stroke-width="0.03" stroke-dasharray="0.2 0.1"/>' },
+  { kind:'vanity',        cat:'Bath', label:'Vanity',       w:3,   h:2,   svg:'<rect x="0" y="0" width="3" height="2" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.07"/><rect x="0.4" y="0.2" width="2.2" height="1.2" rx="0.1" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="1.5" cy="0.8" r="0.08" fill="currentColor"/>' },
+  { kind:'double_vanity', cat:'Bath', label:'Dbl Vanity',   w:5,   h:2,   svg:'<rect x="0" y="0" width="5" height="2" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.07"/><rect x="0.2" y="0.2" width="2.1" height="1.2" rx="0.1" fill="none" stroke="currentColor" stroke-width="0.04"/><rect x="2.7" y="0.2" width="2.1" height="1.2" rx="0.1" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="1.25" cy="0.8" r="0.07" fill="currentColor"/><circle cx="3.75" cy="0.8" r="0.07" fill="currentColor"/>' },
+  { kind:'pedestal_sink', cat:'Bath', label:'Pedestal',     w:2,   h:1.5, svg:'<ellipse cx="1" cy="0.7" rx="0.95" ry="0.65" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="0.7" y="0.7" width="0.6" height="0.8" fill="currentColor" fill-opacity="0.3"/>' },
+  { kind:'bidet',         cat:'Bath', label:'Bidet',        w:1.5, h:2.3, svg:'<ellipse cx="0.75" cy="1.3" rx="0.65" ry="0.9" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="0.3" y="0" width="0.9" height="0.4" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'urinal',        cat:'Bath', label:'Urinal',       w:1.5, h:1,   svg:'<rect x="0" y="0" width="1.5" height="0.6" fill="none" stroke="currentColor" stroke-width="0.06"/><path d="M 0 0.6 Q 0.75 1 1.5 0.6" fill="none" stroke="currentColor" stroke-width="0.05"/>' },
+  { kind:'linen_closet',  cat:'Bath', label:'Linen Cls',    w:2,   h:2,   svg:'<rect x="0" y="0" width="2" height="2" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="0.06"/><line x1="0" y1="0.5" x2="2" y2="0.5" stroke="currentColor" stroke-width="0.03"/><line x1="0" y1="1" x2="2" y2="1" stroke="currentColor" stroke-width="0.03"/><line x1="0" y1="1.5" x2="2" y2="1.5" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'towel_rack',    cat:'Bath', label:'Towel Rack',   w:2,   h:0.3, svg:'<rect x="0" y="0" width="2" height="0.3" fill="currentColor" fill-opacity="0.4"/><line x1="0.2" y1="-0.1" x2="0.2" y2="0.4" stroke="currentColor" stroke-width="0.04"/><line x1="1.8" y1="-0.1" x2="1.8" y2="0.4" stroke="currentColor" stroke-width="0.04"/>' },
+
+  /* ── BEDROOM ── */
+  { kind:'bed',           cat:'Bedroom', label:'Queen Bed', w:5.5, h:6.7, svg:'<rect x="0" y="0" width="5.5" height="6.7" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.08"/><rect x="0.3" y="0.3" width="4.9" height="1.8" fill="currentColor" fill-opacity="0.25"/><rect x="0.6" y="0.5" width="1.8" height="1.2" rx="0.1" fill="currentColor" fill-opacity="0.4"/><rect x="3.1" y="0.5" width="1.8" height="1.2" rx="0.1" fill="currentColor" fill-opacity="0.4"/>' },
+  { kind:'twin_bed',      cat:'Bedroom', label:'Twin Bed',  w:3.25,h:6.25,svg:'<rect x="0" y="0" width="3.25" height="6.25" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.08"/><rect x="0.2" y="0.3" width="2.85" height="1.5" fill="currentColor" fill-opacity="0.25"/><rect x="0.7" y="0.5" width="1.85" height="1" rx="0.1" fill="currentColor" fill-opacity="0.4"/>' },
+  { kind:'king_bed',      cat:'Bedroom', label:'King Bed',  w:6.3, h:6.7, svg:'<rect x="0" y="0" width="6.3" height="6.7" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.08"/><rect x="0.3" y="0.3" width="5.7" height="1.8" fill="currentColor" fill-opacity="0.25"/><rect x="0.7" y="0.5" width="2" height="1.2" rx="0.1" fill="currentColor" fill-opacity="0.4"/><rect x="3.6" y="0.5" width="2" height="1.2" rx="0.1" fill="currentColor" fill-opacity="0.4"/>' },
+  { kind:'nightstand',    cat:'Bedroom', label:'Nightstand',w:1.8, h:1.5, svg:'<rect x="0" y="0" width="1.8" height="1.5" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="0.15" y="0.7" width="1.5" height="0.2" fill="currentColor" fill-opacity="0.3"/>' },
+  { kind:'dresser',       cat:'Bedroom', label:'Dresser',   w:5,   h:2,   svg:'<rect x="0" y="0" width="5" height="2" fill="none" stroke="currentColor" stroke-width="0.07"/><line x1="0" y1="0.5" x2="5" y2="0.5" stroke="currentColor" stroke-width="0.04"/><line x1="0" y1="1" x2="5" y2="1" stroke="currentColor" stroke-width="0.04"/><line x1="0" y1="1.5" x2="5" y2="1.5" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'wardrobe',      cat:'Bedroom', label:'Wardrobe',  w:4,   h:2,   svg:'<rect x="0" y="0" width="4" height="2" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.07"/><line x1="2" y1="0" x2="2" y2="2" stroke="currentColor" stroke-width="0.05"/><circle cx="1.7" cy="1" r="0.05" fill="currentColor"/><circle cx="2.3" cy="1" r="0.05" fill="currentColor"/>' },
+  { kind:'crib',          cat:'Bedroom', label:'Crib',      w:3,   h:4.5, svg:'<rect x="0" y="0" width="3" height="4.5" rx="0.15" fill="none" stroke="currentColor" stroke-width="0.07"/><g stroke="currentColor" stroke-width="0.04"><line x1="0.3" y1="0.2" x2="0.3" y2="4.3"/><line x1="0.8" y1="0.2" x2="0.8" y2="4.3"/><line x1="1.3" y1="0.2" x2="1.3" y2="4.3"/><line x1="1.8" y1="0.2" x2="1.8" y2="4.3"/><line x1="2.3" y1="0.2" x2="2.3" y2="4.3"/><line x1="2.7" y1="0.2" x2="2.7" y2="4.3"/></g>' },
+  { kind:'vanity_desk',   cat:'Bedroom', label:'Vanity',    w:4,   h:1.5, svg:'<rect x="0" y="0" width="4" height="1.5" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="1.3" y="0" width="1.4" height="0.4" fill="currentColor" fill-opacity="0.3"/>' },
+
+  /* ── LIVING ── */
+  { kind:'sofa',          cat:'Living', label:'Sofa',        w:7,   h:3,   svg:'<rect x="0" y="0.8" width="7" height="2.2" rx="0.3" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="0.07"/><rect x="0" y="0" width="7" height="1" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'loveseat',      cat:'Living', label:'Loveseat',    w:5,   h:3,   svg:'<rect x="0" y="0.8" width="5" height="2.2" rx="0.3" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="0.07"/><rect x="0" y="0" width="5" height="1" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'sectional',     cat:'Living', label:'Sectional',   w:9,   h:7,   svg:'<path d="M 0 7 L 0 3 L 4 3 L 4 0 L 9 0 L 9 7 Z" fill="currentColor" fill-opacity="0.18" stroke="currentColor" stroke-width="0.07"/>' },
+  { kind:'recliner',      cat:'Living', label:'Recliner',    w:3.5, h:3.5, svg:'<rect x="0" y="0.7" width="3.5" height="2.8" rx="0.3" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.07"/><rect x="0" y="0" width="3.5" height="1" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.05"/>' },
+  { kind:'armchair',      cat:'Living', label:'Armchair',    w:3,   h:3,   svg:'<rect x="0" y="0.8" width="3" height="2.2" rx="0.3" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.07"/><rect x="0" y="0" width="3" height="1" rx="0.2" fill="none" stroke="currentColor" stroke-width="0.05"/><rect x="0" y="0.4" width="0.5" height="2.2" fill="currentColor" fill-opacity="0.25"/><rect x="2.5" y="0.4" width="0.5" height="2.2" fill="currentColor" fill-opacity="0.25"/>' },
+  { kind:'ottoman',       cat:'Living', label:'Ottoman',     w:2.5, h:2.5, svg:'<rect x="0" y="0" width="2.5" height="2.5" rx="0.2" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'coffee_table',  cat:'Living', label:'Coffee Tbl',  w:4,   h:2,   svg:'<rect x="0" y="0" width="4" height="2" rx="0.15" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0.3" y="0.3" width="3.4" height="1.4" fill="currentColor" fill-opacity="0.12"/>' },
+  { kind:'end_table',     cat:'Living', label:'End Table',   w:2,   h:2,   svg:'<rect x="0" y="0" width="2" height="2" rx="0.1" fill="none" stroke="currentColor" stroke-width="0.06"/>' },
+  { kind:'tv_stand',      cat:'Living', label:'TV Stand',    w:5,   h:1.5, svg:'<rect x="0" y="0" width="5" height="1.5" fill="none" stroke="currentColor" stroke-width="0.06"/><rect x="1.5" y="-0.2" width="2" height="0.15" fill="currentColor"/>' },
+  { kind:'bookshelf',     cat:'Living', label:'Bookshelf',   w:3,   h:1,   svg:'<rect x="0" y="0" width="3" height="1" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.06"/><line x1="0" y1="0.33" x2="3" y2="0.33" stroke="currentColor" stroke-width="0.03"/><line x1="0" y1="0.66" x2="3" y2="0.66" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'piano',         cat:'Living', label:'Piano',       w:5,   h:2.5, svg:'<rect x="0" y="0" width="5" height="2.5" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.07"/><rect x="0.3" y="1.8" width="4.4" height="0.5" fill="currentColor"/><line x1="0.3" y1="2.1" x2="4.7" y2="2.1" stroke="#fff" stroke-width="0.02"/>' },
+  { kind:'fireplace',     cat:'Living', label:'Fireplace',   w:5,   h:1.5, svg:'<rect x="0" y="0" width="5" height="1.5" fill="none" stroke="currentColor" stroke-width="0.08"/><rect x="1.5" y="0.3" width="2" height="1.2" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="0.05"/>' },
+
+  /* ── DINING ── */
+  { kind:'table',          cat:'Dining', label:'Dining Table', w:6,   h:3.5, svg:'<rect x="0" y="0" width="6" height="3.5" rx="0.15" fill="none" stroke="currentColor" stroke-width="0.08"/>' },
+  { kind:'round_table',    cat:'Dining', label:'Round Table',  w:4,   h:4,   svg:'<circle cx="2" cy="2" r="1.9" fill="none" stroke="currentColor" stroke-width="0.08"/>' },
+  { kind:'chair',          cat:'Dining', label:'Chair',        w:1.5, h:1.5, svg:'<rect x="0" y="0" width="1.5" height="1.5" rx="0.1" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0" y="0" width="1.5" height="0.25" fill="currentColor" fill-opacity="0.3"/>' },
+  { kind:'buffet',         cat:'Dining', label:'Buffet',       w:5,   h:1.7, svg:'<rect x="0" y="0" width="5" height="1.7" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.07"/><line x1="1.67" y1="0" x2="1.67" y2="1.7" stroke="currentColor" stroke-width="0.04"/><line x1="3.33" y1="0" x2="3.33" y2="1.7" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'china_cabinet',  cat:'Dining', label:'China Cab',    w:4,   h:1.5, svg:'<rect x="0" y="0" width="4" height="1.5" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.07"/><line x1="2" y1="0" x2="2" y2="1.5" stroke="currentColor" stroke-width="0.05"/><line x1="0.5" y1="0.3" x2="3.5" y2="0.3" stroke="currentColor" stroke-width="0.03"/><line x1="0.5" y1="0.8" x2="3.5" y2="0.8" stroke="currentColor" stroke-width="0.03"/>' },
+
+  /* ── OFFICE ── */
+  { kind:'desk',           cat:'Office', label:'Desk',         w:5,   h:2.5, svg:'<rect x="0" y="0" width="5" height="2.5" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0" y="2" width="5" height="0.5" fill="currentColor" fill-opacity="0.2"/>' },
+  { kind:'l_desk',         cat:'Office', label:'L-Desk',       w:6,   h:5,   svg:'<path d="M 0 0 L 2.5 0 L 2.5 2.5 L 6 2.5 L 6 5 L 0 5 Z" fill="none" stroke="currentColor" stroke-width="0.07"/>' },
+  { kind:'office_chair',   cat:'Office', label:'Office Chair', w:2,   h:2,   svg:'<circle cx="1" cy="1" r="0.9" fill="none" stroke="currentColor" stroke-width="0.06"/><path d="M 0.2 1 A 0.8 0.8 0 0 1 1.8 1" stroke="currentColor" stroke-width="0.08" fill="none"/>' },
+  { kind:'filing_cabinet', cat:'Office', label:'Filing Cab',   w:1.5, h:2,   svg:'<rect x="0" y="0" width="1.5" height="2" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.06"/><rect x="0.2" y="0.2" width="1.1" height="0.5" fill="none" stroke="currentColor" stroke-width="0.03"/><rect x="0.2" y="0.85" width="1.1" height="0.5" fill="none" stroke="currentColor" stroke-width="0.03"/><rect x="0.2" y="1.5" width="1.1" height="0.3" fill="none" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'bookcase',       cat:'Office', label:'Bookcase',     w:3,   h:1,   svg:'<rect x="0" y="0" width="3" height="1" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.06"/><line x1="0" y1="0.33" x2="3" y2="0.33" stroke="currentColor" stroke-width="0.03"/><line x1="0" y1="0.66" x2="3" y2="0.66" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'printer',        cat:'Office', label:'Printer',      w:2,   h:1.5, svg:'<rect x="0" y="0.2" width="2" height="1.1" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.05"/><rect x="0.2" y="0" width="1.6" height="0.3" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+
+  /* ── LAUNDRY ── */
+  { kind:'washer',         cat:'Laundry', label:'Washer',       w:2.5, h:2.5, svg:'<rect x="0" y="0" width="2.5" height="2.5" fill="none" stroke="currentColor" stroke-width="0.07"/><circle cx="1.25" cy="1.4" r="0.8" fill="none" stroke="currentColor" stroke-width="0.06"/><circle cx="1.25" cy="1.4" r="0.5" fill="none" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'dryer',          cat:'Laundry', label:'Dryer',        w:2.5, h:2.5, svg:'<rect x="0" y="0" width="2.5" height="2.5" fill="none" stroke="currentColor" stroke-width="0.07"/><circle cx="1.25" cy="1.4" r="0.8" fill="none" stroke="currentColor" stroke-width="0.06"/><text x="1.25" y="1.6" text-anchor="middle" font-size="0.6" fill="currentColor">D</text>' },
+  { kind:'stacked_wd',     cat:'Laundry', label:'Stacked W/D',  w:2.5, h:2.5, svg:'<rect x="0" y="0" width="2.5" height="2.5" fill="none" stroke="currentColor" stroke-width="0.07"/><line x1="0" y1="1.25" x2="2.5" y2="1.25" stroke="currentColor" stroke-width="0.04"/><circle cx="1.25" cy="0.6" r="0.4" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="1.25" cy="1.9" r="0.4" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'utility_sink',   cat:'Laundry', label:'Utility Sink', w:2,   h:1.8, svg:'<rect x="0" y="0" width="2" height="1.8" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0.1" y="0.15" width="1.8" height="1.5" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="1" cy="0.9" r="0.1" fill="currentColor"/>' },
+
+  /* ── UTILITY ── */
+  { kind:'water_heater',   cat:'Utility', label:'Water Heater', w:2,   h:2,   svg:'<circle cx="1" cy="1" r="0.9" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.07"/><text x="1" y="1.15" text-anchor="middle" font-size="0.5" fill="currentColor">WH</text>' },
+  { kind:'furnace',        cat:'Utility', label:'Furnace',      w:3,   h:3,   svg:'<rect x="0" y="0" width="3" height="3" fill="currentColor" fill-opacity="0.15" stroke="currentColor" stroke-width="0.07"/><text x="1.5" y="1.7" text-anchor="middle" font-size="0.5" fill="currentColor">FURN</text>' },
+  { kind:'electric_panel', cat:'Utility', label:'Elec Panel',   w:1.5, h:0.5, svg:'<rect x="0" y="0" width="1.5" height="0.5" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.05"/><text x="0.75" y="0.38" text-anchor="middle" font-size="0.3" fill="currentColor">EP</text>' },
+  { kind:'ac_unit',        cat:'Utility', label:'AC Unit',      w:3,   h:3,   svg:'<rect x="0" y="0" width="3" height="3" fill="none" stroke="currentColor" stroke-width="0.06"/><circle cx="1.5" cy="1.5" r="1.1" fill="none" stroke="currentColor" stroke-width="0.05"/><circle cx="1.5" cy="1.5" r="0.5" fill="none" stroke="currentColor" stroke-width="0.03"/><line x1="1.5" y1="0.4" x2="1.5" y2="2.6" stroke="currentColor" stroke-width="0.03"/><line x1="0.4" y1="1.5" x2="2.6" y2="1.5" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'mini_split',     cat:'Utility', label:'Mini Split',   w:3,   h:0.8, svg:'<rect x="0" y="0" width="3" height="0.8" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.06"/><line x1="0.3" y1="0.2" x2="2.7" y2="0.2" stroke="currentColor" stroke-width="0.03"/><line x1="0.3" y1="0.4" x2="2.7" y2="0.4" stroke="currentColor" stroke-width="0.03"/><line x1="0.3" y1="0.6" x2="2.7" y2="0.6" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'sump_pump',      cat:'Utility', label:'Sump Pump',    w:1.5, h:1.5, svg:'<circle cx="0.75" cy="0.75" r="0.7" fill="none" stroke="currentColor" stroke-width="0.06"/><text x="0.75" y="0.9" text-anchor="middle" font-size="0.4" fill="currentColor">SP</text>' },
+
+  /* ── OUTDOOR ── */
+  { kind:'deck',           cat:'Outdoor', label:'Deck',     w:12,  h:10,  svg:'<rect x="0" y="0" width="12" height="10" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="0.06"/><g stroke="currentColor" stroke-width="0.03"><line x1="0" y1="1" x2="12" y2="1"/><line x1="0" y1="2" x2="12" y2="2"/><line x1="0" y1="3" x2="12" y2="3"/><line x1="0" y1="4" x2="12" y2="4"/><line x1="0" y1="5" x2="12" y2="5"/><line x1="0" y1="6" x2="12" y2="6"/><line x1="0" y1="7" x2="12" y2="7"/><line x1="0" y1="8" x2="12" y2="8"/><line x1="0" y1="9" x2="12" y2="9"/></g>' },
+  { kind:'patio',          cat:'Outdoor', label:'Patio',    w:12,  h:10,  svg:'<rect x="0" y="0" width="12" height="10" fill="currentColor" fill-opacity="0.05" stroke="currentColor" stroke-width="0.06" stroke-dasharray="0.4 0.2"/>' },
+  { kind:'porch',          cat:'Outdoor', label:'Porch',    w:10,  h:6,   svg:'<rect x="0" y="0" width="10" height="6" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="0.07"/><line x1="0" y1="0.5" x2="10" y2="0.5" stroke="currentColor" stroke-width="0.05"/>' },
+  { kind:'grill',          cat:'Outdoor', label:'Grill',    w:4,   h:2,   svg:'<rect x="0" y="0" width="4" height="2" rx="0.2" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="0.06"/><line x1="0.3" y1="0.5" x2="3.7" y2="0.5" stroke="currentColor" stroke-width="0.03"/><line x1="0.3" y1="1" x2="3.7" y2="1" stroke="currentColor" stroke-width="0.03"/><line x1="0.3" y1="1.5" x2="3.7" y2="1.5" stroke="currentColor" stroke-width="0.03"/>' },
+  { kind:'fire_pit',       cat:'Outdoor', label:'Fire Pit', w:3,   h:3,   svg:'<circle cx="1.5" cy="1.5" r="1.4" fill="none" stroke="currentColor" stroke-width="0.08"/><circle cx="1.5" cy="1.5" r="1" fill="currentColor" fill-opacity="0.2"/><text x="1.5" y="1.75" text-anchor="middle" font-size="0.9">🔥</text>' },
+  { kind:'hot_tub',        cat:'Outdoor', label:'Hot Tub',  w:6,   h:6,   svg:'<rect x="0" y="0" width="6" height="6" rx="0.5" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.08"/><rect x="0.5" y="0.5" width="5" height="5" rx="0.3" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'pool',           cat:'Outdoor', label:'Pool',     w:20,  h:10,  svg:'<rect x="0" y="0" width="20" height="10" rx="1" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.1"/><text x="10" y="5.4" text-anchor="middle" font-size="1.3" fill="currentColor">POOL</text>' },
+  { kind:'tree',           cat:'Outdoor', label:'Tree',     w:4,   h:4,   svg:'<circle cx="2" cy="2" r="1.9" fill="currentColor" fill-opacity="0.25" stroke="currentColor" stroke-width="0.05"/><circle cx="1.4" cy="1.4" r="0.6" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="2.6" cy="1.4" r="0.6" fill="none" stroke="currentColor" stroke-width="0.04"/><circle cx="2" cy="2.6" r="0.6" fill="none" stroke="currentColor" stroke-width="0.04"/>' },
+  { kind:'shrub',          cat:'Outdoor', label:'Shrub',    w:2,   h:2,   svg:'<circle cx="1" cy="1" r="0.9" fill="currentColor" fill-opacity="0.3"/>' },
+  { kind:'car',            cat:'Outdoor', label:'Car',      w:6,   h:15,  svg:'<rect x="0" y="0" width="6" height="15" rx="1" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.1"/><rect x="0.4" y="2" width="5.2" height="4" rx="0.3" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="0.4" y="9" width="5.2" height="4" rx="0.3" fill="none" stroke="currentColor" stroke-width="0.07"/><rect x="2" y="6" width="2" height="3" fill="currentColor" fill-opacity="0.15"/>' },
+  { kind:'truck',          cat:'Outdoor', label:'Truck',    w:7,   h:19,  svg:'<rect x="0" y="0" width="7" height="19" rx="0.5" fill="currentColor" fill-opacity="0.2" stroke="currentColor" stroke-width="0.12"/><rect x="0.3" y="1" width="6.4" height="5" rx="0.3" fill="none" stroke="currentColor" stroke-width="0.08"/><rect x="0.3" y="7" width="6.4" height="11" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-width="0.06"/>' },
+];
+const BP_OBJECTS_MAP = Object.fromEntries(BP_OBJECTS.map(o=>[o.kind,o]));
+const BP_CATEGORIES = ['All','Structural','Doors','Windows','Kitchen','Bath','Bedroom','Living','Dining','Office','Laundry','Utility','Outdoor'];
+
+const BP = {
+  state: null, list: [], tool: 'select', selected: null,
+  zoom: 1, panX: 40, panY: 40,
+  isPanning: false, panStart: null, panOrig: null,
+  isDragging: false, dragStart: null, dragOrig: null, resizeHandle: null,
+  drawingStart: null, draft: null,
+  viewportW: 800, viewportH: 560,
+  history: [], historyIdx: -1,
+  spacePressed: false,
+  libCategory: 'All', libSearch: '',
+};
+
+function bpUid(){ return 'bp_'+Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+function bpSvg(tag, attrs){ const el=document.createElementNS('http://www.w3.org/2000/svg', tag); if(attrs) for(const k in attrs){ el.setAttribute(k, attrs[k]); } return el; }
+function bpUnitLabel(){ return (BP.state && BP.state.units==='metric') ? 'm' : 'ft'; }
+function bpUnitFmt(v){ return (Math.round(v*100)/100)+bpUnitLabel(); }
+function bpCurFloor(){ return BP.state.data.floors[BP.state._floorIdx||0]; }
+function bpPxPerUnit(){ return BP.state.data.scale || 24; }
+function bpSnap(v){ const g=BP.state.data.grid||1; return Math.round(v/g)*g; }
+
+function bpDefaultState(units){
+  return {
+    id: bpUid(),
+    name: 'Untitled Blueprint',
+    project_id: 'proj-ahb123',
+    units: units || 'imperial',
+    data: {
+      units: units || 'imperial',
+      scale: units==='metric' ? 50 : 24,
+      grid: 1,
+      floors: [{ level:1, name:'Ground Floor', rooms:[], walls:[], objects:[], dims:[], notes:[] }],
+    },
+    _floorIdx: 0,
+    _dirty: false,
+  };
+}
+
+async function bpInit(){
+  // Object library
+  bpRenderObjLibrary();
+  // Canvas sizing
+  const wrap = document.getElementById('bp-canvas-wrap');
+  const resize = ()=>{ BP.viewportW = wrap.clientWidth; BP.viewportH = wrap.clientHeight; const svg=document.getElementById('bp-svg'); svg.setAttribute('viewBox', `0 0 ${BP.viewportW} ${BP.viewportH}`); bpRender(); };
+  new ResizeObserver(resize).observe(wrap);
+  setTimeout(resize, 50);
+
+  // Mouse/keyboard
+  const svg = document.getElementById('bp-svg');
+  svg.addEventListener('mousedown', bpOnMouseDown);
+  svg.addEventListener('mousemove', bpOnMouseMove);
+  window.addEventListener('mouseup', bpOnMouseUp);
+  svg.addEventListener('wheel', bpOnWheel, { passive:false });
+  window.addEventListener('keydown', bpOnKeyDown);
+  window.addEventListener('keyup', bpOnKeyUp);
+
+  // Start fresh
+  bpNewBlueprint();
+  await bpRefreshList();
+}
+
+function bpRenderObjLibrary(){
+  const el = document.getElementById('bp-lib');
+  if(!el) return;
+  // Controls (rendered once)
+  if(!document.getElementById('bp-lib-cat')){
+    const controls = document.createElement('div');
+    controls.style.cssText='display:flex;gap:4px;margin-bottom:6px';
+    controls.innerHTML = `
+      <select id="bp-lib-cat" class="bp-select" style="flex:1;font-size:10px;padding:4px 6px" onchange="BP.libCategory=this.value;bpRenderObjLibrary()">
+        ${BP_CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <input id="bp-lib-search" class="bp-input" style="flex:1;font-size:10px;padding:4px 6px" placeholder="Search…" oninput="BP.libSearch=this.value;bpRenderObjLibrary()">`;
+    el.parentNode.insertBefore(controls, el);
+  }
+  const cat = BP.libCategory || 'All';
+  const q = (BP.libSearch||'').toLowerCase().trim();
+  const items = BP_OBJECTS.filter(o => (cat==='All' || o.cat===cat) &&
+                                        (!q || o.label.toLowerCase().includes(q) || o.kind.toLowerCase().includes(q)));
+  if(!items.length){
+    el.innerHTML = '<div style="grid-column:1/-1;padding:14px;text-align:center;font-size:10px;color:#444">No matches</div>';
+    return;
+  }
+  el.innerHTML = items.map(o => {
+    const isWall = o.createAs==='wall' || o.createAs==='partition';
+    const vb = `0 0 ${o.w} ${o.h+(isWall?0.3:0)}`;
+    const badge = isWall ? `<span style="position:absolute;top:2px;right:2px;font-size:7px;color:#fcba03">${o.createAs==='partition'?'P':'W'}</span>` : '';
+    return `<div class="bp-lib-item" draggable="true" data-kind="${o.kind}"
+            title="${o.label} (${o.w}×${o.h}ft)${isWall?' · drag to canvas':''}"
+            ondragstart="event.dataTransfer.setData('text/bp-obj','${o.kind}')"
+            onclick="bpPlaceObjectAtCenter('${o.kind}')" style="position:relative">
+      ${badge}
+      <svg viewBox="${vb}" style="color:#cde">${o.svg}</svg>
+      <div class="bp-lib-item-label">${o.label}</div>
+    </div>`;
+  }).join('');
+  // Drag-drop onto canvas (attach once)
+  if(!window._bpDropAttached){
+    window._bpDropAttached = true;
+    const wrap = document.getElementById('bp-canvas-wrap');
+    wrap.addEventListener('dragover', e=>{ e.preventDefault(); });
+    wrap.addEventListener('drop', e=>{
+      e.preventDefault();
+      const kind = e.dataTransfer.getData('text/bp-obj'); if(!kind) return;
+      const rect = document.getElementById('bp-svg').getBoundingClientRect();
+      const pt = bpScreenToWorld(e.clientX-rect.left, e.clientY-rect.top);
+      bpPlaceFromLibrary(kind, pt.x, pt.y);
+    });
+  }
+}
+
+/* ---------------- CRUD ---------------- */
+async function bpRefreshList(){
+  try{
+    const r = await fetch('/api/ahb/blueprints?project_id=proj-ahb123');
+    BP.list = await r.json();
+    const sel = document.getElementById('bp-open-select');
+    sel.innerHTML = '<option value="">Open…</option>' +
+      BP.list.map(b=>`<option value="${b.id}">${escHtml(b.name)}</option>`).join('');
+  }catch(e){ console.error('bpRefreshList',e); }
+}
+
+function bpNewBlueprint(){
+  if(BP.state && BP.state._dirty && !confirm('Discard unsaved changes?')) return;
+  BP.state = bpDefaultState(document.getElementById('bp-units').value);
+  BP.selected = null;
+  BP.history = []; BP.historyIdx = -1;
+  document.getElementById('bp-name').value = BP.state.name;
+  document.getElementById('bp-units').value = BP.state.units;
+  bpZoomFit();
+  bpRender();
+  bpSnapshotHistory();
+  bpLoadRenders();
+}
+
+async function bpOpenBlueprint(id){
+  if(!id) return;
+  if(BP.state && BP.state._dirty && !confirm('Discard unsaved changes?')) return;
+  try{
+    const r = await fetch('/api/ahb/blueprints/'+id);
+    const bp = await r.json();
+    if(bp.error){ alert(bp.error); return; }
+    BP.state = { ...bp, _floorIdx:0, _dirty:false };
+    if(typeof BP.state.data === 'string'){ try{ BP.state.data = JSON.parse(BP.state.data); }catch{ BP.state.data = bpDefaultState(bp.units).data; } }
+    BP.selected = null;
+    BP.history=[]; BP.historyIdx=-1;
+    document.getElementById('bp-name').value = BP.state.name;
+    document.getElementById('bp-units').value = BP.state.units;
+    bpZoomFit();
+    bpRender();
+    bpSnapshotHistory();
+    bpLoadRenders();
+  }catch(e){ alert('Failed to open blueprint: '+e); }
+}
+
+async function bpSave(){
+  if(!BP.state) return;
+  BP.state.name = document.getElementById('bp-name').value || 'Untitled Blueprint';
+  const payload = { id:BP.state.id, name:BP.state.name, project_id:BP.state.project_id,
+                    units:BP.state.units, data:BP.state.data };
+  try{
+    const existing = BP.list.find(b=>b.id===BP.state.id);
+    let r;
+    if(existing){
+      r = await fetch('/api/ahb/blueprints/'+BP.state.id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    }else{
+      r = await fetch('/api/ahb/blueprints', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    }
+    const d = await r.json();
+    if(!d.success){ alert('Save failed: '+(d.error||'')); return; }
+    BP.state._dirty = false;
+    await bpUploadThumbnail();
+    await bpRefreshList();
+    if(typeof showToast==='function') showToast('Blueprint saved');
+  }catch(e){ alert('Save error: '+e); }
+}
+
+async function bpDeleteBlueprint(){
+  if(!BP.state) return;
+  const existing = BP.list.find(b=>b.id===BP.state.id);
+  if(!existing){ bpNewBlueprint(); return; }
+  if(!confirm(`Delete blueprint "${BP.state.name}"? Cannot be undone.`)) return;
+  try{
+    const r = await fetch('/api/ahb/blueprints/'+BP.state.id, {method:'DELETE'});
+    const d = await r.json();
+    if(!d.success){ alert('Delete failed: '+(d.error||'')); return; }
+    if(typeof showToast==='function') showToast('Deleted');
+    await bpRefreshList();
+    bpNewBlueprint();
+  }catch(e){ alert('Delete error: '+e); }
+}
+
+async function bpUploadThumbnail(){
+  try{
+    const svg = document.getElementById('bp-svg');
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    clone.setAttribute('width', BP.viewportW); clone.setAttribute('height', BP.viewportH);
+    const str = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob([str], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const img = new Image(); img.src = url;
+    await new Promise((ok, err)=>{ img.onload=ok; img.onerror=err; });
+    const canvas = document.createElement('canvas');
+    canvas.width = 320; canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle='#060612'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    const pngB64 = canvas.toDataURL('image/png');
+    await fetch(`/api/ahb/blueprints/${BP.state.id}/thumbnail`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ png_base64: pngB64 })
+    });
+  }catch(e){ console.warn('thumbnail failed', e); }
+}
+
+/* ---------------- Tools ---------------- */
+function bpSetTool(t){
+  BP.tool = t;
+  document.querySelectorAll('.bp-tool').forEach(b=>b.classList.toggle('active', b.dataset.tool===t));
+  const svg = document.getElementById('bp-svg');
+  svg.classList.remove('tool-pan','tool-room','tool-wall','tool-dim','tool-note');
+  if(t!=='select') svg.classList.add('tool-'+t);
+  BP.drawingStart = null; BP.draft = null; bpRenderGhost();
+  const hints = {
+    select:'Click an element to select · drag to move · handles to resize',
+    pan:'Drag to pan the canvas · scroll to zoom',
+    room:'Click to place a room (type & size from the left panel)',
+    wall:'Click two points to draw a wall',
+    dim:'Click two points to add a dimension line',
+    note:'Click to place a text note',
+  };
+  document.getElementById('bp-hud').textContent = hints[t] || '';
+}
+
+function bpSetUnits(u){
+  if(!BP.state) return;
+  if(BP.state.units === u) return;
+  BP.state.units = u; BP.state.data.units = u;
+  BP.state.data.scale = (u==='metric') ? 50 : 24;
+  BP.state._dirty = true;
+  bpZoomFit(); bpRender();
+}
+
+/* ---------------- Coordinate transforms ---------------- */
+function bpScreenToWorld(sx, sy){
+  const pxu = bpPxPerUnit();
+  return { x: (sx - BP.panX) / (BP.zoom * pxu), y: (sy - BP.panY) / (BP.zoom * pxu) };
+}
+function bpWorldToScreen(x, y){
+  const pxu = bpPxPerUnit();
+  return { x: x * pxu * BP.zoom + BP.panX, y: y * pxu * BP.zoom + BP.panY };
+}
+function bpViewportTransform(){
+  const pxu = bpPxPerUnit();
+  return `translate(${BP.panX}, ${BP.panY}) scale(${BP.zoom * pxu})`;
+}
+
+/* ---------------- Zoom / pan ---------------- */
+function bpZoomIn(){ bpZoomAt(BP.viewportW/2, BP.viewportH/2, 1.2); }
+function bpZoomOut(){ bpZoomAt(BP.viewportW/2, BP.viewportH/2, 1/1.2); }
+function bpZoomAt(sx, sy, factor){
+  const w = bpScreenToWorld(sx, sy);
+  BP.zoom *= factor;
+  BP.zoom = Math.max(0.1, Math.min(8, BP.zoom));
+  const pxu = bpPxPerUnit();
+  BP.panX = sx - w.x * pxu * BP.zoom;
+  BP.panY = sy - w.y * pxu * BP.zoom;
+  bpRender();
+}
+function bpZoomFit(){
+  if(!BP.state) return;
+  const f = bpCurFloor(); if(!f) return;
+  let minX=0, minY=0, maxX=30, maxY=25;
+  const items = [...f.rooms, ...f.objects];
+  if(items.length){
+    minX=Infinity; minY=Infinity; maxX=-Infinity; maxY=-Infinity;
+    items.forEach(r=>{ minX=Math.min(minX,r.x); minY=Math.min(minY,r.y); maxX=Math.max(maxX,r.x+r.w); maxY=Math.max(maxY,r.y+r.h); });
+    f.walls.forEach(w=>{ minX=Math.min(minX,w.x1,w.x2); minY=Math.min(minY,w.y1,w.y2); maxX=Math.max(maxX,w.x1,w.x2); maxY=Math.max(maxY,w.y1,w.y2); });
+  }
+  const padW = 4, padH = 4;
+  const contentW = (maxX-minX)+padW*2, contentH = (maxY-minY)+padH*2;
+  const pxu = bpPxPerUnit();
+  const zx = BP.viewportW / (contentW*pxu), zy = BP.viewportH / (contentH*pxu);
+  BP.zoom = Math.max(0.15, Math.min(zx, zy, 3));
+  BP.panX = -(minX-padW) * pxu * BP.zoom;
+  BP.panY = -(minY-padH) * pxu * BP.zoom;
+  bpRender();
+}
+
+/* ---------------- Rendering ---------------- */
+function bpRender(){
+  if(!BP.state) return;
+  document.getElementById('bp-zoom-label').textContent = Math.round(BP.zoom*100)+'%';
+  const vp = document.getElementById('bp-viewport');
+  vp.setAttribute('transform', bpViewportTransform());
+  bpRenderGrid();
+  bpRenderRooms();
+  bpRenderWalls();
+  bpRenderObjects();
+  bpRenderDims();
+  bpRenderNotes();
+  bpRenderGhost();
+  bpRenderHandles();
+  bpRenderProps();
+  bpRenderFloorsList();
+}
+
+function bpRenderGrid(){
+  const layer = document.getElementById('bp-grid-layer');
+  layer.innerHTML = '';
+  const g = BP.state.data.grid || 1;
+  const topL = bpScreenToWorld(0,0);
+  const botR = bpScreenToWorld(BP.viewportW, BP.viewportH);
+  const x0 = Math.floor(topL.x/g)*g, x1 = Math.ceil(botR.x/g)*g;
+  const y0 = Math.floor(topL.y/g)*g, y1 = Math.ceil(botR.y/g)*g;
+  // Cap grid lines to avoid runaway draws at low zoom
+  const steps = Math.min(400, (x1-x0)/g + (y1-y0)/g);
+  if(steps > 400) return;
+  for(let x=x0; x<=x1; x+=g){
+    const el = bpSvg('line', { x1:x, y1:y0, x2:x, y2:y1,
+      class:'bp-grid-line'+(Math.round(x/g)%5===0?' major':''),
+      'vector-effect':'non-scaling-stroke' });
+    layer.appendChild(el);
+  }
+  for(let y=y0; y<=y1; y+=g){
+    const el = bpSvg('line', { x1:x0, y1:y, x2:x1, y2:y,
+      class:'bp-grid-line'+(Math.round(y/g)%5===0?' major':''),
+      'vector-effect':'non-scaling-stroke' });
+    layer.appendChild(el);
+  }
+}
+
+function bpRenderRooms(){
+  const layer = document.getElementById('bp-rooms-layer');
+  layer.innerHTML = '';
+  const f = bpCurFloor();
+  f.rooms.forEach(r => {
+    const g = bpSvg('g', { 'data-id':r.id, 'data-type':'room' });
+    const color = BP_ROOM_COLORS[r.type] || BP_ROOM_COLORS.other;
+    const rect = bpSvg('rect', {
+      x:r.x, y:r.y, width:r.w, height:r.h,
+      fill:color, 'fill-opacity':0.3, class:'bp-room'+(bpIsSelected('room',r.id)?' selected':''),
+      'vector-effect':'non-scaling-stroke'
+    });
+    g.appendChild(rect);
+    // Scale label to room size: cap at 0.55 of the smaller dim, max 0.55 ft
+    const labelSize = Math.min(0.55, Math.max(0.28, Math.min(r.w, r.h) * 0.11));
+    const dimSize = labelSize * 0.72;
+    const label = bpSvg('text', { x:r.x+r.w/2, y:r.y+r.h/2-dimSize*0.3, class:'bp-room-label' });
+    label.setAttribute('font-size', labelSize);
+    label.textContent = r.label || r.type;
+    g.appendChild(label);
+    const dim = bpSvg('text', { x:r.x+r.w/2, y:r.y+r.h/2+labelSize*0.9, class:'bp-room-dim' });
+    dim.setAttribute('font-size', dimSize);
+    dim.textContent = `${Math.round(r.w*10)/10}×${Math.round(r.h*10)/10}${bpUnitLabel()}`;
+    g.appendChild(dim);
+    layer.appendChild(g);
+  });
+}
+
+function bpRenderWalls(){
+  const layer = document.getElementById('bp-walls-layer');
+  layer.innerHTML = '';
+  const f = bpCurFloor();
+  f.walls.forEach(w=>{
+    const style = w.style || 'wall';
+    const th = w.thickness || (style==='partition' ? 0.25 : 0.5);
+    const cls = 'bp-wall'+(style==='partition'?' partition':'')+(bpIsSelected('wall',w.id)?' selected':'');
+    const el = bpSvg('line', {
+      x1:w.x1, y1:w.y1, x2:w.x2, y2:w.y2,
+      class: cls,
+      'stroke-width': th,
+      'data-id':w.id, 'data-type':'wall',
+    });
+    if(style==='partition'){
+      el.setAttribute('stroke-dasharray', '0.5,0.3');
+      el.setAttribute('stroke-opacity', '0.75');
+    }
+    layer.appendChild(el);
+  });
+}
+
+function bpRenderObjects(){
+  const layer = document.getElementById('bp-objects-layer');
+  layer.innerHTML = '';
+  const f = bpCurFloor();
+  f.objects.forEach(o=>{
+    const spec = BP_OBJECTS_MAP[o.kind];
+    if(!spec) return;
+    const cx = o.x + o.w/2, cy = o.y + o.h/2;
+    const scaleX = o.w / spec.w, scaleY = o.h / spec.h;
+    const g = bpSvg('g', {
+      'data-id':o.id, 'data-type':'object',
+      class:'bp-object'+(bpIsSelected('object',o.id)?' selected':''),
+      transform: `translate(${cx}, ${cy}) rotate(${o.rotation||0}) scale(${scaleX}, ${scaleY}) translate(${-spec.w/2}, ${-spec.h/2})`,
+      color: '#dde',
+    });
+    g.innerHTML = spec.svg;
+    // Scale stroke-widths by ~1/scale so they stay visible; use a bounding box as hitbox
+    const hit = bpSvg('rect', { x:0, y:0, width:spec.w, height:spec.h, fill:'transparent' });
+    g.appendChild(hit);
+    if(o.label){
+      const lbl = bpSvg('text', { x:spec.w/2, y:spec.h + 0.5, 'text-anchor':'middle', 'font-size':0.55, fill:'#aab' });
+      lbl.textContent = o.label;
+      g.appendChild(lbl);
+    }
+    layer.appendChild(g);
+  });
+}
+
+function bpRenderDims(){
+  const layer = document.getElementById('bp-dims-layer');
+  layer.innerHTML = '';
+  const f = bpCurFloor();
+  f.dims.forEach(d=>{
+    const g = bpSvg('g', { 'data-id':d.id, 'data-type':'dim' });
+    const line = bpSvg('line', { x1:d.x1, y1:d.y1, x2:d.x2, y2:d.y2,
+      class:'bp-dim', 'stroke-width':0.1, 'vector-effect':'non-scaling-stroke' });
+    g.appendChild(line);
+    // End tick marks
+    const dx = d.x2-d.x1, dy = d.y2-d.y1; const len = Math.hypot(dx,dy)||1;
+    const nx = -dy/len*0.3, ny = dx/len*0.3;
+    g.appendChild(bpSvg('line', { x1:d.x1-nx, y1:d.y1-ny, x2:d.x1+nx, y2:d.y1+ny, class:'bp-dim', 'stroke-width':0.08, 'vector-effect':'non-scaling-stroke' }));
+    g.appendChild(bpSvg('line', { x1:d.x2-nx, y1:d.y2-ny, x2:d.x2+nx, y2:d.y2+ny, class:'bp-dim', 'stroke-width':0.08, 'vector-effect':'non-scaling-stroke' }));
+    // Label
+    const dist = len;
+    const t = bpSvg('text', { x:(d.x1+d.x2)/2+nx*2, y:(d.y1+d.y2)/2+ny*2, class:'bp-dim-text', 'font-size':0.8 });
+    t.textContent = d.label || bpUnitFmt(dist);
+    g.appendChild(t);
+    layer.appendChild(g);
+  });
+}
+
+function bpRenderNotes(){
+  const layer = document.getElementById('bp-notes-layer');
+  layer.innerHTML = '';
+  const f = bpCurFloor();
+  f.notes.forEach(n=>{
+    const t = bpSvg('text', { x:n.x, y:n.y, 'data-id':n.id, 'data-type':'note', 'font-size':0.9,
+      class:'bp-note'+(bpIsSelected('note',n.id)?' selected':'') });
+    t.textContent = n.text || '(note)';
+    layer.appendChild(t);
+  });
+}
+
+function bpRenderGhost(){
+  const layer = document.getElementById('bp-ghost-layer');
+  layer.innerHTML = '';
+  if(!BP.draft) return;
+  if(BP.draft.type==='room'){
+    const r = BP.draft;
+    layer.appendChild(bpSvg('rect', { x:r.x, y:r.y, width:r.w, height:r.h, class:'bp-ghost', 'vector-effect':'non-scaling-stroke' }));
+  }else if(BP.draft.type==='wall' || BP.draft.type==='dim'){
+    const d = BP.draft;
+    layer.appendChild(bpSvg('line', { x1:d.x1, y1:d.y1, x2:d.x2, y2:d.y2, class:'bp-ghost-line', 'vector-effect':'non-scaling-stroke' }));
+  }
+}
+
+function bpIsSelected(type, id){ return BP.selected && BP.selected.type===type && BP.selected.id===id; }
+
+function bpRenderHandles(){
+  const layer = document.getElementById('bp-handles-layer');
+  layer.innerHTML='';
+  if(!BP.selected) return;
+  const item = bpGetSelectedItem(); if(!item) return;
+  const hsize = 10 / BP.zoom / bpPxPerUnit(); // ~10 px in world units
+  if(BP.selected.type==='room' || BP.selected.type==='object'){
+    const {x,y,w,h} = item;
+    const corners = [
+      {h:'nw', cx:x,       cy:y},
+      {h:'ne', cx:x+w,     cy:y},
+      {h:'sw', cx:x,       cy:y+h},
+      {h:'se', cx:x+w,     cy:y+h},
+      {h:'n',  cx:x+w/2,   cy:y},
+      {h:'s',  cx:x+w/2,   cy:y+h},
+      {h:'w',  cx:x,       cy:y+h/2},
+      {h:'e',  cx:x+w,     cy:y+h/2},
+    ];
+    corners.forEach(c=>{
+      const r = bpSvg('rect', {
+        x:c.cx-hsize/2, y:c.cy-hsize/2, width:hsize, height:hsize,
+        class:'bp-handle h-'+c.h, 'data-handle':c.h,
+        'vector-effect':'non-scaling-stroke'
+      });
+      layer.appendChild(r);
+    });
+  }else if(BP.selected.type==='wall' || BP.selected.type==='dim'){
+    [[item.x1,item.y1,'1'],[item.x2,item.y2,'2']].forEach(([cx,cy,tag])=>{
+      layer.appendChild(bpSvg('rect', { x:cx-hsize/2, y:cy-hsize/2, width:hsize, height:hsize,
+        class:'bp-handle', 'data-handle':'p'+tag, 'vector-effect':'non-scaling-stroke' }));
+    });
+  }
+}
+
+function bpRenderFloorsList(){
+  const el = document.getElementById('bp-floors-list');
+  const idx = BP.state._floorIdx||0;
+  el.innerHTML = BP.state.data.floors.map((f,i)=>`
+    <div class="bp-floor-row ${i===idx?'active':''}" onclick="bpSetFloor(${i})">
+      <span style="flex:1">${escHtml(f.name)} (L${f.level})</span>
+      <span style="font-size:10px;color:#555">${f.rooms.length}R / ${f.objects.length}O</span>
+      ${BP.state.data.floors.length>1 ? `<span class="bp-floor-del" onclick="event.stopPropagation();bpDeleteFloor(${i})">&times;</span>` : ''}
+    </div>`).join('');
+}
+
+function bpRenderProps(){
+  const el = document.getElementById('bp-props');
+  const item = bpGetSelectedItem();
+  if(!item){ el.innerHTML = '<div style="font-size:11px;color:#444;padding:10px;text-align:center">Nothing selected</div>'; return; }
+  const t = BP.selected.type;
+  if(t==='room'){
+    const types = Object.keys(BP_ROOM_COLORS).map(k=>`<option value="${k}" ${item.type===k?'selected':''}>${k[0].toUpperCase()+k.slice(1)}</option>`).join('');
+    el.innerHTML = `
+      <div class="bp-props-row"><label>Type</label><select onchange="bpPatchSelected({type:this.value})">${types}</select></div>
+      <div class="bp-props-row"><label>Label</label><input type="text" value="${escHtml(item.label||'')}" onchange="bpPatchSelected({label:this.value})"></div>
+      <div class="bp-props-row"><label>X</label><input type="number" step="0.5" value="${item.x}" onchange="bpPatchSelected({x:+this.value})"></div>
+      <div class="bp-props-row"><label>Y</label><input type="number" step="0.5" value="${item.y}" onchange="bpPatchSelected({y:+this.value})"></div>
+      <div class="bp-props-row"><label>W</label><input type="number" step="0.5" min="1" value="${item.w}" onchange="bpPatchSelected({w:+this.value})"></div>
+      <div class="bp-props-row"><label>H</label><input type="number" step="0.5" min="1" value="${item.h}" onchange="bpPatchSelected({h:+this.value})"></div>
+      <div class="bp-props-row"><label>Notes</label><input type="text" value="${escHtml(item.notes||'')}" onchange="bpPatchSelected({notes:this.value})"></div>
+      <button class="bp-btn" style="width:100%;margin-top:8px;color:#ff5555;border-color:#ff5555" onclick="bpDeleteSelected()">Delete</button>`;
+  }else if(t==='object'){
+    el.innerHTML = `
+      <div class="bp-props-row"><label>Kind</label><input type="text" value="${escHtml(item.kind)}" readonly></div>
+      <div class="bp-props-row"><label>Label</label><input type="text" value="${escHtml(item.label||'')}" onchange="bpPatchSelected({label:this.value})"></div>
+      <div class="bp-props-row"><label>X</label><input type="number" step="0.5" value="${item.x}" onchange="bpPatchSelected({x:+this.value})"></div>
+      <div class="bp-props-row"><label>Y</label><input type="number" step="0.5" value="${item.y}" onchange="bpPatchSelected({y:+this.value})"></div>
+      <div class="bp-props-row"><label>W</label><input type="number" step="0.25" min="0.5" value="${item.w}" onchange="bpPatchSelected({w:+this.value})"></div>
+      <div class="bp-props-row"><label>H</label><input type="number" step="0.25" min="0.5" value="${item.h}" onchange="bpPatchSelected({h:+this.value})"></div>
+      <div class="bp-props-row"><label>Rot°</label><input type="number" step="90" value="${item.rotation||0}" onchange="bpPatchSelected({rotation:+this.value})"></div>
+      <button class="bp-btn" style="width:100%;margin-top:8px;color:#ff5555;border-color:#ff5555" onclick="bpDeleteSelected()">Delete</button>`;
+  }else if(t==='wall'){
+    el.innerHTML = `
+      <div class="bp-props-row"><label>X1</label><input type="number" step="0.5" value="${item.x1}" onchange="bpPatchSelected({x1:+this.value})"></div>
+      <div class="bp-props-row"><label>Y1</label><input type="number" step="0.5" value="${item.y1}" onchange="bpPatchSelected({y1:+this.value})"></div>
+      <div class="bp-props-row"><label>X2</label><input type="number" step="0.5" value="${item.x2}" onchange="bpPatchSelected({x2:+this.value})"></div>
+      <div class="bp-props-row"><label>Y2</label><input type="number" step="0.5" value="${item.y2}" onchange="bpPatchSelected({y2:+this.value})"></div>
+      <div class="bp-props-row"><label>Thick</label><input type="number" step="0.1" min="0.1" value="${item.thickness||0.5}" onchange="bpPatchSelected({thickness:+this.value})"></div>
+      <button class="bp-btn" style="width:100%;margin-top:8px;color:#ff5555;border-color:#ff5555" onclick="bpDeleteSelected()">Delete</button>`;
+  }else if(t==='dim'){
+    el.innerHTML = `
+      <div class="bp-props-row"><label>Label</label><input type="text" value="${escHtml(item.label||'')}" placeholder="auto" onchange="bpPatchSelected({label:this.value})"></div>
+      <button class="bp-btn" style="width:100%;margin-top:8px;color:#ff5555;border-color:#ff5555" onclick="bpDeleteSelected()">Delete</button>`;
+  }else if(t==='note'){
+    el.innerHTML = `
+      <div class="bp-props-row"><label>Text</label><input type="text" value="${escHtml(item.text||'')}" onchange="bpPatchSelected({text:this.value})"></div>
+      <button class="bp-btn" style="width:100%;margin-top:8px;color:#ff5555;border-color:#ff5555" onclick="bpDeleteSelected()">Delete</button>`;
+  }
+}
+
+/* ---------------- Selection & modification ---------------- */
+function bpGetSelectedItem(){
+  if(!BP.selected) return null;
+  const f = bpCurFloor();
+  const col = { room:'rooms', object:'objects', wall:'walls', dim:'dims', note:'notes' }[BP.selected.type];
+  return (f[col]||[]).find(x=>x.id===BP.selected.id);
+}
+function bpPatchSelected(patch){
+  const item = bpGetSelectedItem(); if(!item) return;
+  Object.assign(item, patch);
+  BP.state._dirty = true;
+  bpRender(); bpSnapshotHistory();
+}
+function bpDeleteSelected(){
+  if(!BP.selected) return;
+  const f = bpCurFloor();
+  const col = { room:'rooms', object:'objects', wall:'walls', dim:'dims', note:'notes' }[BP.selected.type];
+  f[col] = f[col].filter(x=>x.id!==BP.selected.id);
+  BP.selected = null; BP.state._dirty = true;
+  bpRender(); bpSnapshotHistory();
+}
+
+/* ---------------- Hit-testing ---------------- */
+function bpHitTest(world){
+  const f = bpCurFloor();
+  // Test in reverse paint order: notes > dims > objects > walls > rooms
+  for(const n of [...f.notes].reverse()){
+    const pad = 1.2;
+    if(world.x>=n.x-0.5 && world.x<=n.x+3 && world.y>=n.y-1 && world.y<=n.y+pad) return {type:'note', id:n.id};
+  }
+  for(const d of [...f.dims].reverse()){
+    if(bpDistPointToLine(world, d) < 0.3) return {type:'dim', id:d.id};
+  }
+  for(const o of [...f.objects].reverse()){
+    if(world.x>=o.x && world.x<=o.x+o.w && world.y>=o.y && world.y<=o.y+o.h) return {type:'object', id:o.id};
+  }
+  for(const w of [...f.walls].reverse()){
+    if(bpDistPointToLine(world, w) < (w.thickness||0.5)) return {type:'wall', id:w.id};
+  }
+  for(const r of [...f.rooms].reverse()){
+    if(world.x>=r.x && world.x<=r.x+r.w && world.y>=r.y && world.y<=r.y+r.h) return {type:'room', id:r.id};
+  }
+  return null;
+}
+function bpDistPointToLine(p, ln){
+  const {x1,y1,x2,y2} = ln;
+  const dx=x2-x1, dy=y2-y1; const L2=dx*dx+dy*dy;
+  if(L2===0) return Math.hypot(p.x-x1, p.y-y1);
+  let t = ((p.x-x1)*dx + (p.y-y1)*dy)/L2; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x-(x1+t*dx), p.y-(y1+t*dy));
+}
+
+/* ---------------- Mouse handling ---------------- */
+function bpOnMouseDown(e){
+  if(e.button===2) return; // ignore right-click
+  const svg = document.getElementById('bp-svg');
+  const rect = svg.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  const world = bpScreenToWorld(sx, sy);
+
+  // Pan: middle button, or space held, or pan tool
+  if(e.button===1 || BP.spacePressed || BP.tool==='pan'){
+    BP.isPanning = true; BP.panStart = {sx, sy}; BP.panOrig = {x:BP.panX, y:BP.panY};
+    svg.classList.add('panning');
+    return;
+  }
+
+  // Handle grab for selected
+  const handleEl = e.target.closest('.bp-handle');
+  if(handleEl && BP.selected){
+    BP.isDragging = true;
+    BP.resizeHandle = handleEl.dataset.handle;
+    BP.dragStart = world; BP.dragOrig = JSON.parse(JSON.stringify(bpGetSelectedItem()));
+    return;
+  }
+
+  if(BP.tool==='select'){
+    const hit = bpHitTest(world);
+    BP.selected = hit;
+    if(hit){
+      BP.isDragging = true;
+      BP.resizeHandle = null;
+      BP.dragStart = world; BP.dragOrig = JSON.parse(JSON.stringify(bpGetSelectedItem()));
+    }
+    bpRender();
+    return;
+  }
+
+  if(BP.tool==='room'){
+    const type = document.getElementById('bp-room-type').value;
+    const w = parseFloat(document.getElementById('bp-room-w').value) || 12;
+    const h = parseFloat(document.getElementById('bp-room-h').value) || 10;
+    const x = bpSnap(world.x - w/2), y = bpSnap(world.y - h/2);
+    const id = bpUid();
+    bpCurFloor().rooms.push({ id, type, label: type[0].toUpperCase()+type.slice(1), x, y, w, h, notes:'' });
+    BP.selected = {type:'room', id};
+    BP.state._dirty = true;
+    bpRender(); bpSnapshotHistory();
+    return;
+  }
+
+  if(BP.tool==='wall' || BP.tool==='dim'){
+    const snapped = { x: bpSnap(world.x), y: bpSnap(world.y) };
+    if(!BP.drawingStart){
+      BP.drawingStart = snapped;
+      BP.draft = { type: BP.tool, x1: snapped.x, y1: snapped.y, x2: snapped.x, y2: snapped.y };
+      bpRenderGhost();
+    }else{
+      const d = { id: bpUid(), x1: BP.drawingStart.x, y1: BP.drawingStart.y, x2: snapped.x, y2: snapped.y };
+      if(BP.tool==='wall'){ d.thickness = 0.5; bpCurFloor().walls.push(d); }
+      else { d.label = ''; bpCurFloor().dims.push(d); }
+      BP.drawingStart = null; BP.draft = null;
+      BP.state._dirty = true;
+      bpRender(); bpSnapshotHistory();
+    }
+    return;
+  }
+
+  if(BP.tool==='note'){
+    const txt = prompt('Note text:') || '';
+    if(!txt) return;
+    bpCurFloor().notes.push({ id: bpUid(), x: bpSnap(world.x), y: bpSnap(world.y), text: txt });
+    BP.state._dirty = true;
+    bpRender(); bpSnapshotHistory();
+    return;
+  }
+}
+
+function bpOnMouseMove(e){
+  const svg = document.getElementById('bp-svg');
+  const rect = svg.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+
+  if(BP.isPanning){
+    BP.panX = BP.panOrig.x + (sx - BP.panStart.sx);
+    BP.panY = BP.panOrig.y + (sy - BP.panStart.sy);
+    document.getElementById('bp-viewport').setAttribute('transform', bpViewportTransform());
+    bpRenderGrid();
+    return;
+  }
+
+  if(BP.isDragging && BP.selected){
+    const world = bpScreenToWorld(sx, sy);
+    const dx = world.x - BP.dragStart.x, dy = world.y - BP.dragStart.y;
+    const item = bpGetSelectedItem(); if(!item) return;
+    const orig = BP.dragOrig;
+    if(BP.resizeHandle){
+      const h = BP.resizeHandle;
+      if(BP.selected.type==='wall' || BP.selected.type==='dim'){
+        if(h==='p1'){ item.x1 = bpSnap(orig.x1+dx); item.y1 = bpSnap(orig.y1+dy); }
+        if(h==='p2'){ item.x2 = bpSnap(orig.x2+dx); item.y2 = bpSnap(orig.y2+dy); }
+      }else{
+        let nx=orig.x, ny=orig.y, nw=orig.w, nh=orig.h;
+        if(h.includes('w')){ nx = orig.x + dx; nw = orig.w - dx; }
+        if(h.includes('e')){ nw = orig.w + dx; }
+        if(h.includes('n')){ ny = orig.y + dy; nh = orig.h - dy; }
+        if(h.includes('s')){ nh = orig.h + dy; }
+        if(nw > 0.5){ item.x = bpSnap(nx); item.w = Math.max(0.5, bpSnap(nw)); }
+        if(nh > 0.5){ item.y = bpSnap(ny); item.h = Math.max(0.5, bpSnap(nh)); }
+      }
+    }else{
+      if(BP.selected.type==='wall' || BP.selected.type==='dim'){
+        item.x1 = bpSnap(orig.x1+dx); item.y1 = bpSnap(orig.y1+dy);
+        item.x2 = bpSnap(orig.x2+dx); item.y2 = bpSnap(orig.y2+dy);
+      }else if(BP.selected.type==='note'){
+        item.x = bpSnap(orig.x+dx); item.y = bpSnap(orig.y+dy);
+      }else{
+        item.x = bpSnap(orig.x+dx); item.y = bpSnap(orig.y+dy);
+      }
+    }
+    BP.state._dirty = true;
+    bpRender();
+    return;
+  }
+
+  // Ghost preview while drawing walls/dims
+  if(BP.drawingStart && (BP.tool==='wall' || BP.tool==='dim')){
+    const world = bpScreenToWorld(sx, sy);
+    BP.draft.x2 = bpSnap(world.x); BP.draft.y2 = bpSnap(world.y);
+    bpRenderGhost();
+  }
+}
+
+function bpOnMouseUp(e){
+  if(BP.isPanning){
+    BP.isPanning = false; document.getElementById('bp-svg').classList.remove('panning');
+  }
+  if(BP.isDragging){
+    BP.isDragging = false; BP.resizeHandle = null; BP.dragOrig = null;
+    bpSnapshotHistory();
+  }
+}
+
+function bpOnWheel(e){
+  e.preventDefault();
+  const svg = document.getElementById('bp-svg');
+  const rect = svg.getBoundingClientRect();
+  const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.1 : 1/1.1;
+  bpZoomAt(sx, sy, factor);
+}
+
+function bpOnKeyDown(e){
+  if(document.getElementById('tab-architect').style.display==='none') return;
+  if(document.getElementById('arch-blueprint').style.display==='none') return;
+  const tag = (e.target.tagName||'').toLowerCase();
+  if(tag==='input' || tag==='textarea' || tag==='select') return;
+  if(e.code==='Space'){ BP.spacePressed = true; document.getElementById('bp-svg').classList.add('tool-pan'); e.preventDefault(); return; }
+  const key = e.key.toLowerCase();
+  if(e.metaKey || e.ctrlKey){
+    if(key==='s'){ e.preventDefault(); bpSave(); return; }
+    if(key==='z' && !e.shiftKey){ e.preventDefault(); bpUndo(); return; }
+    if(key==='z' && e.shiftKey){ e.preventDefault(); bpRedo(); return; }
+    if(key==='y'){ e.preventDefault(); bpRedo(); return; }
+    if(key==='d' && BP.selected){ e.preventDefault(); bpDuplicateSelected(); return; }
+    return;
+  }
+  const toolMap = { v:'select', h:'pan', r:'room', w:'wall', d:'dim', t:'note' };
+  if(toolMap[key]){ e.preventDefault(); bpSetTool(toolMap[key]); return; }
+  if(key==='delete' || key==='backspace'){
+    if(BP.selected){ e.preventDefault(); bpDeleteSelected(); }
+  }
+  if(key==='escape'){
+    BP.selected = null; BP.drawingStart = null; BP.draft = null;
+    bpRender();
+  }
+}
+function bpOnKeyUp(e){
+  if(e.code==='Space'){ BP.spacePressed = false;
+    if(BP.tool!=='pan') document.getElementById('bp-svg').classList.remove('tool-pan');
+  }
+}
+
+function bpDuplicateSelected(){
+  if(!BP.selected) return;
+  const item = bpGetSelectedItem(); if(!item) return;
+  const copy = JSON.parse(JSON.stringify(item)); copy.id = bpUid();
+  if(copy.x !== undefined){ copy.x += 2; copy.y += 2; }
+  else { copy.x1 += 2; copy.y1 += 2; copy.x2 += 2; copy.y2 += 2; }
+  const f = bpCurFloor();
+  const col = { room:'rooms', object:'objects', wall:'walls', dim:'dims', note:'notes' }[BP.selected.type];
+  f[col].push(copy);
+  BP.selected = { type: BP.selected.type, id: copy.id };
+  BP.state._dirty = true;
+  bpRender(); bpSnapshotHistory();
+}
+
+/* ---------------- Object placement ---------------- */
+function bpPlaceFromLibrary(kind, wx, wy){
+  const spec = BP_OBJECTS_MAP[kind]; if(!spec) return;
+  if(spec.createAs==='wall' || spec.createAs==='partition'){
+    // Create a horizontal wall centered at drop point
+    const id = bpUid();
+    const x1 = bpSnap(wx - spec.w/2), x2 = bpSnap(wx + spec.w/2);
+    const y1 = bpSnap(wy), y2 = y1;
+    const thickness = spec.createAs==='partition' ? 0.25 : 0.5;
+    bpCurFloor().walls.push({ id, x1, y1, x2, y2, thickness, style: spec.createAs });
+    BP.selected = {type:'wall', id};
+  }else{
+    const id = bpUid();
+    const obj = { id, kind, x: bpSnap(wx - spec.w/2), y: bpSnap(wy - spec.h/2),
+                  w: spec.w, h: spec.h, rotation: 0, label: '' };
+    bpCurFloor().objects.push(obj);
+    BP.selected = {type:'object', id};
+  }
+  BP.state._dirty = true;
+  bpRender(); bpSnapshotHistory();
+}
+function bpPlaceObject(kind, wx, wy){ bpPlaceFromLibrary(kind, wx, wy); }
+function bpPlaceObjectAtCenter(kind){
+  const center = bpScreenToWorld(BP.viewportW/2, BP.viewportH/2);
+  bpPlaceFromLibrary(kind, center.x, center.y);
+}
+
+/* ---------------- Floors ---------------- */
+function bpAddFloor(){
+  const lvl = (BP.state.data.floors.length ? Math.max(...BP.state.data.floors.map(f=>f.level))+1 : 1);
+  BP.state.data.floors.push({ level:lvl, name:'Floor '+lvl, rooms:[], walls:[], objects:[], dims:[], notes:[] });
+  BP.state._floorIdx = BP.state.data.floors.length-1;
+  BP.selected = null; BP.state._dirty = true;
+  bpRender(); bpSnapshotHistory();
+}
+function bpSetFloor(idx){
+  BP.state._floorIdx = idx; BP.selected = null; bpRender();
+}
+function bpDeleteFloor(idx){
+  if(BP.state.data.floors.length<=1){ alert('At least one floor is required.'); return; }
+  if(!confirm('Delete this floor? All content on it will be lost.')) return;
+  BP.state.data.floors.splice(idx, 1);
+  BP.state._floorIdx = Math.min(BP.state._floorIdx, BP.state.data.floors.length-1);
+  BP.selected = null; BP.state._dirty = true;
+  bpRender(); bpSnapshotHistory();
+}
+
+/* ---------------- History ---------------- */
+function bpSnapshotHistory(){
+  // Drop future if we branched
+  BP.history = BP.history.slice(0, BP.historyIdx+1);
+  BP.history.push(JSON.parse(JSON.stringify(BP.state.data)));
+  if(BP.history.length > 80) BP.history.shift();
+  BP.historyIdx = BP.history.length - 1;
+}
+function bpUndo(){
+  if(BP.historyIdx<=0) return;
+  BP.historyIdx--;
+  BP.state.data = JSON.parse(JSON.stringify(BP.history[BP.historyIdx]));
+  BP.selected = null; bpRender();
+}
+function bpRedo(){
+  if(BP.historyIdx>=BP.history.length-1) return;
+  BP.historyIdx++;
+  BP.state.data = JSON.parse(JSON.stringify(BP.history[BP.historyIdx]));
+  BP.selected = null; bpRender();
+}
+
+/* ---------------- Export ---------------- */
+function bpExportSVG(){
+  const svg = document.getElementById('bp-svg');
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  const str = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([str], {type:'image/svg+xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (BP.state.name||'blueprint')+'.svg';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+async function bpExportPNG(){
+  const svg = document.getElementById('bp-svg');
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width', BP.viewportW); clone.setAttribute('height', BP.viewportH);
+  const str = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([str], {type:'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const img = new Image(); img.src = url;
+  await new Promise(ok=>{ img.onload=ok; });
+  const canvas = document.createElement('canvas');
+  canvas.width = BP.viewportW*2; canvas.height = BP.viewportH*2;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle='#060612'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(url);
+  canvas.toBlob(b=>{
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = (BP.state.name||'blueprint')+'.png';
+    a.click(); URL.revokeObjectURL(a.href);
+  }, 'image/png');
+}
+
+/* ---------------- LLM + Sam integration ---------------- */
+async function bpOpenBrowser(){
+  await bpRefreshList();
+  document.getElementById('bp-browse-search').value = '';
+  bpRenderBrowse();
+  document.getElementById('bp-browse-modal').style.display = 'flex';
+}
+function bpRenderBrowse(){
+  const q = (document.getElementById('bp-browse-search').value||'').toLowerCase();
+  const rows = (BP.list||[]).filter(b => !q || (b.name||'').toLowerCase().includes(q));
+  const el = document.getElementById('bp-browse-grid');
+  if(!rows.length){
+    el.innerHTML = `<div style="grid-column:1/-1;padding:30px;text-align:center;color:#444;font-size:12px">
+      ${q ? 'No blueprints match "'+escHtml(q)+'"' : 'No blueprints yet — create one and save it first'}
+    </div>`;
+    return;
+  }
+  el.innerHTML = rows.map(b=>{
+    const thumb = b.thumbnail_path
+      ? `<img src="${escHtml(b.thumbnail_path)}?t=${encodeURIComponent(b.updated_at||'')}" style="width:100%;height:130px;object-fit:cover;display:block;border-radius:6px 6px 0 0;background:#060612">`
+      : `<div style="width:100%;height:130px;display:flex;align-items:center;justify-content:center;background:#060612;color:#333;font-size:10px;border-radius:6px 6px 0 0">No preview — save to generate</div>`;
+    return `<div class="bp-browse-card" onclick="bpBrowsePick('${b.id}')" style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:7px;overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s">
+      ${thumb}
+      <div style="padding:8px 10px">
+        <div style="font-size:12px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(b.name||'Untitled')}</div>
+        <div style="font-size:10px;color:#555;margin-top:2px">${escHtml((b.units||'imperial'))} · ${escHtml((b.updated_at||'').slice(0,16))}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function bpBrowsePick(id){
+  document.getElementById('bp-browse-modal').style.display='none';
+  bpOpenBlueprint(id);
+}
+
+function bpOpenDescriptionModal(){
+  document.getElementById('bp-desc-input').value = '';
+  document.getElementById('bp-desc-status').textContent = '';
+  document.getElementById('bp-desc-modal').style.display='flex';
+}
+async function bpGenerateFromDescription(){
+  const text = document.getElementById('bp-desc-input').value.trim();
+  if(!text){ alert('Enter a description first'); return; }
+  const statusEl = document.getElementById('bp-desc-status');
+  statusEl.textContent = 'Asking the LLM for a layout (can take 30-90s)...';
+  bpShowProgress('LLM generating layout from description…');
+  try{
+    const r = await fetch('/api/ahb/blueprints/from-description', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ description:text, units: BP.state.units })
+    });
+    const d = await r.json();
+    bpHideProgress();
+    if(!d.success){ statusEl.textContent = 'Failed: '+(d.error||''); return; }
+    // Merge into current blueprint
+    BP.state.data = d.layout;
+    BP.state.data.units = BP.state.units;
+    BP.state.data.scale = (BP.state.units==='metric') ? 50 : 24;
+    BP.state._floorIdx = 0;
+    BP.state._dirty = true;
+    BP.selected = null;
+    bpZoomFit(); bpRender(); bpSnapshotHistory();
+    document.getElementById('bp-desc-modal').style.display='none';
+    if(typeof showToast==='function') showToast('Layout generated');
+  }catch(e){ bpHideProgress(); statusEl.textContent = 'Error: '+e; }
+}
+
+async function bpImportFromPhoto(files){
+  if(!files || !files.length) return;
+  const fd = new FormData();
+  fd.append('image', files[0]);
+  fd.append('units', BP.state.units);
+  bpShowProgress('Uploading photo…');
+  let jobId;
+  try{
+    const r = await fetch('/api/ahb/blueprints/from-photo', { method:'POST', body: fd });
+    const d = await r.json();
+    if(!d.success || !d.job_id){
+      bpHideProgress();
+      alert('Photo upload failed: '+(d.error||'unknown error'));
+      document.getElementById('bp-photo-input').value = '';
+      return;
+    }
+    jobId = d.job_id;
+  }catch(e){
+    bpHideProgress();
+    alert('Upload error: '+e);
+    document.getElementById('bp-photo-input').value = '';
+    return;
+  }
+  document.getElementById('bp-photo-input').value = '';
+
+  // Poll job status. Short interval while running; gives up only if server itself
+  // returns 404 (job expired) or 'error' status.
+  bpShowProgress('Analyzing photo — vision models can take 1-3 minutes if cold…');
+  let attempts = 0, maxAttempts = 180; // 180 * 4s = 12 min ceiling
+  const poll = async () => {
+    attempts++;
+    let d;
+    try{
+      const r = await fetch('/api/ahb/blueprints/photo-jobs/'+jobId);
+      if(r.status === 404){
+        bpHideProgress();
+        alert('Job expired or unknown. Retry the import.');
+        return;
+      }
+      d = await r.json();
+    }catch(err){
+      // Transient network blip — keep polling
+      if(attempts < maxAttempts) return setTimeout(poll, 4000);
+      bpHideProgress();
+      alert('Lost connection while polling the job. Check dashboard logs.');
+      return;
+    }
+    if(d.progress) bpShowProgress(d.progress);
+    if(d.status === 'running'){
+      if(attempts < maxAttempts) return setTimeout(poll, 4000);
+      bpHideProgress();
+      alert('Import still running after 12 min — stopping the UI poll. The job is still active on the server; refresh and try again if needed.');
+      return;
+    }
+    bpHideProgress();
+    if(d.status === 'error'){
+      const phase = d.phase ? ` [${d.phase}]` : '';
+      alert('Photo import failed'+phase+': '+(d.error||'unknown error'));
+      if(d.source_url && confirm('Open the uploaded source image for reference?')) window.open(d.source_url, '_blank');
+      return;
+    }
+    // status === 'done'
+    if(d.layout && d.layout.floors && d.layout.floors.length){
+      if(!confirm('Photo analyzed — apply the suggested layout (replaces current)?')) return;
+      BP.state.data = d.layout;
+      BP.state.data.units = BP.state.units;
+      BP.state.data.scale = (BP.state.units==='metric') ? 50 : 24;
+      BP.state._floorIdx = 0;
+      BP.state._dirty = true;
+      BP.selected = null;
+      bpZoomFit(); bpRender(); bpSnapshotHistory();
+      if(typeof showToast==='function') showToast('Layout imported from photo');
+    }else{
+      const desc = (d.description||'').slice(0, 4000);
+      const useText = confirm('Vision analysis complete but no structured layout produced'+
+        (d.llm_error?' ('+d.llm_error+')':'')+'.\n\nOpen the description in the "From Text" dialog so you can edit and retry?');
+      if(useText){
+        document.getElementById('bp-desc-input').value = desc;
+        document.getElementById('bp-desc-status').textContent =
+          'Loaded from photo vision — edit the description if needed and click Generate.';
+        document.getElementById('bp-desc-modal').style.display = 'flex';
+      }
+    }
+  };
+  setTimeout(poll, 2000);
+}
+
+function bpShowProgress(msg){
+  let el = document.getElementById('bp-progress');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'bp-progress';
+    el.style.cssText='position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#0e0e1e,#0a0a16);border:1px solid #7c3aed;border-radius:8px;padding:12px 16px;color:#fff;font-size:12px;z-index:99999;box-shadow:0 6px 20px rgba(124,58,237,.4);display:flex;align-items:center;gap:10px;max-width:340px';
+    el.innerHTML = '<div style="width:14px;height:14px;border:2px solid #7c3aed;border-top-color:transparent;border-radius:50%;animation:bp-spin 0.8s linear infinite"></div><span id="bp-progress-text"></span>';
+    if(!document.getElementById('bp-spin-style')){
+      const s = document.createElement('style'); s.id='bp-spin-style';
+      s.textContent = '@keyframes bp-spin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(s);
+    }
+    document.body.appendChild(el);
+  }
+  document.getElementById('bp-progress-text').textContent = msg;
+  el.style.display='flex';
+}
+function bpHideProgress(){
+  const el = document.getElementById('bp-progress'); if(el) el.style.display='none';
+}
+
+function bpOpenRenderModal(){
+  if(!BP.state){ alert('No blueprint'); return; }
+  const existing = BP.list.find(b=>b.id===BP.state.id);
+  if(!existing){ if(!confirm('Blueprint must be saved first. Save now?')) return; bpSave().then(()=>bpOpenRenderModal()); return; }
+  document.getElementById('bp-render-status').textContent='';
+  document.getElementById('bp-render-modal').style.display='flex';
+}
+async function bpRunRender(){
+  const statusEl = document.getElementById('bp-render-status');
+  statusEl.textContent = 'Running Stable Diffusion (30-90s)...';
+  bpShowProgress('Sam rendering via Stable Diffusion…');
+  try{
+    const payload = {
+      floor_level: bpCurFloor().level || 1,
+      mode: document.getElementById('bp-render-mode').value,
+      prompt: document.getElementById('bp-render-extra').value,
+      width: parseInt(document.getElementById('bp-render-w').value),
+      height: parseInt(document.getElementById('bp-render-h').value),
+      steps: parseInt(document.getElementById('bp-render-steps').value),
+    };
+    const r = await fetch(`/api/ahb/blueprints/${BP.state.id}/render`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    bpHideProgress();
+    if(!d.success){ statusEl.textContent='Failed: '+(d.error||''); return; }
+    document.getElementById('bp-render-modal').style.display='none';
+    if(typeof showToast==='function') showToast('Sam render ready');
+    bpLoadRenders();
+  }catch(e){ bpHideProgress(); statusEl.textContent = 'Error: '+e; }
+}
+
+async function bpLoadRenders(){
+  const el = document.getElementById('bp-renders');
+  if(!BP.state){ el.innerHTML = ''; return; }
+  const existing = BP.list.find(b=>b.id===BP.state.id);
+  if(!existing){ el.innerHTML = '<div style="font-size:11px;color:#444;padding:10px;text-align:center;grid-column:1/-1">Save first to enable renders</div>'; return; }
+  try{
+    const r = await fetch(`/api/ahb/blueprints/${BP.state.id}/renders`);
+    const rows = await r.json();
+    if(!rows.length){ el.innerHTML = '<div style="font-size:11px;color:#444;padding:10px;text-align:center;grid-column:1/-1">No renders yet</div>'; return; }
+    el.innerHTML = rows.map(x=>`
+      <img src="${x.image_path}" title="${escHtml(x.mode)} — ${escHtml((x.prompt||'').slice(0,80))}"
+           onclick="window.open('${x.image_path}','_blank')">`).join('');
+  }catch(e){ console.error('bpLoadRenders', e); }
+}
+
 </script>
+
+<!-- Activity Feed Sidebar -->
+<div class="activity-sidebar" id="activity-sidebar">
+  <div class="activity-header">
+    <h3>Agent Activity</h3>
+    <select id="af-agent-filter" onchange="loadActivityFeed()" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:4px 8px;color:#aaa;font-size:11px">
+      <option value="">All Agents</option>
+      <option value="simon_bately">Simon Bately</option>
+      <option value="claw_batto">Claw Batto</option>
+      <option value="phil_hass">Phil Hass</option>
+      <option value="duke_harmon">Duke Harmon</option>
+      <option value="sam_axe">Sam Axe</option>
+      <option value="rex_valor">Rex Valor</option>
+      <option value="scout_reeves">Scout Reeves</option>
+      <option value="nova_sterling">Nova Sterling</option>
+    </select>
+    <button onclick="toggleActivityFeed()" style="background:none;border:none;color:#555;font-size:18px;cursor:pointer;padding:0 4px">&times;</button>
+  </div>
+  <div class="activity-feed" id="af-feed">
+    <div style="text-align:center;padding:40px;color:#444">Click to load activity...</div>
+  </div>
+</div>
+
 </body>
 </html>

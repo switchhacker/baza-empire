@@ -199,6 +199,22 @@ def init_context_db():
                 created_at TIMESTAMP DEFAULT NOW()
             );
         """)
+    # ── Activity feed columns on task_journal ──────────────────────────────
+    with _DB() as (cur2, _conn2):
+        for col, typedef in [
+            ("requested_by", "VARCHAR(50) DEFAULT 'unknown'"),
+            ("status",       "VARCHAR(20) DEFAULT 'completed'"),
+            ("action_summary", "TEXT"),
+        ]:
+            try:
+                cur2.execute(f"ALTER TABLE task_journal ADD COLUMN {col} {typedef}")
+            except Exception:
+                _conn2.rollback()  # reset transaction after failed ALTER
+        try:
+            cur2.execute("CREATE INDEX IF NOT EXISTS idx_journal_created ON task_journal(created_at)")
+            cur2.execute("CREATE INDEX IF NOT EXISTS idx_journal_agent ON task_journal(agent_id)")
+        except Exception:
+            _conn2.rollback()
     logger.info("Context DB initialized.")
 
 
@@ -479,14 +495,23 @@ def skill_ran(agent_id: str, skill_name: str):
 def journal_log(agent_id: str, task_type: str, task_description: str,
                 result: str = None, success: bool = True,
                 input_data: dict = {}, duration_ms: int = None,
-                chat_id: int = None):
+                chat_id: int = None, requested_by: str = "unknown",
+                status: str = None, action_summary: str = None):
+    if status is None:
+        status = "completed" if success else "failed"
+    if not action_summary:
+        # Auto-generate a readable summary from type + description
+        desc_short = (task_description or "")[:120]
+        action_summary = f"{task_type}: {desc_short}" if task_type else desc_short
     with _DB() as (cur, _):
         cur.execute("""
             INSERT INTO task_journal
-            (agent_id, chat_id, task_type, task_description, input_data, result, success, duration_ms)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (agent_id, chat_id, task_type, task_description, input_data, result,
+             success, duration_ms, requested_by, status, action_summary)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (agent_id, chat_id, task_type, task_description,
-              json.dumps(input_data), result, success, duration_ms))
+              json.dumps(input_data), result, success, duration_ms,
+              requested_by, status, action_summary))
     # Publish event when a task is completed
     try:
         if "complete" in (task_type or "").lower():
@@ -500,24 +525,30 @@ def journal_log(agent_id: str, task_type: str, task_description: str,
         pass
 
 
-def journal_get(agent_id: str, limit: int = 20, task_type: str = None) -> list:
+def journal_get(agent_id: str = None, limit: int = 20, task_type: str = None,
+                since: str = None) -> list:
     with _DB() as (cur, _):
+        where, params = [], []
+        if agent_id:
+            where.append("agent_id = %s"); params.append(agent_id)
         if task_type:
-            cur.execute("""
-                SELECT task_type, task_description, result, success, created_at
-                FROM task_journal WHERE agent_id = %s AND task_type = %s
-                ORDER BY created_at DESC LIMIT %s
-            """, (agent_id, task_type, limit))
-        else:
-            cur.execute("""
-                SELECT task_type, task_description, result, success, created_at
-                FROM task_journal WHERE agent_id = %s
-                ORDER BY created_at DESC LIMIT %s
-            """, (agent_id, limit))
+            where.append("task_type = %s"); params.append(task_type)
+        if since:
+            where.append("created_at > %s"); params.append(since)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        cur.execute(f"""
+            SELECT id, agent_id, task_type, task_description, result, success,
+                   created_at, requested_by, status, action_summary
+            FROM task_journal {clause}
+            ORDER BY created_at DESC LIMIT %s
+        """, params + [limit])
         rows = cur.fetchall()
     return [{
-        "type": r[0], "description": r[1], "result": r[2],
-        "success": r[3], "date": r[4].strftime("%Y-%m-%d %H:%M")
+        "id": r[0], "agent_id": r[1], "type": r[2], "description": r[3],
+        "result": r[4], "success": r[5],
+        "date": r[6].strftime("%Y-%m-%d %H:%M:%S") if r[6] else None,
+        "requested_by": r[7] or "unknown", "status": r[8] or "completed",
+        "action_summary": r[9] or r[3] or "",
     } for r in rows]
 
 

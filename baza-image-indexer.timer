@@ -1,0 +1,12 @@
+[Unit]
+Description=Baza Empire — Image Indexer schedule (every 30 min)
+
+[Timer]
+# First run 2 min after boot, then every 30 min
+OnBootSec=2min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=baza-image-indexer.service
+
+[Install]
+WantedBy=timers.target

@@ -23,9 +23,11 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_SIMON_BATELY", "8259565938:AAFCNLSrw096JALx
 SERGE_CHAT_ID  = os.getenv("SERGE_CHAT_ID", "8551331144")
 OLLAMA_URLS    = [
     os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-    "http://localhost:11435",
+    "http://localhost:11437",  # ollama-amd (AMD RX 6700 XT, Vulkan)
+    "http://localhost:11436",  # ollama-cpu (CPU fallback)
 ]
-MODEL          = "mistral-small:22b"
+OLLAMA_TIMEOUT = int(os.getenv("SIMON_LLM_TIMEOUT", "120"))  # was 300 — fall over to sibling GPU faster
+MODEL          = "qwen2.5:14b"  # matches phil_hass — stays warm in 11434
 
 AGENTS = [
     ("simon_bately",  "Simon",  "Co-CEO / BizOps"),
@@ -207,6 +209,7 @@ def build_dynamic_briefing(live_data: str, team_status: str, tasks: str,
 You report directly to Serge (the boss). This is your scheduled 2-hour team command briefing.
 
 STRICT FORMAT RULES — NO EXCEPTIONS:
+- LANGUAGE: English only. Never Vietnamese, Chinese, Spanish, or any other language — even if the input has non-English proper nouns. This is a hard rule.
 - ZERO markdown. No #, ##, **, __, *, [], ()
 - Use ━━━━━━━━━━━━━━━━ as section dividers
 - Use emoji for labels and bullets only
@@ -259,7 +262,7 @@ LIVE DATA:
                 f"{url}/api/chat", data=payload,
                 headers={"Content-Type":"application/json"}, method="POST"
             )
-            with urllib.request.urlopen(req, timeout=300) as r:
+            with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as r:
                 return json.loads(r.read())["message"]["content"].strip()
         except Exception as e:
             log.warning(f"LLM at {url} failed: {e}")
@@ -275,8 +278,38 @@ LIVE DATA:
         f"{tasks}"
     )
 
+def looks_non_english(text: str) -> bool:
+    """Returns True if the briefing looks like it drifted to a non-English language.
+
+    Signal: >3% of non-emoji, non-whitespace characters fall outside ASCII/Latin-1
+    common-punctuation range. Emojis and the divider char are whitelisted.
+    """
+    if not text:
+        return False
+    whitelist = set('━─·•→←↑↓✓✗✔✘–—…"\'')
+    suspect = 0; total = 0
+    for ch in text:
+        if ch.isspace() or ch in whitelist:
+            continue
+        cp = ord(ch)
+        # Skip emoji (surrogate pair high-cp) and common symbols
+        if cp >= 0x2600:
+            continue
+        total += 1
+        # ASCII printable is 32-126; Latin-1 extended is up to 255 (covers é, ñ, etc.)
+        if cp > 0x024F:  # beyond Latin Extended-B — likely CJK/Vietnamese-diacritic/etc.
+            suspect += 1
+    if total < 80:
+        return False
+    return (suspect / total) > 0.03
+
+
 def strip_markdown(text: str) -> str:
     import re
+    # Strip qwen/chat-template control tokens that occasionally leak into output
+    text = re.sub(r'</?tool_call>', '', text)
+    text = re.sub(r'</?think>', '', text)
+    text = re.sub(r'<\|[^|]*\|>', '', text)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     text = re.sub(r'\*(.+?)\*', r'\1', text)
@@ -338,6 +371,20 @@ def main():
 
     log.info("All data collected. Building briefing...")
     briefing = build_dynamic_briefing(live_data, team_status, tasks, activity, artifacts, mining_quick)
+    if looks_non_english(briefing):
+        log.warning("Briefing drifted to non-English — retrying with explicit English-only instruction")
+        # Retry once by prepending a hard language lock to the live_data block
+        english_lock = "CRITICAL LANGUAGE INSTRUCTION — THIS OVERRIDES EVERYTHING: Respond in ENGLISH ONLY. Do not use Vietnamese, Chinese, Spanish, French, or any other language. English only.\n\n"
+        briefing = build_dynamic_briefing(english_lock + live_data, team_status, tasks, activity, artifacts, mining_quick)
+        if looks_non_english(briefing):
+            log.warning("Still non-English after retry — falling back to raw data snapshot")
+            briefing = (
+                "━━━━━━━━━━━━━━━━\n"
+                f"📊 Simon Briefing — {datetime.datetime.now().strftime('%A, %B %d %Y — %I:%M %p')}\n"
+                "━━━━━━━━━━━━━━━━\n"
+                "⚠️ LLM output language drifted — raw snapshot below.\n\n"
+                f"{team_status}\n\n{tasks}"
+            )
     log.info(f"Briefing built ({len(briefing)} chars). Sending to Serge...")
     send_telegram(briefing)
     log.info("Done.")

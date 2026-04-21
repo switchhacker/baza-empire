@@ -5,6 +5,7 @@ import logging
 import json
 import random
 import time
+import sqlite3
 import requests as req
 import httpx
 import redis
@@ -438,6 +439,12 @@ class BazaAgent(ContextMixin):
                 await self._handle_dispatch(update, context, chat_id, text)
                 return
 
+        # ── Follow-up filing command: re-route last upload ────────────────────
+        if self._match_filing_intent(text) and self._recent_upload(chat_id):
+            handled = await self._handle_filing_followup(update, context, chat_id, text)
+            if handled:
+                return
+
         # ── Simon: init commander ─────────────────────────────────────────────
         if self.is_simon and not is_group:
             self.init_commander(chat_id)
@@ -533,6 +540,113 @@ class BazaAgent(ContextMixin):
         )
 
 
+    # ── Filing-intent follow-ups ───────────────────────────────────────────
+    _FILING_INTENT_RX = re.compile(
+        r"\b(attach|file|route|link|save|put|move|assign|log)\b.*\b"
+        r"(it|this|that|receipt|permit|coi|w-?9|license|contract|invoice|"
+        r"estimate|doc|document|photo|image|file|pdf|blueprint|plan|"
+        r"to|as|in|under|for)\b",
+        re.IGNORECASE,
+    )
+    _FILING_HINT_RX = re.compile(
+        r"\b(this (is|was) a|that (is|was) a|it(?:'s| is) (a |an )?)"
+        r"(receipt|permit|coi|w-?9|license|contract|invoice|estimate|"
+        r"blueprint|change order|lien waiver)\b",
+        re.IGNORECASE,
+    )
+
+    def _match_filing_intent(self, text: str) -> bool:
+        if not text:
+            return False
+        if self._FILING_INTENT_RX.search(text):
+            return True
+        if self._FILING_HINT_RX.search(text):
+            return True
+        return False
+
+    def _recent_upload(self, chat_id, max_age_sec: int = 900):
+        u = getattr(self, "_last_uploads", {}).get(str(chat_id))
+        if not u:
+            return None
+        if (time.time() - u.get("ts", 0)) > max_age_sec:
+            return None
+        if not os.path.exists(u.get("file_path", "")):
+            return None
+        return u
+
+    def _load_curated_analysis(self, file_path: str) -> dict:
+        """Pull the curator's latest analysis for a file from ahb_documents."""
+        db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "dashboard", "baza_projects.db")
+        try:
+            conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+            r = conn.execute(
+                "SELECT doc_type, entity, doc_date, summary, relevance, tags, "
+                "       suggested_name, confidence, content_text "
+                "FROM ahb_documents WHERE file_path=?", (file_path,)
+            ).fetchone()
+            conn.close()
+            if not r:
+                return {}
+            out = dict(r)
+            try:
+                out["tags"] = json.loads(out.get("tags") or "[]")
+            except Exception:
+                out["tags"] = []
+            return out
+        except Exception as e:
+            logger.warning(f"load_curated_analysis failed: {e}")
+            return {}
+
+    async def _handle_filing_followup(self, update, context, chat_id, text) -> bool:
+        """Re-file the most recent upload using the new caption/hint text."""
+        upload = self._recent_upload(chat_id)
+        if not upload:
+            return False
+        fpath = upload["file_path"]
+        analysis = self._load_curated_analysis(fpath)
+        # Inject an explicit project hint if user named a project in the message
+        m = re.search(r"\b(?:to|for|under|in)\s+([A-Za-z0-9][\w\s\-\.]{2,40}?)"
+                      r"(?:\s+project|\s*[,.?!]|\s*$)", text, re.IGNORECASE)
+        if m:
+            analysis["project_hint"] = m.group(1).strip()
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+        try:
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, self.skills.run, "file_document",
+                {"file_path": fpath, "analysis": analysis, "caption": text,
+                 "agent_id": self.agent_id},
+            )
+            try:
+                filed = json.loads(result) if isinstance(result, str) else (result or {})
+            except Exception:
+                filed = {"_raw": str(result)[:500]}
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"Filing failed: {e}")
+            return True
+        action = filed.get("action")
+        if action == "filed_receipt":
+            reply = (f"🧾 Receipt refiled in AHB123\n"
+                     f"Vendor: {filed.get('vendor') or '-'}\n"
+                     f"Date: {filed.get('receipt_date') or '-'}\n"
+                     f"Total: ${float(filed.get('total') or 0):.2f}\n"
+                     f"Project: {filed.get('project_id') or '-'}\n"
+                     f"ID: {filed.get('receipt_id','')}")
+        elif action == "linked_to_project":
+            reply = (f"🗂 Attached to project {filed.get('project_id')}\n"
+                     f"({filed.get('project_note','')})")
+        elif action == "unassigned":
+            reply = (f"📎 Couldn't match a project\n"
+                     f"hint: {filed.get('hint') or 'none'}\n"
+                     f"reason: {filed.get('reason','')}")
+        else:
+            reply = f"Filed as {filed.get('final_doc_type') or filed.get('doc_type') or 'document'}."
+        self.save_message(chat_id, "user", f"Serge: {text}")
+        self.save_message(chat_id, "assistant", reply)
+        await context.bot.send_message(chat_id=chat_id, text=reply)
+        return True
+
     async def _auto_summarize(self, chat_id: str, history: list):
         """Compress recent conversation into a summary and save to context DB."""
         try:
@@ -606,6 +720,12 @@ class BazaAgent(ContextMixin):
             except Exception:
                 pass
             logger.info(f"[{self.agent_id}] saved {kind} from chat {chat_id}: {fname}")
+            # Stash last upload per chat for follow-up filing commands
+            if not hasattr(self, "_last_uploads"):
+                self._last_uploads = {}
+            self._last_uploads[str(chat_id)] = {
+                "file_path": fpath, "kind": kind, "ts": time.time(),
+            }
             await context.bot.send_message(chat_id=chat_id,
                 text=f"\u2705 Got your {kind}: {fname}\n\u2026 analyzing with Phil's curator...")
 
@@ -640,6 +760,52 @@ class BazaAgent(ContextMixin):
                         out += f"\ntags: {', '.join(tags[:6])}\n"
                     out += f"\n📁 {suggested}"
                     await context.bot.send_message(chat_id=chat_id, text=out)
+
+                    # ── Post-curate filing: receipts → ahb_receipts,
+                    #    permits/COIs/etc → link to project
+                    try:
+                        file_result = await loop.run_in_executor(
+                            None, self.skills.run, "file_document",
+                            {
+                                "file_path": fpath,
+                                "analysis": analysis,
+                                "caption": caption,
+                                "agent_id": self.agent_id,
+                            },
+                        )
+                        try:
+                            filed = json.loads(file_result) if isinstance(file_result, str) else (file_result or {})
+                        except Exception:
+                            filed = {}
+                        if not isinstance(filed, dict):
+                            filed = {}
+                        action = filed.get("action")
+                        msg2 = None
+                        if action == "filed_receipt":
+                            total = filed.get("total") or 0
+                            vendor = filed.get("vendor") or "unknown vendor"
+                            date = filed.get("receipt_date") or "no date"
+                            proj = filed.get("project_id") or "-"
+                            msg2 = (f"🧾 Receipt filed in AHB123\n"
+                                    f"Vendor: {vendor}\n"
+                                    f"Date: {date}\n"
+                                    f"Total: ${float(total or 0):.2f}\n"
+                                    f"Project: {proj}\n"
+                                    f"ID: {filed.get('receipt_id','')}")
+                        elif action == "linked_to_project":
+                            msg2 = (f"🗂 Attached to project {filed.get('project_id')}\n"
+                                    f"({filed.get('project_note','')})")
+                        elif action == "unassigned":
+                            msg2 = (f"📎 Stored in Document Library (no project match)\n"
+                                    f"hint: {filed.get('hint') or 'none'} — {filed.get('reason','')}")
+                        elif action == "kept_in_library":
+                            pass  # already confirmed filed
+                        elif filed.get("success") is False:
+                            msg2 = f"⚠️ Filing error: {filed.get('error') or filed}"
+                        if msg2:
+                            await context.bot.send_message(chat_id=chat_id, text=msg2)
+                    except Exception as e:
+                        logger.error(f"[{self.agent_id}] file_document failed: {e}")
                 except Exception as e:
                     logger.error(f"[{self.agent_id}] curate failed: {e}")
             asyncio.ensure_future(_curate())

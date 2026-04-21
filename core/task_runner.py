@@ -380,6 +380,15 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
                     })
                 except Exception:
                     pass
+                try:
+                    from core.context_db import journal_log
+                    journal_log(agent_id=agent_id, task_type="task_completed",
+                                task_description=task_title,
+                                action_summary=f"{agent_id.replace('_',' ').title()} completed: {task_title[:100]}",
+                                requested_by="task_runner", status="completed",
+                                result=notes[:500])
+                except Exception:
+                    pass
                 # Execute any ##SKILL:artifact_save## calls from LLM output first
                 skill_saves = _execute_skill_saves(agent_id, result["output"])
                 # Fallback: save full deliverable as artifact if LLM didn't save any
@@ -402,6 +411,14 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
                 })
                 logger.info(f"  🔴 BLOCKED: {task_title[:50]} — {result['block_reason']}")
                 results.append({"task": task_title, "status": "blocked", "reason": result["block_reason"]})
+                try:
+                    from core.context_db import journal_log
+                    journal_log(agent_id=agent_id, task_type="task_blocked",
+                                task_description=task_title,
+                                action_summary=f"{agent_id.replace('_',' ').title()} blocked: {task_title[:80]} — {result['block_reason'][:60]}",
+                                requested_by="task_runner", status="blocked")
+                except Exception:
+                    pass
 
             else:
                 update_task(task_id, {"status": "in_progress", "notes": notes})
