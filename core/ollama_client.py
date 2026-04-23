@@ -164,6 +164,9 @@ RATE_LIMIT_MARKERS = (
 )
 
 DEFAULT_FALLBACK_MODEL = os.environ.get("DEFAULT_FALLBACK_MODEL", "qwen2.5:14b")
+# When the LOCAL Ollama stack is unreachable (both GPUs busy, daemon crashed, etc.),
+# transparently route to this cloud model via LiteLLM. Empty = disabled.
+LOCAL_OUTAGE_CLOUD_MODEL = os.environ.get("LOCAL_OUTAGE_CLOUD_MODEL", "gpt-4o-mini")
 
 
 def _looks_rate_limited(text: str) -> bool:
@@ -174,7 +177,13 @@ def _looks_rate_limited(text: str) -> bool:
 
 
 def _route_stream(model: str, messages: list, system_prompt, agent_id: str, on_complete):
-    """Lower-level stream routing (cloud / ollama-cloud / pooled local) without fallback."""
+    """Lower-level stream routing (cloud / ollama-cloud / pooled local).
+
+    For local Ollama models we fall back to LiteLLM cloud (LOCAL_OUTAGE_CLOUD_MODEL)
+    if no GPU slot is available within the pool timeout, or if the local stream
+    raises a connection error — so an Ollama crash or both-GPUs-busy situation
+    degrades to cloud instead of dropping the request.
+    """
     if is_cloud_model(model):
         yield from chat_stream_cloud(model, messages, system_prompt, on_complete=on_complete)
         return
@@ -184,10 +193,26 @@ def _route_stream(model: str, messages: list, system_prompt, agent_id: str, on_c
         return
     slot: Optional[GPUSlot] = gpu_pool.acquire(agent_id, timeout=120.0, model=model)
     if slot is None:
+        # Local outage fallback: route to LiteLLM cloud so the agent doesn't die
+        if LOCAL_OUTAGE_CLOUD_MODEL:
+            yield f"🛡️ _(local GPU pool unavailable — routing {agent_id} to {LOCAL_OUTAGE_CLOUD_MODEL} via LiteLLM)_\n\n"
+            yield from chat_stream_cloud(LOCAL_OUTAGE_CLOUD_MODEL, messages, system_prompt, on_complete=on_complete)
+            return
         yield "_(No GPU available right now. Try again in a moment.)_"
         return
     try:
-        yield from chat_stream(model, messages, system_prompt, base_url=slot.url, on_complete=on_complete)
+        local_yielded_any = False
+        try:
+            for chunk in chat_stream(model, messages, system_prompt, base_url=slot.url, on_complete=on_complete):
+                local_yielded_any = True
+                yield chunk
+        except (requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as local_err:
+            # Ollama daemon crashed mid-stream. If we haven't yielded anything yet, fall back.
+            if not local_yielded_any and LOCAL_OUTAGE_CLOUD_MODEL:
+                yield f"🛡️ _(local Ollama unreachable: {local_err}; routing to {LOCAL_OUTAGE_CLOUD_MODEL})_\n\n"
+                yield from chat_stream_cloud(LOCAL_OUTAGE_CLOUD_MODEL, messages, system_prompt, on_complete=on_complete)
+            else:
+                yield f"\n\n_(stream interrupted: {local_err})_"
     finally:
         gpu_pool.release(slot)
 

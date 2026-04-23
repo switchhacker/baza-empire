@@ -5,8 +5,50 @@ logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_SHARED_DIR = os.path.join(BASE_DIR, "skills", "shared")
-# Accept both ##SKILL: name {args}## (correct) and ##SKILL: name {args} (LLM often forgets closing ##)
-SKILL_CALL_PATTERN = re.compile(r'##SKILL:\s*(\w[\w\-]+)\s*({.*?})?\s*(?:##|(?=\n|$))', re.DOTALL)
+# Start-of-call pattern: ##SKILL:name followed by optional {json-args} and an optional closing ##.
+# We do brace-balanced scanning manually because regex can't handle nested braces inside JSON values.
+SKILL_NAME_PATTERN = re.compile(r'##SKILL:\s*(\w[\w\-]+)\s*')
+
+
+def _extract_json_block(text: str, start: int) -> tuple[str, int]:
+    """Starting at the first '{' on/after `start`, return (json_substring, end_index_after_closing_brace).
+    Returns ('', start) if no '{' at that position. Tracks strings + escapes so `{` inside a JSON string
+    doesn't confuse the depth counter."""
+    i = start
+    n = len(text)
+    while i < n and text[i] != '{' and not text[i].isspace():
+        # `##SKILL:name##` or `##SKILL:name` with no args
+        break
+    # skip whitespace
+    while i < n and text[i].isspace():
+        i += 1
+    if i >= n or text[i] != '{':
+        return '', i
+    depth = 0
+    in_str = False
+    escape = False
+    j = i
+    while j < n:
+        c = text[j]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == '\\':
+                escape = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[i:j+1], j + 1
+        j += 1
+    # unbalanced — give up
+    return '', i
 
 class SkillsEngine:
     def __init__(self, agent_id):
@@ -65,19 +107,45 @@ class SkillsEngine:
             return {"success": False, "error": str(e), "output": ""}
 
     def parse_and_run(self, llm_output, chat_id=None):
+        """Find every ##SKILL:name{...}## call, execute it, and splice the result back into the text.
+
+        Brace-aware: handles nested JSON objects in skill args (e.g. `{"payload": {"k": "v"}}`).
+        Error-aware: reports malformed JSON to the agent rather than silently dropping args."""
         results = []
-        modified = llm_output
-        for match in SKILL_CALL_PATTERN.finditer(llm_output):
-            full_match = match.group(0)
-            skill_name = match.group(1)
-            try: args = json.loads(match.group(2) or "{}")
-            except: args = {}
-            result = self.run(skill_name, args, chat_id=chat_id)
+        pieces = []
+        pos = 0
+        text = llm_output
+        for m in SKILL_NAME_PATTERN.finditer(text):
+            pieces.append(text[pos:m.start()])
+            skill_name = m.group(1)
+            json_str, after_json = _extract_json_block(text, m.end())
+            # consume trailing "##" terminator if present
+            end = after_json
+            while end < len(text) and text[end] in ' \t':
+                end += 1
+            if text[end:end+2] == '##':
+                end += 2
+            if json_str:
+                try:
+                    args = json.loads(json_str)
+                    parse_error = None
+                except json.JSONDecodeError as e:
+                    args = {}
+                    parse_error = f"malformed JSON in skill args: {e.msg} at pos {e.pos} (raw={json_str[:120]})"
+            else:
+                args = {}
+                parse_error = None
+            if parse_error:
+                result = {"success": False, "error": parse_error, "skill": skill_name}
+                logger.warning(f"[skills_engine] {skill_name}: {parse_error}")
+            else:
+                result = self.run(skill_name, args, chat_id=chat_id)
             results.append(result)
             if result.get("success"):
-                replacement = f"\n[SKILL RESULT: {skill_name}]\n{result.get('output','')}\n"
+                pieces.append(f"\n[SKILL RESULT: {skill_name}]\n{result.get('output','')}\n")
             else:
                 err_text = result.get('error') or result.get('output') or 'unknown error'
-                replacement = f"\n[SKILL ERROR: {skill_name}] {err_text}\n"
-            modified = modified.replace(full_match, replacement)
-        return modified, results
+                pieces.append(f"\n[SKILL ERROR: {skill_name}] {err_text}\n")
+            pos = end
+        pieces.append(text[pos:])
+        return ''.join(pieces), results

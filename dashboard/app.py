@@ -3,7 +3,7 @@
 Baza Empire Agent Dashboard — v4
 Full control center: agents, cron jobs, artifacts, settings, logs, infra
 """
-import os, json, yaml, subprocess, re, datetime, sqlite3, uuid, secrets, functools
+import os, sys, json, yaml, subprocess, re, datetime, sqlite3, uuid, secrets, functools
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -2169,6 +2169,76 @@ def api_artifact_send_to_agent():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+
+@app.route('/api/artifacts/run', methods=['POST'])
+def api_artifact_run():
+    """Execute a .py or .sh artifact in a constrained subprocess. 30s timeout, captures stdout/stderr.
+
+    Safety: extension whitelist, path must resolve under ARTIFACTS_DIR, no shell for .py, no network
+    isolation (files already on this box), agent-framework venv for .py.
+    """
+    import subprocess as _sp
+    import shlex as _shlex
+    import time as _time
+    data       = request.json or {}
+    project_id = (data.get('project_id') or '').strip()
+    filename   = (data.get('filename') or '').strip()
+    if not project_id or not filename:
+        return jsonify({'success': False, 'error': 'project_id + filename required'}), 400
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ('.py', '.sh'):
+        return jsonify({'success': False, 'error': f'Extension {ext} not runnable'}), 400
+
+    # Resolve and sanity-check the path is under ARTIFACTS_DIR
+    target = os.path.realpath(os.path.join(ARTIFACTS_DIR, project_id, filename))
+    base = os.path.realpath(ARTIFACTS_DIR)
+    if not target.startswith(base + os.sep):
+        return jsonify({'success': False, 'error': 'Path escapes artifacts dir'}), 400
+    if not os.path.isfile(target):
+        return jsonify({'success': False, 'error': 'File not found'}), 404
+
+    # Build interpreter command
+    if ext == '.py':
+        venv_py = os.path.join(os.path.dirname(DASHBOARD_DIR), 'venv', 'bin', 'python3')
+        py = venv_py if os.path.exists(venv_py) else 'python3'
+        cmd = [py, target]
+        interpreter = 'python3 (venv)' if os.path.exists(venv_py) else 'python3'
+    else:
+        cmd = ['/bin/bash', target]
+        interpreter = 'bash'
+
+    started = _time.time()
+    try:
+        proc = _sp.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=os.path.dirname(target),
+        )
+        duration_ms = int((_time.time() - started) * 1000)
+        return jsonify({
+            'success': True,
+            'returncode': proc.returncode,
+            'stdout': (proc.stdout or '')[-8000:],
+            'stderr': (proc.stderr or '')[-4000:],
+            'duration_ms': duration_ms,
+            'interpreter': interpreter,
+        })
+    except _sp.TimeoutExpired as e:
+        return jsonify({
+            'success': True,
+            'returncode': -1,
+            'stdout': (e.stdout.decode('utf-8', errors='replace') if e.stdout else '')[-8000:],
+            'stderr': (e.stderr.decode('utf-8', errors='replace') if e.stderr else '') + '\n[timed out after 30s]',
+            'duration_ms': int((_time.time() - started) * 1000),
+            'interpreter': interpreter,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
 # ── Routes — Heartbeat API ───────────────────────────────────────────────────
 
 @app.route('/api/heartbeats')
@@ -2762,6 +2832,74 @@ def api_skills_list():
                                'size': stat.st_size, 'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
                                'description': ''})
     return jsonify(skills)
+
+@app.route('/api/skills/catalog')
+def api_skills_catalog():
+    """Rich skill catalog via skills/shared/skill_catalog.py — returns name, scope, owner, summary, args_hint."""
+    filter_str = (request.args.get('filter') or '').strip()
+    agent = (request.args.get('agent') or '').strip() or None
+    env = os.environ.copy()
+    env['SKILL_ARGS'] = json.dumps({'filter': filter_str, 'agent': agent})
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'skill_catalog.py')],
+            env=env, capture_output=True, text=True, timeout=30,
+        )
+        return jsonify(json.loads(proc.stdout or '{}'))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/nerdminer/status')
+def api_nerdminer_status():
+    """Live status of both ESP32-S3 NerdMiner nodes (via serial + cached fallback)."""
+    env = os.environ.copy()
+    env['SKILL_ARGS'] = json.dumps({
+        'node': request.args.get('node', 'all'),
+        'timeout': int(request.args.get('timeout', 3)),
+    })
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'nerdminer_status.py')],
+            env=env, capture_output=True, text=True, timeout=20,
+        )
+        return jsonify(json.loads(proc.stdout or '{}'))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/knowledge/search')
+def api_knowledge_search():
+    """Unified FTS5 knowledge search across AHBCO data + agent memory."""
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({'ok': False, 'error': 'q parameter required'}), 400
+    sources = request.args.getlist('source') or None
+    limit = int(request.args.get('limit', 10))
+    env = os.environ.copy()
+    env['SKILL_ARGS'] = json.dumps({'query': query, 'sources': sources, 'limit': limit})
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'knowledge_search.py')],
+            env=env, capture_output=True, text=True, timeout=15,
+        )
+        return jsonify(json.loads(proc.stdout or '{}'))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/api/knowledge/rebuild', methods=['POST'])
+def api_knowledge_rebuild():
+    """Trigger knowledge index rebuild on demand."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'knowledge_rebuild_index.py')],
+            capture_output=True, text=True, timeout=120,
+        )
+        return jsonify(json.loads(proc.stdout or '{}'))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 
 @app.route('/api/skills/read/<skill_name>')
 def api_skill_read(skill_name):

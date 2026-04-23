@@ -166,6 +166,27 @@
     .preview-code{font-family:'Courier New',monospace;font-size:12px;color:#a0f0a0;padding:16px;white-space:pre-wrap;word-break:break-word;line-height:1.6}
     .preview-img{max-width:100%;max-height:60vh;display:block;margin:0 auto}
 
+    /* File action overflow menu */
+    .fm-overflow{position:relative;display:inline-block}
+    .fm-overflow-btn{padding:6px 10px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;color:#aaa;font-size:13px;cursor:pointer;font-weight:700}
+    .fm-overflow-btn:hover{background:#2a2a4a;color:#fff}
+    .fm-overflow-menu{display:none;position:absolute;top:calc(100% + 4px);right:0;background:#0a0a18;border:1px solid #2a2a4a;border-radius:8px;min-width:200px;z-index:600;box-shadow:0 8px 24px rgba(0,0,0,.6);overflow:hidden}
+    .fm-overflow-menu.open{display:block}
+    .fm-overflow-item{display:flex;align-items:center;gap:10px;padding:10px 14px;color:#ccc;font-size:12px;font-weight:600;cursor:pointer;border-bottom:1px solid #0e0e1e;transition:background .1s}
+    .fm-overflow-item:last-child{border-bottom:none}
+    .fm-overflow-item:hover{background:#1a1a2e;color:#fff}
+    .fm-overflow-item.danger{color:#e94560}
+    .fm-overflow-item.danger:hover{background:#2a0e14;color:#ff6b80}
+    .fm-overflow-icon{font-size:14px;width:18px;text-align:center}
+    .fm-overflow-divider{height:1px;background:#1a1a2e;margin:0}
+
+    /* Run output panel */
+    .fm-run-output{margin-top:12px;background:#020208;border:1px solid #1a1a2e;border-radius:8px;padding:12px;max-height:240px;overflow:auto;font-family:monospace;font-size:11px;line-height:1.5;display:none}
+    .fm-run-output.show{display:block}
+    .fm-run-output .run-meta{color:#666;font-size:10px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #1a1a2e}
+    .fm-run-output .run-stdout{color:#a0f0a0;white-space:pre-wrap}
+    .fm-run-output .run-stderr{color:#ff8080;white-space:pre-wrap;margin-top:6px;padding-top:6px;border-top:1px dashed #333}
+
     /* Ext badges */
     .ext-badge{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid}
     .ext-py{background:#0d1a0d;color:#4CAF50;border-color:#1a3a1a}
@@ -838,13 +859,7 @@ async function openFile(proj,name){
   const ext=(name.match(/\.\w+$/)||[''])[0].toLowerCase();
   const fileType=getFileType(ext);
 
-  // Web files → open in Explore in new tab
-  if(fileType==='web'){
-    window.open(`/explore?source=artifact&project_id=${encodeURIComponent(proj)}&filename=${encodeURIComponent(name)}`,'_blank');
-    return;
-  }
-
-  // All other files → open in modal with context-aware tools
+  // All file types open in the modal — use the overflow menu "Open in Explore" to launch new tab
   const modal=document.getElementById('fileModal');
   const title=document.getElementById('fmTitle');
   const sub=document.getElementById('fmSub');
@@ -859,16 +874,44 @@ async function openFile(proj,name){
   chat.style.display='none';
 
   // Action buttons based on file type
-  let btns=`<a class="btn btn-secondary btn-sm" href="/api/artifacts/download/${proj}/${name}" download>\u2193 Download</a>`;
-  btns+=`<button class="btn btn-ghost btn-sm" onclick="window.open('/explore?source=artifact&project_id='+encodeURIComponent(proj)+'&filename='+encodeURIComponent(name),'_blank')">\u{1F310} Explore</button>`;
+  let btns=`<a class="btn btn-secondary btn-sm" href="/api/artifacts/download/${proj}/${name}" download title="Download">\u2193</a>`;
+  btns+=`<button class="btn btn-ghost btn-sm" onclick="openRawFile()" title="View raw in new tab">\u{1F517} Raw</button>`;
+
+  const isRunnable=(ext==='.py'||ext==='.sh');
+  if(fileType==='code'||fileType==='text'){
+    btns+=`<button class="btn btn-ghost btn-sm" onclick="copyFileContent()" title="Copy contents">\u{1F4CB} Copy</button>`;
+    btns+=`<button class="btn btn-ghost btn-sm" onclick="toggleEditMode()" title="Edit inline">\u270F Edit</button>`;
+  }
 
   if(fileType==='image'){
-    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('sam_axe','image')">\u{1F3A8} Sam Edit</button>`;
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('sam_axe','image')">\u{1F3A8} Sam</button>`;
   }else if(fileType==='code'){
-    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','code')">\u2328 Claw Edit</button>`;
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','code')">\u2328 Claw</button>`;
   }else if(fileType==='text'){
-    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','text')">\u{1F4DD} Claw Edit</button>`;
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','text')">\u{1F4DD} Claw</button>`;
+  }else if(fileType==='web'){
+    btns+=`<button class="btn btn-ghost btn-sm" onclick="copyFileContent()" title="Copy source">\u{1F4CB} Copy</button>`;
+    btns+=`<button class="btn btn-ghost btn-sm" onclick="toggleHtmlSourceView()" title="Toggle rendered vs source">\u{1F500} Source</button>`;
+    btns+=`<button class="btn btn-primary btn-sm" onclick="openAgentChat('claw_batto','code')">\u2328 Claw</button>`;
   }
+
+  // Overflow menu with secondary actions
+  const runItem=isRunnable?`<div class="fm-overflow-item" onclick="runCodeFile()"><span class="fm-overflow-icon">\u25B6</span> Run (sandboxed)</div>`:'';
+  btns+=`<div class="fm-overflow">
+    <button class="fm-overflow-btn" onclick="event.stopPropagation();toggleOverflowMenu()" title="More actions">\u22EF</button>
+    <div class="fm-overflow-menu" id="fmOverflowMenu">
+      <div class="fm-overflow-item" onclick="window.open('/explore?source=artifact&project_id='+encodeURIComponent('${proj}')+'&filename='+encodeURIComponent('${name}'),'_blank')"><span class="fm-overflow-icon">\u{1F310}</span> Open in Explore</div>
+      <div class="fm-overflow-item" onclick="copyFileLink()"><span class="fm-overflow-icon">\u{1F517}</span> Copy link</div>
+      <div class="fm-overflow-divider"></div>
+      <div class="fm-overflow-item" onclick="promptRename()"><span class="fm-overflow-icon">\u{1F4DD}</span> Rename</div>
+      <div class="fm-overflow-item" onclick="promptDuplicate()"><span class="fm-overflow-icon">\u{1F4CB}</span> Duplicate</div>
+      <div class="fm-overflow-item" onclick="promptMoveProject()"><span class="fm-overflow-icon">\u{1F4E6}</span> Move to project...</div>
+      <div class="fm-overflow-item" onclick="promptSendToAgent()"><span class="fm-overflow-icon">\u{1F4E8}</span> Send to agent...</div>
+      ${runItem}
+      <div class="fm-overflow-divider"></div>
+      <div class="fm-overflow-item danger" onclick="confirmDeleteInModal()"><span class="fm-overflow-icon">\u{1F5D1}</span> Delete</div>
+    </div>
+  </div>`;
   actions.innerHTML=btns;
   modal.classList.add('open');
 
@@ -878,6 +921,8 @@ async function openFile(proj,name){
       content.innerHTML=`<div style="text-align:center;padding:10px;background:#020208;border-radius:8px"><img src="/api/artifacts/serve/${proj}/${name}" style="max-width:100%;max-height:55vh;border-radius:6px"></div>`;
     }else if(fileType==='pdf'){
       content.innerHTML=`<iframe src="/api/artifacts/serve/${proj}/${name}" style="width:100%;height:60vh;border:none;border-radius:8px"></iframe>`;
+    }else if(fileType==='web'){
+      content.innerHTML=`<iframe id="fmHtmlFrame" src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}" style="width:100%;height:60vh;border:1px solid #1a1a2e;border-radius:8px;background:#fff"></iframe>`;
     }else if(fileType==='code'||fileType==='text'){
       const r=await fetch(`/api/artifacts/view/${proj}/${name}`);
       const d=await r.json();
@@ -925,6 +970,182 @@ async function saveEditedFile(){
 function closeFileModal(){
   document.getElementById('fileModal').classList.remove('open');
   openFileData=null;
+  const runOut=document.getElementById('fmRunOutput');if(runOut)runOut.remove();
+  const menu=document.getElementById('fmOverflowMenu');if(menu)menu.classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// File action handlers — exposed via the modal action bar + overflow menu
+// ═══════════════════════════════════════════════════════════════════════════
+
+function toggleOverflowMenu(){
+  const menu=document.getElementById('fmOverflowMenu');
+  if(!menu)return;
+  menu.classList.toggle('open');
+  // Close on outside click once
+  if(menu.classList.contains('open')){
+    setTimeout(()=>{
+      document.addEventListener('click',function close(e){
+        if(!menu.contains(e.target)){menu.classList.remove('open');document.removeEventListener('click',close)}
+      });
+    },0);
+  }
+}
+
+function openRawFile(){
+  if(!openFileData)return;
+  window.open(`/api/artifacts/serve/${openFileData.proj}/${encodeURIComponent(openFileData.name)}`,'_blank');
+}
+
+async function clipboardWrite(text){
+  if(navigator.clipboard && window.isSecureContext){
+    await navigator.clipboard.writeText(text);return;
+  }
+  // Fallback: legacy execCommand, works on http://
+  const ta=document.createElement('textarea');
+  ta.value=text;
+  ta.style.position='fixed';ta.style.opacity='0';ta.style.top='0';ta.style.left='0';
+  document.body.appendChild(ta);
+  ta.focus();ta.select();
+  try{
+    const ok=document.execCommand('copy');
+    if(!ok)throw new Error('execCommand(copy) returned false');
+  }finally{document.body.removeChild(ta)}
+}
+
+async function toggleHtmlSourceView(){
+  if(!openFileData)return;
+  const content=document.getElementById('fmContent');
+  const iframe=document.getElementById('fmHtmlFrame');
+  if(iframe){
+    // Switch to source view
+    const r=await fetch(`/api/artifacts/view/${openFileData.proj}/${encodeURIComponent(openFileData.name)}`);
+    const d=await r.json();
+    const src=d.content||d.text||'(empty)';
+    content.innerHTML=`
+      <div class="preview-content" style="max-height:60vh">
+        <pre class="preview-code" id="fmCodeView">${escHtml(src)}</pre>
+        <textarea id="fmCodeEdit" style="display:none;width:100%;height:60vh;background:#020208;color:#a0f0a0;border:none;padding:16px;font-family:monospace;font-size:12px;line-height:1.6;resize:none">${escHtml(src)}</textarea>
+      </div>`;
+  }else{
+    // Switch back to rendered view
+    content.innerHTML=`<iframe id="fmHtmlFrame" src="/api/artifacts/serve/${openFileData.proj}/${encodeURIComponent(openFileData.name)}" style="width:100%;height:60vh;border:1px solid #1a1a2e;border-radius:8px;background:#fff"></iframe>`;
+  }
+}
+
+async function copyFileContent(){
+  if(!openFileData)return;
+  try{
+    const r=await fetch(`/api/artifacts/view/${openFileData.proj}/${encodeURIComponent(openFileData.name)}`);
+    const d=await r.json();
+    const text=d.content||d.text||'';
+    await clipboardWrite(text);
+    toast('Copied '+text.length+' chars','ok');
+  }catch(e){toast('Copy failed: '+e,'err')}
+}
+
+async function copyFileLink(){
+  if(!openFileData)return;
+  const url=`${location.origin}/api/artifacts/serve/${openFileData.proj}/${encodeURIComponent(openFileData.name)}`;
+  try{await clipboardWrite(url);toast('Link copied','ok')}
+  catch(e){toast('Clipboard unavailable: '+e,'err')}
+}
+
+async function promptRename(){
+  if(!openFileData)return;
+  const newName=prompt('New filename:',openFileData.name);
+  if(!newName||newName===openFileData.name)return;
+  try{
+    const r=await fetch('/api/artifacts/rename',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_id:openFileData.proj,old_name:openFileData.name,new_name:newName})});
+    const d=await r.json();
+    if(d.success){toast('Renamed to '+d.new_name,'ok');closeFileModal();loadFiles()}
+    else toast('Rename failed: '+(d.error||''),'err');
+  }catch(e){toast('Rename failed','err')}
+}
+
+async function promptDuplicate(){
+  if(!openFileData)return;
+  const parts=openFileData.name.split('.');
+  const ext=parts.length>1?'.'+parts.pop():'';
+  const base=parts.join('.');
+  const suggest=`${base}-copy${ext}`;
+  const newName=prompt('Duplicate as:',suggest);
+  if(!newName||newName===openFileData.name)return;
+  try{
+    const r=await fetch(`/api/artifacts/view/${openFileData.proj}/${encodeURIComponent(openFileData.name)}`);
+    const d=await r.json();
+    if(d.type!=='text'){toast('Duplicate only works for text files right now','err');return}
+    await fetch('/api/artifacts/save-text',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_id:openFileData.proj,filename:newName,content:d.content||''})});
+    toast('Duplicated as '+newName,'ok');
+    loadFiles();
+  }catch(e){toast('Duplicate failed: '+e,'err')}
+}
+
+async function promptMoveProject(){
+  if(!openFileData)return;
+  const to=prompt('Move to project (id):',openFileData.proj);
+  if(!to||to===openFileData.proj)return;
+  try{
+    const r=await fetch('/api/artifacts/move',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({from_project:openFileData.proj,to_project:to,name:openFileData.name})});
+    const d=await r.json();
+    if(d.success){toast('Moved to '+to,'ok');closeFileModal();loadFiles()}
+    else toast('Move failed: '+(d.error||''),'err');
+  }catch(e){toast('Move failed','err')}
+}
+
+async function promptSendToAgent(){
+  if(!openFileData)return;
+  const options=Object.keys(AGENTS).map(k=>k+' ('+AGENTS[k]+')').join('\n');
+  const agentId=prompt('Agent id:\n\n'+options,'claw_batto');
+  if(!agentId)return;
+  const promptText=prompt('Message for '+AGENTS[agentId]+':','Please review this file and tell me what you think.');
+  if(!promptText)return;
+  try{
+    const r=await fetch('/api/artifacts/send-to-agent',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_id:openFileData.proj,filename:openFileData.name,agent_id:agentId,prompt:promptText})});
+    const d=await r.json();
+    if(d.success)toast('Sent to '+AGENTS[agentId],'ok');
+    else toast('Send failed: '+(d.error||''),'err');
+  }catch(e){toast('Send failed','err')}
+}
+
+async function runCodeFile(){
+  if(!openFileData)return;
+  if(!confirm('Run '+openFileData.name+' on the rig?\n\nTimeout 30s, output captured, no interactive input.'))return;
+  const actions=document.getElementById('fmActions');
+  const content=document.getElementById('fmContent');
+  let out=document.getElementById('fmRunOutput');
+  if(!out){
+    out=document.createElement('div');
+    out.id='fmRunOutput';
+    out.className='fm-run-output show';
+    content.parentNode.insertBefore(out,content.nextSibling);
+  }else{out.classList.add('show')}
+  out.innerHTML='<div class="run-meta">Running...</div>';
+  try{
+    const r=await fetch('/api/artifacts/run',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_id:openFileData.proj,filename:openFileData.name})});
+    const d=await r.json();
+    if(!d.success){out.innerHTML=`<div class="run-meta">Failed</div><div class="run-stderr">${escHtml(d.error||'')}</div>`;return}
+    const meta=`exit ${d.returncode} \u00B7 ${d.duration_ms}ms \u00B7 ${d.interpreter}`;
+    let body=`<div class="run-meta">${meta}</div>`;
+    if(d.stdout)body+=`<div class="run-stdout">${escHtml(d.stdout)}</div>`;
+    if(d.stderr)body+=`<div class="run-stderr">${escHtml(d.stderr)}</div>`;
+    out.innerHTML=body;
+  }catch(e){out.innerHTML=`<div class="run-stderr">Run failed: ${escHtml(String(e))}</div>`}
+}
+
+async function confirmDeleteInModal(){
+  if(!openFileData)return;
+  if(!confirm('Delete '+openFileData.name+'?\n\nThis cannot be undone.'))return;
+  try{
+    await fetch('/api/artifacts/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_id:openFileData.proj,name:openFileData.name})});
+    toast('Deleted','ok');closeFileModal();loadFiles();
+  }catch(e){toast('Delete failed','err')}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
