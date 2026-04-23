@@ -8,21 +8,14 @@ LOG=/var/log/ollama-watchdog.log
 mkdir -p "$(dirname "$LOG")"
 now=$(date -Is)
 
-# 1. Kill zombie ollama serve processes (keep only the newest)
-serves=$(pgrep -f "ollama serve" | sort -n)
-serve_count=$(echo "$serves" | wc -l)
-if [ "$serve_count" -gt 1 ]; then
-    # Keep only the most recent one
-    newest=$(echo "$serves" | tail -1)
-    for pid in $serves; do
-        if [ "$pid" != "$newest" ]; then
-            echo "$now [ZOMBIE] Killing duplicate ollama serve PID $pid" >> "$LOG"
-            kill -9 "$pid" 2>/dev/null || true
-        fi
-    done
-fi
+# NOTE: do NOT kill "duplicate" ollama serve processes — this deployment
+# intentionally runs 3 instances on different ports (11434 AMD, 11436 CPU,
+# 11437 AMD-secondary), each owned by its own systemd unit. The previous
+# zombie-kill block here was killing legitimate service-managed processes
+# every 5 minutes, causing Simon's briefings and other LLM calls to fail
+# when they landed during a restart window.
 
-# 2. Find ollama runner processes with high CPU and long runtime
+# Find ollama runner processes with high CPU and long runtime
 while IFS= read -r line; do
     [ -z "$line" ] && continue
     pid=$(echo "$line" | awk '{print $1}')
