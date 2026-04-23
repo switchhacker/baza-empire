@@ -1,0 +1,12 @@
+[Unit]
+Description=Baza Empire — Watchdog Schedule (every 5 minutes)
+Requires=baza-watchdog.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=baza-watchdog.service
+
+[Install]
+WantedBy=timers.target

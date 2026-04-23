@@ -1,0 +1,16 @@
+[Unit]
+Description=Baza Empire — Service Watchdog (restart dead critical services, alert on repeated failures)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=switchhacker
+Group=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=-/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/scripts/health_watchdog.sh
+TimeoutStartSec=2min
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

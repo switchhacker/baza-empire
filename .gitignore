@@ -13,3 +13,5 @@ dashboard/artifacts/
 email-pipeline/credentials.json
 email-pipeline/token.json
 email-pipeline/sync_state.json
+firmware/**/*.bin
+

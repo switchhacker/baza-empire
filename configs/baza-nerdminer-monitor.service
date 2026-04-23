@@ -1,0 +1,21 @@
+[Unit]
+Description=Baza Empire — NerdMiner Monitor (tails ESP32-S3 miners, writes stats to Postgres, alerts on offline/overtemp)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=switchhacker
+Group=dialout
+SupplementaryGroups=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=-/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python /home/switchhacker/baza-empire/agent-framework-v3/scripts/nerdminer/monitor.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
