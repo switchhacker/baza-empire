@@ -3519,22 +3519,21 @@ def api_ahb_projects_create():
             line_items.append({'description': ph.get('name', f'Phase {i+1}'), 'quantity': 1, 'unit_price': phase_val})
             subtotal += phase_val
 
-        # If no phases, split the project description into line items + use budget as total
+        # If no phases, default to a single line item carrying the budget.
+        # The user adds real line items with material + labor breakdowns in the
+        # invoice editor — we don't auto-shred the description (that produced
+        # duplicated descriptions and uniform total/N prices).
         if not line_items:
             budget = data.get('value') or data.get('budget_high') or data.get('budget_low') or 0
             try: budget = float(budget) if budget else 0
             except Exception: budget = 0
-            desc = (data.get('description') or '').strip()
-            if desc:
-                line_items = _split_description_to_line_items(desc, budget)
-                subtotal = budget
-            if not line_items:
-                line_items = [{
-                    'description': data.get('title', 'Project'),
-                    'qty': 1, 'rate': budget, 'total': budget,
-                    'quantity': 1, 'unit_price': budget,
-                }]
-                subtotal = budget
+            line_items = [{
+                'description': data.get('title', 'Project'),
+                'qty': 1, 'rate': budget, 'total': budget,
+                'materials': 0, 'labor': 0,
+                'quantity': 1, 'unit_price': budget,
+            }]
+            subtotal = budget
 
         # Auto-create correlated invoice
         iid = uuid.uuid4().hex[:24]
@@ -5844,6 +5843,7 @@ def _rebuild_invoice_line_items(conn, project_id):
         line_items.append({
             'description': ph.get('name', 'Phase'),
             'qty': 1, 'rate': val, 'total': val,
+            'materials': 0, 'labor': 0,
             'quantity': 1, 'unit_price': val,   # legacy keys
         })
         subtotal += val
@@ -5880,24 +5880,18 @@ def _split_description_to_line_items(description: str, total_budget: float) -> l
             lines.append(chunk)
     if not lines:
         return []
-    n = len(lines)
+    # Old behavior shredded the description into N items at total/N. That made
+    # invoices repeat the description and assign every line the same uniform price.
+    # We now keep a single line carrying the full budget; the user fills in real
+    # material + labor breakdowns in the invoice editor.
     budget = float(total_budget or 0)
-    # Even split — round to cents, fix the last line so the sum is exact
-    per = round(budget / n, 2) if n else 0
-    items = []
-    running = 0.0
-    for i, line in enumerate(lines):
-        if i == n - 1:
-            rate = round(budget - running, 2)   # last line absorbs the rounding remainder
-        else:
-            rate = per
-            running += rate
-        items.append({
-            'description': line[:300],
-            'qty': 1, 'rate': rate, 'total': rate,
-            'quantity': 1, 'unit_price': rate,
-        })
-    return items
+    label = lines[0][:200]
+    return [{
+        'description': label,
+        'qty': 1, 'rate': budget, 'total': budget,
+        'materials': 0, 'labor': 0,
+        'quantity': 1, 'unit_price': budget,
+    }]
 
 
 def _sync_invoice_from_project(conn, project_id, project_data):
@@ -5946,26 +5940,23 @@ def _sync_invoice_from_project(conn, project_id, project_data):
         "SELECT COUNT(*) FROM ahb_project_phases WHERE project_id = ?", (project_id,)
     ).fetchone()[0]
 
-    # Rebuild line items from description ONLY when there are no phases driving the invoice.
-    # If phases exist, _rebuild_invoice_line_items handles them — don't fight that.
-    if phase_count == 0:
+    # When no phases, leave existing line items alone — the invoice editor is the
+    # source of truth for material/labor breakdowns. We only touch line items when
+    # the invoice has none yet (fresh invoice with no entries), and even then we
+    # write a single placeholder line carrying the budget. Never auto-shred a
+    # description into N items at total/N — that was the source of duplicated
+    # descriptions and uniform prices on the printed invoice.
+    if phase_count == 0 and len(existing_lines) == 0:
         budget = proj.get('value') or proj.get('budget_high') or proj.get('budget_low') or 0
         try:
             budget = float(budget) if budget else 0
         except Exception:
             budget = 0
-        desc = (proj.get('description') or '').strip()
-        if desc:
-            new_lines = _split_description_to_line_items(desc, budget)
-            if new_lines:
-                sets.append('line_items = ?'); vals.append(json.dumps(new_lines))
-                sets.append('subtotal = ?');   vals.append(budget)
-                sets.append('total = ?');      vals.append(budget)
-        elif budget and len(existing_lines) <= 1:
-            # No description but a budget — single line fallback
+        if budget:
             single = [{
                 'description': proj.get('title', 'Project'),
                 'qty': 1, 'rate': budget, 'total': budget,
+                'materials': 0, 'labor': 0,
                 'quantity': 1, 'unit_price': budget,
             }]
             sets.append('line_items = ?'); vals.append(json.dumps(single))
@@ -6194,30 +6185,31 @@ def api_ahb_invoice_from_project(pid):
         if phases:
             for ph in phases:
                 ph = dict(ph)
-                item = {
+                val = ph.get('value', 0) or 0
+                line_items.append({
                     'description': ph.get('name', 'Phase'),
-                    'quantity': 1,
-                    'unit_price': ph.get('value', 0) or 0
-                }
-                line_items.append(item)
-                subtotal += item['unit_price']
+                    'qty': 1, 'rate': val, 'total': val,
+                    'materials': 0, 'labor': 0,
+                    'quantity': 1, 'unit_price': val,
+                })
+                subtotal += val
         else:
             # Fallback: single line item from project value
             val = project.get('value') or project.get('budget_high') or 0
-            line_items = [{'description': project.get('title', 'Project'), 'quantity': 1, 'unit_price': val}]
+            line_items = [{
+                'description': project.get('title', 'Project'),
+                'qty': 1, 'rate': val, 'total': val,
+                'materials': 0, 'labor': 0,
+                'quantity': 1, 'unit_price': val,
+            }]
             subtotal = val
 
         inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
         iid = str(uuid.uuid4())
-        # Build notes with project description for invoice attachment
-        proj_desc = project.get('description', '')
-        proj_scope = project.get('scope', '')
-        notes_parts = []
-        if proj_desc:
-            notes_parts.append(f"Project Description: {proj_desc}")
-        if proj_scope:
-            notes_parts.append(f"Scope: {proj_scope}")
-        notes = '\n'.join(notes_parts) if notes_parts else ''
+        # The PDF already shows the project description in the Scope-of-Work block
+        # at the top of the invoice — putting it in notes too would duplicate it.
+        # Notes is reserved for invoice-specific terms / payment instructions.
+        notes = ''
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
                subtotal, tax, total, status, notes, client_name, project_name, terms,
@@ -6567,7 +6559,14 @@ def api_ahb_invoice_pdf(iid):
             except (json.JSONDecodeError, TypeError):
                 line_items = []
 
-        # Build line items HTML — group by phase if available
+        # Build line items HTML. We render Materials + Labor columns when ANY line
+        # carries a non-zero breakdown — that way old single-total invoices still
+        # render cleanly while new ones show the material/labor split that sums to
+        # the line total.
+        any_breakdown = any(
+            (float(item.get('materials') or 0) > 0) or (float(item.get('labor') or 0) > 0)
+            for item in line_items
+        )
         items_html = ''
         for i, item in enumerate(line_items, 1):
             desc = item.get('description', '')
@@ -6578,33 +6577,70 @@ def api_ahb_invoice_pdf(iid):
             except: qty = 0
             try: price = float(price or 0)
             except: price = 0
+            try: materials = float(item.get('materials') or 0)
+            except: materials = 0
+            try: labor = float(item.get('labor') or 0)
+            except: labor = 0
             # Honor stored total if it was manually overridden
             stored_total = item.get('total')
             try:
                 stored_total = float(stored_total) if stored_total is not None else None
             except:
                 stored_total = None
-            total_item = stored_total if stored_total is not None else (qty * price)
+            if materials or labor:
+                total_item = materials + labor
+            elif stored_total is not None:
+                total_item = stored_total
+            else:
+                total_item = qty * price
             qty_display = f"{qty:g} {unit}" if unit and unit != 'qty' else f"{qty:g}"
-            items_html += f'''<tr>
-                <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">${price:,.2f}</td>
-                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
-            </tr>'''
+            if any_breakdown:
+                items_html += f'''<tr>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">${materials:,.2f}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">${labor:,.2f}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
+                </tr>'''
+            else:
+                items_html += f'''<tr>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">${price:,.2f}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
+                </tr>'''
 
-        # Build scope of work section for PDF
+        # Build scope of work section for PDF.
+        # Avoid duplicating the description in three places (scope block + notes +
+        # line items). If the line items already break the work down (>1 row, or a
+        # single row whose description differs from the project title), the line
+        # items table is sufficient — only show the Trade/Scope tag for context.
         scope_of_work_html = ''
-        if project and project.get('description'):
-            proj_desc = project.get('description', '').replace('<', '&lt;').replace('>', '&gt;')
-            proj_scope = project.get('scope', '').replace('<', '&lt;').replace('>', '&gt;')
-            scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope}</div>' if proj_scope else ''
-            scope_of_work_html = f'''<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #2563eb;">
+        if project:
+            proj_desc = (project.get('description') or '').strip()
+            proj_scope = (project.get('scope') or '').strip()
+            line_items_carry_detail = (
+                len(line_items) > 1 or
+                (len(line_items) == 1 and (line_items[0].get('description') or '').strip()
+                    and (line_items[0].get('description') or '').strip() != (project.get('title') or '').strip())
+            )
+            notes_text = (inv.get('notes') or '').strip()
+            notes_overlaps = bool(notes_text) and proj_desc and (proj_desc[:60].lower() in notes_text.lower())
+            show_desc_block = bool(proj_desc) and not line_items_carry_detail and not notes_overlaps
+            if show_desc_block:
+                proj_desc_html  = proj_desc.replace('<', '&lt;').replace('>', '&gt;')
+                proj_scope_html = proj_scope.replace('<', '&lt;').replace('>', '&gt;')
+                scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope_html}</div>' if proj_scope_html else ''
+                scope_of_work_html = f'''<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #2563eb;">
     <div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Scope of Work</div>
-    <div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{proj_desc}</div>
+    <div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{proj_desc_html}</div>
     {scope_line}
 </div>'''
+            elif proj_scope:
+                proj_scope_html = proj_scope.replace('<', '&lt;').replace('>', '&gt;')
+                scope_of_work_html = f'''<div style="margin-bottom:14px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope_html}</div>'''
 
         subtotal = inv.get('subtotal') or inv.get('total') or 0
         tax = inv.get('tax') or 0
@@ -6672,7 +6708,7 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
             <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">#</th>
             <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Description</th>
             <th style="padding:10px 12px;text-align:center;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Qty</th>
-            <th style="padding:10px 12px;text-align:right;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Price</th>
+            {'<th style="padding:10px 12px;text-align:right;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Materials</th><th style="padding:10px 12px;text-align:right;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Labor</th>' if any_breakdown else '<th style="padding:10px 12px;text-align:right;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Price</th>'}
             <th style="padding:10px 12px;text-align:right;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Total</th>
         </tr>
     </thead>

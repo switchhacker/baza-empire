@@ -2933,22 +2933,30 @@
         <input type="date" id="invoice-due">
       </div>
     </div>
-    <h3 style="font-size:13px;font-weight:700;color:#888;margin:16px 0 8px;text-transform:uppercase;letter-spacing:1px">Line Items <span style="color:#444;font-weight:400;font-size:10px;text-transform:none;letter-spacing:0">(click any total to edit it directly)</span></h3>
+    <h3 style="font-size:13px;font-weight:700;color:#888;margin:16px 0 8px;text-transform:uppercase;letter-spacing:1px">Line Items <span style="color:#444;font-weight:400;font-size:10px;text-transform:none;letter-spacing:0">(materials + labor sum to total — click total to override)</span></h3>
     <table class="line-items-table" id="line-items-table">
       <thead>
         <tr>
-          <th style="width:36%">Description</th>
-          <th style="width:11%">Qty</th>
-          <th style="width:13%">Unit</th>
-          <th style="width:14%">Rate</th>
-          <th style="width:16%">Total</th>
-          <th style="width:10%"></th>
+          <th style="width:26%">Description</th>
+          <th style="width:7%">Qty</th>
+          <th style="width:10%">Unit</th>
+          <th style="width:11%">Rate</th>
+          <th style="width:12%">Materials</th>
+          <th style="width:12%">Labor</th>
+          <th style="width:14%">Total</th>
+          <th style="width:8%"></th>
         </tr>
       </thead>
       <tbody id="line-items-tbody">
       </tbody>
     </table>
-    <button class="btn btn-secondary btn-sm" onclick="addLineItem()" style="margin-bottom:12px">+ Add Line Item</button>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="addLineItem()">+ Add Line Item</button>
+      <button class="btn btn-secondary btn-sm" onclick="invoicePullPhases()" title="Replace lines with phases of the linked project">↻ Pull from Project Phases</button>
+      <button class="btn btn-secondary btn-sm" onclick="invoiceOpenLinkedProject()" title="Open the linked project in the Project detail modal">↗ Open Linked Project</button>
+      <button class="btn btn-secondary btn-sm" onclick="invoiceOpenEstimator()" title="Open Quotes & Estimator on the linked project">💰 Estimator</button>
+      <button class="btn btn-secondary btn-sm" onclick="invoiceConsolidateLines()" title="Collapse legacy split lines into one item carrying the full total">⇲ Consolidate Lines</button>
+    </div>
     <div class="invoice-summary">
       <div>Subtotal: <strong id="inv-subtotal" class="editable-total" title="Click to edit subtotal directly" onclick="editTotalField('subtotal')">$0.00</strong></div>
       <div id="inv-tax-row">
@@ -4320,10 +4328,13 @@ async function editInvoice(id){
       const qty  = li.qty  ?? li.quantity   ?? 1;
       const rate = li.rate ?? li.unit_price ?? 0;
       const unit = li.unit ?? 'qty';
-      // If a stored total exists and doesn't equal qty*rate, treat it as fixed override
+      const materials = parseFloat(li.materials)||0;
+      const labor     = parseFloat(li.labor)||0;
+      // If a stored total exists and doesn't match the implied total, treat as override
       const stored = li.total!=null ? li.total : null;
-      const fixed = (stored!=null && Math.abs(stored - (qty*rate)) > 0.005) ? stored : null;
-      addLineItem(li.description||'', qty, rate, unit, fixed);
+      const implied = (materials || labor) ? (materials + labor) : (qty * rate);
+      const fixed = (stored!=null && Math.abs(stored - implied) > 0.005) ? stored : null;
+      addLineItem(li.description||'', qty, rate, unit, fixed, materials, labor);
     });
   } else {
     addLineItem();
@@ -4334,7 +4345,7 @@ async function editInvoice(id){
 
 const LINE_UNITS=['qty','sq ft','lin ft','hour','day','each','load','room','set'];
 
-function addLineItem(desc,qty,rate,unit,fixedTotal){
+function addLineItem(desc,qty,rate,unit,fixedTotal,materials,labor){
   lineItemCounter++;
   const id=lineItemCounter;
   const tbody=document.getElementById('line-items-tbody');
@@ -4342,14 +4353,21 @@ function addLineItem(desc,qty,rate,unit,fixedTotal){
   tr.id='li-row-'+id;
   const u=unit||'qty';
   const unitOptions=LINE_UNITS.map(x=>`<option value="${x}"${x===u?' selected':''}>${x}</option>`).join('');
-  const initialQty = qty!=null ? qty : 1;
-  const initialRate= rate!=null ? rate : 0;
-  const initialTotal = fixedTotal!=null ? fixedTotal : (initialQty*initialRate);
+  const initialQty   = qty!=null ? qty : 1;
+  const initialRate  = rate!=null ? rate : 0;
+  const initialMat   = materials!=null ? materials : 0;
+  const initialLab   = labor!=null ? labor : 0;
+  const breakdownSum = (parseFloat(initialMat)||0) + (parseFloat(initialLab)||0);
+  const initialTotal = fixedTotal!=null
+      ? fixedTotal
+      : (breakdownSum > 0 ? breakdownSum : (initialQty*initialRate));
   tr.innerHTML=`
     <td><input type="text" id="li-desc-${id}" value="${escHtml(desc||'')}" placeholder="Description"></td>
     <td><input type="number" id="li-qty-${id}" value="${initialQty}" min="0" step="0.01" oninput="recalcLine(${id})"></td>
     <td><select id="li-unit-${id}">${unitOptions}</select></td>
     <td><input type="number" id="li-rate-${id}" value="${initialRate}" min="0" step="0.01" oninput="recalcLine(${id})"></td>
+    <td><input type="number" id="li-mat-${id}" value="${initialMat}" min="0" step="0.01" placeholder="0.00" oninput="recalcLine(${id})"></td>
+    <td><input type="number" id="li-lab-${id}" value="${initialLab}" min="0" step="0.01" placeholder="0.00" oninput="recalcLine(${id})"></td>
     <td><div class="li-total-cell" id="li-total-${id}" data-fixed="${fixedTotal!=null?'1':'0'}" onclick="editLineTotal(${id})">${fmtCurrency(initialTotal)}</div></td>
     <td><button class="btn-icon del" onclick="removeLineItem(${id})">&#10005;</button></td>
   `;
@@ -4360,11 +4378,16 @@ function addLineItem(desc,qty,rate,unit,fixedTotal){
 function recalcLine(id){
   const cell=document.getElementById('li-total-'+id);
   if(!cell) return;
-  // If user manually overrode the total, don't auto-recalc this line
+  // Manual total override sticks until cleared
   if(cell.dataset.fixed==='1') { recalcInvoice(); return; }
-  const qty=parseFloat(document.getElementById('li-qty-'+id)?.value)||0;
+  const mat =parseFloat(document.getElementById('li-mat-'+id)?.value)||0;
+  const lab =parseFloat(document.getElementById('li-lab-'+id)?.value)||0;
+  const qty =parseFloat(document.getElementById('li-qty-'+id)?.value)||0;
   const rate=parseFloat(document.getElementById('li-rate-'+id)?.value)||0;
-  cell.textContent=fmtCurrency(qty*rate);
+  // Materials + Labor wins when either is non-zero — that's the real cost split.
+  // Otherwise fall back to qty * rate so legacy lines without breakdowns still work.
+  const total = (mat || lab) ? (mat + lab) : (qty * rate);
+  cell.textContent=fmtCurrency(total);
   recalcInvoice();
 }
 
@@ -4496,13 +4519,21 @@ function getLineItems(){
     const cell=document.getElementById('li-total-'+id);
     const qty=parseFloat(document.getElementById('li-qty-'+id)?.value)||0;
     const rate=parseFloat(document.getElementById('li-rate-'+id)?.value)||0;
+    const mat=parseFloat(document.getElementById('li-mat-'+id)?.value)||0;
+    const lab=parseFloat(document.getElementById('li-lab-'+id)?.value)||0;
     const unit=document.getElementById('li-unit-'+id)?.value||'qty';
-    const total = (cell && cell.dataset.fixed==='1')
-      ? (parseFloat((cell.textContent||'').replace(/[^0-9.\-]/g,''))||0)
-      : (qty*rate);
+    let total;
+    if(cell && cell.dataset.fixed==='1'){
+      total = parseFloat((cell.textContent||'').replace(/[^0-9.\-]/g,''))||0;
+    } else if(mat || lab){
+      total = mat + lab;
+    } else {
+      total = qty * rate;
+    }
     items.push({
       description:document.getElementById('li-desc-'+id)?.value||'',
       qty:qty, rate:rate, total:total, unit:unit,
+      materials:mat, labor:lab,
       // legacy keys for backwards compat with old PDF generator
       quantity:qty, unit_price:rate,
     });
@@ -4905,6 +4936,82 @@ function renderInvoiceKanban(){
         </div>`).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">None</div>'}</div>
     </div>`;
   }).join('');
+}
+
+/* ===================== INVOICE TOOLBAR ACTIONS ===================== */
+function _invoiceCurrentProjectId(){
+  return document.getElementById('invoice-project')?.value || '';
+}
+
+async function invoiceOpenLinkedProject(){
+  const pid=_invoiceCurrentProjectId();
+  if(!pid){ showToast('No linked project on this invoice','error'); return; }
+  closeModal('invoiceModal');
+  await openProjectDetail(pid);
+}
+
+async function invoiceOpenEstimator(){
+  const pid=_invoiceCurrentProjectId();
+  if(!pid){ showToast('Pick a project first to use the estimator','error'); return; }
+  closeModal('invoiceModal');
+  await openProjectDetail(pid);
+  // pdToggleQuoteEstimator is defined in the project detail modal scope; opens
+  // the same Quotes & Estimator panel the project view uses.
+  if(typeof pdToggleQuoteEstimator==='function') setTimeout(pdToggleQuoteEstimator,100);
+}
+
+async function invoicePullPhases(){
+  const pid=_invoiceCurrentProjectId();
+  if(!pid){ showToast('Pick a project first to pull its phases','error'); return; }
+  try{
+    const res=await fetch('/api/ahb/phases?project_id='+encodeURIComponent(pid));
+    const phases=await res.json();
+    if(!Array.isArray(phases) || !phases.length){ showToast('Linked project has no phases','error'); return; }
+    document.getElementById('line-items-tbody').innerHTML='';
+    lineItemCounter=0;
+    invoiceOverrides={};
+    phases.forEach(ph=>{
+      const v=parseFloat(ph.value)||0;
+      addLineItem(ph.name||('Phase '+ph.phase_number), 1, v, 'qty', null, 0, 0);
+    });
+    recalcInvoice();
+    showToast('Pulled '+phases.length+' phase(s) into line items');
+  }catch(e){ showToast('Error: '+e.message,'error'); }
+}
+
+function invoiceConsolidateLines(){
+  const rows=document.querySelectorAll('#line-items-tbody tr');
+  if(rows.length<=1){ showToast('Already a single line — nothing to consolidate'); return; }
+  // Sum current totals and collect the descriptions, then collapse to one line.
+  let totalSum=0;
+  const descs=[];
+  rows.forEach(tr=>{
+    const id=tr.id.replace('li-row-','');
+    const d=document.getElementById('li-desc-'+id)?.value || '';
+    if(d) descs.push(d);
+    const cell=document.getElementById('li-total-'+id);
+    let t;
+    if(cell && cell.dataset.fixed==='1'){
+      t=parseFloat((cell.textContent||'').replace(/[^0-9.\-]/g,''))||0;
+    } else {
+      const m=parseFloat(document.getElementById('li-mat-'+id)?.value)||0;
+      const l=parseFloat(document.getElementById('li-lab-'+id)?.value)||0;
+      const q=parseFloat(document.getElementById('li-qty-'+id)?.value)||0;
+      const r=parseFloat(document.getElementById('li-rate-'+id)?.value)||0;
+      t=(m||l)?(m+l):(q*r);
+    }
+    totalSum+=t;
+  });
+  document.getElementById('line-items-tbody').innerHTML='';
+  lineItemCounter=0;
+  invoiceOverrides={};
+  // Use the current project title or the first non-empty description as the label
+  const projSel=document.getElementById('invoice-project');
+  const projTitle=projSel && projSel.options[projSel.selectedIndex] ? projSel.options[projSel.selectedIndex].text : '';
+  const label=projTitle || descs[0] || 'Project work';
+  addLineItem(label, 1, totalSum, 'qty', null, 0, 0);
+  recalcInvoice();
+  showToast('Consolidated '+rows.length+' lines → 1 line @ '+fmtCurrency(totalSum));
 }
 
 /* ===================== INVOICE FROM PROJECT ===================== */
