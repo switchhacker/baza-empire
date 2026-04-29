@@ -1109,6 +1109,67 @@ class BaseAgent(ContextMixin):
                         await context.bot.send_message(chat_id=chat_id, text=msg_text, parse_mode="HTML")
                     except Exception:
                         await context.bot.send_message(chat_id=chat_id, text=msg_text.replace("<b>","").replace("</b>","").replace("<i>","").replace("</i>","").replace("<code>","").replace("</code>",""))
+
+                    # Post-curate filing: receipts → ahb_receipts, permits/COIs/etc → link to project.
+                    # Mirrors the legacy core/agent.py pipeline so every BaseAgent-based bot
+                    # (Specter, Phil, Nova, ...) actually files docs instead of just curating them.
+                    try:
+                        file_result = await loop2.run_in_executor(
+                            None, self.skills.run, "file_document",
+                            {
+                                "file_path": fpath,
+                                "analysis": analysis,
+                                "caption": caption,
+                                "agent_id": self.AGENT_ID,
+                            },
+                        )
+                        try:
+                            filed = json.loads(file_result) if isinstance(file_result, str) else (file_result or {})
+                        except Exception:
+                            filed = {}
+                        if not isinstance(filed, dict):
+                            filed = {}
+                        action = filed.get("action")
+                        reply = None
+                        if action == "filed_receipt":
+                            total = filed.get("total") or 0
+                            vendor = filed.get("vendor") or "unknown vendor"
+                            rdate = filed.get("receipt_date") or "no date"
+                            proj = filed.get("project_id") or "-"
+                            reply = (
+                                f"🧾 Receipt filed in AHB123\n"
+                                f"Vendor: {vendor}\n"
+                                f"Date: {rdate}\n"
+                                f"Total: ${float(total or 0):.2f}\n"
+                                f"Project: {proj}\n"
+                                f"ID: {filed.get('receipt_id','')}"
+                            )
+                        elif action == "linked_to_project":
+                            reply = (
+                                f"🗂 Attached to project {filed.get('project_id')}\n"
+                                f"({filed.get('project_note','')})"
+                            )
+                        elif action == "unassigned":
+                            reply = (
+                                f"📎 Stored in Document Library (no project match)\n"
+                                f"hint: {filed.get('hint') or 'none'} — {filed.get('reason','')}"
+                            )
+                        elif action == "kept_in_library":
+                            # Fallback for doc_types that aren't receipts and
+                            # aren't in PROJECT_DOC_TYPES — still worth letting
+                            # Serge know it landed somewhere.
+                            dt = filed.get("doc_type") or "document"
+                            reply = (
+                                f"📂 Kept in Document Library as {dt}. "
+                                f"If this was a receipt, edit the doc type in AHB123 "
+                                f"and I'll refile it."
+                            )
+                        elif filed.get("success") is False:
+                            reply = f"⚠️ Filing error: {filed.get('error') or filed}"
+                        if reply:
+                            await context.bot.send_message(chat_id=chat_id, text=reply)
+                    except Exception as e:
+                        logger.error(f"[{self.AGENT_ID}] file_document failed: {e}")
                 except Exception as e:
                     logger.error(f"[{self.AGENT_ID}] curate failed: {e}")
                     try:

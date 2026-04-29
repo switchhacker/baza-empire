@@ -17,6 +17,7 @@ from typing import Optional, Any
 import httpx
 from sam_imaging import router as sam_imaging_router
 from nova_router import router as nova_router
+from edge_routes import router as edge_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ app = FastAPI(title="Baza Empire Tool Server", version="1.0.0")
 
 app.include_router(sam_imaging_router)
 app.include_router(nova_router)
+app.include_router(edge_router)
 
 app.add_middleware(
     CORSMiddleware,

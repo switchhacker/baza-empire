@@ -122,16 +122,86 @@ def extract_text(path: str) -> tuple[str, str]:
 # Vision analysis (for images)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _top_vendor_hint(limit: int = 10) -> str:
+    """Pull the most common vendors we've filed so the vision model can
+    recognize them even through OCR noise. Cached via function default isn't
+    worth it here — this runs once per image."""
+    try:
+        import sqlite3 as _sq
+        conn = _sq.connect(DASHBOARD_DB)
+        rows = conn.execute(
+            """SELECT COALESCE(NULLIF(store_name,''), vendor) AS n, COUNT(*) c
+                 FROM ahb_receipts
+                WHERE COALESCE(NULLIF(store_name,''), vendor) IS NOT NULL
+                  AND COALESCE(NULLIF(store_name,''), vendor) != ''
+                GROUP BY LOWER(COALESCE(NULLIF(store_name,''), vendor))
+                ORDER BY c DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        names = [r[0] for r in rows if r[0]]
+        if names:
+            return ", ".join(names)
+    except Exception:
+        pass
+    return "Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's, Dunkin', Sheetz"
+
+
+def _tesseract_text(path: str) -> str:
+    """Run Tesseract OCR and return raw text, empty on failure.
+    Belt-and-suspenders for the vision LLM: qwen3-vl has failed on clear
+    receipts before by returning 'a photo of a document' with no transcription.
+    Appending Tesseract's literal text ensures the curator + safety net always
+    see real OCR signals if they exist."""
+    try:
+        import pytesseract
+        from PIL import Image, ImageFilter, ImageEnhance
+        img = Image.open(path).convert("L")
+        img = ImageEnhance.Contrast(img).enhance(2.0)
+        img = img.filter(ImageFilter.SHARPEN)
+        txt = pytesseract.image_to_string(img, config="--psm 6").strip()
+        return txt
+    except Exception:
+        return ""
+
+
 def analyze_image(path: str) -> str:
-    """Send image to vision LLM for description. Tries Ollama first, then LiteLLM."""
+    """Send image to vision LLM for description + run Tesseract in parallel.
+    Returns `<vision text>\\n\\n── OCR (tesseract) ──\\n<ocr text>` so both
+    signals reach the curator. The curator's classification rules + safety
+    net scan the combined text for receipt markers.
+
+    Receipt-first: if ANY two receipt signals are visible (store name, priced
+    items, TOTAL line, tax, tender, store/register number, thermal font,
+    date printed), the model MUST treat it as a receipt and transcribe every
+    line top to bottom. Only images with zero receipt signals should be
+    described as jobsite photos."""
+    vendor_hint = _top_vendor_hint()
     prompt = (
-        "Look at this image carefully. This was sent to a contractor's business assistant. "
-        "Describe in detail: what is this? If it's a document (certificate, license, permit, "
-        "invoice, contract, ID, receipt), read all visible text including company names, dates, "
-        "policy numbers, addresses, dollar amounts, signatures. If it's a jobsite photo, describe "
-        "the scene, what work is happening or has been done, materials visible, condition. "
-        "Be exhaustive — every readable detail matters."
+        "You are reading an image sent to a contractor's business inbox. First, "
+        "scan for RECEIPT signals: (1) a store/vendor name at the top, (2) a list "
+        "of items with prices, (3) a TOTAL or AMOUNT DUE line, (4) tax line, "
+        "(5) tender/card/cash line, (6) date printed on the paper, (7) store or "
+        "register number, (8) thermal-paper printed text. If ANY TWO of these "
+        "are present, this IS a receipt. Do NOT describe it as a photo.\n\n"
+        f"Vendors we often see (OCR typos expected): {vendor_hint}. If the "
+        "store matches one of these even through noise, use its canonical name.\n\n"
+        "If this IS a receipt, transcribe EVERY visible text line top-to-bottom "
+        "— store name, address, cashier/teller name, items with prices, subtotal, "
+        "tax, total, payment method, last 4 digits, date, time. Be exhaustive.\n\n"
+        "If zero receipt signals: describe what you see (document / jobsite photo / "
+        "ID / plan / other) with the same exhaustive detail.\n\n"
+        "Never return a one-sentence generic description — every readable detail matters."
     )
+    # Kick off Tesseract in a background thread so it runs alongside vision.
+    import threading
+    tesseract_out = {"text": ""}
+    def _run_tess():
+        tesseract_out["text"] = _tesseract_text(path)
+    t = threading.Thread(target=_run_tess, daemon=True)
+    t.start()
+
+    vision_text = ""
     # Try Ollama vision first (local, free)
     try:
         with open(path, "rb") as f:
@@ -147,34 +217,50 @@ def analyze_image(path: str) -> str:
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=180) as r:
             data = json.loads(r.read())
-        return data.get("response", "").strip()
-    except Exception as e:
+        vision_text = (data.get("response") or "").strip()
+    except Exception:
         pass
-    # Fallback: LiteLLM proxy (cloud vision)
-    try:
-        with open(path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
-        payload = json.dumps({
-            "model": "gpt-4o-mini",
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
-                ]
-            }],
-            "max_tokens": 1500,
-        }).encode()
-        req = urllib.request.Request(
-            f"{LITELLM_URL}/v1/chat/completions",
-            data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_KEY}"}
-        )
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.loads(r.read())
-        return data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        return f"[vision unavailable: {e}]"
+    # Fallback: LiteLLM proxy (cloud vision) if Ollama vision was empty
+    if not vision_text:
+        try:
+            with open(path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
+            payload = json.dumps({
+                "model": "gpt-4o-mini",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+                    ]
+                }],
+                "max_tokens": 1500,
+            }).encode()
+            req = urllib.request.Request(
+                f"{LITELLM_URL}/v1/chat/completions",
+                data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {LITELLM_KEY}"}
+            )
+            with urllib.request.urlopen(req, timeout=120) as r:
+                data = json.loads(r.read())
+            vision_text = (data["choices"][0]["message"]["content"] or "").strip()
+        except Exception:
+            pass
+
+    # Wait up to 60s for Tesseract to finish; merge both signals so the curator
+    # (and receipt-signal safety net) see actual OCR text even if the vision
+    # model hallucinated a "document photo" description.
+    t.join(timeout=60)
+    tess_text = tesseract_out.get("text") or ""
+
+    parts = []
+    if vision_text:
+        parts.append(vision_text)
+    if tess_text and len(tess_text) > 20:
+        parts.append("── OCR (tesseract) ──\n" + tess_text)
+    if not parts:
+        return "[vision returned nothing and tesseract OCR failed]"
+    return "\n\n".join(parts)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,17 +275,32 @@ Known context:
 - AHBCO is owned by Sergey Tkach (Serge). Phone 800-484-6404. Address: 2725 Colmar Ave, Bensalem PA.
 - Common doc types we receive: Certificate of Insurance (COI), W9, contractor license,
   building permit, contract, change order, invoice, estimate, lien waiver, lead form, project
-  photos (before/during/after), client correspondence, vendor receipts, plans/blueprints.
+  photos (before/during/after), client correspondence, vendor RECEIPTS, plans/blueprints.
 - Common entities: AHBCO itself, our clients (homeowners), vendors (suppliers, subcontractors),
   insurance carriers, government agencies (PA L&I, Philadelphia DLI).
+
+CLASSIFICATION RULES (apply in order, first match wins):
+1. If the content contains ANY dollar amount paired with an itemized list (prices + item names),
+   OR a "TOTAL" / "AMOUNT DUE" line, OR a store register number / thermal-receipt formatting:
+   doc_type = "receipt". Set entity to the STORE NAME (not our company or the client).
+   doc_date must be the date printed ON the receipt (the purchase date), NOT today.
+2. If it's a certificate with policy number + insurance carrier: coi.
+3. If it's a tax form with SSN/EIN and boxes labeled 1-9: w9.
+4. If it's a government-issued permit / license number: permit or license.
+5. If it clearly describes a jobsite / work-in-progress / condition with NO dollar amounts and
+   NO itemized price lines: project_photo.
+6. Otherwise use the closest match from the allowed set.
+
+NEVER default to project_photo just because content is short. If in doubt between receipt and
+project_photo, pick receipt.
 
 Read the document content below and return ONLY a JSON object with these EXACT keys
 (use null for unknown fields):
 
 {
   "doc_type": "one of: coi, w9, license, permit, contract, change_order, invoice, estimate, lien_waiver, lead_form, project_photo, blueprint, receipt, correspondence, id_document, tax_document, other",
-  "entity": "primary entity this doc is for or about (e.g. 'AHBCO', 'John Smith — 123 Main St', 'Liberty Mutual', 'City of Philadelphia')",
-  "doc_date": "YYYY-MM-DD if visible, else null",
+  "entity": "primary entity this doc is for or about (e.g. 'Home Depot', 'John Smith — 123 Main St', 'Liberty Mutual', 'City of Philadelphia'). For receipts, this is the STORE name.",
+  "doc_date": "YYYY-MM-DD if visible (for receipts: the date on the receipt, NOT today), else null",
   "summary": "1-3 sentence plain-English summary of what this document is and says",
   "relevance": "1-2 sentence explanation of why this matters to Baza/AHBCO operations and which agent should care most",
   "tags": ["3-8", "lowercase", "search", "keywords"],
@@ -210,6 +311,37 @@ Read the document content below and return ONLY a JSON object with these EXACT k
 
 Document content:
 """
+
+
+# Receipt-signal regex — used in the post-parse safety net. If the curator
+# returns project_photo but the extracted text clearly contains receipt
+# signals, flip the classification.
+_RECEIPT_SIGNAL_RX = re.compile(
+    r'(\btotal\b[^\n]{0,40}\$?\s*\d+\.\d{2})|'
+    r'(\bsubtotal\b)|'
+    r'(\bamount\s*due\b)|'
+    r'(\bbalance\s*due\b)|'
+    r'(\btax\b[^\n]{0,30}\$?\s*\d+\.\d{2})|'
+    r'(\b(?:visa|mastercard|debit|credit|amex)\b[^\n]{0,20}\d{4})|'
+    r'(\breceipt\b)|'
+    r'(\b\d+\.\d{2,3}\s*gal(?:lons?)?\b)',
+    re.I,
+)
+
+
+def _has_receipt_signals(text: str) -> bool:
+    """Return True if the extracted content clearly shows receipt markers.
+    Used to override the curator when it weakly guesses project_photo."""
+    if not text:
+        return False
+    hits = 0
+    seen = set()
+    for m in _RECEIPT_SIGNAL_RX.finditer(text):
+        for i, g in enumerate(m.groups()):
+            if g and i not in seen:
+                hits += 1
+                seen.add(i)
+    return hits >= 2
 
 def curate_with_llm(text: str, original_name: str, file_kind: str) -> dict:
     """Run the curator prompt against the local text model and parse JSON."""
@@ -255,6 +387,37 @@ if file_kind == "image":
 
 # 2. Curate via LLM
 analysis = curate_with_llm(content_text, original_name, file_kind)
+
+# 2a. Normalize doc_type — LLMs sometimes invent values like "document" that
+# aren't in our allowed enum. Force anything off-list back to "other" so the
+# downstream dispatcher and safety net behave predictably.
+ALLOWED_DOC_TYPES = {
+    "coi", "w9", "license", "permit", "contract", "change_order",
+    "invoice", "estimate", "lien_waiver", "lead_form", "project_photo",
+    "blueprint", "receipt", "correspondence", "id_document",
+    "tax_document", "other",
+}
+dt = (analysis.get("doc_type") or "").strip().lower()
+if dt not in ALLOWED_DOC_TYPES:
+    analysis["doc_type"] = "other"
+    dt = "other"
+
+# 2b. Safety net: curator sometimes classifies clear receipts as project_photo
+# / other / document / correspondence when the vision text is thin. If the
+# extracted content shows two+ receipt signals (TOTAL/SUBTOTAL/AMOUNT DUE/tax
+# line/card-tender/gallons) flip to receipt. Lower confidence so Serge knows
+# it's a soft override.
+_FLIPPABLE = {"project_photo", "other", "correspondence", None, ""}
+if (dt in _FLIPPABLE) and _has_receipt_signals(content_text or ""):
+    analysis["doc_type"] = "receipt"
+    try:
+        analysis["confidence"] = min(float(analysis.get("confidence") or 0.0), 0.6)
+    except Exception:
+        analysis["confidence"] = 0.6
+    if not (analysis.get("tags") or []):
+        analysis["tags"] = ["receipt", "auto-reclassified"]
+    else:
+        analysis["tags"] = list(analysis["tags"]) + ["auto-reclassified"]
 
 # 3. Sanitize suggested_name (preserve original ext)
 suggested = analysis.get("suggested_name", "")

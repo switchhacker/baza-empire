@@ -285,6 +285,21 @@
     .estimate-placeholder{text-align:center;padding:60px 20px;color:#333}
     .estimate-placeholder .icon{font-size:48px;opacity:.3;margin-bottom:12px}
 
+    /* Method 4: Custom Pricing build-up */
+    .m4-section{background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;padding:14px;margin-bottom:12px}
+    .m4-section-head{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:800;color:#ccc;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+    .m4-section-head .m4-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;font-size:11px;font-weight:800}
+    .m4-section-head .m4-section-total{margin-left:auto;font-size:14px;font-weight:800;color:#00d084;letter-spacing:0;text-transform:none}
+    .m4-lbl{display:block;font-size:10px;color:#555;font-weight:700;text-transform:uppercase;margin-bottom:4px}
+    .m4-input{width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px;font-family:inherit;outline:none}
+    .m4-input:focus{border-color:#7c3aed}
+    .m4-mono{font-family:monospace;font-size:13px}
+    .m4-tab{padding:6px 14px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid #2a2a4a;color:#888;background:#070712;transition:all .15s}
+    .m4-tab:hover{color:#ccc;border-color:#7c3aed}
+    .m4-tab.active{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border-color:transparent}
+    .m4-mini-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#aaa;border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer}
+    .m4-mini-btn:hover{border-color:#7c3aed;color:#fff}
+
     /* Line items */
     .line-items-table{width:100%;border-collapse:collapse;margin-bottom:12px}
     .line-items-table th{padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:#444;text-transform:uppercase;border-bottom:1px solid #1a1a2e}
@@ -825,37 +840,20 @@
       </div>
     </div>
     <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
-      <!-- Single Receipt Upload -->
-      <div style="flex:1;min-width:200px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center">
-        <div style="font-size:24px;margin-bottom:6px">&#128206;</div>
-        <div style="font-size:13px;font-weight:700;color:#ddd;margin-bottom:4px">Single Receipt</div>
-        <div style="font-size:11px;color:#555;margin-bottom:10px">1 image = 1 receipt</div>
-        <label class="btn btn-sm btn-primary" style="cursor:pointer">
+      <!-- Easy Bulk Upload — handles both 1-receipt and 2-receipts-per-image automatically -->
+      <div style="flex:2;min-width:280px;background:#0a0a18;border:1px solid #2a1a4a;border-radius:10px;padding:18px;text-align:center">
+        <div style="font-size:28px;margin-bottom:6px">&#128230;</div>
+        <div style="font-size:14px;font-weight:800;color:#e0d4ff;margin-bottom:4px">Easy Bulk Upload</div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px">
+          Pick any mix of images — 1-up portrait or 2-up landscape.
+          We auto-detect &amp; crop. Fix mistakes per card with Rotate / Merge / Adjust Split.
+        </div>
+        <label class="btn btn-primary" style="cursor:pointer">
           Select Images
-          <input type="file" accept="image/*" multiple style="display:none" onchange="submitReceiptsToQueue(this.files,'single')">
+          <input type="file" accept="image/*" multiple style="display:none" onchange="submitReceiptsToQueue(this.files)">
         </label>
       </div>
-      <!-- Dual Receipt Upload -->
-      <div style="flex:1;min-width:200px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center">
-        <div style="font-size:24px;margin-bottom:6px">&#9986;</div>
-        <div style="font-size:13px;font-weight:700;color:#ddd;margin-bottom:4px">Dual Receipt</div>
-        <div style="font-size:11px;color:#555;margin-bottom:10px">2 receipts per image — auto-split</div>
-        <label class="btn btn-sm btn-primary" style="cursor:pointer">
-          Select Images
-          <input type="file" accept="image/*" multiple style="display:none" onchange="submitReceiptsToQueue(this.files,'dual')">
-        </label>
-      </div>
-      <!-- Bulk Upload -->
-      <div style="flex:1;min-width:200px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center">
-        <div style="font-size:24px;margin-bottom:6px">&#128230;</div>
-        <div style="font-size:13px;font-weight:700;color:#ddd;margin-bottom:4px">Bulk Upload</div>
-        <div style="font-size:11px;color:#555;margin-bottom:10px">Mass images for batch processing</div>
-        <label class="btn btn-sm btn-primary" style="cursor:pointer">
-          Select Images
-          <input type="file" accept="image/*" multiple style="display:none" onchange="submitReceiptsToQueue(this.files,'bulk')">
-        </label>
-      </div>
-      <!-- Scan Existing -->
+      <!-- Re-Scan Existing -->
       <div style="flex:1;min-width:200px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center">
         <div style="font-size:24px;margin-bottom:6px">&#128269;</div>
         <div style="font-size:13px;font-weight:700;color:#ddd;margin-bottom:4px">Re-Scan Existing</div>
@@ -893,7 +891,6 @@
       <option value="">All Categories</option>
       <option value="Materials">Materials</option>
       <option value="Tools">Tools</option>
-      <option value="Tools ">Tools </option>
       <option value="Fuel">Fuel</option>
       <option value="Food">Food</option>
       <option value="Office supplies">Office supplies</option>
@@ -909,8 +906,8 @@
   <div id="receipts-kanban" class="kanban-board"></div>
   <div id="receipts-table-view" style="display:none">
     <table class="data-table">
-      <thead><tr><th>Store</th><th>Category</th><th>Amount</th><th>Date</th><th>Payment</th><th>OCR</th></tr></thead>
-      <tbody id="receipts-tbody"><tr><td colspan="6" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
+      <thead><tr><th>Store</th><th>Category</th><th>Amount</th><th>Date</th><th>Payment</th><th>Filed by</th><th>OCR</th></tr></thead>
+      <tbody id="receipts-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
     </table>
   </div>
   <div class="panel" style="margin-top:24px">
@@ -1005,13 +1002,13 @@
   <div class="page-header">
     <div>
       <div class="page-title">🧮 EstimatOR — Super Tool</div>
-      <div class="page-sub">3 estimation methods · editable day rates · Specter market research · low/high range analysis</div>
+      <div class="page-sub">4 estimation methods · editable day rates · Specter market research · low/high range · custom build-up</div>
     </div>
     <button class="btn-secondary" onclick="openEstimatorSettings()">⚙ Day Rates &amp; Margins</button>
   </div>
 
   <!-- Method picker -->
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
     <button class="est-method-btn active" data-m="1" onclick="switchEstMethod(1)">
       <div style="font-size:24px;margin-bottom:6px">⏱</div>
       <div style="font-size:13px;font-weight:800">Method 1: Time × Crew</div>
@@ -1026,6 +1023,11 @@
       <div style="font-size:24px;margin-bottom:6px">📊</div>
       <div style="font-size:13px;font-weight:800">Method 3: Low / High Range</div>
       <div style="font-size:11px;color:#666;margin-top:4px">Generates budget vs premium estimates. Returns the average sweet spot.</div>
+    </button>
+    <button class="est-method-btn" data-m="4" onclick="switchEstMethod(4)">
+      <div style="font-size:24px;margin-bottom:6px">🛠</div>
+      <div style="font-size:13px;font-weight:800">Method 4: Custom Pricing</div>
+      <div style="font-size:11px;color:#666;margin-top:4px">Build up: materials + labor crew + Home Depot tool rentals + profit + overhead.</div>
     </button>
   </div>
 
@@ -1127,6 +1129,172 @@
       <button class="btn-primary btn-lg" style="width:100%" onclick="runMethod3()">📊 Generate Range Estimate</button>
     </div>
     <div id="m3-results" style="margin-top:14px"></div>
+  </div>
+
+  <!-- ── Method 4: Custom Pricing ──────────────────────────────── -->
+  <div class="est-method-pane" id="est-method-4" style="display:none">
+    <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;padding:16px">
+      <div style="font-size:12px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Custom Build-Up — Materials · Labor · Equipment · Profit · Overhead</div>
+      <div style="background:#0a1a2a;border:1px solid #1a3a5a;border-radius:8px;padding:12px;margin-bottom:14px;font-size:11px;color:#aaa;line-height:1.5">
+        <b style="color:#4da6ff">🛠 How this works:</b> Build the price line by line. Plug in your real material cost, calculate labor from a crew or type a flat number, click tools from the Home Depot rental catalog, then choose profit and overhead/contingency as a percentage <i>or</i> a flat dollar amount. Total updates live. Push to invoice as a single total or as itemized lines from the description.
+      </div>
+
+      <!-- 1. Materials -->
+      <div class="m4-section">
+        <div class="m4-section-head"><span class="m4-num">1</span><span>Material Cost</span><span class="m4-section-total" id="m4-mat-total">$0.00</span></div>
+        <div style="display:grid;grid-template-columns:1fr 180px;gap:10px">
+          <div>
+            <label class="m4-lbl">Materials Description (optional)</label>
+            <textarea id="m4-mat-notes" rows="2" placeholder="Cabinets, quartz counters, tile, fixtures, paint..." class="m4-input" style="resize:vertical"></textarea>
+          </div>
+          <div>
+            <label class="m4-lbl">Materials $</label>
+            <input id="m4-mat-cost" type="number" min="0" step="0.01" value="0" class="m4-input m4-mono" oninput="recalcM4()">
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Labor -->
+      <div class="m4-section">
+        <div class="m4-section-head"><span class="m4-num">2</span><span>Labor Cost</span><span class="m4-section-total" id="m4-lab-total">$0.00</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button type="button" class="m4-tab active" data-tab="crew" onclick="m4LaborTab('crew')">🧮 Calculate from Crew</button>
+          <button type="button" class="m4-tab" data-tab="manual" onclick="m4LaborTab('manual')">✎ Enter Flat Amount</button>
+        </div>
+        <div id="m4-lab-crew">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+            <div><label class="m4-lbl">Days</label><input id="m4-lab-days" type="number" min="0" step="0.5" value="5" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+            <div><label class="m4-lbl">Lead</label><input id="m4-lab-leads" type="number" min="0" step="1" value="1" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+            <div><label class="m4-lbl">Crew</label><input id="m4-lab-crew-n" type="number" min="0" step="1" value="2" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+            <div><label class="m4-lbl">Helpers</label><input id="m4-lab-helpers" type="number" min="0" step="1" value="1" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+            <div><label class="m4-lbl">Lead $/day</label><input id="m4-lab-lead-rate" type="number" min="0" step="25" value="1200" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+            <div><label class="m4-lbl">Crew $/day</label><input id="m4-lab-crew-rate" type="number" min="0" step="25" value="800" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+            <div><label class="m4-lbl">Helper $/day</label><input id="m4-lab-helper-rate" type="number" min="0" step="25" value="450" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+            <div><label class="m4-lbl">Sub Days</label><input id="m4-lab-subdays" type="number" min="0" step="0.5" value="0" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+            <div><label class="m4-lbl">Sub $/day</label><input id="m4-lab-sub-rate" type="number" min="0" step="25" value="1500" class="m4-input m4-mono" oninput="recalcM4Labor()"></div>
+          </div>
+          <div style="margin-top:10px;padding:8px 10px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;font-size:11px;color:#888">
+            Calculated crew cost: <b id="m4-lab-calc" style="color:#00d084;float:right">$0.00</b>
+            <button type="button" class="m4-mini-btn" style="float:right;margin-right:8px" onclick="m4ApplyCrewToFlat()">Override → flat ✎</button>
+          </div>
+        </div>
+        <div id="m4-lab-manual" style="display:none">
+          <label class="m4-lbl">Labor $ (flat)</label>
+          <input id="m4-lab-manual-amt" type="number" min="0" step="0.01" value="0" class="m4-input m4-mono" oninput="recalcM4()">
+        </div>
+      </div>
+
+      <!-- 3. Equipment / Tool Rentals -->
+      <div class="m4-section">
+        <div class="m4-section-head"><span class="m4-num">3</span><span>Equipment / Tool Rentals</span><span class="m4-section-total" id="m4-eq-total">$0.00</span></div>
+        <div style="display:grid;grid-template-columns:1fr 130px 110px 100px 80px;gap:8px;margin-bottom:8px;align-items:end">
+          <div>
+            <label class="m4-lbl">Pick from Home Depot rental catalog</label>
+            <select id="m4-eq-catalog" class="m4-input" onchange="m4PrefillRental()">
+              <option value="">— select a tool to add —</option>
+            </select>
+          </div>
+          <div>
+            <label class="m4-lbl">Rate basis</label>
+            <select id="m4-eq-basis" class="m4-input" onchange="m4PrefillRental()">
+              <option value="day">Daily</option>
+              <option value="hr4">4-Hour</option>
+              <option value="week">Weekly</option>
+            </select>
+          </div>
+          <div><label class="m4-lbl">Rate $</label><input id="m4-eq-rate" type="number" min="0" step="0.01" class="m4-input m4-mono" placeholder="0.00"></div>
+          <div><label class="m4-lbl">Qty (days/wks)</label><input id="m4-eq-qty" type="number" min="0" step="0.5" value="1" class="m4-input m4-mono"></div>
+          <div><button type="button" class="btn-primary btn-sm" style="width:100%" onclick="m4AddRental()">+ Add</button></div>
+        </div>
+        <div style="font-size:10px;color:#555;margin-bottom:8px">Rates are reference Home Depot 2025-26 prices — edit any row before or after adding.</div>
+        <table id="m4-eq-table" class="line-items-table" style="margin-bottom:0">
+          <thead>
+            <tr>
+              <th style="width:40%">Item</th>
+              <th style="width:15%">Basis</th>
+              <th style="width:15%">Rate $</th>
+              <th style="width:15%">Qty</th>
+              <th style="width:12%">Total</th>
+              <th style="width:3%"></th>
+            </tr>
+          </thead>
+          <tbody id="m4-eq-tbody">
+            <tr id="m4-eq-empty"><td colspan="6" style="text-align:center;color:#444;padding:14px;font-size:11px">No equipment yet — pick a tool above and click + Add, or add a custom row.</td></tr>
+          </tbody>
+        </table>
+        <button type="button" class="btn-secondary btn-sm" style="margin-top:6px" onclick="m4AddCustomRental()">+ Custom Equipment Row</button>
+      </div>
+
+      <!-- 4. Profit -->
+      <div class="m4-section">
+        <div class="m4-section-head"><span class="m4-num">4</span><span>Profit</span><span class="m4-section-total" id="m4-profit-total">$0.00</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button type="button" class="m4-tab active" data-tab="profit-pct" onclick="m4ProfitMode('pct')">% of Cost</button>
+          <button type="button" class="m4-tab" data-tab="profit-flat" onclick="m4ProfitMode('flat')">Flat $</button>
+        </div>
+        <div id="m4-profit-pct-row">
+          <label class="m4-lbl">Profit %</label>
+          <input id="m4-profit-pct" type="number" min="0" step="0.5" value="18" class="m4-input m4-mono" oninput="recalcM4()">
+        </div>
+        <div id="m4-profit-flat-row" style="display:none">
+          <label class="m4-lbl">Profit $</label>
+          <input id="m4-profit-flat" type="number" min="0" step="0.01" value="0" class="m4-input m4-mono" oninput="recalcM4()">
+        </div>
+      </div>
+
+      <!-- 5. Overhead / Contingency -->
+      <div class="m4-section">
+        <div class="m4-section-head"><span class="m4-num">5</span><span>Overhead / Contingency</span><span class="m4-section-total" id="m4-oh-total">$0.00</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button type="button" class="m4-tab active" data-tab="oh-pct" onclick="m4OhMode('pct')">% of Cost</button>
+          <button type="button" class="m4-tab" data-tab="oh-flat" onclick="m4OhMode('flat')">Flat $</button>
+        </div>
+        <div id="m4-oh-pct-row" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label class="m4-lbl">Overhead %</label><input id="m4-oh-pct" type="number" min="0" step="0.5" value="15" class="m4-input m4-mono" oninput="recalcM4()"></div>
+          <div><label class="m4-lbl">Contingency %</label><input id="m4-cont-pct" type="number" min="0" step="0.5" value="10" class="m4-input m4-mono" oninput="recalcM4()"></div>
+        </div>
+        <div id="m4-oh-flat-row" style="display:none;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label class="m4-lbl">Overhead $</label><input id="m4-oh-flat" type="number" min="0" step="0.01" value="0" class="m4-input m4-mono" oninput="recalcM4()"></div>
+          <div><label class="m4-lbl">Contingency $</label><input id="m4-cont-flat" type="number" min="0" step="0.01" value="0" class="m4-input m4-mono" oninput="recalcM4()"></div>
+        </div>
+      </div>
+
+      <!-- Live total -->
+      <div style="background:linear-gradient(135deg,#0a1a2a,#0a0a16);border:2px solid #4da6ff;border-radius:12px;padding:16px;margin-top:14px">
+        <table style="width:100%;font-size:12px;color:#aaa;border-collapse:collapse">
+          <tr><td>Materials</td><td style="text-align:right;color:#fff" id="m4-row-mat">$0.00</td></tr>
+          <tr><td>Labor</td><td style="text-align:right;color:#fff" id="m4-row-lab">$0.00</td></tr>
+          <tr><td>Equipment</td><td style="text-align:right;color:#fff" id="m4-row-eq">$0.00</td></tr>
+          <tr style="border-top:1px solid #1a3a5a"><td style="padding-top:8px;color:#aaa">Direct Cost</td><td style="text-align:right;color:#aaa;padding-top:8px" id="m4-row-direct">$0.00</td></tr>
+          <tr><td>Overhead</td><td style="text-align:right;color:#fff" id="m4-row-oh">$0.00</td></tr>
+          <tr><td>Contingency</td><td style="text-align:right;color:#fff" id="m4-row-cont">$0.00</td></tr>
+          <tr><td>Profit</td><td style="text-align:right;color:#fff" id="m4-row-profit">$0.00</td></tr>
+          <tr style="border-top:2px solid #4da6ff"><td style="padding:10px 0;font-size:18px;font-weight:800;color:#4da6ff">CUSTOM TOTAL</td><td style="text-align:right;font-size:22px;font-weight:800;color:#4da6ff" id="m4-row-total">$0.00</td></tr>
+        </table>
+      </div>
+
+      <!-- Sync controls -->
+      <div style="background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:12px;margin-top:12px">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px">📤 Sync to Invoice</div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:#ccc;margin-bottom:6px">
+          <input type="checkbox" id="m4-sync-from-desc" checked>
+          Use the project description (above) as invoice line items — each line becomes one item, total spread by the breakdown.
+        </label>
+        <div style="font-size:10px;color:#555;margin-bottom:10px;padding-left:22px">When off, the invoice gets 3 lines: Materials, Labor, Equipment (plus profit + overhead bundled into the total).</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn-primary btn-sm" onclick="m4PushToInvoice()">📤 Push to New Invoice</button>
+          <button class="btn-secondary btn-sm" onclick="m4PushToInvoice(true)">📤 Append to Open Invoice</button>
+          <button class="btn-secondary btn-sm" onclick="m4PullFromInvoice()" title="Pull line-item descriptions from the most recent draft invoice into the description field">⇆ Pull Description From Invoice</button>
+          <button class="btn-secondary btn-sm" onclick="estCopyToClipboard(parseFloat((document.getElementById('m4-row-total').textContent||'').replace(/[^0-9.\-]/g,''))||0)">Copy Total</button>
+          <button class="btn-secondary btn-sm" onclick="m4CreateProject()">🏗 Create Project</button>
+        </div>
+      </div>
+    </div>
+    <div id="m4-results" style="margin-top:14px"></div>
   </div>
 </div>
 
@@ -5099,17 +5267,42 @@ function renderReceiptKanban(receipts){
     </div>`;
   }).join('');
 }
+// Agent registry — loaded once so 'created_by' IDs map to friendly names
+// ("phil_hass" → "Phil", "specter_voss" → "Specter"). Populated by fetchAgents()
+// on first use; never blocks the render if it fails.
+let agentRegistry = null;
+async function fetchAgents(){
+  if (agentRegistry !== null) return agentRegistry;
+  try {
+    const r = await fetch('/api/agents');
+    const d = await r.json();
+    agentRegistry = d.by_id || {};
+  } catch(e) {
+    agentRegistry = {};
+  }
+  return agentRegistry;
+}
+function filedByLabel(id){
+  if (!id) return '—';
+  const meta = (agentRegistry && agentRegistry[id]) || null;
+  return meta ? (meta.display || id) : id;
+}
+
 function renderReceiptTable(receipts){
   const tb=document.getElementById('receipts-tbody');
-  if(!receipts.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;padding:40px;color:#333">No receipts</td></tr>';return;}
-  tb.innerHTML=receipts.map(r=>`<tr style="cursor:pointer" onclick="openReceiptDetail('${r.id}')">
-    <td style="font-weight:600;color:#ddd">${r.image_path?'&#128247; ':''}${escHtml(r.store_name||r.vendor||'Unknown')}</td>
-    <td><span class="badge badge-${(r.category||'misc').toLowerCase().replace(' ','')}">${escHtml(r.category||'—')}</span></td>
-    <td style="color:#00d084;font-weight:700">${fmtCurrency(r.total||r.amount)}</td>
-    <td style="font-size:12px;color:#555">${fmtDate(r.receipt_date)}</td>
-    <td style="font-size:12px;color:#888">${escHtml(r.payment_method||'—')}</td>
-    <td style="font-size:11px;color:#444;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((r.ocr_text||'').substring(0,60))}</td>
-  </tr>`).join('');
+  if(!receipts.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:40px;color:#333">No receipts</td></tr>';return;}
+  // Ensure agent registry is loaded so created_by renders as name, not id.
+  fetchAgents().then(()=>{
+    tb.innerHTML=receipts.map(r=>`<tr style="cursor:pointer" onclick="openReceiptDetail('${r.id}')">
+      <td style="font-weight:600;color:#ddd">${r.image_path?'&#128247; ':''}${escHtml(r.store_name||r.vendor||'Unknown')}</td>
+      <td><span class="badge badge-${(r.category||'misc').toLowerCase().replace(' ','')}">${escHtml(r.category||'—')}</span></td>
+      <td style="color:#00d084;font-weight:700">${fmtCurrency(r.total||r.amount)}</td>
+      <td style="font-size:12px;color:#555">${fmtDate(r.receipt_date)}</td>
+      <td style="font-size:12px;color:#888">${escHtml(r.payment_method||'—')}</td>
+      <td style="font-size:12px;color:#8ab4ff">${escHtml(filedByLabel(r.created_by))}</td>
+      <td style="font-size:11px;color:#444;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((r.ocr_text||'').substring(0,60))}</td>
+    </tr>`).join('');
+  });
 }
 
 /* ===================== RECEIPT DETAIL MODAL ===================== */
@@ -5118,7 +5311,11 @@ async function openReceiptDetail(id){
   const r=allReceipts.find(x=>x.id===id);
   if(!r) return;
   document.getElementById('rd-id').value=id;
-  document.getElementById('rd-title').textContent=(r.store_name||r.vendor||'Receipt')+' — '+fmtCurrency(r.total||r.amount);
+  await fetchAgents();
+  const filedBy = filedByLabel(r.created_by);
+  document.getElementById('rd-title').textContent=
+    (r.store_name||r.vendor||'Receipt')+' — '+fmtCurrency(r.total||r.amount)
+    + (filedBy && filedBy !== '—' ? '   (filed by '+filedBy+')' : '');
   document.getElementById('rd-store').value=r.store_name||r.vendor||'';
   document.getElementById('rd-category').value=r.category||'Materials';
   document.getElementById('rd-total').value=r.total||r.amount||'';
@@ -5228,7 +5425,14 @@ async function saveReceiptDetail(){
     year:(document.getElementById('rd-date').value||'').substring(0,4)
   };
   try{
-    await fetch('/api/ahb/receipts/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    // X-Agent-Id tags every edit as "serge" in family mode. The backend logs
+    // each diff into ahb_receipt_corrections; receipt_learn.py mines that
+    // history to improve vendor aliases + category rules.
+    await fetch('/api/ahb/receipts/'+id,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Agent-Id':'serge'},
+      body:JSON.stringify(data),
+    });
     showToast('Receipt updated');
     closeModal('receiptDetailModal');
     loadReceipts();
@@ -5265,68 +5469,321 @@ function populateReceiptProjectDropdowns(){
 
 /* ===================== RECEIPT PROCESSING QUEUE ===================== */
 let receiptQueue=[];
-async function submitReceiptsToQueue(files,mode){
-  if(!files.length)return;
+let _rqPollTimer=null;
+const RQ_CATEGORIES=['Materials','Tools','Fuel','Food','Office supplies','Clothes'];
+
+async function submitReceiptsToQueue(files){
+  if(!files||!files.length)return;
   const fd=new FormData();
-  fd.append('mode',mode);
   for(const f of files) fd.append('files',f);
   try{
-    showToast(`Uploading ${files.length} image(s) in ${mode} mode...`);
+    showToast(`Uploading ${files.length} image(s)...`);
     const res=await fetch('/api/ahb/receipts/process',{method:'POST',body:fd});
     const data=await res.json();
     if(data.success){
-      showToast(`${data.count} receipt(s) queued for processing`);
+      showToast(`${data.count} receipt(s) queued — OCR running automatically`);
+      if(!allProjects.length){
+        try{ allProjects=await fetch('/api/ahb/projects').then(r=>r.json()); }catch(e){}
+      }
       loadReceiptQueue();
+      _rqStartPolling();
     }else showToast(data.error||'Upload failed','error');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
+
+function _rqStartPolling(){
+  if(_rqPollTimer)return;
+  _rqPollTimer=setInterval(()=>{
+    const live=receiptQueue.some(q=>q.status==='pending'||q.status==='processing');
+    if(live){loadReceiptQueue();}
+    else{clearInterval(_rqPollTimer);_rqPollTimer=null;}
+  },3000);
+}
+
 async function loadReceiptQueue(){
   try{
     const res=await fetch('/api/ahb/receipts/queue');
     receiptQueue=await res.json();
     const pending=receiptQueue.filter(q=>q.status==='pending').length;
     const processing=receiptQueue.filter(q=>q.status==='processing').length;
-    const done=receiptQueue.filter(q=>q.status==='done').length;
-    document.getElementById('rq-status').textContent=`Queue: ${pending} pending, ${processing} processing, ${done} ready`;
+    const ready=receiptQueue.filter(q=>q.status==='done').length;
+    const errored=receiptQueue.filter(q=>q.status==='error').length;
+    const bits=[];
+    if(pending) bits.push(`${pending} pending`);
+    if(processing) bits.push(`${processing} processing`);
+    if(ready) bits.push(`${ready} ready for review`);
+    if(errored) bits.push(`${errored} error`);
+    document.getElementById('rq-status').textContent=bits.join(' · ')||'Queue empty';
     const panel=document.getElementById('rq-queue-panel');
-    if(receiptQueue.length){panel.style.display='block';renderReceiptQueue();}
+    const visible=receiptQueue.filter(q=>['pending','processing','done','error'].includes(q.status));
+    if(visible.length){panel.style.display='block';renderReceiptQueue();}
     else panel.style.display='none';
+    if(pending||processing) _rqStartPolling();
   }catch(e){console.error('loadReceiptQueue',e);}
 }
+
+function _rqProjectOptions(selectedId){
+  const opts=['<option value="">— No Project —</option>'].concat(
+    allProjects.map(p=>`<option value="${p.id}"${p.id===selectedId?' selected':''}>${escHtml(p.title)}</option>`)
+  );
+  return opts.join('');
+}
+
+function _rqCategoryOptions(selected){
+  return ['<option value="">— Category —</option>'].concat(
+    RQ_CATEGORIES.map(c=>`<option value="${c}"${c===selected?' selected':''}>${c}</option>`)
+  ).join('');
+}
+
 function renderReceiptQueue(){
   const el=document.getElementById('rq-queue-list');
-  const items=receiptQueue.filter(q=>q.status==='done'||q.status==='pending'||q.status==='processing'||q.status==='error');
-  if(!items.length){el.innerHTML='<div style="text-align:center;padding:20px;color:#444">Queue empty</div>';return;}
-  el.innerHTML=items.map(q=>{
-    const isDone=q.status==='done';
-    let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
-    const s=parsed.structured||{};
-    const statusColor=q.status==='done'?'#00d084':q.status==='pending'?'#f59e0b':q.status==='processing'?'#4da6ff':'#ff5555';
-    return `<div style="display:flex;gap:12px;padding:12px;margin:6px 0;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;border-left:3px solid ${statusColor};align-items:flex-start">
-      <img src="/api/ahb/receipts/queue/image/${q.id}" style="width:80px;height:100px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a" onclick="window.open('/api/ahb/receipts/queue/image/${q.id}','_blank')" onerror="this.style.display='none'">
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-weight:700;color:#ddd">${isDone?escHtml(s.store_name||'Unknown Store'):'Processing...'}</span>
-          <span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${statusColor}22;color:${statusColor};font-weight:700">${q.status.toUpperCase()}</span>
-        </div>
-        ${isDone?`
-          <div style="font-size:12px;color:#888;display:grid;grid-template-columns:1fr 1fr;gap:4px">
-            <span>Total: <b style="color:#00d084">${s.total?fmtCurrency(s.total):'—'}</b></span>
-            <span>Tax: ${s.tax_amount?fmtCurrency(s.tax_amount):'—'}</span>
-            <span>Date: ${s.purchase_date||'—'}</span>
-            <span>Payment: ${s.payment_method||'—'}</span>
-            <span>Category: ${s.category||'—'}</span>
-            <span>Teller: ${s.teller_name||'—'}</span>
-          </div>
-          <div style="display:flex;gap:6px;margin-top:8px">
-            <button class="btn btn-sm btn-primary" onclick="confirmQueueItem('${q.id}')">Confirm</button>
-            <button class="btn btn-sm btn-secondary" onclick="editQueueItem('${q.id}')">Edit & Confirm</button>
-            <button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">Reject</button>
-          </div>
-        `:`<div style="font-size:11px;color:#555">${q.status==='error'?'Error: '+escHtml(q.error||'Unknown'):q.mode+' mode'}</div>`}
+  const queueItems=receiptQueue.filter(q=>q.status==='pending'||q.status==='processing'||q.status==='error');
+  const reviewItems=receiptQueue.filter(q=>q.status==='done');
+
+  let html='';
+
+  // ── PROCESSING-STATUS BAR (compact pending/processing/error rows) ──
+  if(queueItems.length){
+    html+=`<div style="margin-bottom:14px"><div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">Processing (${queueItems.length})</div>`;
+    html+=queueItems.map(q=>{
+      const c=q.status==='processing'?'#4da6ff':q.status==='error'?'#ff5555':'#f59e0b';
+      const lbl=q.status==='error'?(q.error||'Failed'):q.status.toUpperCase();
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid ${c};border-radius:6px;margin:4px 0;font-size:11px">
+        <span style="color:${c};font-weight:700;min-width:90px">${lbl}</span>
+        <span style="color:#666;font-family:monospace">${q.mode||''}</span>
+        <span style="color:#444;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((q.image_path||'').split('/').pop()||'')}</span>
+        ${q.status==='error'?`<button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">Erase</button>`:''}
+      </div>`;
+    }).join('');
+    html+='</div>';
+  }
+
+  // ── PENDING REVIEW (done items — editable, bulk-actionable) ──
+  if(reviewItems.length){
+    html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 8px">
+      <div style="font-size:11px;color:#5cdc99;text-transform:uppercase;letter-spacing:1.5px">Pending Review (${reviewItems.length})</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;color:#888;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="rq-select-all" onchange="rqToggleSelectAll(this.checked)"> Select all
+        </label>
+        <button class="btn btn-sm btn-primary" onclick="rqFileSelected()">📂 File Selected</button>
+        <button class="btn btn-sm btn-danger" onclick="rqEraseSelected()">🗑 Erase Selected</button>
       </div>
     </div>`;
-  }).join('');
+    html+=reviewItems.map(q=>{
+      let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
+      const s=parsed.structured||{};
+      const total = s.total!=null?s.total:'';
+      const tax   = s.tax_amount!=null?s.tax_amount:'';
+      const sub   = s.subtotal!=null?s.subtotal:'';
+      return `<div class="rq-row" data-qid="${q.id}" style="display:grid;grid-template-columns:24px 90px 1fr;gap:12px;padding:12px;margin:8px 0;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid #5cdc99;border-radius:8px;align-items:start">
+        <input type="checkbox" class="rq-check" data-qid="${q.id}" style="margin-top:38px;cursor:pointer">
+        <img src="/api/ahb/receipts/queue/image/${q.id}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a" onclick="window.open('/api/ahb/receipts/queue/image/${q.id}','_blank')" onerror="this.style.display='none'">
+        <div>
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">STORE</label>
+              <input class="rq-f" data-f="store_name" value="${escHtml(s.store_name||'')}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">TOTAL</label>
+              <input class="rq-f" data-f="total" type="number" step="0.01" value="${total}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#00d084;font-weight:700;border-radius:4px;font-size:12px"></div>
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">TAX</label>
+              <input class="rq-f" data-f="tax_amount" type="number" step="0.01" value="${tax}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">SUBTOTAL</label>
+              <input class="rq-f" data-f="subtotal" type="number" step="0.01" value="${sub}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">DATE</label>
+              <input class="rq-f" data-f="receipt_date" type="date" value="${s.purchase_date||''}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">PAYMENT</label>
+              <input class="rq-f" data-f="payment_method" value="${escHtml(s.payment_method||'')}" placeholder="cash / card / check" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">CATEGORY</label>
+              <select class="rq-f" data-f="category" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqCategoryOptions(s.category||'')}</select></div>
+            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">PROJECT (type to filter)</label>
+              <input class="rq-proj-search" data-qid="${q.id}" oninput="rqFilterProjects('${q.id}',this.value)" placeholder="Search projects..." style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px;margin-bottom:3px">
+              <select class="rq-f" data-f="project_id" id="rq-proj-${q.id}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqProjectOptions('')}</select></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <span style="font-size:10px;color:#444;font-family:monospace">${escHtml(s.teller_name||'')} ${s.purchase_time?'· '+s.purchase_time:''}</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-sm btn-secondary" onclick="rqRotate('${q.id}')" title="Rotate source 90° CW and re-detect">🔄 Rotate</button>
+              ${q.pair_id?`<button class="btn btn-sm btn-secondary" onclick="rqMerge('${q.id}')" title="This was incorrectly split — merge halves back into one">⇆ Merge</button>`:''}
+              ${q.pair_id&&q.parent_image_path?`<button class="btn btn-sm btn-secondary" onclick="rqOpenAdjustSplit('${q.id}')" title="Drag the split line to fix off-center crops">⇔ Adjust Split</button>`:''}
+              <button class="btn btn-sm btn-secondary" onclick="rqSplit('${q.id}')" title="Force-split this image at the midpoint">✂ Force Split</button>
+              <button class="btn btn-sm btn-secondary" onclick="rqRescan('${q.id}')" title="Re-run OCR on this image">🔁 Rescan</button>
+              <button class="btn btn-sm btn-primary" onclick="rqFile('${q.id}')">📂 File</button>
+              <button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">🗑 Erase</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  el.innerHTML=html||'<div style="text-align:center;padding:20px;color:#444">Queue empty</div>';
+}
+
+// ── Helpers for the review rows ────────────────────────────────────────────
+function _rqRowValues(qid){
+  const row=document.querySelector(`.rq-row[data-qid="${qid}"]`);
+  if(!row)return null;
+  const out={};
+  row.querySelectorAll('.rq-f').forEach(el=>{
+    const k=el.dataset.f;
+    let v=el.value;
+    if(['total','tax_amount','subtotal'].includes(k)) v=parseFloat(v)||0;
+    out[k]=v;
+  });
+  return out;
+}
+
+async function rqFile(qid){
+  const v=_rqRowValues(qid);if(!v)return;
+  const q=receiptQueue.find(x=>x.id===qid);
+  let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
+  const s=parsed.structured||{};
+  // merge edited values back into structured for posterity
+  const merged={...s,...v,purchase_date:v.receipt_date};
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/'+qid+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      ...v,
+      items:s.items||[],
+      ocr_text:parsed.ocr_raw||'',ocr_raw:parsed.ocr_raw||'',
+      structured:merged
+    })});
+    const data=await res.json();
+    if(data.success){showToast('Filed: '+(v.store_name||'receipt'));loadReceiptQueue();loadReceipts();}
+    else showToast(data.error||'Failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function rqSplit(qid){
+  if(!confirm('Split this image into two receipts (left/right) and re-OCR both?'))return;
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/'+qid+'/split',{method:'POST'});
+    const data=await res.json();
+    if(data.success){showToast('Split into 2 — re-OCR queued');loadReceiptQueue();_rqStartPolling();}
+    else showToast(data.error||'Split failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function rqRotate(qid){
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/'+qid+'/rotate',{method:'POST'});
+    const data=await res.json();
+    if(data.success){showToast('Rotated — re-OCR queued');loadReceiptQueue();_rqStartPolling();}
+    else showToast(data.error||'Rotate failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function rqMerge(qid){
+  if(!confirm('Merge this half with its sibling back into one receipt?'))return;
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/'+qid+'/merge',{method:'POST'});
+    const data=await res.json();
+    if(data.success){showToast('Merged — re-OCR queued');loadReceiptQueue();_rqStartPolling();}
+    else showToast(data.error||'Merge failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+let _rqAdjustState=null;
+
+async function rqOpenAdjustSplit(qid){
+  const url='/api/ahb/receipts/queue/image/'+qid+'?parent=1';
+  const modal=document.getElementById('rq-adjust-modal');
+  const img=document.getElementById('rq-adjust-img');
+  const line=document.getElementById('rq-adjust-line');
+  const info=document.getElementById('rq-adjust-info');
+  img.src=url;
+  modal.style.display='flex';
+  await new Promise(res=>{img.onload=res;img.onerror=()=>{showToast('Could not load parent image','error');res();}});
+  const naturalW=img.naturalWidth;
+  const naturalH=img.naturalHeight;
+  const displayW=img.clientWidth||naturalW;
+  let splitColNatural=Math.floor(naturalW/2);
+  _rqAdjustState={qid,naturalW,naturalH,displayW,splitColNatural};
+  const updateLine=()=>{
+    const ratio=displayW/naturalW;
+    line.style.left=Math.round(splitColNatural*ratio)+'px';
+    info.textContent=`split @ x=${splitColNatural} / ${naturalW}px (${Math.round(splitColNatural/naturalW*100)}%)`;
+  };
+  updateLine();
+  const wrap=document.getElementById('rq-adjust-canvas-wrap');
+  let dragging=false;
+  const onMove=(ev)=>{
+    if(!dragging)return;
+    const rect=wrap.getBoundingClientRect();
+    const x=Math.max(1,Math.min(displayW-1,ev.clientX-rect.left));
+    splitColNatural=Math.max(1,Math.min(naturalW-1,Math.round(x*naturalW/displayW)));
+    _rqAdjustState.splitColNatural=splitColNatural;
+    updateLine();
+  };
+  wrap.onmousedown=(ev)=>{dragging=true;onMove(ev);};
+  window.onmousemove=onMove;
+  window.onmouseup=()=>{dragging=false;};
+  document.getElementById('rq-adjust-apply').onclick=()=>rqApplyAdjustSplit();
+}
+
+async function rqApplyAdjustSplit(){
+  if(!_rqAdjustState)return;
+  const {qid,splitColNatural}=_rqAdjustState;
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/'+qid+'/adjust-split',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({split_col:splitColNatural})
+    });
+    const data=await res.json();
+    if(data.success){
+      showToast('Split adjusted — re-OCR queued');
+      document.getElementById('rq-adjust-modal').style.display='none';
+      _rqAdjustState=null;
+      loadReceiptQueue();_rqStartPolling();
+    }else showToast(data.error||'Adjust failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function rqRescan(qid){
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/'+qid+'/rescan',{method:'POST'});
+    const data=await res.json();
+    if(data.success){showToast('Re-OCR queued');loadReceiptQueue();_rqStartPolling();}
+    else showToast(data.error||'Rescan failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+function rqToggleSelectAll(checked){
+  document.querySelectorAll('.rq-check').forEach(cb=>cb.checked=checked);
+}
+
+function _rqSelectedQids(){
+  return Array.from(document.querySelectorAll('.rq-check:checked')).map(cb=>cb.dataset.qid);
+}
+
+async function rqFileSelected(){
+  const ids=_rqSelectedQids();
+  if(!ids.length){showToast('Select at least one row','error');return;}
+  showToast(`Filing ${ids.length} receipt(s)...`);
+  for(const qid of ids){ await rqFile(qid); }
+  showToast(`Filed ${ids.length} receipt(s)`);
+}
+
+async function rqEraseSelected(){
+  const ids=_rqSelectedQids();
+  if(!ids.length){showToast('Select at least one row','error');return;}
+  if(!confirm(`Erase ${ids.length} receipt(s)?`))return;
+  for(const qid of ids){
+    try{ await fetch('/api/ahb/receipts/queue/'+qid+'/reject',{method:'POST'}); }catch(e){}
+  }
+  showToast(`Erased ${ids.length} receipt(s)`);
+  loadReceiptQueue();
+}
+
+function rqFilterProjects(qid,query){
+  const sel=document.getElementById('rq-proj-'+qid);if(!sel)return;
+  const cur=sel.value;
+  const q=(query||'').toLowerCase();
+  const filtered=q?allProjects.filter(p=>(p.title||'').toLowerCase().includes(q)):allProjects;
+  sel.innerHTML=['<option value="">— No Project —</option>'].concat(
+    filtered.map(p=>`<option value="${p.id}"${p.id===cur?' selected':''}>${escHtml(p.title)}</option>`)
+  ).join('');
 }
 async function runReceiptQueue(){
   const btn=document.getElementById('rq-run-btn');
@@ -5545,6 +6002,14 @@ function switchEstMethod(m){
   document.querySelectorAll('.est-method-btn').forEach(b=>b.classList.toggle('active', parseInt(b.dataset.m)===m));
   document.querySelectorAll('.est-method-pane').forEach(p=>p.style.display='none');
   document.getElementById('est-method-'+m).style.display='block';
+  if(m===4){
+    // Make sure settings are loaded so default rates seed correctly, then init
+    if(!estimatorSettings || !estimatorSettings.lead_day_rate){
+      loadEstimatorSettings().then(m4Init);
+    } else {
+      m4Init();
+    }
+  }
 }
 
 function openEstimatorSettings(){
@@ -5731,6 +6196,344 @@ async function runMethod3(){
 
 function estCopyToClipboard(amount){
   navigator.clipboard.writeText(fmtCurrency(amount)).then(()=>showToast('Copied: '+fmtCurrency(amount)));
+}
+
+/* ===================== METHOD 4: CUSTOM PRICING ===================== */
+// Reference Home Depot tool rental rates (Greater Philly, 2025-26).
+// User can edit any row before adding or after — these are seed values only.
+const M4_RENTAL_CATALOG = [
+  {name:'Concrete Mixer (9 cu ft)',         hr4:44,  day:61,  week:244},
+  {name:'Demo Hammer (35 lb)',              hr4:47,  day:69,  week:276},
+  {name:'Jackhammer (60 lb)',               hr4:58,  day:83,  week:332},
+  {name:'Concrete Saw (14")',               hr4:68,  day:98,  week:392},
+  {name:'Tile Saw (10")',                   hr4:40,  day:58,  week:232},
+  {name:'Floor Sander (Drum)',              hr4:40,  day:59,  week:236},
+  {name:'Floor Edger',                      hr4:25,  day:36,  week:144},
+  {name:'Pressure Washer (3000 PSI)',       hr4:35,  day:52,  week:208},
+  {name:'Wet/Dry Vac',                      hr4:20,  day:29,  week:116},
+  {name:'Drywall Lift',                     hr4:26,  day:38,  week:152},
+  {name:'Scaffolding Set (6\')',            hr4:26,  day:38,  week:152},
+  {name:'Extension Ladder (32\')',          hr4:19,  day:28,  week:112},
+  {name:'Mini Excavator (1.5T)',            hr4:250, day:363, week:1452},
+  {name:'Skid Steer Loader',                hr4:245, day:355, week:1420},
+  {name:'Stump Grinder',                    hr4:86,  day:123, week:492},
+  {name:'Trencher (24")',                   hr4:90,  day:128, week:512},
+  {name:'Plate Compactor',                  hr4:43,  day:62,  week:248},
+  {name:'Concrete Vibrator',                hr4:26,  day:38,  week:152},
+  {name:'Heat Gun',                         hr4:11,  day:16,  week:64},
+  {name:'Air Compressor (10 gal)',          hr4:24,  day:35,  week:140},
+  {name:'Generator (5500W)',                hr4:50,  day:73,  week:292},
+  {name:'Mortar Mixer',                     hr4:30,  day:44,  week:176},
+  {name:'Tile Stripper',                    hr4:29,  day:42,  week:168},
+  {name:'Wood Chipper',                     hr4:112, day:164, week:656},
+  {name:'Carpet Cleaner',                   hr4:32,  day:46,  week:184},
+  {name:'Dehumidifier',                     hr4:43,  day:62,  week:248},
+  {name:'Insulation Blower',                hr4:96,  day:140, week:560},
+  {name:'MIG Welder (140A)',                hr4:36,  day:52,  week:208},
+  {name:'Drywall Sander',                   hr4:34,  day:49,  week:196},
+  {name:'Paint Sprayer (Airless)',          hr4:55,  day:79,  week:316},
+  {name:'Lawn Aerator',                     hr4:40,  day:58,  week:232},
+  {name:'Sod Cutter',                       hr4:60,  day:87,  week:348},
+  {name:'Power Auger',                      hr4:32,  day:46,  week:184},
+];
+
+let m4LaborMode='crew';   // 'crew' | 'manual'
+let m4ProfitModeVal='pct';   // 'pct' | 'flat'
+let m4OhModeVal='pct';
+let m4RentalRows=[];      // [{name,basis,rate,qty,total}]
+let m4InitDone=false;
+
+function m4Init(){
+  if(m4InitDone) return;
+  const sel=document.getElementById('m4-eq-catalog');
+  if(sel){
+    M4_RENTAL_CATALOG.forEach((it,i)=>{
+      const o=document.createElement('option');
+      o.value=i; o.textContent=it.name+`  ($${it.day}/day)`;
+      sel.appendChild(o);
+    });
+  }
+  // Seed labor rates from saved estimator settings if available
+  if(estimatorSettings && estimatorSettings.lead_day_rate){
+    document.getElementById('m4-lab-lead-rate').value=estimatorSettings.lead_day_rate;
+    document.getElementById('m4-lab-crew-rate').value=estimatorSettings.crew_day_rate;
+    document.getElementById('m4-lab-helper-rate').value=estimatorSettings.helper_day_rate;
+    document.getElementById('m4-lab-sub-rate').value=estimatorSettings.sub_day_rate;
+    document.getElementById('m4-profit-pct').value=Math.round((estimatorSettings.profit_pct||0.18)*100);
+    document.getElementById('m4-oh-pct').value=Math.round((estimatorSettings.overhead_pct||0.15)*100);
+    document.getElementById('m4-cont-pct').value=Math.round((estimatorSettings.contingency_pct||0.10)*100);
+  }
+  m4InitDone=true;
+  recalcM4();
+}
+
+function m4LaborTab(mode){
+  m4LaborMode=mode;
+  document.querySelectorAll('#est-method-4 .m4-tab[data-tab="crew"],#est-method-4 .m4-tab[data-tab="manual"]').forEach(b=>b.classList.toggle('active', b.dataset.tab===mode));
+  document.getElementById('m4-lab-crew').style.display=(mode==='crew'?'block':'none');
+  document.getElementById('m4-lab-manual').style.display=(mode==='manual'?'block':'none');
+  recalcM4();
+}
+
+function m4ApplyCrewToFlat(){
+  const v=parseFloat(document.getElementById('m4-lab-calc').textContent.replace(/[^0-9.\-]/g,''))||0;
+  document.getElementById('m4-lab-manual-amt').value=v.toFixed(2);
+  m4LaborTab('manual');
+  showToast('Crew cost copied — edit the flat amount as needed');
+}
+
+function m4ProfitMode(mode){
+  m4ProfitModeVal=mode;
+  document.querySelectorAll('#est-method-4 .m4-tab[data-tab="profit-pct"],#est-method-4 .m4-tab[data-tab="profit-flat"]').forEach(b=>b.classList.toggle('active', b.dataset.tab==='profit-'+mode));
+  document.getElementById('m4-profit-pct-row').style.display=(mode==='pct'?'block':'none');
+  document.getElementById('m4-profit-flat-row').style.display=(mode==='flat'?'block':'none');
+  recalcM4();
+}
+
+function m4OhMode(mode){
+  m4OhModeVal=mode;
+  document.querySelectorAll('#est-method-4 .m4-tab[data-tab="oh-pct"],#est-method-4 .m4-tab[data-tab="oh-flat"]').forEach(b=>b.classList.toggle('active', b.dataset.tab==='oh-'+mode));
+  document.getElementById('m4-oh-pct-row').style.display=(mode==='pct'?'grid':'none');
+  document.getElementById('m4-oh-flat-row').style.display=(mode==='flat'?'grid':'none');
+  recalcM4();
+}
+
+function m4PrefillRental(){
+  const sel=document.getElementById('m4-eq-catalog');
+  const basis=document.getElementById('m4-eq-basis').value;
+  const rateBox=document.getElementById('m4-eq-rate');
+  if(sel.value===''){rateBox.value='';return;}
+  const it=M4_RENTAL_CATALOG[parseInt(sel.value)];
+  if(!it)return;
+  rateBox.value=it[basis]||0;
+}
+
+function m4AddRental(){
+  const sel=document.getElementById('m4-eq-catalog');
+  const basis=document.getElementById('m4-eq-basis').value;
+  const rate=parseFloat(document.getElementById('m4-eq-rate').value)||0;
+  const qty=parseFloat(document.getElementById('m4-eq-qty').value)||0;
+  let name='Custom rental';
+  if(sel.value!==''){
+    const it=M4_RENTAL_CATALOG[parseInt(sel.value)];
+    if(it) name=it.name;
+  }
+  if(!rate || !qty){showToast('Enter rate and qty','error');return;}
+  m4RentalRows.push({name,basis,rate,qty});
+  document.getElementById('m4-eq-catalog').value='';
+  document.getElementById('m4-eq-rate').value='';
+  document.getElementById('m4-eq-qty').value='1';
+  m4RenderRentals();
+}
+
+function m4AddCustomRental(){
+  m4RentalRows.push({name:'',basis:'day',rate:0,qty:1});
+  m4RenderRentals();
+  // focus the new row's name
+  setTimeout(()=>{
+    const inputs=document.querySelectorAll('#m4-eq-tbody input[data-eq-field="name"]');
+    if(inputs.length) inputs[inputs.length-1].focus();
+  },20);
+}
+
+function m4RenderRentals(){
+  const tb=document.getElementById('m4-eq-tbody');
+  if(!m4RentalRows.length){
+    tb.innerHTML='<tr id="m4-eq-empty"><td colspan="6" style="text-align:center;color:#444;padding:14px;font-size:11px">No equipment yet — pick a tool above and click + Add, or add a custom row.</td></tr>';
+  } else {
+    tb.innerHTML=m4RentalRows.map((r,i)=>{
+      const total=(parseFloat(r.rate)||0)*(parseFloat(r.qty)||0);
+      r.total=total;
+      const basisOpts=['day','hr4','week'].map(b=>`<option value="${b}"${r.basis===b?' selected':''}>${b==='hr4'?'4-hr':b}</option>`).join('');
+      return `<tr>
+        <td><input type="text" data-eq-field="name" data-i="${i}" value="${escHtml(r.name||'')}" oninput="m4UpdateRental(${i},'name',this.value)"></td>
+        <td><select data-i="${i}" onchange="m4UpdateRental(${i},'basis',this.value)">${basisOpts}</select></td>
+        <td><input type="number" min="0" step="0.01" value="${r.rate}" oninput="m4UpdateRental(${i},'rate',this.value)"></td>
+        <td><input type="number" min="0" step="0.5" value="${r.qty}" oninput="m4UpdateRental(${i},'qty',this.value)"></td>
+        <td style="text-align:right;color:#00d084;font-weight:600;font-family:monospace">${fmtCurrency(total)}</td>
+        <td><button class="btn-icon del" onclick="m4RemoveRental(${i})">&#10005;</button></td>
+      </tr>`;
+    }).join('');
+  }
+  recalcM4();
+}
+
+function m4UpdateRental(i,field,val){
+  if(!m4RentalRows[i])return;
+  if(field==='rate'||field==='qty') val=parseFloat(val)||0;
+  m4RentalRows[i][field]=val;
+  // Update the row's total cell live without re-render to preserve focus
+  const total=(parseFloat(m4RentalRows[i].rate)||0)*(parseFloat(m4RentalRows[i].qty)||0);
+  m4RentalRows[i].total=total;
+  const tr=document.querySelectorAll('#m4-eq-tbody tr')[i];
+  if(tr){
+    const tCell=tr.children[4];
+    if(tCell) tCell.textContent=fmtCurrency(total);
+  }
+  recalcM4();
+}
+
+function m4RemoveRental(i){
+  m4RentalRows.splice(i,1);
+  m4RenderRentals();
+}
+
+function recalcM4Labor(){
+  const days=parseFloat(document.getElementById('m4-lab-days').value)||0;
+  const leads=parseFloat(document.getElementById('m4-lab-leads').value)||0;
+  const crew=parseFloat(document.getElementById('m4-lab-crew-n').value)||0;
+  const helpers=parseFloat(document.getElementById('m4-lab-helpers').value)||0;
+  const subDays=parseFloat(document.getElementById('m4-lab-subdays').value)||0;
+  const leadR=parseFloat(document.getElementById('m4-lab-lead-rate').value)||0;
+  const crewR=parseFloat(document.getElementById('m4-lab-crew-rate').value)||0;
+  const helpR=parseFloat(document.getElementById('m4-lab-helper-rate').value)||0;
+  const subR=parseFloat(document.getElementById('m4-lab-sub-rate').value)||0;
+  const total=days*(leads*leadR + crew*crewR + helpers*helpR) + subDays*subR;
+  document.getElementById('m4-lab-calc').textContent=fmtCurrency(total);
+  recalcM4();
+}
+
+function m4GetLaborTotal(){
+  if(m4LaborMode==='manual') return parseFloat(document.getElementById('m4-lab-manual-amt').value)||0;
+  return parseFloat((document.getElementById('m4-lab-calc').textContent||'').replace(/[^0-9.\-]/g,''))||0;
+}
+
+function recalcM4(){
+  const mat=parseFloat(document.getElementById('m4-mat-cost').value)||0;
+  const lab=m4GetLaborTotal();
+  const eq=m4RentalRows.reduce((a,r)=>a+((parseFloat(r.rate)||0)*(parseFloat(r.qty)||0)),0);
+  const direct=mat+lab+eq;
+
+  let oh=0, cont=0;
+  if(m4OhModeVal==='pct'){
+    oh   = direct*((parseFloat(document.getElementById('m4-oh-pct').value)||0)/100);
+    cont = direct*((parseFloat(document.getElementById('m4-cont-pct').value)||0)/100);
+  } else {
+    oh   = parseFloat(document.getElementById('m4-oh-flat').value)||0;
+    cont = parseFloat(document.getElementById('m4-cont-flat').value)||0;
+  }
+  let profit=0;
+  const baseForProfit=direct+oh+cont;
+  if(m4ProfitModeVal==='pct'){
+    profit=baseForProfit*((parseFloat(document.getElementById('m4-profit-pct').value)||0)/100);
+  } else {
+    profit=parseFloat(document.getElementById('m4-profit-flat').value)||0;
+  }
+  const total=direct+oh+cont+profit;
+
+  document.getElementById('m4-mat-total').textContent=fmtCurrency(mat);
+  document.getElementById('m4-lab-total').textContent=fmtCurrency(lab);
+  document.getElementById('m4-eq-total').textContent=fmtCurrency(eq);
+  document.getElementById('m4-profit-total').textContent=fmtCurrency(profit);
+  document.getElementById('m4-oh-total').textContent=fmtCurrency(oh+cont);
+
+  document.getElementById('m4-row-mat').textContent=fmtCurrency(mat);
+  document.getElementById('m4-row-lab').textContent=fmtCurrency(lab);
+  document.getElementById('m4-row-eq').textContent=fmtCurrency(eq);
+  document.getElementById('m4-row-direct').textContent=fmtCurrency(direct);
+  document.getElementById('m4-row-oh').textContent=fmtCurrency(oh);
+  document.getElementById('m4-row-cont').textContent=fmtCurrency(cont);
+  document.getElementById('m4-row-profit').textContent=fmtCurrency(profit);
+  document.getElementById('m4-row-total').textContent=fmtCurrency(total);
+
+  return {mat,lab,eq,direct,oh,cont,profit,total};
+}
+
+function m4BuildLineItemsFromDescription(total, breakdown){
+  const desc=(document.getElementById('est-description').value||'').trim();
+  // Each non-empty line of description = 1 line item.
+  const lines=desc.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  if(!lines.length) return null;
+  // Distribute the total evenly across description lines.
+  const each=Math.round((total/lines.length)*100)/100;
+  const items=lines.map((line,i)=>{
+    // Last line absorbs rounding
+    const lineTotal = (i===lines.length-1) ? Math.round((total - each*(lines.length-1))*100)/100 : each;
+    return {description:line, qty:1, rate:lineTotal, total:lineTotal, unit:'qty', materials:0, labor:0, quantity:1, unit_price:lineTotal};
+  });
+  return items;
+}
+
+function m4BuildLineItemsFromBreakdown(b){
+  const items=[];
+  const matNotes=(document.getElementById('m4-mat-notes').value||'').trim();
+  if(b.mat>0)
+    items.push({description:'Materials'+(matNotes?' — '+matNotes:''), qty:1, rate:b.mat, total:b.mat, unit:'qty', materials:b.mat, labor:0, quantity:1, unit_price:b.mat});
+  if(b.lab>0)
+    items.push({description:'Labor', qty:1, rate:b.lab, total:b.lab, unit:'qty', materials:0, labor:b.lab, quantity:1, unit_price:b.lab});
+  if(b.eq>0){
+    // One line per rental row, plus a header
+    m4RentalRows.forEach(r=>{
+      const t=(parseFloat(r.rate)||0)*(parseFloat(r.qty)||0);
+      if(t<=0) return;
+      const basisLbl=(r.basis==='hr4'?'4-hr':r.basis);
+      items.push({description:'Equipment: '+(r.name||'Rental')+` (${r.qty} ${basisLbl} @ $${r.rate})`, qty:r.qty||1, rate:r.rate||0, total:t, unit:basisLbl, materials:0, labor:0, quantity:r.qty||1, unit_price:r.rate||0});
+    });
+  }
+  const overheadCont = (b.oh||0)+(b.cont||0);
+  if(overheadCont>0)
+    items.push({description:'Overhead & Contingency', qty:1, rate:overheadCont, total:overheadCont, unit:'qty', materials:0, labor:0, quantity:1, unit_price:overheadCont});
+  if((b.profit||0)>0)
+    items.push({description:'Profit', qty:1, rate:b.profit, total:b.profit, unit:'qty', materials:0, labor:0, quantity:1, unit_price:b.profit});
+  return items;
+}
+
+async function m4PushToInvoice(append){
+  const b=recalcM4();
+  if(b.total<=0){showToast('Total is zero — fill in some costs first','error');return;}
+  const useDesc=document.getElementById('m4-sync-from-desc').checked;
+  const desc=(document.getElementById('est-description').value||'').trim();
+  let items=null;
+  if(useDesc){
+    items=m4BuildLineItemsFromDescription(b.total, b);
+    if(!items){
+      if(!confirm('Description is empty — fall back to itemized breakdown (Materials/Labor/Equipment/etc)?')) return;
+      items=m4BuildLineItemsFromBreakdown(b);
+    }
+  } else {
+    items=m4BuildLineItemsFromBreakdown(b);
+  }
+  if(!items.length){showToast('Nothing to push','error');return;}
+
+  // Open the invoice modal and inject lines.
+  if(append && document.getElementById('invoiceModal').classList.contains('open')){
+    items.forEach(li=>addLineItem(li.description, li.qty, li.rate, li.unit, li.total, li.materials, li.labor));
+  } else {
+    await openInvoiceModal();
+    // Clear the default empty row that openInvoiceModal added
+    document.getElementById('line-items-tbody').innerHTML='';
+    lineItemCounter=0;
+    items.forEach(li=>addLineItem(li.description, li.qty, li.rate, li.unit, li.total, li.materials, li.labor));
+    // Stash the description text into invoice notes too (handy reference)
+    if(desc){
+      const notes=document.getElementById('invoice-notes');
+      notes.value=(notes.value? notes.value+'\n\n':'') + 'From EstimatOR (Custom): '+desc;
+    }
+  }
+  recalcInvoice();
+  showToast('Pushed to invoice — review and Save');
+  // Switch over so the user lands on the invoice modal
+  switchTab('invoices');
+}
+
+function m4PullFromInvoice(){
+  // Pull line item descriptions from the most recent draft invoice
+  if(!Array.isArray(allInvoices) || !allInvoices.length){showToast('No invoices loaded','error');return;}
+  const drafts=allInvoices.filter(i=>(i.status||'').toLowerCase()==='draft').sort((a,b)=>(b.id||0)-(a.id||0));
+  const inv=drafts[0]||allInvoices[0];
+  if(!inv){showToast('No invoice found','error');return;}
+  let items=[];
+  try{ items=typeof inv.line_items==='string'?JSON.parse(inv.line_items):(inv.line_items||[]); }catch(e){ items=[]; }
+  const lines=items.map(li=>li.description||'').filter(Boolean);
+  if(!lines.length){showToast('That invoice has no line items','error');return;}
+  document.getElementById('est-description').value=lines.join('\n');
+  showToast('Description pulled from invoice #'+(inv.invoice_number||inv.id));
+}
+
+async function m4CreateProject(){
+  const b=recalcM4();
+  if(b.total<=0){showToast('Total is zero','error');return;}
+  estCreateProject(b.total);
 }
 
 // ── Project-Detail inline estimator (writes quotes back to the project) ──
@@ -11298,6 +12101,24 @@ async function bpLoadRenders(){
   </div>
   <div class="activity-feed" id="af-feed">
     <div style="text-align:center;padding:40px;color:#444">Click to load activity...</div>
+  </div>
+</div>
+
+<!-- Adjust Split modal (QuickRF) -->
+<div id="rq-adjust-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:#0a0a18;border:1px solid #2a2a4a;border-radius:10px;padding:18px;max-width:90vw;max-height:90vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:#e0d4ff">Adjust Split — drag the orange line to where the gap is</div>
+      <button class="btn btn-sm btn-danger" onclick="document.getElementById('rq-adjust-modal').style.display='none'">✕ Close</button>
+    </div>
+    <div id="rq-adjust-canvas-wrap" style="position:relative;display:inline-block;cursor:ew-resize;user-select:none">
+      <img id="rq-adjust-img" style="max-width:80vw;max-height:70vh;display:block" alt="">
+      <div id="rq-adjust-line" style="position:absolute;top:0;bottom:0;width:3px;background:#f5a623;box-shadow:0 0 6px #f5a623;pointer-events:none"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:10px">
+      <span id="rq-adjust-info" style="font-size:11px;color:#888;font-family:monospace"></span>
+      <button class="btn btn-primary" id="rq-adjust-apply">Apply Split</button>
+    </div>
   </div>
 </div>
 

@@ -18,6 +18,8 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
+# 200MB ceiling — bulk receipt uploads can be 20+ phone-camera JPEGs at once.
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DASHBOARD_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -417,6 +419,9 @@ def init_ahb_tables():
         "ALTER TABLE ahb_projects ADD COLUMN commission_pct REAL DEFAULT 10",
         "ALTER TABLE ahb_projects ADD COLUMN commission_value REAL DEFAULT 0",
         "ALTER TABLE ahb_projects ADD COLUMN commission_beneficiary TEXT DEFAULT ''",
+        "ALTER TABLE ahb_receipt_queue ADD COLUMN parent_image_path TEXT",
+        "ALTER TABLE ahb_receipt_queue ADD COLUMN pair_id TEXT",
+        "ALTER TABLE ahb_receipt_queue ADD COLUMN split_col INTEGER",
     ]
     for stmt in alter_stmts:
         try:
@@ -437,6 +442,18 @@ def init_ahb_tables():
             created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_ahb_quotes_pid ON ahb_quotes(project_id);
+
+        CREATE TABLE IF NOT EXISTS ahb_receipt_corrections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id TEXT NOT NULL,
+            changed_by TEXT NOT NULL,
+            changed_at TEXT DEFAULT (datetime('now')),
+            field TEXT NOT NULL,
+            old_value TEXT,
+            new_value TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_arc_rid ON ahb_receipt_corrections(receipt_id);
+        CREATE INDEX IF NOT EXISTS idx_arc_field ON ahb_receipt_corrections(field);
     """)
     conn.commit()
     conn.close()
@@ -480,6 +497,17 @@ def init_cloud_tables():
             category TEXT DEFAULT 'files',
             created_at TEXT DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS cloud_shares (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT '1',
+            path TEXT NOT NULL,
+            expires_at TEXT,
+            created_by TEXT DEFAULT 'serge',
+            created_at TEXT DEFAULT (datetime('now')),
+            access_count INTEGER DEFAULT 0,
+            last_accessed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_cshr_path ON cloud_shares(path);
     """)
     conn.commit()
     conn.close()
@@ -2531,6 +2559,34 @@ def email_db_exists():
 def rows_to_list(rows):
     return [dict(r) for r in rows]
 
+# ── Edge nodes proxy (Tool Server :8000 → /edge/*) ──────────────────────────
+EDGE_TOOL_SERVER = os.environ.get("BAZA_TOOL_SERVER", "http://localhost:8000")
+
+@app.route('/api/edge/nodes')
+def api_edge_nodes():
+    import requests as _rq
+    try:
+        r = _rq.get(f"{EDGE_TOOL_SERVER}/edge/nodes", timeout=3)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({"error": str(e), "nodes": [], "alerts": []}), 503
+
+@app.route('/api/edge/frame/<node_id>')
+def api_edge_frame(node_id):
+    """Stream the latest JPEG for <node_id> through the dashboard origin."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{EDGE_TOOL_SERVER}/edge/frames/{node_id}/latest",
+                    timeout=4, stream=True)
+        if r.status_code != 200:
+            return ("no frame", 404)
+        resp = make_response(r.content)
+        resp.headers["Content-Type"]  = "image/jpeg"
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    except Exception as e:
+        return (f"upstream: {e}", 503)
+
 @app.route('/email')
 def email_page():
     return render_template('email.html')
@@ -4036,22 +4092,114 @@ def api_ahb_receipt_detail(rid):
 
 @app.route('/api/ahb/receipts/<rid>', methods=['PUT'])
 def api_ahb_receipt_update(rid):
+    """Update a receipt AND record each changed field in ahb_receipt_corrections.
+    The corrections table is what receipt_learn.py mines to improve vendor
+    aliases and category rules — so accurate audit is the whole point."""
     try:
         data = request.json or {}
+        editable = ['vendor', 'amount', 'category', 'description', 'receipt_date',
+                    'store_name', 'payment_method', 'total', 'teller_name',
+                    'store_location', 'purchase_time', 'tax_amount', 'subtotal',
+                    'items_json', 'ocr_text', 'ocr_raw', 'ocr_structured',
+                    'image_path', 'project_id', 'year']
+        changed_by = (
+            request.headers.get('X-Agent-Id')
+            or data.pop('_edited_by', None)
+            or 'serge'
+        )
+
         conn = _ahb_db()
+        conn.row_factory = sqlite3.Row
+        old_row = conn.execute(
+            "SELECT * FROM ahb_receipts WHERE id = ?", (rid,)
+        ).fetchone()
+
+        def _ser(v):
+            if v is None:
+                return ''
+            if isinstance(v, (list, dict)):
+                return json.dumps(v, ensure_ascii=False)
+            return str(v)
+
+        corrections = []
         fields, vals = [], []
-        for k in ['vendor', 'amount', 'category', 'description', 'receipt_date', 'store_name',
-                   'payment_method', 'total', 'teller_name', 'store_location', 'purchase_time',
-                   'tax_amount', 'subtotal', 'items_json', 'ocr_text', 'ocr_raw', 'ocr_structured',
-                   'image_path', 'project_id', 'year']:
-            if k in data:
-                fields.append(f"{k} = ?"); vals.append(data[k])
+        for k in editable:
+            if k not in data:
+                continue
+            new_v = data[k]
+            old_v = old_row[k] if old_row is not None and k in old_row.keys() else None
+            if _ser(old_v) != _ser(new_v):
+                corrections.append((rid, changed_by, k, _ser(old_v), _ser(new_v)))
+            fields.append(f"{k} = ?")
+            vals.append(new_v)
+
+        if corrections:
+            conn.executemany(
+                """INSERT INTO ahb_receipt_corrections
+                        (receipt_id, changed_by, field, old_value, new_value)
+                   VALUES (?, ?, ?, ?, ?)""",
+                corrections,
+            )
+
         if fields:
             vals.append(rid)
             conn.execute(f"UPDATE ahb_receipts SET {', '.join(fields)} WHERE id = ?", vals)
-            conn.commit()
+        conn.commit()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({
+            'success': True,
+            'changed_fields': [c[2] for c in corrections],
+            'changed_by': changed_by,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/agents', methods=['GET'])
+def api_agents_registry():
+    """Return the list of named agents/admins for UI attribution.
+    Feeds the 'Filed by' column on receipts/documents and the audit trail."""
+    try:
+        import yaml as _yaml
+        path = os.path.join(
+            os.path.dirname(DASHBOARD_DIR), 'config', 'agents_registry.yaml'
+        )
+        with open(path) as f:
+            data = _yaml.safe_load(f) or {}
+        admins = data.get('admins') or []
+        # Return as both a list and a convenience map for easy JS lookup.
+        by_id = {a.get('id', ''): a for a in admins if a.get('id')}
+        return jsonify({'admins': admins, 'by_id': by_id})
+    except Exception as e:
+        return jsonify({'admins': [], 'by_id': {}, 'error': str(e)}), 200
+
+
+@app.route('/api/ahb/receipts/corrections', methods=['GET'])
+def api_ahb_receipt_corrections_list():
+    """List correction history, optionally filtered by receipt_id or field.
+    Query params: receipt_id, field, limit (default 100)."""
+    try:
+        rid = request.args.get('receipt_id')
+        field = request.args.get('field')
+        limit = int(request.args.get('limit', 100))
+        where, vals = [], []
+        if rid:
+            where.append("receipt_id = ?"); vals.append(rid)
+        if field:
+            where.append("field = ?"); vals.append(field)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        conn = _ahb_db()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"""SELECT id, receipt_id, changed_by, changed_at, field,
+                       old_value, new_value
+                  FROM ahb_receipt_corrections
+                  {clause}
+                 ORDER BY id DESC LIMIT ?""",
+            (*vals, limit),
+        ).fetchall()
+        conn.close()
+        return jsonify({'corrections': [dict(r) for r in rows]})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -6932,11 +7080,107 @@ def api_ahb_files_serve(fid):
 
 # ── AHB123 — Receipt Processing Queue ───────────────────────────────────────
 
+def _find_split_column(img):
+    """Return the x-column index that best separates two side-by-side receipts.
+    Strategy: brightest column ('white valley') in the middle 60% of width.
+    Falls back to image midpoint when no clear valley exists.
+
+    img: PIL.Image (any mode; will be converted to L)
+    returns: int column index in [0, w)
+    """
+    gray = img.convert('L')
+    w, h = gray.size
+    if w < 4:
+        return w // 2
+    pixels = gray.load()
+    lo = int(w * 0.20)
+    hi = int(w * 0.80)
+    if hi <= lo:
+        return w // 2
+    row_step = max(1, h // 64)
+    col_means = []
+    for x in range(lo, hi):
+        s = 0
+        n = 0
+        for y in range(0, h, row_step):
+            s += pixels[x, y]
+            n += 1
+        col_means.append((x, s / max(1, n)))
+    if not col_means:
+        return w // 2
+    vals = [m for _, m in col_means]
+    spread = max(vals) - min(vals)
+    if spread < 20:
+        return w // 2
+    return max(col_means, key=lambda t: t[1])[0]
+
+
+def _detect_and_queue(file_storage, conn, queue_dir):
+    """Detect 1-up vs 2-up, crop accordingly, insert queue row(s).
+    Returns list of new queue ids. Caller is responsible for conn.commit().
+
+    file_storage: werkzeug FileStorage from request.files
+    conn:         sqlite3 connection (open, autocommit off)
+    queue_dir:    absolute path where crops are saved
+    """
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    safe_name = re.sub(r'[^\w.\-]', '_', file_storage.filename or 'receipt.jpg')
+
+    try:
+        img = Image.open(file_storage.stream)
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        img = img.convert('RGB')
+    except UnidentifiedImageError:
+        file_storage.stream.seek(0)
+        qid = str(uuid.uuid4())
+        fpath = os.path.join(queue_dir, f"{qid}_{safe_name}")
+        file_storage.save(fpath)
+        conn.execute(
+            "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) "
+            "VALUES (?, ?, 'bulk-fallback', 'pending')",
+            (qid, fpath))
+        return [qid]
+
+    w, h = img.size
+
+    if h >= w:
+        qid = str(uuid.uuid4())
+        fpath = os.path.join(queue_dir, f"{qid}.jpg")
+        img.save(fpath, 'JPEG', quality=90)
+        conn.execute(
+            "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) "
+            "VALUES (?, ?, 'bulk-single', 'pending')",
+            (qid, fpath))
+        return [qid]
+
+    pair_id = str(uuid.uuid4())
+    parent_fpath = os.path.join(queue_dir, f"{pair_id}_parent.jpg")
+    img.save(parent_fpath, 'JPEG', quality=90)
+    split_col = _find_split_column(img)
+    new_ids = []
+    for side, box in [('left', (0, 0, split_col, h)),
+                      ('right', (split_col, 0, w, h))]:
+        qid = f"{pair_id}-{side}"
+        fpath = os.path.join(queue_dir, f"{qid}.jpg")
+        img.crop(box).save(fpath, 'JPEG', quality=90)
+        conn.execute(
+            "INSERT INTO ahb_receipt_queue "
+            "(id, image_path, mode, status, parent_image_path, pair_id, split_col) "
+            "VALUES (?, ?, ?, 'pending', ?, ?, ?)",
+            (qid, fpath, f'bulk-dual-{side}', parent_fpath, pair_id, split_col))
+        new_ids.append(qid)
+    return new_ids
+
+
 @app.route('/api/ahb/receipts/process', methods=['POST'])
 def api_ahb_receipts_process():
-    """Upload receipt images for processing. Modes: single, dual, bulk."""
+    """Easy Bulk receipt upload. Per file: EXIF-transpose, then portrait → 1-up,
+    landscape → 2-up split at the brightest column (white valley between receipts).
+    Queue cards appear immediately with cropped thumbnails; OCR drains in background."""
     try:
-        mode = request.form.get('mode', 'single')
         files = request.files.getlist('files') or [request.files.get('file')]
         files = [f for f in files if f]
         if not files:
@@ -6946,41 +7190,80 @@ def api_ahb_receipts_process():
         os.makedirs(queue_dir, exist_ok=True)
         conn = _ahb_db()
         queue_ids = []
-
         for f in files:
-            if mode == 'dual':
-                # Split image in half — left and right
-                from PIL import Image
-                import io as _io
-                img = Image.open(f.stream)
-                w, h = img.size
-                mid = w // 2
-                for side, crop_box in [('left', (0, 0, mid, h)), ('right', (mid, 0, w, h))]:
-                    qid = str(uuid.uuid4())
-                    cropped = img.crop(crop_box)
-                    fname = f"{qid}_{side}.jpg"
-                    fpath = os.path.join(queue_dir, fname)
-                    cropped.save(fpath, 'JPEG', quality=85)
-                    conn.execute(
-                        "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) VALUES (?, ?, ?, 'pending')",
-                        (qid, fpath, 'dual'))
-                    queue_ids.append(qid)
-            else:
-                # Single or bulk — each file is one receipt
+            try:
+                queue_ids.extend(_detect_and_queue(f, conn, queue_dir))
+            except Exception as _e:
                 qid = str(uuid.uuid4())
-                safe_name = re.sub(r'[^\w.\-]', '_', f.filename or 'receipt.jpg')
-                fpath = os.path.join(queue_dir, f"{qid}_{safe_name}")
-                f.save(fpath)
                 conn.execute(
-                    "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) VALUES (?, ?, ?, 'pending')",
-                    (qid, fpath, mode))
+                    "INSERT INTO ahb_receipt_queue (id, image_path, mode, status, error) "
+                    "VALUES (?, '', 'bulk-error', 'error', ?)",
+                    (qid, f"upload failed: {str(_e)[:200]}"))
                 queue_ids.append(qid)
-
         conn.commit()
         conn.close()
+        _spawn_receipt_queue_worker()
         return jsonify({'success': True, 'queue_ids': queue_ids, 'count': len(queue_ids)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ── Background OCR worker ────────────────────────────────────────────────────
+import threading as _ahb_threading
+_ahb_worker_lock = _ahb_threading.Lock()
+_ahb_worker_running = {'flag': False}
+
+def _spawn_receipt_queue_worker():
+    """Start a background thread that drains the receipt queue through OCR.
+    Idempotent — only one worker runs at a time. Items move pending → done
+    automatically; user only needs to review/confirm in the modal."""
+    with _ahb_worker_lock:
+        if _ahb_worker_running['flag']:
+            return  # already draining
+        _ahb_worker_running['flag'] = True
+
+    def _drain():
+        try:
+            skill_path = os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'receipt_ocr.py')
+            while True:
+                conn = _ahb_db()
+                row = conn.execute(
+                    "SELECT id, image_path FROM ahb_receipt_queue "
+                    "WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1"
+                ).fetchone()
+                if not row:
+                    conn.close()
+                    break
+                qid = row['id']
+                conn.execute("UPDATE ahb_receipt_queue SET status='processing' WHERE id=?", (qid,))
+                conn.commit()
+                conn.close()
+                try:
+                    env = os.environ.copy()
+                    env['SKILL_ARGS'] = json.dumps({'image_path': row['image_path'], 'mode': 'full'})
+                    result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True,
+                                            text=True, timeout=180, env=env)
+                    conn = _ahb_db()
+                    if result.returncode == 0:
+                        conn.execute("UPDATE ahb_receipt_queue SET status='done', result_json=? WHERE id=?",
+                                     (result.stdout.strip(), qid))
+                    else:
+                        conn.execute("UPDATE ahb_receipt_queue SET status='error', error=? WHERE id=?",
+                                     (result.stderr.strip()[:500] or 'OCR failed', qid))
+                    conn.commit()
+                    conn.close()
+                except Exception as _e:
+                    conn = _ahb_db()
+                    conn.execute("UPDATE ahb_receipt_queue SET status='error', error=? WHERE id=?",
+                                 (str(_e)[:500], qid))
+                    conn.commit()
+                    conn.close()
+        finally:
+            with _ahb_worker_lock:
+                _ahb_worker_running['flag'] = False
+
+    t = _ahb_threading.Thread(target=_drain, name='ahb-receipt-ocr', daemon=True)
+    t.start()
 
 
 @app.route('/api/ahb/receipts/queue', methods=['GET'])
@@ -7068,12 +7351,13 @@ def api_ahb_receipts_queue_confirm(qid):
             image_path = perm_path
 
         conn.execute(
-            """INSERT INTO ahb_receipts (id, vendor, store_name, amount, total, category, description,
+            """INSERT INTO ahb_receipts (id, project_id, vendor, store_name, amount, total, category, description,
                receipt_date, payment_method, teller_name, store_location, purchase_time,
                tax_amount, subtotal, items_json, ocr_text, ocr_raw, ocr_structured,
                image_path, file_path, year, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (rid, data.get('store_name', data.get('vendor', '')),
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (rid, data.get('project_id') or None,
+             data.get('store_name', data.get('vendor', '')),
              data.get('store_name', ''), data.get('total', 0), data.get('total', 0),
              data.get('category', ''), data.get('description', ''),
              data.get('receipt_date', now.strftime('%Y-%m-%d')),
@@ -7108,16 +7392,206 @@ def api_ahb_receipts_queue_reject(qid):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/ahb/receipts/queue/image/<qid>', methods=['GET'])
-def api_ahb_receipts_queue_image(qid):
-    """Serve a queue item's image."""
+@app.route('/api/ahb/receipts/queue/<qid>/split', methods=['POST'])
+def api_ahb_receipts_queue_split(qid):
+    """Split a queue item's image down the middle into two new pending items
+    and reject the original. For when the smart bulk-detector missed a 2-up."""
     try:
         conn = _ahb_db()
-        row = conn.execute("SELECT image_path FROM ahb_receipt_queue WHERE id = ?", (qid,)).fetchone()
-        conn.close()
+        row = conn.execute("SELECT image_path FROM ahb_receipt_queue WHERE id=?", (qid,)).fetchone()
         if not row or not row['image_path'] or not os.path.exists(row['image_path']):
+            conn.close()
+            return jsonify({'success': False, 'error': 'item not found'}), 404
+        img = Image.open(row['image_path'])
+        w, h = img.size
+        mid = w // 2
+        queue_dir = os.path.join(DASHBOARD_DIR, 'uploads', 'ahb', 'receipts', 'queue')
+        os.makedirs(queue_dir, exist_ok=True)
+        new_ids = []
+        base_qid = str(uuid.uuid4())
+        for side, box in [('left', (0, 0, mid, h)), ('right', (mid, 0, w, h))]:
+            new_qid = f"{base_qid}-{side}"
+            fpath = os.path.join(queue_dir, f"{new_qid}.jpg")
+            img.crop(box).save(fpath, 'JPEG', quality=85)
+            conn.execute(
+                "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) VALUES (?, ?, 'manual-split', 'pending')",
+                (new_qid, fpath))
+            new_ids.append(new_qid)
+        conn.execute("UPDATE ahb_receipt_queue SET status='rejected' WHERE id=?", (qid,))
+        conn.commit()
+        conn.close()
+        _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'queue_ids': new_ids})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/<qid>/rescan', methods=['POST'])
+def api_ahb_receipts_queue_rescan(qid):
+    """Reset an item to pending so the OCR worker re-processes it.
+    Useful after a manual split or when fields came back as garbage."""
+    try:
+        conn = _ahb_db()
+        conn.execute("UPDATE ahb_receipt_queue SET status='pending', result_json=NULL, error=NULL WHERE id=?", (qid,))
+        conn.commit()
+        conn.close()
+        _spawn_receipt_queue_worker()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/<qid>/rotate', methods=['POST'])
+def api_ahb_receipts_queue_rotate(qid):
+    """Rotate the source image 90° CW and re-detect. Replaces the old queue row(s)."""
+    try:
+        from PIL import Image
+        from io import BytesIO
+        from werkzeug.datastructures import FileStorage
+        conn = _ahb_db()
+        row = conn.execute(
+            "SELECT image_path, parent_image_path, pair_id FROM ahb_receipt_queue WHERE id=?",
+            (qid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'queue item not found'}), 404
+        src = row['parent_image_path'] or row['image_path']
+        if not src or not os.path.exists(src):
+            conn.close()
+            return jsonify({'success': False, 'error': 'source image missing'}), 410
+
+        queue_dir = os.path.join(DASHBOARD_DIR, 'uploads', 'ahb', 'receipts', 'queue')
+        os.makedirs(queue_dir, exist_ok=True)
+
+        rotated = Image.open(src).rotate(-90, expand=True).convert('RGB')
+        buf = BytesIO()
+        rotated.save(buf, 'JPEG', quality=90)
+        buf.seek(0)
+        fs = FileStorage(stream=buf, filename=f"rotated_{qid}.jpg", content_type='image/jpeg')
+        new_ids = _detect_and_queue(fs, conn, queue_dir)
+
+        if row['pair_id']:
+            conn.execute("UPDATE ahb_receipt_queue SET status='rejected' WHERE pair_id=?",
+                         (row['pair_id'],))
+        else:
+            conn.execute("UPDATE ahb_receipt_queue SET status='rejected' WHERE id=?", (qid,))
+        conn.commit()
+        conn.close()
+        _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'queue_ids': new_ids})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/<qid>/merge', methods=['POST'])
+def api_ahb_receipts_queue_merge(qid):
+    """Merge two halves of an auto-split pair back into a single 1-up queue item."""
+    try:
+        import shutil
+        conn = _ahb_db()
+        row = conn.execute(
+            "SELECT pair_id, parent_image_path FROM ahb_receipt_queue WHERE id=?",
+            (qid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'queue item not found'}), 404
+        if not row['pair_id'] or not row['parent_image_path']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'item is not a split half'}), 400
+        if not os.path.exists(row['parent_image_path']):
+            conn.close()
+            return jsonify({'success': False, 'error': 'parent image missing'}), 410
+
+        conn.execute("UPDATE ahb_receipt_queue SET status='rejected' WHERE pair_id=?",
+                     (row['pair_id'],))
+
+        queue_dir = os.path.join(DASHBOARD_DIR, 'uploads', 'ahb', 'receipts', 'queue')
+        os.makedirs(queue_dir, exist_ok=True)
+        new_qid = str(uuid.uuid4())
+        new_fpath = os.path.join(queue_dir, f"{new_qid}.jpg")
+        shutil.copy2(row['parent_image_path'], new_fpath)
+        conn.execute(
+            "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) "
+            "VALUES (?, ?, 'bulk-merged', 'pending')",
+            (new_qid, new_fpath))
+        conn.commit()
+        conn.close()
+        _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'queue_id': new_qid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/<qid>/adjust-split', methods=['POST'])
+def api_ahb_receipts_queue_adjust_split(qid):
+    """Re-crop both halves of an auto-split pair at a new split column.
+    Body: {"split_col": <int>}"""
+    try:
+        from PIL import Image
+        data = request.json or {}
+        try:
+            split_col = int(data.get('split_col', 0))
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'split_col must be an integer'}), 400
+
+        conn = _ahb_db()
+        row = conn.execute(
+            "SELECT pair_id, parent_image_path FROM ahb_receipt_queue WHERE id=?",
+            (qid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'queue item not found'}), 404
+        if not row['pair_id'] or not row['parent_image_path']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'item is not a split half'}), 400
+        if not os.path.exists(row['parent_image_path']):
+            conn.close()
+            return jsonify({'success': False, 'error': 'parent image missing'}), 410
+
+        img = Image.open(row['parent_image_path']).convert('RGB')
+        w, h = img.size
+        split_col = max(1, min(w - 1, split_col))
+
+        halves = conn.execute(
+            "SELECT id, image_path, mode FROM ahb_receipt_queue WHERE pair_id=? AND status!='rejected'",
+            (row['pair_id'],)).fetchall()
+        if len(halves) < 2:
+            conn.close()
+            return jsonify({'success': False, 'error': 'pair incomplete (use rotate or re-upload)'}), 400
+
+        for half in halves:
+            side = 'left' if 'left' in (half['mode'] or '') else 'right'
+            box = (0, 0, split_col, h) if side == 'left' else (split_col, 0, w, h)
+            img.crop(box).save(half['image_path'], 'JPEG', quality=90)
+            conn.execute(
+                "UPDATE ahb_receipt_queue "
+                "SET status='pending', result_json=NULL, error=NULL, split_col=? "
+                "WHERE id=?",
+                (split_col, half['id']))
+        conn.commit()
+        conn.close()
+        _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'split_col': split_col})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/image/<qid>', methods=['GET'])
+def api_ahb_receipts_queue_image(qid):
+    """Serve a queue item's image. ?parent=1 serves the original (pre-split) parent."""
+    try:
+        conn = _ahb_db()
+        row = conn.execute(
+            "SELECT image_path, parent_image_path FROM ahb_receipt_queue WHERE id = ?",
+            (qid,)).fetchone()
+        conn.close()
+        if not row:
             return 'Not found', 404
-        return send_from_directory(os.path.dirname(row['image_path']), os.path.basename(row['image_path']))
+        want_parent = request.args.get('parent') in ('1', 'true', 'yes')
+        path = row['parent_image_path'] if want_parent else row['image_path']
+        if not path or not os.path.exists(path):
+            return 'Not found', 404
+        return send_from_directory(os.path.dirname(path), os.path.basename(path))
     except Exception as e:
         return str(e), 500
 
@@ -8013,9 +8487,14 @@ if CLOUD_ENABLED:
         ('/mnt/empirepool/media/icloud',  'icloud'),
         ('/mnt/empirepool/media/generated', 'generated'),
     ]
-    CLOUD_IMG_EXTS = {'.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.webp','.gif','.bmp'}
-    CLOUD_VID_EXTS = {'.mov','.mp4','.m4v','.avi','.mkv','.webm'}
-    CLOUD_DOC_EXTS = {'.pdf','.doc','.docx','.txt','.csv','.xlsx','.xls','.md','.rtf'}
+    CLOUD_IMG_EXTS = {'.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.webp','.gif','.bmp',
+                      '.dng','.cr2','.cr3','.nef','.arw','.orf','.rw2','.raw',
+                      '.insp'}
+    CLOUD_VID_EXTS = {'.mov','.mp4','.m4v','.avi','.mkv','.webm','.3gp','.wmv','.flv','.mts',
+                      '.insv','.lrv','.thm'}
+    CLOUD_DOC_EXTS = {'.pdf','.doc','.docx','.txt','.csv','.xlsx','.xls','.md','.rtf',
+                      '.odt','.pptx','.ppt','.pages','.numbers','.key'}
+    CLOUD_SKIP_DIRS = {'.thumbnails', '.vault_meta', 'Vault', 'Imports'}
     THUMB_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.thumbnails')
     os.makedirs(THUMB_DIR, exist_ok=True)
 
@@ -8060,8 +8539,8 @@ if CLOUD_ENABLED:
         for base_dir, source in CLOUD_MEDIA_DIRS:
             if not os.path.isdir(base_dir):
                 continue
-            for root, dirs, files in os.walk(base_dir):
-                dirs[:] = [d for d in dirs if d != '.thumbnails']
+            for root, dirs, files in os.walk(base_dir, followlinks=False):
+                dirs[:] = [d for d in dirs if d not in CLOUD_SKIP_DIRS]
                 for fname in files:
                     full = os.path.join(root, fname)
                     rel = os.path.relpath(full, base_dir)
@@ -8163,6 +8642,46 @@ if CLOUD_ENABLED:
                                            max_age=86400)
             except Exception:
                 pass
+        if ext in CLOUD_VID_EXTS:
+            # Use ffmpeg to extract a frame ~1s in and scale to <=size. Works
+            # for .insv (dual-fisheye shown as-is — still beats a black square).
+            # Prefer the smaller .lrv sibling for Insta360 .insv when available.
+            source = full
+            if ext == '.insv':
+                base = os.path.basename(full)
+                lrv_name = base.replace('VID_', 'LRV_', 1).replace('_00_', '_11_', 1)
+                lrv_name = os.path.splitext(lrv_name)[0] + '.lrv'
+                lrv_path = os.path.join(os.path.dirname(full), lrv_name)
+                if os.path.exists(lrv_path):
+                    source = lrv_path
+            try:
+                import subprocess
+                subprocess.run(
+                    ['ffmpeg', '-nostdin', '-loglevel', 'error', '-y',
+                     '-ss', '1', '-i', source,
+                     '-vframes', '1',
+                     '-vf', f'scale={size}:-2:force_original_aspect_ratio=decrease',
+                     '-q:v', '5', cached],
+                    check=True, timeout=15,
+                )
+                if os.path.exists(cached) and os.path.getsize(cached) > 0:
+                    return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
+                                               max_age=86400)
+            except Exception:
+                # Retry at frame 0 in case the file is shorter than 1s.
+                try:
+                    subprocess.run(
+                        ['ffmpeg', '-nostdin', '-loglevel', 'error', '-y',
+                         '-i', source, '-vframes', '1',
+                         '-vf', f'scale={size}:-2:force_original_aspect_ratio=decrease',
+                         '-q:v', '5', cached],
+                        check=True, timeout=15,
+                    )
+                    if os.path.exists(cached) and os.path.getsize(cached) > 0:
+                        return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
+                                                   max_age=86400)
+                except Exception:
+                    pass
         # Fallback: 1x1 transparent pixel
         import base64
         pixel = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
@@ -8290,6 +8809,248 @@ if CLOUD_ENABLED:
         new = os.path.join(os.path.dirname(old), new_name)
         os.rename(old, new)
         return jsonify({'success': True, 'new_name': new_name})
+
+    # ── Cloud: download by query-param (matches cloud.html client code) ─────
+    @app.route('/api/cloud/files/download', methods=['GET'])
+    def api_cloud_download_q():
+        """Download via ?path=... — the cloud.html client uses this shape."""
+        filepath = request.args.get('path', '')
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
+        target = os.path.realpath(os.path.join(user_dir, filepath))
+        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+            return jsonify({'error': 'Invalid path'}), 403
+        return send_from_directory(os.path.dirname(target),
+                                   os.path.basename(target), as_attachment=True)
+
+    # ── Cloud: in-browser open (inline, not download) ──────────────────────
+    @app.route('/api/cloud/files/open', methods=['GET'])
+    def api_cloud_open():
+        """Serve file inline so the browser previews images/PDFs/video."""
+        filepath = request.args.get('path', '')
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
+        target = os.path.realpath(os.path.join(user_dir, filepath))
+        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+            return jsonify({'error': 'Invalid path'}), 403
+        return send_from_directory(os.path.dirname(target),
+                                   os.path.basename(target), as_attachment=False)
+
+    # ── Cloud: share link (tokenized, optionally time-limited) ─────────────
+    @app.route('/api/cloud/files/share', methods=['POST'])
+    def api_cloud_share_create():
+        """Create a tokenized public share for a single file.
+        Body: {path, expires_days?}  Returns: {token, url, expires_at}"""
+        import secrets as _secrets
+        import datetime as _dt
+        data = request.json or {}
+        filepath = data.get('path', '').strip()
+        if not filepath:
+            return jsonify({'success': False, 'error': 'path required'}), 400
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
+        target = os.path.realpath(os.path.join(user_dir, filepath))
+        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+            return jsonify({'success': False, 'error': 'Invalid path'}), 403
+        days = int(data.get('expires_days', 7))
+        expires_at = (_dt.datetime.utcnow() + _dt.timedelta(days=days)).isoformat() if days > 0 else None
+        token = _secrets.token_urlsafe(18)
+        try:
+            conn = _ahb_db()
+            conn.execute(
+                """INSERT INTO cloud_shares (token, user_id, path, expires_at, created_by)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (token, str(FAMILY_USER_ID), filepath, expires_at, 'serge'),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+        share_url = f"{_public_base_url()}/s/{token}"
+        return jsonify({'success': True, 'token': token, 'url': share_url,
+                        'expires_at': expires_at, 'path': filepath})
+
+    @app.route('/api/cloud/files/share/list', methods=['GET'])
+    def api_cloud_share_list():
+        """Return existing shares (optionally filtered by path)."""
+        path = request.args.get('path')
+        conn = _ahb_db()
+        conn.row_factory = sqlite3.Row
+        q = "SELECT token, path, expires_at, created_at, access_count, last_accessed_at FROM cloud_shares"
+        vals = ()
+        if path:
+            q += " WHERE path = ?"
+            vals = (path,)
+        q += " ORDER BY created_at DESC LIMIT 500"
+        rows = conn.execute(q, vals).fetchall()
+        conn.close()
+        base = _public_base_url()
+        return jsonify({'shares': [
+            {**dict(r), 'url': f"{base}/s/{r['token']}"} for r in rows
+        ]})
+
+    @app.route('/api/cloud/files/share/<token>', methods=['DELETE'])
+    def api_cloud_share_revoke(token):
+        conn = _ahb_db()
+        conn.execute("DELETE FROM cloud_shares WHERE token = ?", (token,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+
+    # ── Cloud: send file via Telegram (uses Phil's bot) ────────────────────
+    @app.route('/api/cloud/files/telegram', methods=['POST'])
+    def api_cloud_telegram_send():
+        """Send a cloud file to a Telegram chat.
+        Body: {path, chat_id?, caption?}
+        Chat defaults to SERGE_CHAT_ID env, then falls back to the most recent
+        chat_id in task_journal for phil_hass. Bot token = TELEGRAM_PHIL_HASS."""
+        data = request.json or {}
+        filepath = (data.get('path') or '').strip()
+        if not filepath:
+            return jsonify({'success': False, 'error': 'path required'}), 400
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
+        target = os.path.realpath(os.path.join(user_dir, filepath))
+        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+            return jsonify({'success': False, 'error': 'Invalid path'}), 403
+
+        token = os.environ.get('CLOUD_TELEGRAM_BOT') or os.environ.get('TELEGRAM_PHIL_HASS')
+        if not token:
+            return jsonify({'success': False,
+                            'error': 'No Telegram bot token configured '
+                                     '(set TELEGRAM_PHIL_HASS or CLOUD_TELEGRAM_BOT)'}), 500
+
+        chat_id = str(data.get('chat_id') or os.environ.get('SERGE_CHAT_ID') or '').strip()
+        if not chat_id:
+            # Fallback: most recent chat_id in task_journal with any agent
+            try:
+                from core.context_db import get_pool as _gp
+                pool = _gp()
+                c = pool.getconn()
+                cur = c.cursor()
+                cur.execute("SELECT chat_id FROM task_journal "
+                            "WHERE chat_id IS NOT NULL AND chat_id != '' "
+                            "ORDER BY created_at DESC LIMIT 1")
+                r = cur.fetchone()
+                cur.close(); pool.putconn(c)
+                if r and r[0]:
+                    chat_id = str(r[0])
+            except Exception:
+                pass
+        if not chat_id:
+            return jsonify({'success': False,
+                            'error': 'No chat_id provided and SERGE_CHAT_ID not set'}), 400
+
+        caption = (data.get('caption') or '').strip()
+        ext = os.path.splitext(target)[1].lower()
+        api_base = f"https://api.telegram.org/bot{token}"
+
+        # Pick the right endpoint based on file type so the preview is nice.
+        if ext in ('.jpg', '.jpeg', '.png', '.webp', '.gif'):
+            method = 'sendPhoto'
+            field = 'photo'
+        elif ext in ('.mp4', '.mov', '.m4v', '.webm'):
+            method = 'sendVideo'
+            field = 'video'
+        elif ext in ('.mp3', '.m4a', '.wav', '.ogg'):
+            method = 'sendAudio'
+            field = 'audio'
+        else:
+            method = 'sendDocument'
+            field = 'document'
+
+        try:
+            import requests as _rq
+            with open(target, 'rb') as fh:
+                files = {field: (os.path.basename(target), fh)}
+                payload = {'chat_id': chat_id}
+                if caption:
+                    payload['caption'] = caption[:1024]
+                resp = _rq.post(f"{api_base}/{method}", data=payload, files=files, timeout=120)
+            try:
+                result = resp.json()
+            except Exception:
+                result = {'raw': resp.text[:500]}
+            if resp.status_code == 200 and result.get('ok'):
+                return jsonify({'success': True, 'chat_id': chat_id,
+                                'method': method, 'filename': os.path.basename(target)})
+            return jsonify({'success': False, 'error': result.get('description') or result}), 502
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    # ── Cloud: HLS wrapper for .ts dashcam clips ───────────────────────────
+    @app.route('/api/cloud/media/hls', methods=['GET'])
+    def api_cloud_hls_manifest():
+        """Serve a single-segment HLS manifest that points to the TS file.
+        hls.js on the frontend feeds the segment to a <video> via MSE so the
+        browser can play MPEG-TS clips (e.g. dashcam footage) without remux."""
+        filepath = request.args.get('path', '')
+        user_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID))
+        target = os.path.realpath(os.path.join(user_dir, filepath))
+        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+            return jsonify({'error': 'Invalid path'}), 403
+
+        # Compute duration with ffprobe if available; default to 300s.
+        duration = 300
+        try:
+            import subprocess as _sp
+            out = _sp.check_output(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', target],
+                stderr=_sp.DEVNULL, timeout=10,
+            ).decode().strip()
+            if out:
+                duration = int(float(out)) + 1
+        except Exception:
+            pass
+
+        ts_url = f"/api/cloud/files/open?path={request.args.get('path')}"
+        manifest = (
+            "#EXTM3U\n"
+            "#EXT-X-VERSION:3\n"
+            f"#EXT-X-TARGETDURATION:{duration}\n"
+            "#EXT-X-MEDIA-SEQUENCE:0\n"
+            "#EXT-X-PLAYLIST-TYPE:VOD\n"
+            f"#EXTINF:{duration}.0,\n"
+            f"{ts_url}\n"
+            "#EXT-X-ENDLIST\n"
+        )
+        resp = make_response(manifest)
+        resp.headers['Content-Type'] = 'application/vnd.apple.mpegurl'
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
+
+    # ── Public share endpoint: no auth required ────────────────────────────
+    @app.route('/s/<token>')
+    def public_share(token):
+        import datetime as _dt
+        conn = _ahb_db()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT user_id, path, expires_at FROM cloud_shares WHERE token = ?",
+            (token,),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return "Share link not found or revoked", 404
+        if row['expires_at']:
+            try:
+                if _dt.datetime.fromisoformat(row['expires_at']) < _dt.datetime.utcnow():
+                    conn.close()
+                    return "Share link expired", 410
+            except Exception:
+                pass
+        user_dir = os.path.join(CLOUD_STORAGE, str(row['user_id']))
+        target = os.path.realpath(os.path.join(user_dir, row['path']))
+        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+            conn.close()
+            return "File no longer available", 404
+        conn.execute(
+            "UPDATE cloud_shares SET access_count = access_count + 1, "
+            "last_accessed_at = datetime('now') WHERE token = ?", (token,))
+        conn.commit()
+        conn.close()
+        # Download-as-attachment by default; add ?inline=1 to preview in-browser.
+        inline = request.args.get('inline') in ('1', 'true', 'yes')
+        return send_from_directory(os.path.dirname(target),
+                                   os.path.basename(target),
+                                   as_attachment=not inline)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -196,8 +196,13 @@ def file_receipt():
     raw_text   = (ocr.get("ocr_raw") or "") if isinstance(ocr, dict) else ""
 
     # Fall back to curate fields if OCR missed something
-    vendor       = structured.get("store_name") or analysis.get("entity") or ""
-    receipt_date = structured.get("purchase_date") or analysis.get("doc_date") or ""
+    vendor         = structured.get("store_name") or analysis.get("entity") or ""
+    store_location = structured.get("store_location") or ""
+    teller_name    = structured.get("teller_name") or ""
+    purchase_time  = structured.get("purchase_time") or ""
+    # Receipt date MUST be the date printed on the receipt. If OCR didn't find
+    # one, leave it blank rather than defaulting to today — Serge was explicit.
+    receipt_date = structured.get("purchase_date") or ""
     total        = structured.get("total") or 0
     subtotal     = structured.get("subtotal") or 0
     tax_amount   = structured.get("tax_amount") or 0
@@ -205,6 +210,23 @@ def file_receipt():
     payment      = structured.get("payment_method") or ""
     items        = structured.get("items") or []
     description  = analysis.get("summary") or ""
+
+    # Normalize vendor + infer category via vendor_kb (fuzzy-match against
+    # seed + 889 rows of history + learned aliases). Leaves raw vendor alone
+    # when no strong match — prevents garbage-in/garbage-out collapses.
+    try:
+        from vendor_kb import match_vendor, suggest_category_from_items
+        canonical, cat_hint, vconf = match_vendor(vendor)
+        if canonical and vconf >= 0.85:
+            vendor = canonical
+        if not category and cat_hint:
+            category = cat_hint
+        if not category:
+            item_cat = suggest_category_from_items(items)
+            if item_cat:
+                category = item_cat
+    except Exception:
+        pass
 
     # Project resolution (optional for receipts)
     project_id, proj_note = resolve_project(analysis.get("project_hint") or "")
@@ -222,12 +244,14 @@ def file_receipt():
             """INSERT INTO ahb_receipts
                (id, project_id, vendor, amount, category, description,
                 receipt_date, file_path, ocr_text, created_by,
-                store_name, payment_method, total, subtotal, tax_amount,
+                store_name, store_location, teller_name, purchase_time,
+                payment_method, total, subtotal, tax_amount,
                 items_json, ocr_raw, ocr_structured, year, image_path)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (rid, project_id, vendor, float(total or 0), category, description,
              receipt_date, file_path, raw_text, agent_id,
-             vendor, payment, float(total or 0), float(subtotal or 0), float(tax_amount or 0),
+             vendor, store_location, teller_name, purchase_time,
+             payment, float(total or 0), float(subtotal or 0), float(tax_amount or 0),
              json.dumps(items), raw_text, json.dumps(structured), year, file_path),
         )
         conn.commit()
@@ -246,6 +270,8 @@ def file_receipt():
         "project_id": project_id,
         "project_note": proj_note,
         "vendor": vendor,
+        "store_location": store_location,
+        "teller_name": teller_name,
         "total": total,
         "receipt_date": receipt_date,
         "category": category,

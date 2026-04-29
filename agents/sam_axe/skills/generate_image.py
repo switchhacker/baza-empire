@@ -57,29 +57,106 @@ CONSISTENCY_NEGATIVE = (
     "feng shui random mix, each one different"
 )
 
-raw_prompt = args.get("prompt", "a beautiful landscape, photorealistic, 8k")
+raw_prompt = args.get("prompt", "a beautiful landscape, photorealistic, 8k") or ""
+if not raw_prompt.strip():
+    # Refuse silently — caller passed an empty prompt; running with just
+    # ControlNet edges + model bias produced gender drift in the past.
+    print(json.dumps({"error": "Empty prompt — refusing to generate from edges + model bias alone."}))
+    sys.exit(1)
 prompt_lower = raw_prompt.lower()
 
-# Detect if prompt involves multiple/paired items
+# Explicit style override from caller (e.g. "oil_painting") takes precedence
+# over keyword detection in the prompt — the LLM-drafted prompt may not
+# contain the keywords but we still know the intent.
+explicit_style = (args.get("style") or "").lower()
+subject_gender = (args.get("subject_gender") or "").lower()
+
+# ── Style detection ─────────────────────────────────────────────────────────
+# Painted/illustrated styles need a different checkpoint AND prompt steering
+# than photorealism, otherwise the photo-realism models render "oil on canvas
+# portrait" as a red-carpet headshot.
+PAINTING_KEYWORDS = (
+    "oil on canvas", "oil painting", "oil-on-canvas", "watercolor", "watercolour",
+    "acrylic painting", "gouache", "ink wash", "pen and ink", "charcoal",
+    "pastel", "impressionist", "expressionist", "renaissance", "baroque",
+    "rembrandt", "sargent", "vermeer", "van gogh", "monet",
+    "illustration", "illustrated", "concept art", "matte painting",
+    "anime", "manga", "cartoon", "comic", "graphic novel", "storybook",
+    "sketch", "etching", "lithograph", "woodcut", "engraving",
+    "painterly", "brush strokes", "brush stroke", "canvas texture", "gallery",
+)
+is_painting = explicit_style in ("oil_painting", "painting", "illustration") or \
+              any(kw in prompt_lower for kw in PAINTING_KEYWORDS)
+
+PORTRAIT_KEYWORDS = (
+    "avatar", "portrait", "headshot", "head shot", "bust",
+    "character design", "character sheet", "face study",
+)
+is_portrait = any(kw in prompt_lower for kw in PORTRAIT_KEYWORDS)
+
 needs_consistency = any(kw in prompt_lower for kw in PAIR_KEYWORDS)
 
-if needs_consistency:
-    prompt = raw_prompt + CONSISTENCY_SUFFIX
-    base_negative = (
-        "blurry, distorted, low quality, watermark, text, nsfw, ugly, deformed, "
-        "extra limbs, bad anatomy, out of frame, " + CONSISTENCY_NEGATIVE
+prompt = raw_prompt
+extra_negative_parts = []
+
+if is_painting:
+    if "oil" in prompt_lower or "painterly" in prompt_lower or "impressionist" in prompt_lower:
+        style_suffix = (
+            ", oil on canvas, traditional oil painting, visible brush strokes, "
+            "rich impasto texture, canvas weave, painterly, masterwork, museum quality, "
+            "John Singer Sargent style, Rembrandt lighting, gallery lit, "
+            "fine art, classical portraiture"
+        )
+    else:
+        style_suffix = ", traditional artwork, hand-painted, illustrated, fine art, gallery quality"
+    prompt = raw_prompt + style_suffix
+    extra_negative_parts.append(
+        "photograph, photo, photorealistic, photorealism, dslr, raw photo, "
+        "cinematic still, film still, hdr, 4k photo, 8k photo, candid photo, "
+        "red carpet, paparazzi, celebrity headshot, magazine photo, instagram, "
+        "sharp focus photography, bokeh, lens flare, smooth digital render, "
+        "3d render, octane render, cgi, plastic skin, airbrushed"
     )
-    # Bump CFG for tighter prompt adherence on consistency-sensitive images
+
+if is_portrait:
+    extra_negative_parts.append(
+        "extra fingers, missing fingers, malformed hands, asymmetric eyes, "
+        "cross-eyed, lazy eye, distorted face, two heads, multiple people, crowd"
+    )
+
+if subject_gender == "male":
+    extra_negative_parts.append(
+        "woman, female, girl, feminine, breasts, cleavage, lipstick, makeup, "
+        "long flowing hair, eyeshadow, mascara, earrings, necklace, dress, "
+        "blouse, skirt, androgynous"
+    )
+elif subject_gender == "female":
+    extra_negative_parts.append(
+        "man, male, boy, masculine, beard, mustache, stubble, adam's apple, "
+        "muscular jaw, broad shoulders, suit and tie, androgynous"
+    )
+
+if needs_consistency:
+    prompt = prompt + CONSISTENCY_SUFFIX
+    extra_negative_parts.append(CONSISTENCY_NEGATIVE)
+
+base_negative = "blurry, distorted, low quality, watermark, text, nsfw, ugly, deformed, extra limbs, bad anatomy, out of frame"
+if extra_negative_parts:
+    base_negative = base_negative + ", " + ", ".join(extra_negative_parts)
+
+if is_painting:
+    default_cfg = 9.0
+    default_steps = 40
+elif needs_consistency:
     default_cfg = 8.5
     default_steps = 35
 else:
-    prompt = raw_prompt
-    base_negative = (
-        "blurry, distorted, low quality, watermark, text, nsfw, ugly, deformed, "
-        "extra limbs, bad anatomy, out of frame"
-    )
     default_cfg = 7.0
     default_steps = 30
+
+# Turbo/Lightning SDXL variants need very few steps + low CFG, otherwise they
+# blow VRAM on activations and produce burnt/fried output. Auto-detect.
+_pending_model_name = (args.get("model") or "").lower()
 
 negative  = args.get("negative_prompt", base_negative)
 steps     = int(args.get("steps", default_steps))
@@ -101,13 +178,18 @@ except requests.exceptions.Timeout:
     print(json.dumps({"error": "SD WebUI timed out — still loading? Try again in 30s."}))
     sys.exit(1)
 
-# ── Detect best available model (prefer SDXL) ───────────────────────────────
-def pick_model():
+# ── Detect best available model (style-aware) ───────────────────────────────
+def pick_model(prefer_painted: bool = False):
     try:
         r = requests.get(f"{SDWEBUI_URL}/sdapi/v1/sd-models", timeout=5)
         models = r.json()
-        # Prefer Juggernaut, then RealVis, then DreamShaper, then any SDXL
-        priority = ["juggernaut", "realvis", "dreamshaper", "sdxl", "base"]
+        # DreamShaper handles painted/illustrated styles much better than
+        # photoreal models like RealVis or Juggernaut, which collapse
+        # "oil painting portrait" into red-carpet headshots.
+        if prefer_painted:
+            priority = ["dreamshaper", "sdxl", "base", "juggernaut", "realvis"]
+        else:
+            priority = ["juggernaut", "realvis", "dreamshaper", "sdxl", "base"]
         for kw in priority:
             for m in models:
                 if kw.lower() in m.get("model_name","").lower():
@@ -116,7 +198,15 @@ def pick_model():
     except:
         return None
 
-model = args.get("model") or pick_model()
+model = args.get("model") or pick_model(prefer_painted=is_painting)
+
+# Auto-tune for Turbo / Lightning models (use few steps + low CFG)
+_model_lower = (model or "").lower()
+_is_turbo = any(tag in _model_lower for tag in ("turbo", "lightning", "lcm", "hyper"))
+if _is_turbo and "steps" not in args and "cfg_scale" not in args:
+    steps = 8
+    cfg_scale = 2.0
+    sampler = args.get("sampler", "DPM++ SDE Karras")
 
 # ── Set model if specified ───────────────────────────────────────────────────
 if model:

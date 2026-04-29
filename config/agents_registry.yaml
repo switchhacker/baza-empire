@@ -1,0 +1,15 @@
+# Named admin identities for AHB123 attribution (receipts, documents, invoices).
+# The dashboard UI renders "Filed by: <display>" using this registry; the
+# `created_by` column on ahb_receipts / ahb_documents stores the `id`.
+# Serge is listed so that edits he makes directly in the UI show up as his
+# actions, not as agent activity.
+admins:
+  - id: serge
+    display: "Serge"
+    role: "Owner"
+  - id: phil_hass
+    display: "Phil"
+    role: "Legal / Finance / Docs"
+  - id: specter_voss
+    display: "Specter"
+    role: "General / Super-Agent"

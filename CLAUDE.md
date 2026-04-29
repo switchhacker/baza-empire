@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Baza Empire Agent Framework v3 is a multi-agent autonomous system for business operations (All Home Building Co LLC + crypto mining infrastructure). 8 AI agents (Simon, Claw, Phil, Sam, Rex, Duke, Scout, Nova) run as Telegram bots powered by local Ollama LLMs, sharing persistent PostgreSQL memory, a skill execution system, and a Flask dashboard.
+Baza Empire Agent Framework v3 is a multi-agent autonomous system for business operations (All Home Building Co LLC + crypto mining infrastructure). 9 AI agents (Simon, Claw, Phil, Sam, Rex, Duke, Scout, Nova, Specter) run as Telegram bots powered by local Ollama LLMs (Specter uses Ollama cloud models), sharing persistent PostgreSQL memory, a skill execution system, and a Flask dashboard.
+
+Specter Voss is Serge's general / super-agent with sudo access to every tool, skill, and dataset across the empire. He runs on the phantom NUC via a separate **OpenClaw** runtime (not BaseAgent), with confirm-before-act as a hard rule — silence is not consent.
 
 ## Running the System
 
@@ -35,9 +37,13 @@ systemctl status baza-agents.service
 
 All must be running before agents start:
 - **PostgreSQL** `localhost:5432` db=`baza_agents` — context, memory, skills, task journal
-- **Ollama AMD** `localhost:11434` — AMD RX 6700 XT (Vulkan)
-- **Ollama NVIDIA** `localhost:11435` — NVIDIA RTX 3070 (CUDA)
+- **Ollama AMD (primary)** `localhost:11434` — AMD RX 6700 XT (Vulkan) — `ollama.service`
+- **Ollama CPU** `localhost:11436` — big-model fallback — `ollama-cpu.service`
+- **Ollama AMD (secondary)** `localhost:11437` — AMD Vulkan — `ollama-amd.service`
 - **Redis** `localhost:6379` — chat history
+- **Stable Diffusion WebUI Forge** `baza-sd-webui.service` — NVIDIA RTX 3070 (CUDA), used by Sam for imaging
+
+`scripts/ollama_watchdog.sh` (every 5 min via systemd timer) only kills *stuck* runners (>200% CPU, >8 min). Do NOT re-add a "duplicate serve" kill block — the 3 Ollama instances are intentional and each is owned by its own systemd unit. A prior zombie-kill block broke briefings (fixed in cb0004a).
 
 Key env vars: `TELEGRAM_SIMON_BATELY`, `TELEGRAM_CLAW_BATTO`, `TELEGRAM_PHIL_HASS`, `TELEGRAM_SAM_AXE`, `DB_PASSWORD`
 
@@ -61,7 +67,19 @@ There are **two parallel agent systems**:
 1. **`core/base_agent.py`** — newer architecture used by per-agent classes in `agents/*/agent.py`. Uses `ContextMixin` for PostgreSQL memory, skill patterns, auto-summarization every 15 messages.
 2. **`core/agent.py`** — legacy/active architecture with Simon's DISPATCH system, direct tool calls (mining, crypto, docker), group chat handling, and more inline features.
 
-`config/agents.yaml` is the single source of truth for agent names, models, system prompts, and roles.
+`config/agents.yaml` is the single source of truth for agent names, models, system prompts, and roles — **except for Specter on phantom**, which loads persona from the OpenClaw files below.
+
+### Specter's OpenClaw Runtime (phantom-only)
+
+Specter on phantom (NUC) does NOT run `agents/specter_voss/agent.py`. He runs `agents/specter_voss/openclaw/telegram_bridge.py`, which shells out to the `/usr/bin/openclaw` binary. OpenClaw loads its persona from:
+
+- `agents/specter_voss/openclaw/IDENTITY.md` — who he is
+- `agents/specter_voss/openclaw/MISSION.md` — mandate
+- `agents/specter_voss/openclaw/SOUL.md` — personality/tone
+- `agents/specter_voss/openclaw/USER.md` — who Serge is
+- `agents/specter_voss/openclaw/config.yaml` — model + runtime config
+
+When changing Specter's behavior on phantom, edit these files (NOT `agent.py` or `config/agents.yaml`). Phantom's `~/baza-empire/agent-framework-v3` was bootstrapped via scp and is not a git repo — sync via rsync/scp, then restart `baza-specter.service` on phantom.
 
 ### Skill System
 
@@ -134,7 +152,9 @@ litellm --config configs/litellm.yaml --port 4000
 | `core/task_runner.py` | Autonomous background task executor |
 | `dashboard/app.py` | Flask control center |
 | `agents/*/agent.py` | Per-agent classes with persona overrides |
+| `agents/specter_voss/openclaw/*.md` | Specter's phantom persona (OpenClaw runtime) |
 | `skills/shared/` | Skills available to all agents |
+| `scripts/ollama_watchdog.sh` | Kills stuck runners only — do not add "duplicate serve" logic |
 
 ## Adding a New Agent
 

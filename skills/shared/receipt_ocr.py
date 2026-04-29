@@ -21,7 +21,9 @@ import requests
 from pathlib import Path
 
 LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
-LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "baza-litellm")
+LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "baza-litellm-internal")
+OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "llava:13b")
 
 EMPTY_STRUCTURED = {
     "store_name": "",
@@ -57,24 +59,97 @@ def run_tesseract(image_path: str) -> str:
     return raw.strip()
 
 
+def _fresh_structured() -> dict:
+    """Deep-clone EMPTY_STRUCTURED so mutable defaults (items list) don't leak
+    between parses. `dict(EMPTY_STRUCTURED)` was a shallow copy — items was
+    shared across every call, so successive receipts accumulated each other's
+    items and got mis-categorized."""
+    import copy
+    return copy.deepcopy(EMPTY_STRUCTURED)
+
+
+def _looks_like_garbage(s: str) -> bool:
+    """Heuristic — True if a string is OCR noise, not a real label.
+    Bad photos (rotated, blurry, dim) make Tesseract emit lines like
+    `>a , WFA wm a \\ SN fact?` — single chars and punctuation with no
+    real vendor-shaped word. Refuse to use those as store_name so the
+    review UI doesn't display garbage as the prefilled value."""
+    if not s or len(s) < 3:
+        return True
+    tokens = re.findall(r"\S+", s)
+    if not tokens:
+        return True
+    # Lots of 1-char tokens = junk (e.g. ">a , WFA wm a \ SN")
+    short_tokens = sum(1 for t in tokens if len(t) <= 2)
+    if len(tokens) >= 3 and short_tokens / len(tokens) >= 0.55:
+        return True
+    # At least one ≥4-char run of letters with a vowel — real words have these.
+    long_words = re.findall(r"[A-Za-z]{4,}", s)
+    has_vowel_word = any(re.search(r"[AEIOUaeiou]", w) for w in long_words)
+    # Vendor names like "AT&T" survive (uppercase letters around & or ').
+    looks_like_brand = bool(re.search(r"[A-Z]{2,}(?:\s*[&'\-]\s*[A-Z]+)+", s)) \
+        or bool(re.search(r"[A-Z]{3,}", s))
+    if not (has_vowel_word or looks_like_brand):
+        return True
+    # Mostly punctuation/whitespace
+    alnum = sum(1 for c in s if c.isalnum())
+    if alnum / len(s) < 0.5:
+        return True
+    return False
+
+
 def parse_ocr_text(raw: str) -> dict:
     """Parse common receipt patterns from raw OCR text."""
-    result = dict(EMPTY_STRUCTURED)
+    result = _fresh_structured()
     lines = raw.splitlines()
 
-    # Store name — typically the first non-empty line
+    # Store name — first non-empty line that doesn't look like OCR garbage.
+    # Previous version blindly grabbed line 1, so a junk row like
+    # `>a , WFA wm a \ SN fact?` ended up displayed as the store name in the
+    # review UI. If no line passes the sanity check, leave store_name empty
+    # (the LLM step or user edit can fill it in).
     for line in lines:
         cleaned = line.strip()
-        if cleaned and len(cleaned) > 2:
+        if cleaned and not _looks_like_garbage(cleaned):
             result["store_name"] = cleaned
             break
 
-    # Store address — look for lines with common address patterns
-    for line in lines:
+    # Store address — score each candidate line and pick the strongest.
+    # Previous version grabbed "DUNKIN #340123" because bare 5-digit runs look
+    # like zip codes. Tighten: require either (a) street suffix adjacent to
+    # a number, or (b) a proper city/state/ZIP pattern.
+    street_rx = re.compile(
+        r'\b\d+\s+[\w\s]{2,40}\b(?:st|street|ave|avenue|blvd|boulevard|'
+        r'rd|road|dr|drive|ln|lane|way|ct|court|pkwy|parkway|hwy|highway|'
+        r'pl|place|ter|terrace|cir|circle|tpke|turnpike)\b',
+        re.I,
+    )
+    citystate_rx = re.compile(
+        r'\b[A-Z][A-Za-z\- ]{1,30},?\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?\b'
+    )
+    store_num_rx = re.compile(r'#\s*\d+')  # "DUNKIN #340123"
+
+    addr_candidates = []  # (score, line)
+    for i, line in enumerate(lines[:15]):  # address is usually in first 15 lines
         stripped = line.strip()
-        if re.search(r'\d{5}', stripped) or re.search(r'\d+\s+\w+\s+(st|ave|blvd|rd|dr|ln|way|ct|pkwy|hwy)', stripped, re.I):
-            result["store_location"] = stripped
-            break
+        if not stripped or len(stripped) < 6:
+            continue
+        score = 0
+        if citystate_rx.search(stripped):
+            score += 5
+        if street_rx.search(stripped):
+            score += 4
+        if re.search(r'\b\d{5}(?:-\d{4})?\b', stripped) and not store_num_rx.search(stripped):
+            score += 2
+        # Penalize lines that look like a store-name + store-number
+        if store_num_rx.search(stripped) and not street_rx.search(stripped):
+            score -= 3
+        if score >= 3:
+            addr_candidates.append((score, stripped))
+
+    if addr_candidates:
+        addr_candidates.sort(key=lambda x: x[0], reverse=True)
+        result["store_location"] = addr_candidates[0][1]
 
     # Date patterns
     for line in lines:
@@ -96,29 +171,90 @@ def parse_ocr_text(raw: str) -> dict:
             result["purchase_time"] = m.group(1).strip()
             break
 
-    # Total — look for "TOTAL" line (not subtotal, not tax)
+    # Subtotal (parse first so total-scoring can use it)
     for line in lines:
-        if re.search(r'\btotal\b', line, re.I) and not re.search(r'sub\s*total|tax', line, re.I):
-            m = re.search(r'\$?\s*([\d,]+\.\d{2})', line)
-            if m:
-                result["total"] = float(m.group(1).replace(",", ""))
-                break
-
-    # Subtotal
-    for line in lines:
-        if re.search(r'sub\s*total', line, re.I):
+        if re.search(r'sub\s*-?\s*total', line, re.I):
             m = re.search(r'\$?\s*([\d,]+\.\d{2})', line)
             if m:
                 result["subtotal"] = float(m.group(1).replace(",", ""))
                 break
 
-    # Tax
+    # Tax — sum all tax lines (handles "TAX1", "STATE TAX", "LOCAL TAX")
+    tax_sum = 0.0
     for line in lines:
-        if re.search(r'\btax\b', line, re.I):
+        if re.search(r'\btax\b', line, re.I) and not re.search(r'tax\s*id|tax\s*exempt', line, re.I):
             m = re.search(r'\$?\s*([\d,]+\.\d{2})', line)
             if m:
-                result["tax_amount"] = float(m.group(1).replace(",", ""))
-                break
+                tax_sum += float(m.group(1).replace(",", ""))
+    if tax_sum > 0:
+        result["tax_amount"] = round(tax_sum, 2)
+
+    # Total — score every money-line and pick the best candidate.
+    # Positive keywords boost, negative keywords subtract. Bonus for bottom
+    # of receipt (receipts put the grand total near the end) and for values
+    # that are math-consistent with subtotal + tax.
+    money_rx = re.compile(r'\$?\s*([\d,]+\.\d{2})')
+    candidates = []  # (score, amount, line)
+    n_lines = len(lines)
+    for i, raw_line in enumerate(lines):
+        line_strip = raw_line.strip()
+        if not line_strip:
+            continue
+        m = money_rx.search(line_strip)
+        if not m:
+            continue
+        try:
+            amt = float(m.group(1).replace(",", ""))
+        except Exception:
+            continue
+        if amt <= 0:
+            continue
+        lower = line_strip.lower()
+        score = 0
+
+        # Negative signals — strongly exclude subtotals + pre-tax/tax-only lines
+        if re.search(r'\bsub\s*-?\s*total\b|\bsub\b', lower):
+            score -= 8
+        if re.search(r'\bpre[- ]?tax\b', lower):
+            score -= 8
+        if re.search(r'^\s*tax\b', lower):
+            score -= 4
+        if re.search(r'\bchange\b|\bcash\s*back\b', lower):
+            score -= 6
+        if re.search(r'\btip\b|\bgratuity\b', lower):
+            score -= 3
+
+        # Positive signals
+        if re.search(r'\bgrand\s*total\b|\bamount\s*due\b|\bbalance\s*due\b', lower):
+            score += 7
+        elif re.search(r'\btotal\b', lower) and score > -4:
+            score += 5
+        if re.search(r'\btotal\s*charged?\b|\bcharge\s*total\b|\bnew\s*balance\b', lower):
+            score += 5
+        if re.search(r'\bvisa\b|\bmaster\s*card\b|\bmastercard\b|\bdebit\b|\bcredit\b|\bamex\b', lower):
+            # Card-tender line often carries the final charge
+            score += 2
+
+        # Math consistency bonus: if value >= subtotal + tax (within $0.05) it's
+        # likely the final total.
+        if result["subtotal"] > 0 and result["tax_amount"] >= 0:
+            expected = result["subtotal"] + result["tax_amount"]
+            if abs(amt - expected) < 0.05:
+                score += 4
+            elif amt < result["subtotal"] - 0.01:
+                # Can't be a total if smaller than subtotal
+                score -= 5
+
+        # Position bonus: lower third of receipt
+        if n_lines and i >= int(n_lines * 0.66):
+            score += 1
+
+        if score > -2:  # keep weakly-positive candidates
+            candidates.append((score, amt, line_strip))
+
+    if candidates:
+        candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        result["total"] = candidates[0][1]
 
     # Payment method
     for line in lines:
@@ -142,12 +278,47 @@ def parse_ocr_text(raw: str) -> dict:
             result["payment_method"] = "Check"
             break
 
-    # Teller / cashier
-    for line in lines:
-        m = re.search(r'(?:cashier|teller|server|clerk|associate|emp)[:\s#]*(.+)', line, re.I)
+    # Teller / cashier — scan both same-line labels and adjacent lines.
+    teller_keywords = re.compile(
+        r'(?:cashier|cshr|teller|server|clerk|associate|sales\s*person|salesperson|'
+        r'by|op\b|operator|emp(?:loyee)?|checkout|rep)',
+        re.I,
+    )
+    teller_inline = re.compile(
+        r'(?:cashier|cshr|teller|server|clerk|associate|sales\s*person|salesperson|'
+        r'by|op|operator|emp(?:loyee)?|checkout|rep)'
+        r'\s*[:#.]?\s*(?:id\s*)?(?:\d+\s*[-:/])?\s*([A-Za-z][A-Za-z \'\-.]{1,40})',
+        re.I,
+    )
+    cap_name_rx = re.compile(r'\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z\.]+){0,2})\b')
+
+    def _clean_teller(raw: str) -> str:
+        s = raw.strip(" :#-.")
+        s = re.sub(r"^\d+\s+", "", s)  # strip leading numeric IDs
+        s = re.sub(r"\s+\d+\s*$", "", s)  # strip trailing numeric IDs
+        s = s.strip()
+        # Reject false positives (all caps non-name words)
+        if s.lower() in {"your", "the", "today", "thanks", "thank you",
+                         "receipt", "customer", "welcome", "sale"}:
+            return ""
+        return s
+
+    for i, line in enumerate(lines):
+        m = teller_inline.search(line)
         if m:
-            result["teller_name"] = m.group(1).strip()
-            break
+            cleaned = _clean_teller(m.group(1))
+            if cleaned and len(cleaned) >= 2:
+                result["teller_name"] = cleaned
+                break
+        # Adjacent-line scan: keyword line followed by a name line
+        if teller_keywords.search(line) and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            nm = cap_name_rx.search(nxt)
+            if nm:
+                cleaned = _clean_teller(nm.group(1))
+                if cleaned and len(cleaned) >= 2:
+                    result["teller_name"] = cleaned
+                    break
 
     # Items — lines with a price pattern that aren't total/tax/subtotal
     skip_keywords = {"total", "subtotal", "sub total", "tax", "change", "cash", "credit", "debit", "visa", "mastercard"}
@@ -180,6 +351,34 @@ def parse_ocr_text(raw: str) -> dict:
 
 # ── LLM Vision Analysis ────────────────────────────────────────────────────────
 
+def _top_vendors_hint(limit: int = 10) -> str:
+    """Pull the most-filed vendors from ahb_receipts for prompt grounding.
+    Falls back to a seed list if the DB is unreachable."""
+    try:
+        import sqlite3
+        from pathlib import Path as _P
+        db = _P(__file__).resolve().parent.parent.parent / "dashboard" / "baza_projects.db"
+        if not db.exists():
+            raise RuntimeError("db missing")
+        conn = sqlite3.connect(str(db))
+        rows = conn.execute(
+            """SELECT COALESCE(NULLIF(store_name,''), vendor) AS name, COUNT(*) n
+                 FROM ahb_receipts
+                WHERE COALESCE(NULLIF(store_name,''), vendor) IS NOT NULL
+                  AND COALESCE(NULLIF(store_name,''), vendor) != ''
+                GROUP BY LOWER(COALESCE(NULLIF(store_name,''), vendor))
+                ORDER BY n DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        names = [r[0] for r in rows if r[0]]
+        if names:
+            return ", ".join(names)
+    except Exception:
+        pass
+    return "Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's"
+
+
 def run_llm_analysis(image_path: str) -> dict:
     """Send receipt image to a vision-capable LLM via LiteLLM proxy."""
     img_path = Path(image_path)
@@ -189,15 +388,33 @@ def run_llm_analysis(image_path: str) -> dict:
 
     img_b64 = base64.b64encode(img_path.read_bytes()).decode("utf-8")
 
+    vendor_hint = _top_vendors_hint()
+
     prompt = (
-        "Analyze this receipt image. Extract ALL data as JSON with these fields: "
-        "store_name, store_location (full address), teller_name (cashier/server), "
-        "purchase_date (YYYY-MM-DD), purchase_time (HH:MM), "
-        "items (array of {name, quantity, price}), subtotal, tax_amount, total, "
-        "payment_method (Cash/Credit Card/Debit Card/Check), "
-        "payment_details (last 4 digits if card), "
-        "category (Materials/Tools/Fuel/Food/Office supplies/Clothes). "
-        "Return ONLY valid JSON."
+        "Extract structured data from this receipt image as JSON.\n"
+        f"Likely vendors (we see these often): {vendor_hint}. "
+        "If the store matches one of these, use its canonical name; "
+        "OCR typos like 'The homedepot' → 'Home Depot' are expected.\n\n"
+        "Fields to extract:\n"
+        "- store_name: vendor name, canonicalized\n"
+        "- store_location: full street address + city/state if printed\n"
+        "- teller_name: cashier/server name; often labeled Cashier/CSHR/Server/Op/By; "
+        "  strip leading IDs; leave empty if not clearly a person's name\n"
+        "- purchase_date: YYYY-MM-DD (the date printed on the receipt, not today)\n"
+        "- purchase_time: HH:MM (24h) if printed\n"
+        "- items: [{name, quantity, price}]\n"
+        "- subtotal: pre-tax subtotal as number\n"
+        "- tax_amount: total tax as number (sum state+local if multiple tax lines)\n"
+        "- total: GRAND TOTAL / Amount Due / Balance Due — the final charge, "
+        "  NEVER the subtotal. If subtotal+tax is printed, the total equals that.\n"
+        "- payment_method: Cash/Credit Card/Debit Card/Check\n"
+        "- payment_details: last 4 digits if card\n"
+        "- category: one of Materials, Tools, Fuel, Food, Office supplies, Clothes. "
+        "  Rules: Home Depot / Lowe's / Sherwin-Williams / Ace / 84 Lumber / "
+        "  hardware stores = Materials. Gallons/unleaded/premium/diesel = Fuel "
+        "  (even at Wawa/Sheetz/7-Eleven). Grocery or coffee/food chains = Food. "
+        "  Specialty tool stores (Harbor Freight / Snap-On / Matco) = Tools.\n\n"
+        "Return ONLY valid JSON. Use empty string for unknown text fields and 0 for unknown numbers."
     )
 
     payload = {
@@ -220,18 +437,24 @@ def run_llm_analysis(image_path: str) -> dict:
         "temperature": 0.1,
     }
 
-    resp = requests.post(
-        f"{LITELLM_BASE}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {LITELLM_KEY}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=60,
-    )
-    resp.raise_for_status()
-
-    content = resp.json()["choices"][0]["message"]["content"]
+    try:
+        resp = requests.post(
+            f"{LITELLM_BASE}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {LITELLM_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+    except Exception as cloud_err:
+        # LiteLLM proxy down, no cloud key, or routed to a text-only fallback.
+        # Drop to local Ollama vision so OCR garbage doesn't end up in fields.
+        content = _ollama_vision_analyze(prompt, img_b64, mime_type)
+        if not content:
+            raise cloud_err
 
     # Strip markdown code fences if present
     content = content.strip()
@@ -244,33 +467,90 @@ def run_llm_analysis(image_path: str) -> dict:
     return parsed
 
 
-def merge_results(ocr_data: dict, llm_data: dict) -> dict:
+def _ollama_vision_analyze(prompt: str, img_b64: str, mime_type: str) -> str:
+    """Local vision fallback — Ollama llava. Returns the model's raw text
+    response, or '' on failure."""
+    try:
+        resp = requests.post(
+            f"{OLLAMA_BASE}/api/generate",
+            json={
+                "model": OLLAMA_VISION_MODEL,
+                "prompt": prompt + "\n\nReturn ONLY a JSON object — no commentary.",
+                "images": [img_b64],
+                "stream": False,
+                "options": {"temperature": 0.1, "num_predict": 1500},
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        return (resp.json() or {}).get("response", "") or ""
+    except Exception:
+        return ""
+
+
+def merge_results(ocr_data: dict, llm_data: dict, raw_text: str = "") -> dict:
     """Merge OCR and LLM results, preferring LLM values when OCR is empty/zero."""
-    merged = dict(EMPTY_STRUCTURED)
+    merged = _fresh_structured()
 
     for key in EMPTY_STRUCTURED:
         ocr_val = ocr_data.get(key, EMPTY_STRUCTURED[key])
         llm_val = llm_data.get(key, EMPTY_STRUCTURED[key])
 
         if key == "items":
-            # Prefer LLM items if it found more, or if OCR found none
             ocr_items = ocr_val if isinstance(ocr_val, list) else []
             llm_items = llm_val if isinstance(llm_val, list) else []
             merged[key] = llm_items if len(llm_items) >= len(ocr_items) else ocr_items
         elif isinstance(EMPTY_STRUCTURED[key], (int, float)):
-            # Prefer non-zero value; if both non-zero prefer LLM
             if llm_val and llm_val != 0:
                 merged[key] = llm_val
             else:
                 merged[key] = ocr_val
         else:
-            # Prefer non-empty string; if both non-empty prefer LLM
             if llm_val:
                 merged[key] = llm_val
             else:
                 merged[key] = ocr_val
 
+    _normalize_vendor_and_category(merged, raw_text)
     return merged
+
+
+# ── Vendor + category post-processing ─────────────────────────────────────────
+
+def _normalize_vendor_and_category(merged: dict, raw_text: str = "") -> None:
+    """In-place: normalize store_name via vendor_kb, apply fuel-detection override."""
+    try:
+        from vendor_kb import match_vendor, suggest_category_from_items
+    except Exception:
+        return
+
+    # Normalize vendor (store_name) using the knowledge base
+    raw_name = merged.get("store_name") or ""
+    if raw_name:
+        canon, cat_hint, conf = match_vendor(raw_name)
+        if canon and conf >= 0.85:
+            merged["store_name"] = canon
+            if not merged.get("category") and cat_hint:
+                merged["category"] = cat_hint
+
+    # Fuel detection — if OCR text shows "X.XX gal" / "gallons" / pump keywords,
+    # force category=Fuel regardless of what LLM said. Wawa/Sheetz/7-Eleven
+    # are mixed food+fuel; the pump signal disambiguates the purchase type.
+    fuel_signals = re.compile(
+        r'(\b\d+\.\d{2,3}\s*(?:gal|gallon|gallons|g\b))|'
+        r'(\b(?:regular|unleaded|premium|diesel|pump|fuel|gas)\b[^\n]{0,30}\$?\s*[\d,]+\.\d{2})|'
+        r'(\bprice\s*/\s*gal\b)|(\bgal\s*price\b)',
+        re.I,
+    )
+    hay = "\n".join(filter(None, [raw_text, raw_name, merged.get("store_location", "")]))
+    if fuel_signals.search(hay):
+        merged["category"] = "Fuel"
+
+    # Item-based tiebreaker (food keywords in items → Food) if still empty
+    if not merged.get("category"):
+        item_cat = suggest_category_from_items(merged.get("items") or [])
+        if item_cat:
+            merged["category"] = item_cat
 
 
 # ── Main Skill Entry ────────────────────────────────────────────────────────────
@@ -290,8 +570,8 @@ def analyze_receipt(image_path: str, mode: str = "full") -> dict:
         return {"success": False, "error": f"Image not found: {image_path}"}
 
     ocr_raw = ""
-    ocr_data = dict(EMPTY_STRUCTURED)
-    llm_data = dict(EMPTY_STRUCTURED)
+    ocr_data = _fresh_structured()
+    llm_data = _fresh_structured()
     errors = []
 
     # Step 1: Tesseract OCR
@@ -326,11 +606,13 @@ def analyze_receipt(image_path: str, mode: str = "full") -> dict:
 
     # Step 3: Combine results
     if mode == "full":
-        structured = merge_results(ocr_data, llm_data)
+        structured = merge_results(ocr_data, llm_data, raw_text=ocr_raw)
     elif mode == "llm_only":
         structured = llm_data
+        _normalize_vendor_and_category(structured, raw_text="")
     else:
         structured = ocr_data
+        _normalize_vendor_and_category(structured, raw_text=ocr_raw)
 
     result = {
         "success": True,
