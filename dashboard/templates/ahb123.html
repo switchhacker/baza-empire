@@ -6,6 +6,7 @@
   <title>Baza Empire — AHB123 Business Hub</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/quickrf-editor.js" defer></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#07070f;color:#f0f0f0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
@@ -284,6 +285,37 @@
     .estimate-results{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:24px;min-height:400px}
     .estimate-placeholder{text-align:center;padding:60px 20px;color:#333}
     .estimate-placeholder .icon{font-size:48px;opacity:.3;margin-bottom:12px}
+
+    /* Project-modal estimator: brighter labels and inputs (the inline 9-10px /
+       #666 styling looked pixelated and washed out). Scoped to the quote
+       estimator panel — uses !important to override inline styles on the
+       existing Method 1/2/3 labels without rewriting each one. */
+    #pd-quote-estimator label{
+      display:block !important;
+      font-family:'Segoe UI',system-ui,sans-serif !important;
+      font-size:11px !important;
+      font-weight:600 !important;
+      color:#c8d2ee !important;
+      letter-spacing:.3px !important;
+      margin-bottom:4px !important;
+      text-transform:none !important;
+    }
+    #pd-quote-estimator input,
+    #pd-quote-estimator select,
+    #pd-quote-estimator textarea{
+      font-family:'Segoe UI',system-ui,sans-serif !important;
+      color:#f0f3fb !important;
+      font-size:12.5px !important;
+    }
+    #pd-quote-estimator input[type="number"]{
+      font-family:'JetBrains Mono','SF Mono',Consolas,monospace !important;
+      font-variant-numeric:tabular-nums;
+      letter-spacing:.2px;
+    }
+    /* Section headers in Method 4 panel: bump them too */
+    #pd-quote-estimator [style*="text-transform:uppercase"]{
+      color:#dde4f6 !important;
+    }
 
     /* Method 4: Custom Pricing build-up */
     .m4-section{background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;padding:14px;margin-bottom:12px}
@@ -830,23 +862,25 @@
       </div>
     </div>
   </div>
-  <!-- Receipt Processing Tools -->
+  <!-- Receipt Processing — 3-bin layout (Upload → Pre-scan → Analyzed) -->
   <div class="panel" style="margin-bottom:16px;border-color:#7c3aed">
     <div class="panel-header">
       <h3 style="color:#c4b5fd">Receipt Processing</h3>
-      <div style="display:flex;gap:6px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;cursor:pointer" title="When ON, dropped images go straight to OCR. When OFF, they sit in the Upload bin until you click Send to OCR.">
+          <input type="checkbox" id="rq-auto-ocr-toggle" onchange="rqToggleAutoOcr(this.checked)"> Auto-OCR on upload
+        </label>
         <span id="rq-status" style="font-size:11px;color:#555"></span>
-        <button class="btn btn-sm btn-secondary" onclick="loadReceiptQueue()">Refresh Queue</button>
+        <button class="btn btn-sm btn-secondary" onclick="loadReceiptQueue()">Refresh</button>
       </div>
     </div>
-    <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
-      <!-- Easy Bulk Upload — handles both 1-receipt and 2-receipts-per-image automatically -->
+    <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+      <!-- Upload tile -->
       <div style="flex:2;min-width:280px;background:#0a0a18;border:1px solid #2a1a4a;border-radius:10px;padding:18px;text-align:center">
         <div style="font-size:28px;margin-bottom:6px">&#128230;</div>
-        <div style="font-size:14px;font-weight:800;color:#e0d4ff;margin-bottom:4px">Easy Bulk Upload</div>
+        <div style="font-size:14px;font-weight:800;color:#e0d4ff;margin-bottom:4px">Drop Images Here</div>
         <div style="font-size:11px;color:#888;margin-bottom:10px">
-          Pick any mix of images — 1-up portrait or 2-up landscape.
-          We auto-detect &amp; crop. Fix mistakes per card with Rotate / Merge / Adjust Split.
+          1-up portrait or 2-up landscape — auto-detect &amp; crop. Toggle Auto-OCR above to gate processing.
         </div>
         <label class="btn btn-primary" style="cursor:pointer">
           Select Images
@@ -868,13 +902,49 @@
         <button class="btn btn-sm btn-secondary" onclick="scanExistingReceipts()">Start Scan</button>
       </div>
     </div>
-    <!-- Queue Results -->
-    <div id="rq-queue-panel" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h4 style="font-size:13px;color:#fff">Processing Queue</h4>
+
+    <!-- Bin 1: Upload (staged, not yet OCR'd) -->
+    <div id="rq-bin-upload" style="display:none;border-top:1px solid #1a1a2e;padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:11px;color:#f59e0b;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">
+          &#128229; Upload Bin (<span id="rq-cnt-upload">0</span>) &mdash; staged
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-secondary" onclick="rqUploadSelectAll(true)">Select All</button>
+          <button class="btn btn-sm btn-secondary" onclick="rqUploadSelectAll(false)">Clear</button>
+          <button class="btn btn-sm btn-primary" onclick="rqSendStagedSelected()">&rarr; Send to OCR</button>
+          <button class="btn btn-sm btn-danger" onclick="rqEraseStagedSelected()">&#128465; Erase Selected</button>
+        </div>
+      </div>
+      <div id="rq-list-upload" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:380px;overflow-y:auto"></div>
+    </div>
+
+    <!-- Bin 2: Pre-scan (pending/processing/error) -->
+    <div id="rq-bin-prescan" style="display:none;border-top:1px solid #1a1a2e;padding-top:12px;margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+        <div style="font-size:11px;color:#4da6ff;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">
+          &#9881; Pre-scan (<span id="rq-cnt-prescan">0</span>)
+        </div>
         <button class="btn btn-sm btn-primary" id="rq-run-btn" onclick="runReceiptQueue()">Process Queue</button>
       </div>
-      <div id="rq-queue-list" style="max-height:400px;overflow-y:auto"></div>
+      <div id="rq-list-prescan" style="max-height:300px;overflow-y:auto"></div>
+    </div>
+
+    <!-- Bin 3: Analyzed (ready for review/file) -->
+    <div id="rq-bin-analyzed" style="display:none;border-top:1px solid #1a1a2e;padding-top:12px;margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:11px;color:#5cdc99;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">
+          &#9989; Analyzed (<span id="rq-cnt-analyzed">0</span>) &mdash; review &amp; file
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:11px;color:#888;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="rq-select-all" onchange="rqToggleSelectAll(this.checked)"> Select all
+          </label>
+          <button class="btn btn-sm btn-primary" onclick="rqFileSelected()">&#128194; File Selected</button>
+          <button class="btn btn-sm btn-danger" onclick="rqEraseSelected()">&#128465; Erase Selected</button>
+        </div>
+      </div>
+      <div id="rq-list-analyzed" style="max-height:560px;overflow-y:auto"></div>
     </div>
   </div>
   <div class="stats-row" id="receipt-stats">
@@ -3535,7 +3605,7 @@
             </div>
             <div style="font-size:9px;color:#555;margin-top:4px">This description and scope are sent to the estimator and saved with the quote for reference.</div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
             <button class="est-method-btn pd-est-method active" data-m="1" onclick="pdSwitchEstMethod(1)" style="padding:10px">
               <div style="font-size:18px">⏱</div>
               <div style="font-size:11px;font-weight:800;margin-top:4px">Time × Crew</div>
@@ -3547,6 +3617,10 @@
             <button class="est-method-btn pd-est-method" data-m="3" onclick="pdSwitchEstMethod(3)" style="padding:10px">
               <div style="font-size:18px">📊</div>
               <div style="font-size:11px;font-weight:800;margin-top:4px">Low/High Range</div>
+            </button>
+            <button class="est-method-btn pd-est-method" data-m="4" onclick="pdSwitchEstMethod(4)" style="padding:10px">
+              <div style="font-size:18px">🛠</div>
+              <div style="font-size:11px;font-weight:800;margin-top:4px">Custom Pricing</div>
             </button>
           </div>
           <!-- Method 1: Time × Crew -->
@@ -3577,6 +3651,117 @@
           <div class="pd-est-pane" id="pd-est-pane-3" style="display:none">
             <div style="background:#0a1a2a;border:1px solid #1a3a5a;border-radius:6px;padding:9px;margin-bottom:10px;font-size:10px;color:#aaa">📊 Generates LOW (basic), HIGH (premium), and a recommended sweet-spot quote.</div>
             <button class="btn btn-sm btn-primary" style="width:100%" onclick="pdRunMethod(3)">📊 Generate Range</button>
+          </div>
+          <!-- Method 4: Custom Pricing -->
+          <div class="pd-est-pane" id="pd-est-pane-4" style="display:none">
+            <div style="background:#0a1a2a;border:1px solid #1a3a5a;border-radius:6px;padding:9px;margin-bottom:10px;font-size:10px;color:#aaa">🛠 Build the price line by line: materials + crew labor + Home Depot tool rentals + profit + overhead. Each input is editable; profit and overhead can be % or flat $.</div>
+
+            <!-- 1. Materials -->
+            <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:6px;padding:10px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#ccc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+                <span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">1</span>
+                Material Cost <span style="margin-left:auto;color:#00d084;font-family:monospace" id="pd-m4-mat-total">$0.00</span>
+              </div>
+              <input id="pd-m4-mat-cost" type="number" min="0" step="0.01" value="0" placeholder="Materials $" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace" oninput="recalcPdM4()">
+            </div>
+
+            <!-- 2. Labor -->
+            <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:6px;padding:10px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#ccc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+                <span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">2</span>
+                Labor Cost <span style="margin-left:auto;color:#00d084;font-family:monospace" id="pd-m4-lab-total">$0.00</span>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:8px">
+                <button type="button" class="m4-tab active" data-pd="crew" onclick="pdM4LaborTab('crew')">🧮 Crew Calc</button>
+                <button type="button" class="m4-tab" data-pd="manual" onclick="pdM4LaborTab('manual')">✎ Flat $</button>
+              </div>
+              <div id="pd-m4-lab-crew">
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px">
+                  <div><label style="font-size:9px;color:#666">Days</label><input id="pd-m4-lab-days" type="number" min="0" step="0.5" value="5" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                  <div><label style="font-size:9px;color:#666">Lead</label><input id="pd-m4-lab-leads" type="number" min="0" value="1" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                  <div><label style="font-size:9px;color:#666">Crew</label><input id="pd-m4-lab-crew-n" type="number" min="0" value="2" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                  <div><label style="font-size:9px;color:#666">Helpers</label><input id="pd-m4-lab-helpers" type="number" min="0" value="1" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+                  <div><label style="font-size:9px;color:#666">Lead $/d</label><input id="pd-m4-lab-lead-rate" type="number" min="0" step="25" value="1200" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                  <div><label style="font-size:9px;color:#666">Crew $/d</label><input id="pd-m4-lab-crew-rate" type="number" min="0" step="25" value="800" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                  <div><label style="font-size:9px;color:#666">Helper $/d</label><input id="pd-m4-lab-helper-rate" type="number" min="0" step="25" value="450" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4Labor()"></div>
+                </div>
+                <div style="margin-top:6px;font-size:10px;color:#888">Calculated: <b id="pd-m4-lab-calc" style="color:#00d084">$0.00</b> <button type="button" class="m4-mini-btn" style="margin-left:6px" onclick="pdM4ApplyCrewToFlat()">Override → flat ✎</button></div>
+              </div>
+              <div id="pd-m4-lab-manual" style="display:none">
+                <input id="pd-m4-lab-manual-amt" type="number" min="0" step="0.01" value="0" placeholder="Labor $ (flat)" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace" oninput="recalcPdM4()">
+              </div>
+            </div>
+
+            <!-- 3. Equipment -->
+            <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:6px;padding:10px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#ccc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+                <span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">3</span>
+                Tool Rentals (Home Depot) <span style="margin-left:auto;color:#00d084;font-family:monospace" id="pd-m4-eq-total">$0.00</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 90px 80px 70px 60px;gap:5px;margin-bottom:6px;align-items:end">
+                <div>
+                  <select id="pd-m4-eq-catalog" onchange="pdM4PrefillRental()" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px">
+                    <option value="">— pick a tool —</option>
+                  </select>
+                </div>
+                <div>
+                  <select id="pd-m4-eq-basis" onchange="pdM4PrefillRental()" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px">
+                    <option value="day">Daily</option><option value="hr4">4-hr</option><option value="week">Weekly</option>
+                  </select>
+                </div>
+                <div><input id="pd-m4-eq-rate" type="number" min="0" step="0.01" placeholder="Rate" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace"></div>
+                <div><input id="pd-m4-eq-qty" type="number" min="0" step="0.5" value="1" placeholder="Qty" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace"></div>
+                <div><button type="button" class="btn btn-sm btn-primary" style="width:100%;padding:6px" onclick="pdM4AddRental()">+ Add</button></div>
+              </div>
+              <div id="pd-m4-eq-list" style="font-size:11px;color:#888"></div>
+              <button type="button" class="btn btn-sm btn-secondary" style="margin-top:5px;font-size:10px;padding:4px 8px" onclick="pdM4AddCustomRental()">+ Custom row</button>
+            </div>
+
+            <!-- 4. Profit -->
+            <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:6px;padding:10px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#ccc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+                <span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">4</span>
+                Profit <span style="margin-left:auto;color:#00d084;font-family:monospace" id="pd-m4-profit-total">$0.00</span>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <button type="button" class="m4-tab active" data-pd="profit-pct" onclick="pdM4ProfitMode('pct')">% of Cost</button>
+                <button type="button" class="m4-tab" data-pd="profit-flat" onclick="pdM4ProfitMode('flat')">Flat $</button>
+              </div>
+              <div id="pd-m4-profit-pct-row"><input id="pd-m4-profit-pct" type="number" min="0" step="0.5" value="18" placeholder="Profit %" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace" oninput="recalcPdM4()"></div>
+              <div id="pd-m4-profit-flat-row" style="display:none"><input id="pd-m4-profit-flat" type="number" min="0" step="0.01" value="0" placeholder="Profit $" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace" oninput="recalcPdM4()"></div>
+            </div>
+
+            <!-- 5. Overhead / Contingency -->
+            <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:6px;padding:10px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;color:#ccc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+                <span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">5</span>
+                Overhead / Contingency <span style="margin-left:auto;color:#00d084;font-family:monospace" id="pd-m4-oh-total">$0.00</span>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <button type="button" class="m4-tab active" data-pd="oh-pct" onclick="pdM4OhMode('pct')">% of Cost</button>
+                <button type="button" class="m4-tab" data-pd="oh-flat" onclick="pdM4OhMode('flat')">Flat $</button>
+              </div>
+              <div id="pd-m4-oh-pct-row" style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <div><label style="font-size:9px;color:#666">Overhead %</label><input id="pd-m4-oh-pct" type="number" min="0" step="0.5" value="15" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4()"></div>
+                <div><label style="font-size:9px;color:#666">Contingency %</label><input id="pd-m4-cont-pct" type="number" min="0" step="0.5" value="10" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4()"></div>
+              </div>
+              <div id="pd-m4-oh-flat-row" style="display:none;grid-template-columns:1fr 1fr;gap:6px">
+                <div><label style="font-size:9px;color:#666">Overhead $</label><input id="pd-m4-oh-flat" type="number" min="0" step="0.01" value="0" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4()"></div>
+                <div><label style="font-size:9px;color:#666">Contingency $</label><input id="pd-m4-cont-flat" type="number" min="0" step="0.01" value="0" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace" oninput="recalcPdM4()"></div>
+              </div>
+            </div>
+
+            <!-- Live total -->
+            <div style="background:linear-gradient(135deg,#0a1a2a,#0a0a16);border:2px solid #4da6ff;border-radius:8px;padding:10px;margin-bottom:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-size:11px;font-weight:800;color:#4da6ff;text-transform:uppercase;letter-spacing:1px">Custom Total</span>
+                <span style="font-size:20px;font-weight:800;color:#4da6ff;font-family:monospace" id="pd-m4-row-total">$0.00</span>
+              </div>
+            </div>
+
+            <button class="btn btn-sm btn-primary" style="width:100%" onclick="pdRunMethod(4)">💾 Save Custom Quote</button>
           </div>
           <div id="pd-est-results" style="margin-top:12px"></div>
         </div>
@@ -5472,21 +5657,38 @@ let receiptQueue=[];
 let _rqPollTimer=null;
 const RQ_CATEGORIES=['Materials','Tools','Fuel','Food','Office supplies','Clothes'];
 
+function rqAutoOcrEnabled(){
+  const v=localStorage.getItem('quickrf_auto_ocr');
+  return v===null?true:v==='1';
+}
+function rqToggleAutoOcr(checked){
+  localStorage.setItem('quickrf_auto_ocr',checked?'1':'0');
+  showToast(checked?'Auto-OCR ON — uploads process immediately':'Auto-OCR OFF — uploads stay in Upload bin');
+}
+function _rqInitAutoToggle(){
+  const t=document.getElementById('rq-auto-ocr-toggle');
+  if(t) t.checked=rqAutoOcrEnabled();
+}
+
 async function submitReceiptsToQueue(files){
   if(!files||!files.length)return;
+  const auto=rqAutoOcrEnabled();
   const fd=new FormData();
   for(const f of files) fd.append('files',f);
+  if(!auto) fd.append('stage','1');
   try{
-    showToast(`Uploading ${files.length} image(s)...`);
+    showToast(`Uploading ${files.length} image(s)${auto?'':' (staged)'}...`);
     const res=await fetch('/api/ahb/receipts/process',{method:'POST',body:fd});
     const data=await res.json();
     if(data.success){
-      showToast(`${data.count} receipt(s) queued — OCR running automatically`);
+      showToast(auto
+        ? `${data.count} receipt(s) queued — OCR running automatically`
+        : `${data.count} receipt(s) staged — pick & Send to OCR when ready`);
       if(!allProjects.length){
         try{ allProjects=await fetch('/api/ahb/projects').then(r=>r.json()); }catch(e){}
       }
       loadReceiptQueue();
-      _rqStartPolling();
+      if(auto) _rqStartPolling();
     }else showToast(data.error||'Upload failed','error');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
@@ -5502,22 +5704,28 @@ function _rqStartPolling(){
 
 async function loadReceiptQueue(){
   try{
-    const res=await fetch('/api/ahb/receipts/queue');
+    _rqInitAutoToggle();
+    const res=await fetch('/api/ahb/receipts/queue?bin=live');
     receiptQueue=await res.json();
+    const staged=receiptQueue.filter(q=>q.status==='staged').length;
     const pending=receiptQueue.filter(q=>q.status==='pending').length;
     const processing=receiptQueue.filter(q=>q.status==='processing').length;
-    const ready=receiptQueue.filter(q=>q.status==='done').length;
+    const ready=receiptQueue.filter(q=>q.status==='ready').length;
     const errored=receiptQueue.filter(q=>q.status==='error').length;
     const bits=[];
+    if(staged) bits.push(`${staged} staged`);
     if(pending) bits.push(`${pending} pending`);
     if(processing) bits.push(`${processing} processing`);
     if(ready) bits.push(`${ready} ready for review`);
     if(errored) bits.push(`${errored} error`);
     document.getElementById('rq-status').textContent=bits.join(' · ')||'Queue empty';
-    const panel=document.getElementById('rq-queue-panel');
-    const visible=receiptQueue.filter(q=>['pending','processing','done','error'].includes(q.status));
-    if(visible.length){panel.style.display='block';renderReceiptQueue();}
-    else panel.style.display='none';
+    document.getElementById('rq-cnt-upload').textContent=staged;
+    document.getElementById('rq-cnt-prescan').textContent=pending+processing+errored;
+    document.getElementById('rq-cnt-analyzed').textContent=ready;
+    document.getElementById('rq-bin-upload').style.display=staged?'block':'none';
+    document.getElementById('rq-bin-prescan').style.display=(pending+processing+errored)?'block':'none';
+    document.getElementById('rq-bin-analyzed').style.display=ready?'block':'none';
+    renderReceiptQueue();
     if(pending||processing) _rqStartPolling();
   }catch(e){console.error('loadReceiptQueue',e);}
 }
@@ -5536,41 +5744,43 @@ function _rqCategoryOptions(selected){
 }
 
 function renderReceiptQueue(){
-  const el=document.getElementById('rq-queue-list');
+  const upEl=document.getElementById('rq-list-upload');
+  const psEl=document.getElementById('rq-list-prescan');
+  const anEl=document.getElementById('rq-list-analyzed');
+
+  // ── BIN 1: Upload — staged thumbnails with checkboxes ──
+  const stagedItems=receiptQueue.filter(q=>q.status==='staged');
+  if(upEl){
+    upEl.innerHTML=stagedItems.map(q=>`
+      <label class="rq-staged" data-qid="${q.id}" style="position:relative;display:block;border:2px solid #2a2a4a;border-radius:8px;overflow:hidden;cursor:pointer;background:#0a0a18">
+        <input type="checkbox" class="rq-staged-check" data-qid="${q.id}" style="position:absolute;top:6px;left:6px;width:18px;height:18px;cursor:pointer;z-index:2">
+        <img src="/api/ahb/receipts/queue/image/${q.id}" style="display:block;width:100%;height:140px;object-fit:cover;background:#000" onerror="this.style.display='none'">
+        <div style="padding:6px 8px;font-size:10px;color:#aaa;display:flex;justify-content:space-between;gap:6px">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((q.image_path||'').split('/').pop()||q.id.slice(0,8))}</span>
+          <span style="color:#f59e0b;font-weight:700">staged</span>
+        </div>
+      </label>`).join('')||'<div style="grid-column:1/-1;text-align:center;padding:14px;color:#444;font-size:11px">No staged uploads</div>';
+  }
+
+  // ── BIN 2: Pre-scan — pending/processing/error compact rows ──
   const queueItems=receiptQueue.filter(q=>q.status==='pending'||q.status==='processing'||q.status==='error');
-  const reviewItems=receiptQueue.filter(q=>q.status==='done');
-
-  let html='';
-
-  // ── PROCESSING-STATUS BAR (compact pending/processing/error rows) ──
-  if(queueItems.length){
-    html+=`<div style="margin-bottom:14px"><div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">Processing (${queueItems.length})</div>`;
-    html+=queueItems.map(q=>{
+  if(psEl){
+    psEl.innerHTML=queueItems.map(q=>{
       const c=q.status==='processing'?'#4da6ff':q.status==='error'?'#ff5555':'#f59e0b';
       const lbl=q.status==='error'?(q.error||'Failed'):q.status.toUpperCase();
       return `<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid ${c};border-radius:6px;margin:4px 0;font-size:11px">
-        <span style="color:${c};font-weight:700;min-width:90px">${lbl}</span>
-        <span style="color:#666;font-family:monospace">${q.mode||''}</span>
+        <span style="color:${c};font-weight:700;min-width:90px">${escHtml(String(lbl).slice(0,80))}</span>
+        <span style="color:#666;font-family:monospace">${escHtml(q.mode||'')}</span>
         <span style="color:#444;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((q.image_path||'').split('/').pop()||'')}</span>
-        ${q.status==='error'?`<button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">Erase</button>`:''}
+        ${q.status==='error'?`<button class="btn btn-sm btn-secondary" onclick="rqRescan('${q.id}')">Retry</button><button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">Erase</button>`:''}
       </div>`;
-    }).join('');
-    html+='</div>';
+    }).join('')||'<div style="text-align:center;padding:10px;color:#444;font-size:11px">Idle</div>';
   }
 
-  // ── PENDING REVIEW (done items — editable, bulk-actionable) ──
-  if(reviewItems.length){
-    html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 8px">
-      <div style="font-size:11px;color:#5cdc99;text-transform:uppercase;letter-spacing:1.5px">Pending Review (${reviewItems.length})</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <label style="font-size:11px;color:#888;display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="rq-select-all" onchange="rqToggleSelectAll(this.checked)"> Select all
-        </label>
-        <button class="btn btn-sm btn-primary" onclick="rqFileSelected()">📂 File Selected</button>
-        <button class="btn btn-sm btn-danger" onclick="rqEraseSelected()">🗑 Erase Selected</button>
-      </div>
-    </div>`;
-    html+=reviewItems.map(q=>{
+  // ── BIN 3: Analyzed — full review rows ──
+  const reviewItems=receiptQueue.filter(q=>q.status==='ready');
+  if(anEl){
+    anEl.innerHTML=reviewItems.map(q=>{
       let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
       const s=parsed.structured||{};
       const total = s.total!=null?s.total:'';
@@ -5578,7 +5788,7 @@ function renderReceiptQueue(){
       const sub   = s.subtotal!=null?s.subtotal:'';
       return `<div class="rq-row" data-qid="${q.id}" style="display:grid;grid-template-columns:24px 90px 1fr;gap:12px;padding:12px;margin:8px 0;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid #5cdc99;border-radius:8px;align-items:start">
         <input type="checkbox" class="rq-check" data-qid="${q.id}" style="margin-top:38px;cursor:pointer">
-        <img src="/api/ahb/receipts/queue/image/${q.id}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a" onclick="window.open('/api/ahb/receipts/queue/image/${q.id}','_blank')" onerror="this.style.display='none'">
+        <img src="/api/ahb/receipts/queue/image/${q.id}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a" onclick="rqOpenEditor('${q.id}')" onerror="this.style.display='none'">
         <div>
           <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">STORE</label>
@@ -5604,21 +5814,58 @@ function renderReceiptQueue(){
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
             <span style="font-size:10px;color:#444;font-family:monospace">${escHtml(s.teller_name||'')} ${s.purchase_time?'· '+s.purchase_time:''}</span>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-sm btn-secondary" onclick="rqRotate('${q.id}')" title="Rotate source 90° CW and re-detect">🔄 Rotate</button>
-              ${q.pair_id?`<button class="btn btn-sm btn-secondary" onclick="rqMerge('${q.id}')" title="This was incorrectly split — merge halves back into one">⇆ Merge</button>`:''}
-              ${q.pair_id&&q.parent_image_path?`<button class="btn btn-sm btn-secondary" onclick="rqOpenAdjustSplit('${q.id}')" title="Drag the split line to fix off-center crops">⇔ Adjust Split</button>`:''}
-              <button class="btn btn-sm btn-secondary" onclick="rqSplit('${q.id}')" title="Force-split this image at the midpoint">✂ Force Split</button>
-              <button class="btn btn-sm btn-secondary" onclick="rqRescan('${q.id}')" title="Re-run OCR on this image">🔁 Rescan</button>
-              <button class="btn btn-sm btn-primary" onclick="rqFile('${q.id}')">📂 File</button>
-              <button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">🗑 Erase</button>
+              <button class="btn btn-sm btn-secondary" onclick="rqOpenEditor('${q.id}')" title="Open zoom / rotate / brightness / crop / split editor">&#127912; Edit Image</button>
+              <button class="btn btn-sm btn-secondary" onclick="rqRotate('${q.id}')" title="Rotate source 90° CW and re-detect (server-side, handles split pairs)">&#128260; Rotate</button>
+              ${q.pair_id?`<button class="btn btn-sm btn-secondary" onclick="rqMerge('${q.id}')" title="This was incorrectly split — merge halves back into one">&#8646; Merge</button>`:''}
+              <button class="btn btn-sm btn-secondary" onclick="rqSplit('${q.id}')" title="Force-split this image at the midpoint">&#9986; Force Split</button>
+              <button class="btn btn-sm btn-secondary" onclick="rqRescan('${q.id}')" title="Re-run OCR on this image">&#128257; Rescan</button>
+              <button class="btn btn-sm btn-primary" onclick="rqFile('${q.id}')">&#128194; File</button>
+              <button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">&#128465; Erase</button>
             </div>
           </div>
         </div>
       </div>`;
-    }).join('');
+    }).join('')||'<div style="text-align:center;padding:14px;color:#444">No analyzed receipts pending review</div>';
   }
+}
 
-  el.innerHTML=html||'<div style="text-align:center;padding:20px;color:#444">Queue empty</div>';
+function rqOpenEditor(qid){
+  const q=receiptQueue.find(x=>x.id===qid);
+  if(!q){showToast('Queue item not found','error');return;}
+  if(!window.QuickRFEditor){showToast('Editor not loaded — refresh page','error');return;}
+  QuickRFEditor.open(qid,{
+    pairId:q.pair_id||null,
+    parentImagePath:q.parent_image_path||null,
+    mode:q.mode||'',
+    onSave:()=>{loadReceiptQueue();_rqStartPolling();}
+  });
+}
+
+function rqUploadSelectAll(checked){
+  document.querySelectorAll('.rq-staged-check').forEach(cb=>cb.checked=!!checked);
+}
+function _rqSelectedStaged(){
+  return Array.from(document.querySelectorAll('.rq-staged-check:checked')).map(cb=>cb.dataset.qid);
+}
+async function rqSendStagedSelected(){
+  const ids=_rqSelectedStaged();
+  if(!ids.length){showToast('Select at least one upload','error');return;}
+  try{
+    const res=await fetch('/api/ahb/receipts/queue/send-batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+    const data=await res.json();
+    if(data.success){showToast(`Sent ${data.promoted} to OCR`);loadReceiptQueue();_rqStartPolling();}
+    else showToast(data.error||'Send failed','error');
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+async function rqEraseStagedSelected(){
+  const ids=_rqSelectedStaged();
+  if(!ids.length){showToast('Select at least one upload','error');return;}
+  if(!confirm(`Erase ${ids.length} staged upload(s)?`))return;
+  for(const qid of ids){
+    try{ await fetch('/api/ahb/receipts/queue/'+qid+'/reject',{method:'POST'}); }catch(e){}
+  }
+  showToast(`Erased ${ids.length} staged upload(s)`);
+  loadReceiptQueue();
 }
 
 // ── Helpers for the review rows ────────────────────────────────────────────
@@ -6554,7 +6801,197 @@ function pdToggleQuoteEstimator(){
 
 function pdSwitchEstMethod(m){
   document.querySelectorAll('.pd-est-method').forEach(b=>b.classList.toggle('active', String(b.dataset.m)===String(m)));
-  [1,2,3].forEach(i=>{document.getElementById('pd-est-pane-'+i).style.display=(i===m?'block':'none')});
+  [1,2,3,4].forEach(i=>{const el=document.getElementById('pd-est-pane-'+i); if(el) el.style.display=(i===m?'block':'none');});
+  if(m===4){ pdM4Init(); }
+}
+
+/* ===== Project-detail Method 4: Custom Pricing (mini build-up) ===== */
+let pdM4LaborMode='crew';
+let pdM4ProfitModeVal='pct';
+let pdM4OhModeVal='pct';
+let pdM4RentalRows=[];
+let pdM4InitDone=false;
+
+function pdM4Init(){
+  if(pdM4InitDone) return;
+  const sel=document.getElementById('pd-m4-eq-catalog');
+  if(sel && typeof M4_RENTAL_CATALOG!=='undefined'){
+    M4_RENTAL_CATALOG.forEach((it,i)=>{
+      const o=document.createElement('option');
+      o.value=i; o.textContent=it.name+`  ($${it.day}/d)`;
+      sel.appendChild(o);
+    });
+  }
+  // Seed rates from estimator settings if loaded
+  if(estimatorSettings && estimatorSettings.lead_day_rate){
+    document.getElementById('pd-m4-lab-lead-rate').value=estimatorSettings.lead_day_rate;
+    document.getElementById('pd-m4-lab-crew-rate').value=estimatorSettings.crew_day_rate;
+    document.getElementById('pd-m4-lab-helper-rate').value=estimatorSettings.helper_day_rate;
+    document.getElementById('pd-m4-profit-pct').value=Math.round((estimatorSettings.profit_pct||0.18)*100);
+    document.getElementById('pd-m4-oh-pct').value=Math.round((estimatorSettings.overhead_pct||0.15)*100);
+    document.getElementById('pd-m4-cont-pct').value=Math.round((estimatorSettings.contingency_pct||0.10)*100);
+  } else if(typeof loadEstimatorSettings==='function'){
+    loadEstimatorSettings().then(()=>{
+      if(estimatorSettings && estimatorSettings.lead_day_rate){
+        document.getElementById('pd-m4-lab-lead-rate').value=estimatorSettings.lead_day_rate;
+        document.getElementById('pd-m4-lab-crew-rate').value=estimatorSettings.crew_day_rate;
+        document.getElementById('pd-m4-lab-helper-rate').value=estimatorSettings.helper_day_rate;
+        document.getElementById('pd-m4-profit-pct').value=Math.round((estimatorSettings.profit_pct||0.18)*100);
+        document.getElementById('pd-m4-oh-pct').value=Math.round((estimatorSettings.overhead_pct||0.15)*100);
+        document.getElementById('pd-m4-cont-pct').value=Math.round((estimatorSettings.contingency_pct||0.10)*100);
+        recalcPdM4Labor();
+      }
+    });
+  }
+  pdM4InitDone=true;
+  recalcPdM4Labor();
+  recalcPdM4();
+}
+
+function pdM4LaborTab(mode){
+  pdM4LaborMode=mode;
+  document.querySelectorAll('#pd-est-pane-4 .m4-tab[data-pd="crew"],#pd-est-pane-4 .m4-tab[data-pd="manual"]').forEach(b=>b.classList.toggle('active', b.dataset.pd===mode));
+  document.getElementById('pd-m4-lab-crew').style.display=(mode==='crew'?'block':'none');
+  document.getElementById('pd-m4-lab-manual').style.display=(mode==='manual'?'block':'none');
+  recalcPdM4();
+}
+
+function pdM4ApplyCrewToFlat(){
+  const v=parseFloat(document.getElementById('pd-m4-lab-calc').textContent.replace(/[^0-9.\-]/g,''))||0;
+  document.getElementById('pd-m4-lab-manual-amt').value=v.toFixed(2);
+  pdM4LaborTab('manual');
+}
+
+function pdM4ProfitMode(mode){
+  pdM4ProfitModeVal=mode;
+  document.querySelectorAll('#pd-est-pane-4 .m4-tab[data-pd="profit-pct"],#pd-est-pane-4 .m4-tab[data-pd="profit-flat"]').forEach(b=>b.classList.toggle('active', b.dataset.pd==='profit-'+mode));
+  document.getElementById('pd-m4-profit-pct-row').style.display=(mode==='pct'?'block':'none');
+  document.getElementById('pd-m4-profit-flat-row').style.display=(mode==='flat'?'block':'none');
+  recalcPdM4();
+}
+
+function pdM4OhMode(mode){
+  pdM4OhModeVal=mode;
+  document.querySelectorAll('#pd-est-pane-4 .m4-tab[data-pd="oh-pct"],#pd-est-pane-4 .m4-tab[data-pd="oh-flat"]').forEach(b=>b.classList.toggle('active', b.dataset.pd==='oh-'+mode));
+  document.getElementById('pd-m4-oh-pct-row').style.display=(mode==='pct'?'grid':'none');
+  document.getElementById('pd-m4-oh-flat-row').style.display=(mode==='flat'?'grid':'none');
+  recalcPdM4();
+}
+
+function pdM4PrefillRental(){
+  const sel=document.getElementById('pd-m4-eq-catalog');
+  const basis=document.getElementById('pd-m4-eq-basis').value;
+  const rateBox=document.getElementById('pd-m4-eq-rate');
+  if(sel.value===''||typeof M4_RENTAL_CATALOG==='undefined'){rateBox.value='';return;}
+  const it=M4_RENTAL_CATALOG[parseInt(sel.value)];
+  if(!it)return;
+  rateBox.value=it[basis]||0;
+}
+
+function pdM4AddRental(){
+  const sel=document.getElementById('pd-m4-eq-catalog');
+  const basis=document.getElementById('pd-m4-eq-basis').value;
+  const rate=parseFloat(document.getElementById('pd-m4-eq-rate').value)||0;
+  const qty=parseFloat(document.getElementById('pd-m4-eq-qty').value)||0;
+  let name='Custom rental';
+  if(sel.value!==''&&typeof M4_RENTAL_CATALOG!=='undefined'){
+    const it=M4_RENTAL_CATALOG[parseInt(sel.value)];
+    if(it) name=it.name;
+  }
+  if(!rate || !qty){showToast('Enter rate and qty','error');return;}
+  pdM4RentalRows.push({name,basis,rate,qty});
+  document.getElementById('pd-m4-eq-catalog').value='';
+  document.getElementById('pd-m4-eq-rate').value='';
+  document.getElementById('pd-m4-eq-qty').value='1';
+  pdM4RenderRentals();
+}
+
+function pdM4AddCustomRental(){
+  pdM4RentalRows.push({name:'',basis:'day',rate:0,qty:1});
+  pdM4RenderRentals();
+}
+
+function pdM4RenderRentals(){
+  const el=document.getElementById('pd-m4-eq-list');
+  if(!pdM4RentalRows.length){el.innerHTML='<div style="color:#444;padding:4px 0">No equipment yet</div>';recalcPdM4();return;}
+  el.innerHTML=pdM4RentalRows.map((r,i)=>{
+    const total=(parseFloat(r.rate)||0)*(parseFloat(r.qty)||0);
+    r.total=total;
+    const basisLbl=r.basis==='hr4'?'4-hr':r.basis;
+    return `<div style="display:grid;grid-template-columns:1fr 60px 70px 60px 70px 24px;gap:4px;align-items:center;padding:3px 0;border-top:1px solid #1a1a2e">
+      <input type="text" value="${escHtml(r.name||'')}" oninput="pdM4UpdateRental(${i},'name',this.value)" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:4px;padding:4px;color:#ccc;font-size:11px">
+      <select onchange="pdM4UpdateRental(${i},'basis',this.value)" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:4px;padding:4px;color:#ccc;font-size:10px">
+        <option value="day" ${r.basis==='day'?'selected':''}>day</option>
+        <option value="hr4" ${r.basis==='hr4'?'selected':''}>4-hr</option>
+        <option value="week" ${r.basis==='week'?'selected':''}>week</option>
+      </select>
+      <input type="number" value="${r.rate}" min="0" step="0.01" oninput="pdM4UpdateRental(${i},'rate',this.value)" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:4px;padding:4px;color:#ccc;font-size:11px;font-family:monospace">
+      <input type="number" value="${r.qty}" min="0" step="0.5" oninput="pdM4UpdateRental(${i},'qty',this.value)" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:4px;padding:4px;color:#ccc;font-size:11px;font-family:monospace">
+      <span style="color:#00d084;font-weight:600;text-align:right;font-family:monospace;font-size:11px">${fmtCurrency(total)}</span>
+      <button class="btn-icon del" onclick="pdM4RemoveRental(${i})" style="font-size:11px">&#10005;</button>
+    </div>`;
+  }).join('');
+  recalcPdM4();
+}
+
+function pdM4UpdateRental(i,field,val){
+  if(!pdM4RentalRows[i])return;
+  if(field==='rate'||field==='qty') val=parseFloat(val)||0;
+  pdM4RentalRows[i][field]=val;
+  recalcPdM4();
+}
+
+function pdM4RemoveRental(i){
+  pdM4RentalRows.splice(i,1);
+  pdM4RenderRentals();
+}
+
+function recalcPdM4Labor(){
+  const days=parseFloat(document.getElementById('pd-m4-lab-days').value)||0;
+  const leads=parseFloat(document.getElementById('pd-m4-lab-leads').value)||0;
+  const crew=parseFloat(document.getElementById('pd-m4-lab-crew-n').value)||0;
+  const helpers=parseFloat(document.getElementById('pd-m4-lab-helpers').value)||0;
+  const leadR=parseFloat(document.getElementById('pd-m4-lab-lead-rate').value)||0;
+  const crewR=parseFloat(document.getElementById('pd-m4-lab-crew-rate').value)||0;
+  const helpR=parseFloat(document.getElementById('pd-m4-lab-helper-rate').value)||0;
+  const total=days*(leads*leadR + crew*crewR + helpers*helpR);
+  document.getElementById('pd-m4-lab-calc').textContent=fmtCurrency(total);
+  recalcPdM4();
+}
+
+function pdM4GetLabor(){
+  if(pdM4LaborMode==='manual') return parseFloat(document.getElementById('pd-m4-lab-manual-amt').value)||0;
+  return parseFloat((document.getElementById('pd-m4-lab-calc').textContent||'').replace(/[^0-9.\-]/g,''))||0;
+}
+
+function recalcPdM4(){
+  const mat=parseFloat(document.getElementById('pd-m4-mat-cost').value)||0;
+  const lab=pdM4GetLabor();
+  const eq=pdM4RentalRows.reduce((a,r)=>a+((parseFloat(r.rate)||0)*(parseFloat(r.qty)||0)),0);
+  const direct=mat+lab+eq;
+  let oh=0,cont=0;
+  if(pdM4OhModeVal==='pct'){
+    oh=direct*((parseFloat(document.getElementById('pd-m4-oh-pct').value)||0)/100);
+    cont=direct*((parseFloat(document.getElementById('pd-m4-cont-pct').value)||0)/100);
+  } else {
+    oh=parseFloat(document.getElementById('pd-m4-oh-flat').value)||0;
+    cont=parseFloat(document.getElementById('pd-m4-cont-flat').value)||0;
+  }
+  let profit=0;
+  const baseForProfit=direct+oh+cont;
+  if(pdM4ProfitModeVal==='pct'){
+    profit=baseForProfit*((parseFloat(document.getElementById('pd-m4-profit-pct').value)||0)/100);
+  } else {
+    profit=parseFloat(document.getElementById('pd-m4-profit-flat').value)||0;
+  }
+  const total=direct+oh+cont+profit;
+  document.getElementById('pd-m4-mat-total').textContent=fmtCurrency(mat);
+  document.getElementById('pd-m4-lab-total').textContent=fmtCurrency(lab);
+  document.getElementById('pd-m4-eq-total').textContent=fmtCurrency(eq);
+  document.getElementById('pd-m4-profit-total').textContent=fmtCurrency(profit);
+  document.getElementById('pd-m4-oh-total').textContent=fmtCurrency(oh+cont);
+  document.getElementById('pd-m4-row-total').textContent=fmtCurrency(total);
+  return {mat,lab,eq,direct,oh,cont,profit,total};
 }
 
 async function pdLoadQuotes(pid){
@@ -6574,7 +7011,7 @@ async function pdLoadQuotes(pid){
             <span style="color:#fff;font-weight:700">${fmtCurrency(q.total)}</span>
             <span style="font-size:10px;color:#888;background:#1a1a2e;padding:2px 7px;border-radius:10px">${escHtml((q.method||'').toUpperCase())}</span>
             <button onclick="pdToggleQuoteActive(${q.id},'${pid}',${isActive?'false':'true'})" style="cursor:pointer;background:${toggleBg};border:1px solid ${toggleColor};border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700;color:${toggleColor}">${isActive?'CHOSEN':'INACTIVE'}</button>
-            ${isActive?'<button class="btn btn-sm" style="padding:1px 8px;font-size:9px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" onclick="pdApplyQuoteToInvoice(${q.id},\'${pid}\')">Apply to Invoice</button>':''}
+            <button class="btn btn-sm" style="padding:1px 8px;font-size:9px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed;cursor:pointer" onclick="pdApplyQuoteTotalToInvoice(${q.id},'${pid}')" title="Push this quote's total to the linked invoice and rebuild line items from its description">📤 Apply Quote Total to Invoice</button>
             <span style="font-size:10px;color:#444">${fmtDate(q.created_at)}</span>
           </div>
           ${q.notes?'<div style="font-size:10px;color:#666;margin-top:3px">'+escHtml(q.notes)+'</div>':''}
@@ -6609,6 +7046,21 @@ async function pdApplyQuoteToInvoice(qid, pid){
   loadInvoices();
 }
 
+// Apply ANY quote's total to the linked invoice without changing which quote
+// is "chosen". Rebuilds invoice line items from the quote's description so the
+// invoice's description-of-work always reflects the project description.
+async function pdApplyQuoteTotalToInvoice(qid, pid){
+  if(!confirm('Push this quote total to the invoice?\n\nThe invoice line items will be rebuilt from this quote\'s description (one line item per non-empty line of description, total split across them).'))return;
+  try{
+    const r=await fetch('/api/ahb/quotes/'+qid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({apply_to_invoice:true})});
+    const d=await r.json();
+    if(d.success===false){showToast(d.error||'Failed','error');return;}
+    showToast('Quote total applied — invoice line items rebuilt from description');
+    pdLoadQuotes(pid);
+    loadInvoices();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
 async function pdDeleteQuote(qid, pid){
   if(!confirm('Delete this quote?'))return;
   await fetch('/api/ahb/quotes/'+qid,{method:'DELETE'});
@@ -6640,6 +7092,36 @@ async function pdRunMethod(m){
   const qDesc=(document.getElementById('pd-quote-desc')||{}).value||p.description||'';
   const qScope=(document.getElementById('pd-quote-scope')||{}).value||p.scope||'kitchen';
   const out=document.getElementById('pd-est-results');
+
+  // Method 4 (Custom Pricing) is fully client-side — no server roundtrip.
+  if(m===4){
+    const b=recalcPdM4();
+    if(!b.total){showToast('Total is zero — fill in some costs first','error');return;}
+    const breakdown={
+      materials:b.mat, labor:b.lab, equipment:b.eq, direct_cost:b.direct,
+      overhead:b.oh, contingency:b.cont, profit:b.profit, total:b.total,
+    };
+    out.innerHTML=`<div style="background:#0a0a16;border:1px solid #00d084;border-radius:10px;padding:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px">custom pricing estimate</div>
+        <div style="font-size:24px;font-weight:800;color:#00d084">${fmtCurrency(b.total)}</div>
+      </div>
+      <div id="pd-est-detail" style="font-size:11px;color:#888;max-height:200px;overflow-y:auto;margin-bottom:10px"></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm btn-primary" style="flex:1" onclick="pdSaveQuote(${b.total},'custom',true)">💾 Save as ACTIVE Quote</button>
+        <button class="btn btn-sm btn-secondary" onclick="pdSaveQuote(${b.total},'custom',false)">Save (not active)</button>
+      </div>
+    </div>`;
+    const det=document.getElementById('pd-est-detail');
+    const rows=[];
+    for(const [k,v] of Object.entries(breakdown)){
+      if(typeof v==='number'){rows.push('<div style="display:flex;justify-content:space-between;padding:2px 0"><span>'+k.replace(/_/g,' ')+'</span><span style="color:#aaa">'+fmtCurrency(v)+'</span></div>');}
+    }
+    det.innerHTML=rows.join('');
+    window._pdLastQuote={total:b.total,method:'custom',breakdown,scope:qScope,description:qDesc};
+    return;
+  }
+
   out.innerHTML='<div style="text-align:center;padding:20px;color:#666">'+(m===1?'Calculating…':'🔮 Researching market rates… (10-30s)')+'</div>';
   let body, url;
   if(m===1){
@@ -8949,7 +9431,7 @@ async function openProjectDetail(pid){
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:4px">
-            <input type="number" id="pd-commission-pct" value="${p.commission_pct!=null?p.commission_pct:10}" min="0" max="100" step="0.5" style="width:70px;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px 8px;color:#f59e0b;font-size:13px;font-weight:700;text-align:center" oninput="pdCalcCommission()">
+            <input type="number" id="pd-commission-pct" value="${p.commission_pct!=null?p.commission_pct:0}" min="0" max="100" step="0.5" style="width:70px;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px 8px;color:#f59e0b;font-size:13px;font-weight:700;text-align:center" oninput="pdCalcCommission()">
             <span style="color:#888;font-size:12px">%</span>
           </div>
           <span style="color:#555;font-size:14px">=</span>

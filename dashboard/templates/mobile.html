@@ -13,6 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="apple-touch-icon" href="/static/img/ahb_logo.jpeg">
 <link rel="manifest" href="/mobile/manifest.json">
+<script src="/static/quickrf-editor.js" defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden}
@@ -980,18 +981,16 @@ function bazaInit() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bazaInit);
 else bazaInit();
 
-/* Tear down any previously-installed service worker + clear stale caches.
-   Prior SW versions interfered with Safari rendering; we now run SW-less. */
+/* Register the lightweight app-shell SW so iOS/Android treat /mobile as installable.
+   The SW only caches the manifest, app icon, and the editor JS — no API offline. */
 try {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(regs => {
-      regs.forEach(r => { try { r.unregister(); } catch(e){} });
-    }).catch(()=>{});
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/mobile/sw.js', { scope: '/' })
+        .catch(err => console.warn('SW register failed', err));
+    });
   }
-  if (window.caches && caches.keys) {
-    caches.keys().then(keys => keys.forEach(k => { try { caches.delete(k); } catch(e){} })).catch(()=>{});
-  }
-} catch(e) { console.warn('cache/sw cleanup', e); }
+} catch(e) { console.warn('SW register skipped', e); }
 
 /* Home auto-refresh */
 setInterval(() => { if (S.tab === 'home') loadHome(); tickGreeting(); }, 60000);
@@ -2627,6 +2626,309 @@ function openSettingsView() {
 }
 function installPWA() {
   toast('On iOS: Share → Add to Home Screen');
+}
+
+/* ═════════════════════════════════ QUICKRF — RECEIPT CAPTURE ═════════════════════════════════
+   Opens a sub-view with three bins (Upload / Pre-scan / Analyzed) plus an
+   auto-OCR toggle. Reuses /static/quickrf-editor.js for full image editing
+   (zoom/rotate/brightness/contrast/crop/split). */
+const QRF = {
+  queue: [],
+  pollTimer: null,
+  CATS: ['Materials','Tools','Fuel','Food','Office supplies','Clothes'],
+};
+function qrfAutoOcr() { const v = localStorage.getItem('quickrf_auto_ocr'); return v === null ? true : v === '1'; }
+function qrfSetAutoOcr(checked) { localStorage.setItem('quickrf_auto_ocr', checked ? '1' : '0'); toast(checked ? 'Auto-OCR ON' : 'Stage mode — uploads wait in Upload bin'); }
+
+function openReceiptCapture() {
+  haptic(8);
+  openSubView('QuickRF', body => {
+    body.innerHTML = `
+      <div style="padding:0 4px 14px">
+        <div class="card" style="margin:0 0 12px;padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700">Capture</div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2)">
+              <input type="checkbox" id="qrfAutoOcr" ${qrfAutoOcr() ? 'checked' : ''} onchange="qrfSetAutoOcr(this.checked)" style="width:18px;height:18px">
+              <span>Auto-OCR</span>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label class="btn btn-primary btn-block" style="cursor:pointer;padding:14px;text-align:center;font-weight:700">
+              📷 Camera
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="qrfMobileUpload(this.files)">
+            </label>
+            <label class="btn btn-secondary btn-block" style="cursor:pointer;padding:14px;text-align:center;font-weight:700">
+              📁 Library
+              <input type="file" accept="image/*" multiple style="display:none" onchange="qrfMobileUpload(this.files)">
+            </label>
+          </div>
+          <div id="qrfStatus" style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center"></div>
+        </div>
+
+        <div class="qrf-bin" id="qrfBinUpload" style="display:none">
+          <div class="qrf-bin-head" style="color:var(--yellow)">
+            <span>📥 Upload <span id="qrfCntUpload">0</span></span>
+            <div style="display:flex;gap:6px">
+              <button class="btn-mini" onclick="qrfSelectAllStaged(true)">All</button>
+              <button class="btn-mini" onclick="qrfSelectAllStaged(false)">None</button>
+              <button class="btn-mini btn-mini-primary" onclick="qrfSendStaged()">→ OCR</button>
+              <button class="btn-mini btn-mini-danger" onclick="qrfEraseStaged()">🗑</button>
+            </div>
+          </div>
+          <div id="qrfListUpload" class="qrf-grid"></div>
+        </div>
+
+        <div class="qrf-bin" id="qrfBinPrescan" style="display:none">
+          <div class="qrf-bin-head" style="color:var(--blue)">
+            <span>⚙ Pre-scan <span id="qrfCntPrescan">0</span></span>
+            <button class="btn-mini btn-mini-primary" onclick="qrfRunQueue()">Process</button>
+          </div>
+          <div id="qrfListPrescan"></div>
+        </div>
+
+        <div class="qrf-bin" id="qrfBinAnalyzed" style="display:none">
+          <div class="qrf-bin-head" style="color:var(--green)">
+            <span>✅ Analyzed <span id="qrfCntAnalyzed">0</span></span>
+            <button class="btn-mini btn-mini-primary" onclick="qrfFileAllAnalyzed()">File All</button>
+          </div>
+          <div id="qrfListAnalyzed"></div>
+        </div>
+      </div>
+      <style>
+        .qrf-bin{margin-bottom:14px}
+        .qrf-bin-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin:0 4px 8px;gap:8px}
+        .qrf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+        .qrf-thumb{position:relative;border:2px solid var(--border3);border-radius:10px;overflow:hidden;background:var(--bg4);cursor:pointer}
+        .qrf-thumb.selected{border-color:var(--accent2)}
+        .qrf-thumb img{width:100%;height:130px;object-fit:cover;background:#000}
+        .qrf-thumb .qrf-thumb-foot{padding:5px 7px;font-size:10px;color:var(--text2);display:flex;justify-content:space-between;gap:4px}
+        .qrf-thumb .qrf-thumb-check{position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:5px;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;font-size:13px;color:#fff}
+        .qrf-thumb.selected .qrf-thumb-check{background:var(--accent2);border-color:var(--accent2)}
+        .qrf-row{background:var(--bg4);border:1px solid var(--border);border-radius:10px;padding:10px;margin:6px 4px;display:flex;gap:10px;align-items:flex-start}
+        .qrf-row img{width:60px;height:80px;object-fit:cover;border-radius:6px;background:#000;flex-shrink:0}
+        .qrf-row .qrf-row-body{flex:1;min-width:0}
+        .qrf-row .qrf-row-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .qrf-row .qrf-row-sub{font-size:11px;color:var(--text2);margin-bottom:4px}
+        .qrf-row .qrf-row-amt{font-size:14px;font-weight:800;color:var(--green)}
+        .qrf-row .qrf-row-actions{display:flex;flex-direction:column;gap:5px}
+        .btn-mini{padding:5px 9px;font-size:11px;border-radius:6px;background:var(--bg5);border:1px solid var(--border3);color:var(--text)}
+        .btn-mini-primary{background:var(--accent2);border-color:var(--accent2);color:#fff}
+        .btn-mini-danger{background:#3a0a0a;border-color:var(--red);color:var(--red)}
+        .qrf-empty{text-align:center;padding:14px;color:var(--text4);font-size:12px}
+      </style>
+    `;
+    qrfLoadQueue();
+  });
+}
+
+async function qrfLoadQueue() {
+  try {
+    const res = await fetch('/api/ahb/receipts/queue?bin=live');
+    QRF.queue = await res.json();
+    const cnt = s => QRF.queue.filter(q => q.status === s).length;
+    const upN = cnt('staged'), psN = cnt('pending') + cnt('processing') + cnt('error'), anN = cnt('ready');
+    const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    set('qrfCntUpload', upN); set('qrfCntPrescan', psN); set('qrfCntAnalyzed', anN);
+    const show = (id, on) => { const el = $(id); if (el) el.style.display = on ? 'block' : 'none'; };
+    show('qrfBinUpload', upN); show('qrfBinPrescan', psN); show('qrfBinAnalyzed', anN);
+    const status = $('qrfStatus');
+    if (status) {
+      const bits = [];
+      if (upN) bits.push(`${upN} staged`);
+      if (psN) bits.push(`${psN} processing`);
+      if (anN) bits.push(`${anN} ready`);
+      status.textContent = bits.join(' · ') || 'Queue empty';
+    }
+    qrfRenderQueue();
+    if (cnt('pending') || cnt('processing')) qrfStartPolling();
+  } catch (e) { console.warn('qrfLoadQueue', e); }
+}
+
+function qrfStartPolling() {
+  if (QRF.pollTimer) return;
+  QRF.pollTimer = setInterval(() => {
+    const live = QRF.queue.some(q => q.status === 'pending' || q.status === 'processing');
+    if (live) qrfLoadQueue();
+    else { clearInterval(QRF.pollTimer); QRF.pollTimer = null; }
+  }, 3500);
+}
+
+function qrfRenderQueue() {
+  const upEl = $('qrfListUpload'), psEl = $('qrfListPrescan'), anEl = $('qrfListAnalyzed');
+  if (upEl) {
+    const staged = QRF.queue.filter(q => q.status === 'staged');
+    upEl.innerHTML = staged.map(q => `
+      <div class="qrf-thumb" data-qid="${q.id}" onclick="qrfToggleStaged('${q.id}',event)">
+        <div class="qrf-thumb-check">✓</div>
+        <img src="/api/ahb/receipts/queue/image/${q.id}" alt="" onerror="this.style.display='none'">
+        <div class="qrf-thumb-foot"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(q.mode || '')}</span><span style="color:var(--yellow);font-weight:700">staged</span></div>
+      </div>`).join('') || '<div class="qrf-empty">No staged uploads</div>';
+  }
+  if (psEl) {
+    const items = QRF.queue.filter(q => q.status === 'pending' || q.status === 'processing' || q.status === 'error');
+    psEl.innerHTML = items.map(q => {
+      const c = q.status === 'processing' ? 'var(--blue)' : q.status === 'error' ? 'var(--red)' : 'var(--yellow)';
+      const lbl = q.status === 'error' ? (q.error || 'Failed').slice(0, 60) : q.status.toUpperCase();
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin:5px 4px;background:var(--bg4);border:1px solid var(--border);border-left:3px solid ${c};border-radius:8px;font-size:11px">
+        <span style="color:${c};font-weight:700;min-width:80px">${esc(lbl)}</span>
+        <span style="color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((q.image_path || '').split('/').pop() || '')}</span>
+        ${q.status === 'error' ? `<button class="btn-mini" onclick="qrfRescan('${q.id}')">Retry</button><button class="btn-mini btn-mini-danger" onclick="qrfErase('${q.id}')">✕</button>` : ''}
+      </div>`;
+    }).join('') || '<div class="qrf-empty">Idle</div>';
+  }
+  if (anEl) {
+    const items = QRF.queue.filter(q => q.status === 'ready');
+    anEl.innerHTML = items.map(q => {
+      let parsed = {}; try { parsed = JSON.parse(q.result_json || '{}'); } catch (e) {}
+      const s = parsed.structured || {};
+      return `<div class="qrf-row" data-qid="${q.id}">
+        <img src="/api/ahb/receipts/queue/image/${q.id}" onclick="qrfOpenEditor('${q.id}')" alt="" onerror="this.style.display='none'">
+        <div class="qrf-row-body">
+          <div class="qrf-row-title">${esc(s.store_name || s.vendor || 'Unknown vendor')}</div>
+          <div class="qrf-row-sub">${esc(s.purchase_date || '')} · ${esc(s.category || '?')}</div>
+          <div class="qrf-row-amt">${s.total != null ? '$' + Number(s.total).toFixed(2) : '$?'}</div>
+        </div>
+        <div class="qrf-row-actions">
+          <button class="btn-mini btn-mini-primary" onclick="qrfFile('${q.id}')">File</button>
+          <button class="btn-mini" onclick="qrfOpenEditor('${q.id}')">Edit</button>
+          <button class="btn-mini btn-mini-danger" onclick="qrfErase('${q.id}')">Erase</button>
+        </div>
+      </div>`;
+    }).join('') || '<div class="qrf-empty">No analyzed receipts</div>';
+  }
+}
+
+async function qrfMobileUpload(files) {
+  if (!files || !files.length) return;
+  const auto = qrfAutoOcr();
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  if (!auto) fd.append('stage', '1');
+  toast(`Uploading ${files.length} image(s)${auto ? '' : ' (staged)'}...`);
+  haptic(15);
+  const data = await apiUpload('/api/ahb/receipts/process', fd);
+  if (data && data.success) {
+    toast(auto ? `${data.count} queued — OCR running` : `${data.count} staged — pick & send when ready`);
+    qrfLoadQueue();
+    if (auto) qrfStartPolling();
+  } else {
+    toast((data && data.error) || 'Upload failed', { err: true });
+  }
+}
+
+function qrfToggleStaged(qid, ev) {
+  if (ev) ev.stopPropagation();
+  const el = document.querySelector('.qrf-thumb[data-qid="' + qid + '"]');
+  if (el) el.classList.toggle('selected');
+}
+function qrfSelectAllStaged(on) {
+  document.querySelectorAll('.qrf-thumb').forEach(el => el.classList.toggle('selected', !!on));
+}
+function _qrfSelectedStagedIds() {
+  return Array.from(document.querySelectorAll('.qrf-thumb.selected')).map(el => el.dataset.qid);
+}
+async function qrfSendStaged() {
+  let ids = _qrfSelectedStagedIds();
+  if (!ids.length) {
+    if (!confirm('No selection — send ALL staged uploads to OCR?')) return;
+    ids = QRF.queue.filter(q => q.status === 'staged').map(q => q.id);
+    if (!ids.length) { toast('Nothing to send'); return; }
+  }
+  haptic(15);
+  const r = await api('/api/ahb/receipts/queue/send-batch', { method: 'POST', body: { ids } });
+  if (r && r.success) { toast(`Sent ${r.promoted} to OCR`); qrfLoadQueue(); qrfStartPolling(); }
+  else toast((r && r.error) || 'Send failed', { err: true });
+}
+async function qrfEraseStaged() {
+  const ids = _qrfSelectedStagedIds();
+  if (!ids.length) { toast('Nothing selected'); return; }
+  if (!confirm(`Erase ${ids.length} staged upload(s)?`)) return;
+  haptic(15);
+  for (const qid of ids) await api('/api/ahb/receipts/queue/' + qid + '/reject', { method: 'POST' });
+  toast(`Erased ${ids.length}`); qrfLoadQueue();
+}
+async function qrfRunQueue() {
+  haptic(15);
+  const r = await api('/api/ahb/receipts/queue/run?limit=20', { method: 'POST' });
+  if (r) toast(`Processed ${r.processed || 0}`);
+  qrfLoadQueue();
+}
+async function qrfRescan(qid) {
+  await api('/api/ahb/receipts/queue/' + qid + '/rescan', { method: 'POST' });
+  toast('Re-OCR queued'); qrfLoadQueue(); qrfStartPolling();
+}
+async function qrfErase(qid) {
+  if (!confirm('Discard this receipt?')) return;
+  await api('/api/ahb/receipts/queue/' + qid + '/reject', { method: 'POST' });
+  toast('Erased'); qrfLoadQueue();
+}
+async function qrfFile(qid) {
+  const q = QRF.queue.find(x => x.id === qid); if (!q) return;
+  let parsed = {}; try { parsed = JSON.parse(q.result_json || '{}'); } catch (e) {}
+  const s = parsed.structured || {};
+  haptic(15);
+  const r = await api('/api/ahb/receipts/queue/' + qid + '/confirm', {
+    method: 'POST',
+    body: {
+      store_name: s.store_name || '',
+      total: s.total || 0, subtotal: s.subtotal || 0, tax_amount: s.tax_amount || 0,
+      category: s.category || '', receipt_date: s.purchase_date || '',
+      payment_method: s.payment_method || '', teller_name: s.teller_name || '',
+      store_location: s.store_location || '', purchase_time: s.purchase_time || '',
+      items: s.items || [], ocr_text: parsed.ocr_raw || '', ocr_raw: parsed.ocr_raw || '',
+      structured: s,
+    }
+  });
+  if (r && r.success) { toast('Filed: ' + (s.store_name || 'receipt')); qrfLoadQueue(); }
+  else toast((r && r.error) || 'File failed', { err: true });
+}
+async function qrfFileAllAnalyzed() {
+  const ready = QRF.queue.filter(q => q.status === 'ready');
+  if (!ready.length) { toast('Nothing to file'); return; }
+  if (!confirm(`File ${ready.length} analyzed receipt(s)?`)) return;
+  for (const q of ready) await qrfFile(q.id);
+  toast(`Filed ${ready.length}`);
+}
+function qrfOpenEditor(qid) {
+  const q = QRF.queue.find(x => x.id === qid); if (!q) return;
+  if (!window.QuickRFEditor) { toast('Editor not ready — try again', { err: true }); return; }
+  haptic(10);
+  QuickRFEditor.open(qid, {
+    pairId: q.pair_id || null,
+    parentImagePath: q.parent_image_path || null,
+    mode: q.mode || '',
+    onSave: () => { qrfLoadQueue(); qrfStartPolling(); }
+  });
+}
+
+/* Filed-receipt detail (tap a receipt in the Receipts list). */
+async function openReceiptDetail(rid) {
+  haptic(8);
+  openSubView('Receipt', body => {
+    body.innerHTML = '<div class="card skeleton" style="height:140px;margin-bottom:12px"></div><div class="card skeleton" style="height:100px"></div>';
+    api('/api/ahb/receipts/' + rid).then(r => {
+      if (!r || r.error) { body.innerHTML = '<div class="qrf-empty">Receipt not found</div>'; return; }
+      const img = r.image_path ? `/api/ahb/receipts/image/${rid}` : '';
+      body.innerHTML = `
+        ${img ? `<div class="card" style="padding:0;overflow:hidden;cursor:pointer" onclick="openImgViewer('${img}')">
+          <img src="${img}" style="width:100%;max-height:360px;object-fit:contain;background:#000">
+        </div>` : ''}
+        <div class="card">
+          <div class="detail-row"><span class="label">Store</span><span class="value">${esc(r.store_name || r.vendor || '?')}</span></div>
+          <div class="detail-row"><span class="label">Total</span><span class="value" style="color:var(--green);font-weight:800">$${Number(r.total || r.amount || 0).toFixed(2)}</span></div>
+          <div class="detail-row"><span class="label">Date</span><span class="value">${esc(r.receipt_date || dateStr(r.created_at))}</span></div>
+          <div class="detail-row"><span class="label">Category</span><span class="value">${esc(r.category || '?')}</span></div>
+          <div class="detail-row"><span class="label">Payment</span><span class="value">${esc(r.payment_method || '?')}</span></div>
+          ${r.tax_amount ? `<div class="detail-row"><span class="label">Tax</span><span class="value">$${Number(r.tax_amount).toFixed(2)}</span></div>` : ''}
+          ${r.subtotal ? `<div class="detail-row"><span class="label">Subtotal</span><span class="value">$${Number(r.subtotal).toFixed(2)}</span></div>` : ''}
+          ${r.teller_name ? `<div class="detail-row"><span class="label">Teller</span><span class="value">${esc(r.teller_name)}</span></div>` : ''}
+          ${r.store_location ? `<div class="detail-row"><span class="label">Location</span><span class="value">${esc(r.store_location)}</span></div>` : ''}
+        </div>
+        ${r.ocr_text || r.ocr_raw ? `<div class="card"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">OCR text</div><pre style="font-size:10px;color:var(--text2);white-space:pre-wrap;word-wrap:break-word;font-family:ui-monospace,monospace">${esc((r.ocr_text || r.ocr_raw || '').slice(0, 1500))}</pre></div>` : ''}
+      `;
+    });
+  });
 }
 </script>
 <!-- MORE_JS -->

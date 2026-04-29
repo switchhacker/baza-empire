@@ -416,7 +416,7 @@ def init_ahb_tables():
         "ALTER TABLE ahb_files ADD COLUMN document_type TEXT DEFAULT ''",
         "ALTER TABLE ahb_invoices ADD COLUMN year TEXT DEFAULT ''",
         "ALTER TABLE ahb_projects ADD COLUMN year TEXT DEFAULT ''",
-        "ALTER TABLE ahb_projects ADD COLUMN commission_pct REAL DEFAULT 10",
+        "ALTER TABLE ahb_projects ADD COLUMN commission_pct REAL DEFAULT 0",
         "ALTER TABLE ahb_projects ADD COLUMN commission_value REAL DEFAULT 0",
         "ALTER TABLE ahb_projects ADD COLUMN commission_beneficiary TEXT DEFAULT ''",
         "ALTER TABLE ahb_receipt_queue ADD COLUMN parent_image_path TEXT",
@@ -428,6 +428,10 @@ def init_ahb_tables():
             c.execute(stmt)
         except Exception:
             pass
+    try:
+        c.execute("UPDATE ahb_receipt_queue SET status='ready' WHERE status='done'")
+    except Exception:
+        pass
     c.executescript("""
         CREATE TABLE IF NOT EXISTS ahb_quotes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3412,18 +3416,35 @@ def mobile_manifest():
 @app.route('/mobile/sw.js')
 @app.route('/sw.js')
 def mobile_sw():
-    """Self-destructing service worker — unregisters itself and clears all caches.
-    Prior versions interfered with Safari loading. This replacement purges SWs and bails."""
+    """Minimal app-shell service worker. Caches the icon + the editor JS so
+    Chrome treats /mobile as installable. Network-first for HTML and APIs —
+    no offline support; the SW exists only to satisfy the install criteria
+    and to speed up cold loads of static assets."""
     sw = """
-self.addEventListener('install', e => { self.skipWaiting(); });
+const CACHE = 'baza-shell-v3';
+const SHELL = ['/static/img/ahb_logo.jpeg', '/static/quickrf-editor.js', '/mobile/manifest.json'];
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL).catch(()=>null)));
+});
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map(k => caches.delete(k)));
-    await self.registration.unregister();
-    const clients = await self.clients.matchAll({ type: 'window' });
-    clients.forEach(c => c.navigate(c.url));
+    await Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)));
+    await self.clients.claim();
   })());
+});
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET') return;
+  // Cache-first only for our small static shell; everything else hits the network.
+  if (SHELL.includes(url.pathname)) {
+    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
+      const clone = resp.clone();
+      caches.open(CACHE).then(c => c.put(e.request, clone)).catch(()=>null);
+      return resp;
+    }).catch(() => caches.match(e.request))));
+  }
 });
 """
     resp = make_response(sw)
@@ -3547,8 +3568,9 @@ def api_ahb_projects_create():
         conn.execute(
             """INSERT INTO ahb_projects (id, client_id, title, address, scope, description,
                budget_low, budget_high, status, start_date, end_date, assigned_agents, notes,
-               value, client_name, client_email, contact_info, location)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               value, client_name, client_email, contact_info, location,
+               commission_pct, commission_value)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (pid, data.get('client_id'), data.get('title'), data.get('address'),
              data.get('scope'), data.get('description'),
              data.get('budget_low'), data.get('budget_high'),
@@ -3556,7 +3578,11 @@ def api_ahb_projects_create():
              data.get('end_date'), data.get('assigned_agents'), data.get('notes'),
              data.get('value'), data.get('client_name', ''),
              data.get('client_email', ''), data.get('contact_info', ''),
-             data.get('location', ''))
+             data.get('location', ''),
+             # Default new projects to 0% commission. The user enters a real
+             # commission per-project in the project detail modal when needed.
+             float(data.get('commission_pct') or 0),
+             float(data.get('commission_value') or 0))
         )
 
         # Create phases if provided
@@ -3738,6 +3764,144 @@ def api_ahb_invoice_move_year(iid):
 
 # ── Project Quotes ──────────────────────────────────────────────────────────
 
+def _deposit_lines(total, carry_money):
+    """The two auto-injected payment-schedule rows: 50% deposit + 50% balance.
+
+    When `carry_money` is True (quote-applied invoice with blank work-line
+    totals), the deposit/balance rows carry the money — their `total`s sum
+    to the basis. When False (manual invoice with real work-line totals),
+    the rows are informational with `total=0` and the dollar amounts shown
+    inline in the description so they don't double-count."""
+    total = float(total or 0)
+    deposit_amount = round(total * 0.5, 2)
+    balance_amount = round(total - deposit_amount, 2)
+    if carry_money:
+        d_total, b_total = deposit_amount, balance_amount
+        d_desc = '50% Deposit due before commencement of work'
+        b_desc = 'Balance (50%) due upon project completion — total due after deposit'
+    else:
+        d_total, b_total = 0, 0
+        d_desc = f'50% Deposit due before commencement of work — ${deposit_amount:,.2f}'
+        b_desc = f'Balance (50%) due upon project completion — total due after deposit ${balance_amount:,.2f}'
+    return [
+        {
+            'description': d_desc,
+            'qty': 1, 'rate': d_total, 'total': d_total,
+            'unit': 'qty', 'materials': 0, 'labor': 0,
+            'quantity': 1, 'unit_price': d_total,
+            '_auto_deposit': True,
+        },
+        {
+            'description': b_desc,
+            'qty': 1, 'rate': b_total, 'total': b_total,
+            'unit': 'qty', 'materials': 0, 'labor': 0,
+            'quantity': 1, 'unit_price': b_total,
+            '_auto_deposit': True,
+        },
+    ]
+
+
+def _line_items_from_description(description, total):
+    """Build invoice line_items from a quote: each non-empty line of the
+    description becomes one item carrying ONLY the description text — qty,
+    rate, materials, labor, and total are blank ($0) so the contractor can
+    fill them in later. The full total is carried on the auto-appended
+    50% deposit + 50% balance rows."""
+    total = float(total or 0)
+    lines = [ln.strip() for ln in (description or '').split('\n') if ln.strip()]
+    items = []
+    if not lines:
+        items.append({
+            'description': 'Project work per quote',
+            'qty': 1, 'rate': 0, 'total': 0,
+            'unit': 'qty', 'materials': 0, 'labor': 0,
+            'quantity': 1, 'unit_price': 0,
+        })
+    else:
+        for ln in lines:
+            items.append({
+                'description': ln,
+                'qty': 1, 'rate': 0, 'total': 0,
+                'unit': 'qty', 'materials': 0, 'labor': 0,
+                'quantity': 1, 'unit_price': 0,
+            })
+    # Quote-applied invoices have blank work-line totals, so deposit/balance
+    # carry the money.
+    items.extend(_deposit_lines(total, carry_money=True))
+    return items
+
+
+_DEPOSIT_DESC_PREFIXES = (
+    '50% deposit due before',
+    'balance (50%) due upon',
+    'balance due upon',
+)
+
+
+def _is_auto_deposit_line(li):
+    """An auto-deposit row is identified by its marker OR by its canonical
+    description (the marker is dropped on frontend round-trips through the
+    invoice modal, so the description is our fallback)."""
+    if li.get('_auto_deposit'):
+        return True
+    desc = (li.get('description') or '').strip().lower()
+    return any(desc.startswith(p) for p in _DEPOSIT_DESC_PREFIXES)
+
+
+def _ensure_deposit_lines(items_or_json, fallback_total=0):
+    """Strip any prior auto-deposit lines from the payload, then append fresh
+    50% deposit + 50% balance payment-schedule rows.
+
+    - If the remaining work lines sum to > 0 (manual invoice flow), the
+      deposit/balance rows are informational with `total=0` and the dollar
+      amounts inlined in the description, so they don't double-count.
+    - If the work lines all sum to 0 (quote-driven invoice with blank work
+      totals), the deposit/balance rows carry the money split 50/50 of
+      `fallback_total` (the quote total)."""
+    if items_or_json is None:
+        return None
+    items = items_or_json
+    if isinstance(items, str):
+        try:
+            items = json.loads(items) if items else []
+        except Exception:
+            return items_or_json
+    if not isinstance(items, list):
+        return items_or_json
+    work_items = [li for li in items if not _is_auto_deposit_line(li)]
+    work_subtotal = 0.0
+    for li in work_items:
+        try:
+            work_subtotal += float(li.get('total') or li.get('rate') or 0)
+        except Exception:
+            pass
+    if work_subtotal > 0:
+        return work_items + _deposit_lines(work_subtotal, carry_money=False)
+    fallback = float(fallback_total or 0)
+    if fallback > 0:
+        return work_items + _deposit_lines(fallback, carry_money=True)
+    return work_items  # nothing to schedule yet
+
+
+def _apply_quote_to_invoice(c, project_id, quote_total, quote_description):
+    """Rewrite the linked invoice's line items from the quote's description
+    and sync subtotal/total. Returns the invoice id or None if no invoice
+    exists for this project."""
+    inv = c.execute(
+        "SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1",
+        (project_id,)
+    ).fetchone()
+    if not inv:
+        return None
+    items = _line_items_from_description(quote_description, quote_total)
+    c.execute(
+        "UPDATE ahb_invoices SET line_items=?, subtotal=?, total=?, tax=0, updated_at=? WHERE id=?",
+        (json.dumps(items), float(quote_total or 0), float(quote_total or 0),
+         datetime.datetime.now().isoformat(), inv['id'])
+    )
+    return inv['id']
+
+
 @app.route('/api/ahb/projects/<pid>/quotes', methods=['GET', 'POST'])
 def api_ahb_project_quotes(pid):
     conn = _ahb_db()
@@ -3756,16 +3920,13 @@ def api_ahb_project_quotes(pid):
              json.dumps(d.get('breakdown') or {}),
              d.get('notes', ''), 1 if d.get('make_active') else 0))
         qid = c.lastrowid
-        # If marked active, demote others, update project value, and sync invoice total
+        # If marked active, demote others, update project value, and rebuild
+        # the linked invoice's line items from this quote's description.
         if d.get('make_active'):
             c.execute("UPDATE ahb_quotes SET is_active=0 WHERE project_id=? AND id<>?", (pid, qid))
             c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                       (total, total, datetime.datetime.now().isoformat(), pid))
-            # Sync linked invoice total (keep descriptions intact)
-            inv = c.execute("SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1", (pid,)).fetchone()
-            if inv:
-                c.execute("UPDATE ahb_invoices SET total=?, subtotal=?, updated_at=? WHERE id=?",
-                          (total, total, datetime.datetime.now().isoformat(), inv['id']))
+            _apply_quote_to_invoice(c, pid, total, d.get('description', ''))
         conn.commit()
         row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
         conn.close()
@@ -3795,19 +3956,14 @@ def api_ahb_quote_modify(qid):
         c.execute("UPDATE ahb_quotes SET is_active=1 WHERE id=?", (qid,))
         c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                   (row['total'], row['total'], datetime.datetime.now().isoformat(), pid))
-        # Sync linked invoice total (keep descriptions intact)
-        inv = c.execute("SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1", (pid,)).fetchone()
-        if inv:
-            c.execute("UPDATE ahb_invoices SET total=?, subtotal=?, updated_at=? WHERE id=?",
-                      (row['total'], row['total'], datetime.datetime.now().isoformat(), inv['id']))
+        # Rebuild the linked invoice's line items from this quote's description.
+        _apply_quote_to_invoice(c, pid, row['total'], row['description'] or '')
     if d.get('deactivate'):
         c.execute("UPDATE ahb_quotes SET is_active=0 WHERE id=?", (qid,))
     if d.get('apply_to_invoice'):
-        # Apply active quote total to the linked invoice
-        inv = c.execute("SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1", (pid,)).fetchone()
-        if inv:
-            c.execute("UPDATE ahb_invoices SET total=?, subtotal=?, updated_at=? WHERE id=?",
-                      (row['total'], row['total'], datetime.datetime.now().isoformat(), inv['id']))
+        # Apply this quote's total to the linked invoice and rebuild line items
+        # from its description — works whether or not the quote is active.
+        _apply_quote_to_invoice(c, pid, row['total'], row['description'] or '')
     if 'notes' in d:
         c.execute("UPDATE ahb_quotes SET notes=? WHERE id=?", (d['notes'], qid))
     conn.commit()
@@ -3946,6 +4102,20 @@ def api_ahb_invoices_create():
         data = request.json or {}
         iid = uuid.uuid4().hex[:24]
         inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
+
+        # Always inject the 50% deposit + balance payment-schedule rows and
+        # recompute subtotal/total to match the rebuilt line items.
+        items_in = data.get('line_items', [])
+        rebuilt = _ensure_deposit_lines(
+            items_in,
+            fallback_total=data.get('total') or data.get('subtotal') or 0
+        )
+        if rebuilt is not None:
+            items_in = rebuilt
+            sub = sum(float(li.get('total') or 0) for li in items_in)
+            data['subtotal'] = sub
+            data['total'] = sub + float(data.get('tax') or 0)
+
         conn = _ahb_db()
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
@@ -3955,7 +4125,7 @@ def api_ahb_invoices_create():
                client_address, client_email, client_phone, project_address)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (iid, data.get('client_id'), data.get('project_id'), inv_num,
-             json.dumps(data.get('line_items', [])) if isinstance(data.get('line_items'), list) else data.get('line_items'),
+             json.dumps(items_in) if isinstance(items_in, list) else items_in,
              data.get('subtotal'), data.get('tax'), data.get('total'),
              data.get('status', 'draft'), data.get('due_date'),
              data.get('paid_date'), data.get('notes'),
@@ -3980,6 +4150,20 @@ def api_ahb_invoices_update(iid):
         data = request.json or {}
         fields = []
         vals = []
+        # Re-inject deposit lines whenever line_items is being rewritten and
+        # recompute subtotal/total so the stored math matches the rebuilt
+        # line items (frontend-submitted subtotal/total may include the
+        # round-tripped old deposit amounts and would otherwise be stale).
+        if 'line_items' in data:
+            rebuilt = _ensure_deposit_lines(
+                data['line_items'],
+                fallback_total=data.get('total') or data.get('subtotal') or 0
+            )
+            if rebuilt is not None:
+                data['line_items'] = rebuilt
+                sub = sum(float(li.get('total') or 0) for li in rebuilt)
+                data['subtotal'] = sub
+                data['total'] = sub + float(data.get('tax') or 0)
         for k in ('client_id', 'project_id', 'line_items', 'subtotal', 'tax',
                    'total', 'status', 'due_date', 'paid_date', 'notes',
                    'date', 'parent_invoice_id', 'is_change_order', 'overdue_since',
@@ -7115,13 +7299,14 @@ def _find_split_column(img):
     return max(col_means, key=lambda t: t[1])[0]
 
 
-def _detect_and_queue(file_storage, conn, queue_dir):
+def _detect_and_queue(file_storage, conn, queue_dir, status='pending'):
     """Detect 1-up vs 2-up, crop accordingly, insert queue row(s).
     Returns list of new queue ids. Caller is responsible for conn.commit().
 
     file_storage: werkzeug FileStorage from request.files
     conn:         sqlite3 connection (open, autocommit off)
     queue_dir:    absolute path where crops are saved
+    status:       initial row status — 'pending' (default, auto-OCR) or 'staged' (sit in upload bin)
     """
     from PIL import Image, ImageOps, UnidentifiedImageError
     safe_name = re.sub(r'[^\w.\-]', '_', file_storage.filename or 'receipt.jpg')
@@ -7140,8 +7325,8 @@ def _detect_and_queue(file_storage, conn, queue_dir):
         file_storage.save(fpath)
         conn.execute(
             "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) "
-            "VALUES (?, ?, 'bulk-fallback', 'pending')",
-            (qid, fpath))
+            "VALUES (?, ?, 'bulk-fallback', ?)",
+            (qid, fpath, status))
         return [qid]
 
     w, h = img.size
@@ -7152,8 +7337,8 @@ def _detect_and_queue(file_storage, conn, queue_dir):
         img.save(fpath, 'JPEG', quality=90)
         conn.execute(
             "INSERT INTO ahb_receipt_queue (id, image_path, mode, status) "
-            "VALUES (?, ?, 'bulk-single', 'pending')",
-            (qid, fpath))
+            "VALUES (?, ?, 'bulk-single', ?)",
+            (qid, fpath, status))
         return [qid]
 
     pair_id = str(uuid.uuid4())
@@ -7169,8 +7354,8 @@ def _detect_and_queue(file_storage, conn, queue_dir):
         conn.execute(
             "INSERT INTO ahb_receipt_queue "
             "(id, image_path, mode, status, parent_image_path, pair_id, split_col) "
-            "VALUES (?, ?, ?, 'pending', ?, ?, ?)",
-            (qid, fpath, f'bulk-dual-{side}', parent_fpath, pair_id, split_col))
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (qid, fpath, f'bulk-dual-{side}', status, parent_fpath, pair_id, split_col))
         new_ids.append(qid)
     return new_ids
 
@@ -7179,12 +7364,20 @@ def _detect_and_queue(file_storage, conn, queue_dir):
 def api_ahb_receipts_process():
     """Easy Bulk receipt upload. Per file: EXIF-transpose, then portrait → 1-up,
     landscape → 2-up split at the brightest column (white valley between receipts).
-    Queue cards appear immediately with cropped thumbnails; OCR drains in background."""
+    Queue cards appear immediately with cropped thumbnails; OCR drains in background.
+
+    Pass stage=1 (form field or query string) to keep rows in the Upload bin
+    (status='staged') without spawning the OCR worker. Caller flips to pending
+    via /api/ahb/receipts/queue/send-batch when ready."""
     try:
         files = request.files.getlist('files') or [request.files.get('file')]
         files = [f for f in files if f]
         if not files:
             return jsonify({'success': False, 'error': 'No files uploaded'}), 400
+
+        stage_raw = (request.form.get('stage') or request.args.get('stage') or '').strip().lower()
+        stage_mode = stage_raw in ('1', 'true', 'yes', 'on')
+        initial_status = 'staged' if stage_mode else 'pending'
 
         queue_dir = os.path.join(DASHBOARD_DIR, 'uploads', 'ahb', 'receipts', 'queue')
         os.makedirs(queue_dir, exist_ok=True)
@@ -7192,7 +7385,7 @@ def api_ahb_receipts_process():
         queue_ids = []
         for f in files:
             try:
-                queue_ids.extend(_detect_and_queue(f, conn, queue_dir))
+                queue_ids.extend(_detect_and_queue(f, conn, queue_dir, status=initial_status))
             except Exception as _e:
                 qid = str(uuid.uuid4())
                 conn.execute(
@@ -7202,8 +7395,14 @@ def api_ahb_receipts_process():
                 queue_ids.append(qid)
         conn.commit()
         conn.close()
-        _spawn_receipt_queue_worker()
-        return jsonify({'success': True, 'queue_ids': queue_ids, 'count': len(queue_ids)})
+        if not stage_mode:
+            _spawn_receipt_queue_worker()
+        return jsonify({
+            'success': True,
+            'queue_ids': queue_ids,
+            'count': len(queue_ids),
+            'staged': stage_mode,
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -7245,7 +7444,7 @@ def _spawn_receipt_queue_worker():
                                             text=True, timeout=180, env=env)
                     conn = _ahb_db()
                     if result.returncode == 0:
-                        conn.execute("UPDATE ahb_receipt_queue SET status='done', result_json=? WHERE id=?",
+                        conn.execute("UPDATE ahb_receipt_queue SET status='ready', result_json=? WHERE id=?",
                                      (result.stdout.strip(), qid))
                     else:
                         conn.execute("UPDATE ahb_receipt_queue SET status='error', error=? WHERE id=?",
@@ -7266,20 +7465,158 @@ def _spawn_receipt_queue_worker():
     t.start()
 
 
+_BIN_STATUSES = {
+    'upload':   ('staged',),
+    'prescan':  ('pending', 'processing', 'error'),
+    'analyzed': ('ready',),
+    'live':     ('staged', 'pending', 'processing', 'error', 'ready'),
+}
+
 @app.route('/api/ahb/receipts/queue', methods=['GET'])
 def api_ahb_receipts_queue_list():
-    """List queue items. ?status=pending|processing|done|error"""
+    """List queue items.
+    ?status=staged|pending|processing|ready|error|rejected|confirmed — exact status
+    ?bin=upload|prescan|analyzed|live — convenience grouping for the 3-bin UI"""
     try:
         conn = _ahb_db()
         q = "SELECT * FROM ahb_receipt_queue WHERE 1=1"
         params = []
-        if request.args.get('status'):
-            q += " AND status = ?"; params.append(request.args['status'])
+        bin_arg = (request.args.get('bin') or '').strip().lower()
+        status_arg = request.args.get('status')
+        if bin_arg in _BIN_STATUSES:
+            placeholders = ','.join('?' * len(_BIN_STATUSES[bin_arg]))
+            q += f" AND status IN ({placeholders})"
+            params.extend(_BIN_STATUSES[bin_arg])
+        elif status_arg:
+            q += " AND status = ?"
+            params.append(status_arg)
         rows = conn.execute(q + " ORDER BY created_at DESC", params).fetchall()
         conn.close()
         return jsonify([dict(r) for r in rows])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/send-batch', methods=['POST'])
+def api_ahb_receipts_queue_send_batch():
+    """Promote staged items to pending so the OCR worker picks them up.
+    Body: {"ids": ["qid1", "qid2", ...]}  (omit or empty = promote all staged)"""
+    try:
+        data = request.json or {}
+        ids = data.get('ids') or []
+        conn = _ahb_db()
+        if ids:
+            placeholders = ','.join('?' * len(ids))
+            cur = conn.execute(
+                f"UPDATE ahb_receipt_queue SET status='pending' "
+                f"WHERE status='staged' AND id IN ({placeholders})",
+                ids)
+        else:
+            cur = conn.execute(
+                "UPDATE ahb_receipt_queue SET status='pending' WHERE status='staged'")
+        promoted = cur.rowcount or 0
+        conn.commit()
+        conn.close()
+        if promoted:
+            _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'promoted': promoted})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/queue/<qid>/edit-image', methods=['POST'])
+def api_ahb_receipts_queue_edit_image(qid):
+    """Replace a queue item's image with a client-edited version (zoom/rotate/
+    brightness/contrast/crop applied in the browser canvas).
+
+    Body: {
+      "image_b64": "data:image/jpeg;base64,...",   # required
+      "rescan":    true|false,                      # default true → re-OCR
+      "split_col": <int>                            # optional, only for split halves
+    }
+
+    For split halves with split_col provided, the parent image stays untouched
+    but the sibling half is re-cropped from the parent at the new column."""
+    try:
+        from PIL import Image
+        from io import BytesIO
+        import base64
+
+        data = request.json or {}
+        b64 = (data.get('image_b64') or '').strip()
+        if not b64:
+            return jsonify({'success': False, 'error': 'image_b64 required'}), 400
+        if ',' in b64 and b64.lower().startswith('data:'):
+            b64 = b64.split(',', 1)[1]
+        try:
+            raw = base64.b64decode(b64, validate=False)
+        except Exception:
+            return jsonify({'success': False, 'error': 'invalid base64'}), 400
+
+        conn = _ahb_db()
+        row = conn.execute(
+            "SELECT id, image_path, pair_id, parent_image_path, mode "
+            "FROM ahb_receipt_queue WHERE id=?",
+            (qid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'queue item not found'}), 404
+        if not row['image_path']:
+            conn.close()
+            return jsonify({'success': False, 'error': 'no image path on row'}), 410
+
+        try:
+            edited = Image.open(BytesIO(raw)).convert('RGB')
+        except Exception as _e:
+            conn.close()
+            return jsonify({'success': False, 'error': f'decode failed: {_e}'}), 400
+        edited.save(row['image_path'], 'JPEG', quality=92)
+
+        new_split = data.get('split_col')
+        if new_split is not None and row['pair_id'] and row['parent_image_path'] \
+                and os.path.exists(row['parent_image_path']):
+            try:
+                split_col = int(new_split)
+                parent = Image.open(row['parent_image_path']).convert('RGB')
+                pw, ph = parent.size
+                split_col = max(1, min(pw - 1, split_col))
+                this_side = 'left' if 'left' in (row['mode'] or '') else 'right'
+                other_side = 'right' if this_side == 'left' else 'left'
+                sibling = conn.execute(
+                    "SELECT id, image_path, mode FROM ahb_receipt_queue "
+                    "WHERE pair_id=? AND id!=? AND status!='rejected'",
+                    (row['pair_id'], qid)).fetchone()
+                if sibling:
+                    box = (0, 0, split_col, ph) if other_side == 'left' \
+                          else (split_col, 0, pw, ph)
+                    parent.crop(box).save(sibling['image_path'], 'JPEG', quality=90)
+                    conn.execute(
+                        "UPDATE ahb_receipt_queue SET split_col=?, status='pending', "
+                        "result_json=NULL, error=NULL WHERE id=?",
+                        (split_col, sibling['id']))
+                conn.execute(
+                    "UPDATE ahb_receipt_queue SET split_col=? WHERE id=?",
+                    (split_col, qid))
+            except (TypeError, ValueError):
+                pass
+
+        rescan = data.get('rescan')
+        rescan_flag = rescan if isinstance(rescan, bool) else \
+                      str(rescan).strip().lower() in ('1', 'true', 'yes', 'on')
+        if rescan is None:
+            rescan_flag = True
+        if rescan_flag:
+            conn.execute(
+                "UPDATE ahb_receipt_queue SET status='pending', "
+                "result_json=NULL, error=NULL WHERE id=?",
+                (qid,))
+        conn.commit()
+        conn.close()
+        if rescan_flag:
+            _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'rescan': rescan_flag})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/ahb/receipts/queue/run', methods=['POST'])
@@ -7307,7 +7644,7 @@ def api_ahb_receipts_queue_run():
                 env['SKILL_ARGS'] = json.dumps({'image_path': item['image_path'], 'mode': 'full'})
                 result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True, text=True, timeout=120, env=env)
                 if result.returncode == 0:
-                    conn.execute("UPDATE ahb_receipt_queue SET status = 'done', result_json = ? WHERE id = ?",
+                    conn.execute("UPDATE ahb_receipt_queue SET status = 'ready', result_json = ? WHERE id = ?",
                                  (result.stdout.strip(), qid))
                 else:
                     conn.execute("UPDATE ahb_receipt_queue SET status = 'error', error = ? WHERE id = ?",
