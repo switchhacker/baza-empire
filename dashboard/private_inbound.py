@@ -116,6 +116,16 @@ def mark_private(fpath: str, extra: Optional[dict] = None) -> None:
         pass
 
 
+def observe_into_vision(fpath: str, *, agent_id: Optional[str] = None) -> None:
+    """Best-effort: register the file with the Vision catalogue. Failures are
+    swallowed — never break the upload flow because vision indexing is down."""
+    try:
+        from dashboard.vision.ingest import observe
+        observe(fpath, source="inbound", origin_agent=agent_id)
+    except Exception:
+        pass
+
+
 _INBOUND_FILENAME_RE = re.compile(
     r"^(?:sam_axe|phil_hass|nova_sterling|claw_batto|simon_bately|"
     r"duke_harmon|scout_reeves|rex_valor|specter_voss)_\d{8}_\d{4}_[0-9a-f]+\.[a-z0-9]+$",

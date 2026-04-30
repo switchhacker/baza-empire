@@ -881,6 +881,9 @@ class BaseAgent(ContextMixin):
                 "received_at": _dt.datetime.now().isoformat(),
                 "caption": caption[:500] if caption else "",
             })
+            if kind == "photo":
+                from dashboard.private_inbound import observe_into_vision
+                observe_into_vision(fpath, agent_id=self.AGENT_ID)
 
             logger.info(f"[{self.AGENT_ID}] saved {kind} from chat {chat_id}: {fname}")
             self.journal("attachment_received",

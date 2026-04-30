@@ -356,6 +356,8 @@ class SamAxe(BaseAgent):
             "caption": caption[:500],
             "created_at": _dt.datetime.now().isoformat(),
         })
+        from dashboard.private_inbound import observe_into_vision
+        observe_into_vision(local_path, agent_id=self.AGENT_ID)
 
         save_message(chat_id, self.AGENT_ID, "user", f"[Photo: {filename}] {caption}")
         self.journal("photo_received", f"Photo: {filename}", chat_id=chat_id)
