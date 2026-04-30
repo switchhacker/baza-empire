@@ -1,31 +1,88 @@
-<!doctype html>
-<html lang="en" data-theme="{{ request.cookies.get('theme','dark') }}">
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ session.get('theme') or request.cookies.get('theme', 'dark') }}">
 <head>
-  <meta charset="utf-8">
-  <title>Vision — Baza Edge</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Vision</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-           margin: 0; padding: 24px; background: #0b0b14; color: #e7e7f0; }
-    h1 { margin-top: 0; color: #c4b5fd; }
-    .placeholder { padding: 24px; border: 1px dashed #3f3f5f; border-radius: 8px;
-                   background: #15151f; }
-    code { background: #1f1f2e; padding: 2px 6px; border-radius: 4px; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent}
+    .nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-spacer{margin-left:auto}
+    .clock{padding:0 18px;font-size:12px;color:#666;font-variant-numeric:tabular-nums}
+    .layout{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 60px)}
+    .tree{border-right:1px solid #1a1a3a;background:#09091a;padding:16px;overflow-y:auto;max-height:calc(100vh - 60px);position:sticky;top:60px}
+    .tree-node{padding:6px 8px;font-size:13px;cursor:pointer;border-radius:5px;display:flex;align-items:center;gap:6px}
+    .tree-node:hover{background:#13132a}
+    .tree-node.active{background:#1a1a3a;color:#e94560}
+    .tree-children{margin-left:14px}
+    .tree-count{margin-left:auto;font-size:11px;color:#666}
+    .main{padding:24px 28px}
+    .breadcrumb{font-size:12px;color:#666;margin-bottom:18px}
+    .toolbar{display:flex;gap:10px;margin-bottom:16px;align-items:center}
+    .search{flex:1;background:#0e0e1e;border:1px solid #2a2a4a;color:#e0e0e0;padding:8px 12px;border-radius:6px;font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+    .card{aspect-ratio:1;background:#0e0e1e;border:1px solid #1a1a3a;border-radius:6px;overflow:hidden;cursor:pointer;position:relative}
+    .card img{width:100%;height:100%;object-fit:cover}
+    .card .badge{position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.7);color:#aaa;font-size:10px;padding:2px 6px;border-radius:3px}
+    .empty{padding:40px;text-align:center;color:#666;border:1px dashed #2a2a4a;border-radius:8px}
+    .seed-cta{margin-top:16px;padding:14px 18px;background:#1a0a1e;border:1px solid #4a1a3a;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+    .btn{padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn:hover{opacity:.85}
+    .pager{margin-top:18px;display:flex;gap:8px;justify-content:center;align-items:center;color:#666;font-size:12px}
+    .pager button{background:#0e0e1e;border:1px solid #2a2a4a;color:#aaa;padding:6px 12px;border-radius:5px;cursor:pointer}
+    .pager button:disabled{opacity:.4;cursor:not-allowed}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:300}
+    .modal.open{display:flex}
+    .modal-card{background:#0d0d1e;border:1px solid #2a2a4a;border-radius:10px;max-width:90vw;max-height:90vh;display:grid;grid-template-columns:1fr 320px;overflow:hidden}
+    .modal-img{background:#000;display:flex;align-items:center;justify-content:center;min-height:300px}
+    .modal-img img{max-width:100%;max-height:80vh;object-fit:contain}
+    .modal-meta{padding:18px;overflow-y:auto;font-size:12px;line-height:1.6}
+    .modal-meta h3{font-size:14px;color:#e94560;margin-bottom:10px}
+    .meta-row{display:flex;gap:8px;border-bottom:1px solid #1a1a3a;padding:5px 0}
+    .meta-key{color:#666;width:110px;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+    .meta-val{color:#e0e0e0}
+    .nsfw-blur img{filter:blur(20px)}
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body>
-  <h1>Vision</h1>
-  <div class="placeholder">
-    <p>Vision UI placeholder — full catalogue UI lands in the next task.</p>
-    <p>Available endpoints:</p>
-    <ul>
-      <li><code>GET /api/vision/tree</code></li>
-      <li><code>GET /api/vision/browse?path=/Catalogue&amp;page=1</code></li>
-      <li><code>GET /api/vision/search?q=...</code></li>
-      <li><code>GET /api/vision/asset/&lt;id&gt;</code></li>
-      <li><code>POST /api/vision/asset/&lt;id&gt;/attributes</code></li>
-      <li><code>POST /api/vision/specter/seed</code></li>
-    </ul>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Home</a>
+    <a class="nav-link" href="/agents">Agents</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link active" href="/vision">Vision</a>
+    <div class="nav-spacer"></div>
+    <span class="clock" id="clock"></span>
+    <span data-theme-mount></span>
+  </nav>
+
+  <div class="layout">
+    <aside class="tree" id="tree">Loading…</aside>
+    <main class="main">
+      <div class="breadcrumb" id="breadcrumb">Vision</div>
+      <div class="toolbar">
+        <input class="search" id="search" placeholder="Search captions, tags, attributes (e.g. blonde bikini beach)">
+      </div>
+      <div id="content"></div>
+      <div class="pager" id="pager"></div>
+    </main>
   </div>
+
+  <div class="modal" id="modal">
+    <div class="modal-card">
+      <div class="modal-img"><img id="modalImg" src=""></div>
+      <div class="modal-meta" id="modalMeta">…</div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/vision.js') }}"></script>
 </body>
 </html>
