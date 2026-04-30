@@ -172,6 +172,18 @@ def api_asset_attributes(asset_id: int):
         con.close()
 
 
+@bp.route("/api/vision/keep-unlocked", methods=["POST"])
+@_require_unlocked
+def api_keep_unlocked():
+    """Toggle session permanence so the unlock survives browser-tab cookie
+    weirdness for 12 hours. Off by default — Vision UI's header toggle calls
+    this to opt in. Lifetime is configured app-wide via PERMANENT_SESSION_LIFETIME."""
+    body = request.get_json(silent=True) or {}
+    keep = bool(body.get("value"))
+    session.permanent = keep
+    return jsonify({"ok": True, "keep_unlocked": keep})
+
+
 @bp.route("/api/vision/specter/seed", methods=["POST"])
 @_require_unlocked
 def api_specter_seed():

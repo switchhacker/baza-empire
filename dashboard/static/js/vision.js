@@ -89,6 +89,72 @@
 
   function navigate(path) { state.path = path; state.page = 1; refreshTree(); loadBrowse(); }
 
+  // ── Landing pane (no images on first open — privacy by default) ─────────
+  function showLanding(stats) {
+    var s = stats || {pending: 0, failed: 0, open_demand: 0};
+    el('breadcrumb').textContent = 'Vision';
+    el('content').innerHTML =
+      '<div class="landing">' +
+      '<h2>Vision Catalogue</h2>' +
+      '<p>Pick a folder on the left to load thumbnails. ' +
+      'Search uses caption + tags + attribute values — try things like ' +
+      '<em>blonde bikini beach</em> or <em>female smiling studio</em>.</p>' +
+      '<div class="landing-stats">' +
+        '<div class="landing-stat"><span class="landing-stat-num">' + s.pending + '</span>' +
+          '<span class="landing-stat-label">pending</span></div>' +
+        '<div class="landing-stat"><span class="landing-stat-num">' + s.failed + '</span>' +
+          '<span class="landing-stat-label">failed</span></div>' +
+        '<div class="landing-stat"><span class="landing-stat-num">' + s.open_demand + '</span>' +
+          '<span class="landing-stat-label">open demand</span></div>' +
+      '</div>' +
+      '</div>';
+    el('pager').innerHTML = '';
+  }
+
+  // ── Keep-unlocked toggle + lock-now button ──────────────────────────────
+  function getCookie(name) {
+    return document.cookie.split('; ').reduce(function (acc, c) {
+      var p = c.split('='); return p[0] === name ? decodeURIComponent(p.slice(1).join('=')) : acc;
+    }, null);
+  }
+  function setCookie(name, value, days) {
+    document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' +
+      (days * 24 * 60 * 60) + '; SameSite=Lax';
+  }
+
+  var keepAliveTimer = null;
+  function startKeepAlive() {
+    if (keepAliveTimer) return;
+    // Ping every 60s — server sees activity, session stays warm.
+    keepAliveTimer = setInterval(function () {
+      fetch('/api/datahub/private/status', {credentials: 'same-origin'}).catch(function () {});
+    }, 60 * 1000);
+  }
+  function stopKeepAlive() {
+    if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+  }
+
+  function applyKeepToggle(on) {
+    var btn = el('keepToggle'); var label = el('keepLabel');
+    if (on) { btn.classList.add('on'); label.textContent = 'Stay unlocked 12h'; startKeepAlive(); }
+    else    { btn.classList.remove('on'); label.textContent = 'Auto-lock'; stopKeepAlive(); }
+  }
+
+  el('keepToggle').addEventListener('click', function () {
+    var nowOn = !el('keepToggle').classList.contains('on');
+    applyKeepToggle(nowOn);
+    setCookie('vision_keep_unlocked', nowOn ? '1' : '0', 365);
+    fetch('/api/vision/keep-unlocked', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: nowOn}), credentials: 'same-origin',
+    }).catch(function () { /* silent — UI already optimistic */ });
+  });
+
+  el('lockNow').addEventListener('click', function () {
+    fetch('/api/datahub/private/lock', {method: 'POST', credentials: 'same-origin'})
+      .then(function () { window.location.href = '/datahub/private'; });
+  });
+
   // ── Modal ───────────────────────────────────────────────────────────────
   function openAsset(id) {
     fetch('/api/vision/asset/' + id).then(function (r) { return r.json(); }).then(function (j) {
@@ -144,5 +210,16 @@
   setInterval(tickClock, 30 * 1000); tickClock();
 
   // ── Boot ────────────────────────────────────────────────────────────────
-  refreshTree().then(loadBrowse);
+  // Privacy default: no thumbnails until the user clicks a folder. Stats are
+  // best-effort — /api/vision/tree may not include them yet (added in Phase 6).
+  fetch('/api/vision/tree').then(function (r) { return r.json(); }).then(function (j) {
+    if (j && j.ok) {
+      var root = el('tree'); root.innerHTML = '';
+      j.tree.forEach(function (n) { root.appendChild(renderTreeNode(n, 0)); });
+      showLanding(j.stats || null);
+    }
+  });
+
+  // Restore keep-unlocked toggle from cookie (if user had it on last session).
+  applyKeepToggle(getCookie('vision_keep_unlocked') === '1');
 })();

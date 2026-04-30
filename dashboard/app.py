@@ -21,6 +21,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 # 200MB ceiling — bulk receipt uploads can be 20+ phone-camera JPEGs at once.
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024
+# When Vision UI's "keep unlocked" toggle is on, sessions become permanent for
+# this duration (covers a full work session through tab switches and brief
+# browser quits). Default off — see /api/vision/keep-unlocked.
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=12)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DASHBOARD_DIR  = os.path.dirname(os.path.abspath(__file__))
