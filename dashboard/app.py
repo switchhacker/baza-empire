@@ -12283,8 +12283,15 @@ app.register_blueprint(vision_bp)
 
 @app.route("/datahub/private")
 def datahub_private_redirect():
-    """Old URL — keep redirecting old bookmarks to /vision."""
-    return redirect("/vision", code=302)
+    """Old URL: when locked, render the unlock form (private.html still owns
+    that flow). When unlocked, hand off to /vision. Phase 5's blunt always-
+    redirect created a loop with the Vision blueprint's _require_unlocked
+    decorator (which itself redirects here when locked)."""
+    if _is_private_unlocked():
+        return redirect("/vision", code=302)
+    return render_template('private.html',
+                           passphrase_set=_private_pass_is_set(),
+                           unlocked=False)
 
 
 if __name__ == '__main__':
