@@ -16,3 +16,11 @@ email-pipeline/token.json
 email-pipeline/sync_state.json
 firmware/**/*.bin
 
+# Vision UI runtime artifacts
+dashboard/vision.db
+dashboard/vision.db-shm
+dashboard/vision.db-wal
+dashboard/artifacts/.vision-generated/
+dashboard/artifacts/.vision-scraped/
+dashboard/artifacts/.vision-crops/
+
