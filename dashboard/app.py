@@ -12263,5 +12263,21 @@ def api_comms_shell():
         return jsonify({'error': str(e)}), 500
 
 
+# ── Theme toggle ─────────────────────────────────────────────────────────────
+# Stores user theme in session + a 1-year cookie. Templates read session.theme
+# (or the cookie via `data-theme="{{ request.cookies.get('theme','dark') }}"`).
+@app.route('/settings/theme', methods=['POST'])
+def settings_theme():
+    body = request.get_json(silent=True) or {}
+    val = (body.get('value') or '').strip().lower()
+    if val not in ('dark', 'light'):
+        return jsonify({'ok': False, 'error': 'theme must be dark or light'}), 400
+    session['theme'] = val
+    resp = jsonify({'ok': True, 'theme': val})
+    # 1y cookie so it survives session expiry. No HttpOnly: theme.js reads it.
+    resp.set_cookie('theme', val, max_age=60 * 60 * 24 * 365, samesite='Lax')
+    return resp
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8888, debug=False)
