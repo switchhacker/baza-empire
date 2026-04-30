@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Baza Empire — Private Gallery</title>
+  <title>Baza Empire — Private</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
@@ -17,6 +17,9 @@
     .lock-pill{margin-left:auto;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:14px;font-size:11px;font-weight:700;border:1px solid #1a1a3a}
     .lock-pill.locked{background:#1a0606;color:#ff6666;border-color:#3a0e0e}
     .lock-pill.unlocked{background:#061a10;color:#00d084;border-color:#0e3a1e}
+    .keep-toggle{margin-left:8px;display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid #2a2a4a;border-radius:14px;font-size:11px;font-weight:700;color:#888;cursor:pointer;user-select:none;background:transparent;transition:all .2s}
+    .keep-toggle.on{color:#00d084;border-color:#0e3a1e;background:#061a10}
+    .keep-toggle:hover{color:#fff;border-color:#e94560}
 
     .container{max-width:1600px;margin:0 auto;padding:32px 28px}
 
@@ -85,6 +88,7 @@
     <a class="nav-link" href="/journal">Journal</a>
     <a class="nav-link" href="/memory">Memory</a>
     <span id="lockPill" class="lock-pill locked">🔒 Locked</span>
+    <button class="keep-toggle" id="keepToggle" title="When OFF (default): the page auto-locks 30s after you switch away from this tab. When ON: stays unlocked for 12h across tab switches.">🔒 <span id="keepLabel">Auto-lock 30s</span></button>
   </nav>
 
   <div class="container">
@@ -93,7 +97,7 @@
     <div id="lockScreen" class="lock-screen" style="display:none">
       <div class="lock-card">
         <div class="lock-icon">🔒</div>
-        <div class="lock-title">Private Gallery</div>
+        <div class="lock-title">Private</div>
         <div class="lock-desc" id="lockDesc">
           All Telegram-inbound photos and attachments live here. Hidden from the
           rest of the Data Hub. Enter your passphrase to view.
@@ -113,7 +117,7 @@
     <!-- Gallery (shown when unlocked) -->
     <div id="gallery" style="display:none">
       <div class="page-header">
-        <div class="page-title">🔓 Private Gallery</div>
+        <div class="page-title">🔓 Private</div>
         <div class="page-sub">
           Telegram-inbound media for every agent. These files are excluded from
           Data Hub search, the image index, and the public serve endpoint —

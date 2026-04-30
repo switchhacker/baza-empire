@@ -18,16 +18,9 @@ from dashboard.vision.taxonomy import TAXONOMY, all_nodes, ancestor_filters, fin
 
 bp = Blueprint("vision", __name__)
 
-
-def _require_unlocked(fn):
-    @functools.wraps(fn)
-    def wrap(*a, **kw):
-        if not session.get("private_unlocked"):
-            if request.path.startswith("/api/"):
-                return jsonify({"ok": False, "error": "locked"}), 401
-            return redirect("/datahub/private")  # existing unlock UI handles this
-        return fn(*a, **kw)
-    return wrap
+# Vision UI is open within the dashboard auth boundary — no passphrase
+# required. The legacy /datahub/private route remains passphrase-gated for
+# the locked-down photo gallery (private.html).
 
 
 def _node_to_dict(node, con) -> dict:
@@ -42,13 +35,11 @@ def _node_to_dict(node, con) -> dict:
 
 
 @bp.route("/vision")
-@_require_unlocked
 def vision_page():
     return render_template("vision.html")
 
 
 @bp.route("/api/vision/tree")
-@_require_unlocked
 def api_tree():
     init_db()
     con = connect()
@@ -72,7 +63,6 @@ def api_tree():
 
 
 @bp.route("/api/vision/browse")
-@_require_unlocked
 def api_browse():
     init_db()
     path = request.args.get("path", "/Catalogue")
@@ -102,7 +92,6 @@ def api_browse():
 
 
 @bp.route("/api/vision/search")
-@_require_unlocked
 def api_search():
     init_db()
     q = (request.args.get("q") or "").strip()
@@ -119,7 +108,6 @@ def api_search():
 
 
 @bp.route("/api/vision/asset/<int:asset_id>")
-@_require_unlocked
 def api_asset(asset_id: int):
     init_db()
     con = connect()
@@ -156,7 +144,6 @@ def api_asset(asset_id: int):
 
 
 @bp.route("/api/vision/asset/<int:asset_id>/attributes", methods=["POST"])
-@_require_unlocked
 def api_asset_attributes(asset_id: int):
     body = request.get_json(silent=True) or {}
     updates = body.get("attributes") or {}
@@ -185,7 +172,6 @@ def api_asset_attributes(asset_id: int):
 
 
 @bp.route("/api/vision/keep-unlocked", methods=["POST"])
-@_require_unlocked
 def api_keep_unlocked():
     """Toggle session permanence so the unlock survives browser-tab cookie
     weirdness for 12 hours. Off by default — Vision UI's header toggle calls
@@ -197,7 +183,6 @@ def api_keep_unlocked():
 
 
 @bp.route("/api/vision/specter/seed", methods=["POST"])
-@_require_unlocked
 def api_specter_seed():
     body = request.get_json(silent=True) or {}
     path = (body.get("path") or "").strip()
@@ -217,7 +202,6 @@ def api_specter_seed():
 
 
 @bp.route("/api/vision/asset/<int:asset_id>/thumb")
-@_require_unlocked
 def api_asset_thumb(asset_id: int):
     init_db()
     full = request.args.get("full") == "1"

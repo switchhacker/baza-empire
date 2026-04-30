@@ -118,50 +118,6 @@
     el('pager').innerHTML = '';
   }
 
-  // ── Keep-unlocked toggle + lock-now button ──────────────────────────────
-  function getCookie(name) {
-    return document.cookie.split('; ').reduce(function (acc, c) {
-      var p = c.split('='); return p[0] === name ? decodeURIComponent(p.slice(1).join('=')) : acc;
-    }, null);
-  }
-  function setCookie(name, value, days) {
-    document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' +
-      (days * 24 * 60 * 60) + '; SameSite=Lax';
-  }
-
-  var keepAliveTimer = null;
-  function startKeepAlive() {
-    if (keepAliveTimer) return;
-    // Ping every 60s — server sees activity, session stays warm.
-    keepAliveTimer = setInterval(function () {
-      fetch('/api/datahub/private/status', {credentials: 'same-origin'}).catch(function () {});
-    }, 60 * 1000);
-  }
-  function stopKeepAlive() {
-    if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-  }
-
-  function applyKeepToggle(on) {
-    var btn = el('keepToggle'); var label = el('keepLabel');
-    if (on) { btn.classList.add('on'); label.textContent = 'Stay unlocked 12h'; startKeepAlive(); }
-    else    { btn.classList.remove('on'); label.textContent = 'Auto-lock'; stopKeepAlive(); }
-  }
-
-  el('keepToggle').addEventListener('click', function () {
-    var nowOn = !el('keepToggle').classList.contains('on');
-    applyKeepToggle(nowOn);
-    setCookie('vision_keep_unlocked', nowOn ? '1' : '0', 365);
-    fetch('/api/vision/keep-unlocked', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({value: nowOn}), credentials: 'same-origin',
-    }).catch(function () { /* silent — UI already optimistic */ });
-  });
-
-  el('lockNow').addEventListener('click', function () {
-    fetch('/api/datahub/private/lock', {method: 'POST', credentials: 'same-origin'})
-      .then(function () { window.location.href = '/datahub/private'; });
-  });
-
   // ── Modal ───────────────────────────────────────────────────────────────
   function openAsset(id) {
     fetch('/api/vision/asset/' + id).then(function (r) { return r.json(); }).then(function (j) {
@@ -226,7 +182,4 @@
       showLanding(j.stats || null);
     }
   });
-
-  // Restore keep-unlocked toggle from cookie (if user had it on last session).
-  applyKeepToggle(getCookie('vision_keep_unlocked') === '1');
 })();
