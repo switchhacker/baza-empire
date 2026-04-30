@@ -1,0 +1,90 @@
+# Curated CC0/CC-BY image search APIs. Specter only scrapes from this list.
+# Add new sources only after vetting their license + ToS.
+
+sources:
+  - id: unsplash
+    enabled: true
+    base_url: "https://api.unsplash.com/search/photos"
+    auth_header: "Authorization"
+    auth_value_env: "UNSPLASH_ACCESS_KEY"   # set in .env.nuc; missing = disabled
+    auth_prefix: "Client-ID "
+    rate_limit_seconds: 2
+    license: "Unsplash License (CC0-like, attribution preferred)"
+    query_param: query
+    page_param: page
+    per_page_param: per_page
+    per_page_default: 6
+    response_path:                            # how to walk the JSON to get URLs
+      list: results
+      url:  urls.regular
+      author: user.name
+
+  - id: pexels
+    enabled: true
+    base_url: "https://api.pexels.com/v1/search"
+    auth_header: "Authorization"
+    auth_value_env: "PEXELS_API_KEY"
+    auth_prefix: ""
+    rate_limit_seconds: 2
+    license: "Pexels License (CC0-like)"
+    query_param: query
+    page_param: page
+    per_page_param: per_page
+    per_page_default: 6
+    response_path:
+      list: photos
+      url:  src.large
+      author: photographer
+
+  - id: pixabay
+    enabled: true
+    base_url: "https://pixabay.com/api/"
+    auth_header: ""                           # uses query-string key=
+    auth_value_env: "PIXABAY_API_KEY"
+    auth_prefix: ""
+    rate_limit_seconds: 2
+    license: "Pixabay License (CC0)"
+    query_param: q
+    page_param: page
+    per_page_param: per_page
+    per_page_default: 6
+    extra_params:
+      key_env: PIXABAY_API_KEY                # appended as ?key=...
+    response_path:
+      list: hits
+      url: largeImageURL
+      author: user
+
+  - id: wikimedia
+    enabled: true
+    base_url: "https://commons.wikimedia.org/w/api.php"
+    auth_header: ""
+    auth_value_env: ""                        # public, no key
+    rate_limit_seconds: 2
+    license: "Wikimedia Commons (mostly CC-BY-SA)"
+    query_param: srsearch
+    page_param: sroffset
+    per_page_param: srlimit
+    per_page_default: 6
+    extra_params:
+      static:
+        action: query
+        list: search
+        srnamespace: 6
+        format: json
+    response_path:
+      list: query.search
+      url: __wikimedia_title__               # special: derive image URL from title
+      author: ""
+
+# Path → query string mapping (terminal segment of the taxonomy path).
+queries:
+  "/Catalogue/Scenes/Beach":   "empty beach landscape no people"
+  "/Catalogue/Scenes/Studio":  "empty photography studio"
+  "/Catalogue/Scenes/Outdoor": "outdoor nature scene no people"
+  "/Catalogue/Scenes/Urban":   "empty urban street architecture"
+  "/Catalogue/Scenes/Indoor":  "empty interior room"
+  "/Catalogue/Style/Swimwear":   "swimwear clothing flat lay"
+  "/Catalogue/Style/Formal":     "formal clothing flat lay"
+  "/Catalogue/Style/Sportswear": "sportswear clothing flat lay"
+  "/Catalogue/Style/Casual":     "casual clothing flat lay"
