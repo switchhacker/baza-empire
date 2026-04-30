@@ -40,7 +40,14 @@ def main() -> int:
         print(f"[migrate] {PRIVATE_INBOUND_DIR} missing — nothing to do.")
         return 0
 
-    seen = added = skipped = 0
+    from dashboard.vision.db import connect
+    con = connect(args.db)
+    try:
+        before_count = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+    finally:
+        con.close()
+
+    seen = skipped = 0
     for root, _dirs, files in os.walk(PRIVATE_INBOUND_DIR):
         for fn in files:
             if fn.endswith(".meta"):
@@ -54,15 +61,24 @@ def main() -> int:
                 print(f"[would-add] {path}")
                 continue
             try:
-                aid = observe(path, source="inbound", db_path=args.db,
-                              origin_agent=_agent_from_path(path))
-                if aid:
-                    added += 1
+                observe(path, source="inbound", db_path=args.db,
+                        origin_agent=_agent_from_path(path))
             except Exception as e:
                 skipped += 1
                 print(f"[skip] {path}: {e}", file=sys.stderr)
 
-    print(f"[migrate] seen={seen} added={added} skipped={skipped}")
+    if args.dry_run:
+        print(f"[migrate] seen={seen} (dry-run, nothing written)")
+        return 0
+
+    con = connect(args.db)
+    try:
+        after_count = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+    finally:
+        con.close()
+    new = after_count - before_count
+    deduped = seen - new - skipped
+    print(f"[migrate] seen={seen} new={new} deduped={deduped} skipped={skipped}")
     return 0
 
 
