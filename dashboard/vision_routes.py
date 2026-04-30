@@ -54,7 +54,19 @@ def api_tree():
     con = connect()
     try:
         tree = [_node_to_dict(n, con) for n in TAXONOMY]
-        return jsonify({"ok": True, "tree": tree})
+        pending = con.execute(
+            "SELECT COUNT(*) FROM assets WHERE status='pending'"
+        ).fetchone()[0]
+        failed = con.execute(
+            "SELECT COUNT(*) FROM assets WHERE status='failed'"
+        ).fetchone()[0]
+        open_demand = con.execute(
+            "SELECT COUNT(*) FROM seed_demand WHERE fulfilled_at IS NULL"
+        ).fetchone()[0]
+        return jsonify({
+            "ok": True, "tree": tree,
+            "stats": {"pending": pending, "failed": failed, "open_demand": open_demand},
+        })
     finally:
         con.close()
 

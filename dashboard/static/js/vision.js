@@ -27,6 +27,13 @@
     return fetch('/api/vision/tree').then(function (r) { return r.json(); }).then(function (j) {
       if (!j.ok) return;
       var root = el('tree'); root.innerHTML = '';
+      if (j.stats) {
+        var s = j.stats;
+        var bar = document.createElement('div');
+        bar.style.cssText = 'font-size:11px;color:#666;margin-bottom:10px;border-bottom:1px solid #1a1a3a;padding-bottom:8px';
+        bar.innerHTML = 'pending: ' + s.pending + ' &middot; failed: ' + s.failed + ' &middot; demand: ' + s.open_demand;
+        root.appendChild(bar);
+      }
       j.tree.forEach(function (n) { root.appendChild(renderTreeNode(n, 0)); });
     });
   }
