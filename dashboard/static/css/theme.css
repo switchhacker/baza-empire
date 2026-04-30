@@ -1,0 +1,95 @@
+/* Theme overlay for the Baza Dashboard.
+ * The dashboard's existing per-page <style> blocks are the dark default.
+ * This file ONLY overrides colors when [data-theme="light"] is set on <html>.
+ *
+ * Applied page-by-page: link to this file in each template's <head> after
+ * the inline <style> block, then add data-theme="..." to the <html> tag.
+ */
+
+/* Custom-property baseline (dark theme — matches existing inline styles). */
+:root,
+:root[data-theme="dark"] {
+  --bg:        #07070f;
+  --bg-elev:   #0d0d1e;
+  --bg-card:   #0e0e1e;
+  --fg:        #e0e0e0;
+  --fg-dim:    #666;
+  --fg-mute:   #aaa;
+  --accent:    #e94560;
+  --accent-2:  #7c3aed;
+  --border:    #1a1a3a;
+  --border-2:  #2a2a4a;
+  --ok:        #00d084;
+  --warn:      #f59e0b;
+  --danger:    #ff6666;
+}
+
+:root[data-theme="light"] {
+  --bg:        #f6f7fb;
+  --bg-elev:   #ffffff;
+  --bg-card:   #ffffff;
+  --fg:        #111122;
+  --fg-dim:    #888;
+  --fg-mute:   #555;
+  --accent:    #c52a45;
+  --accent-2:  #5a23c4;
+  --border:    #d8d8e8;
+  --border-2:  #c0c0d4;
+  --ok:        #009b62;
+  --warn:      #b06700;
+  --danger:    #b73030;
+}
+
+/* Light-mode overrides for the most common selectors used across templates.
+ * This is intentionally narrow — it doesn't try to remap every shade of grey,
+ * just the body, nav, cards, page header, and primary buttons so the toggle
+ * is visibly working immediately. Each page picks up additional fixes as it
+ * gets touched (see plan Task 1.4). */
+:root[data-theme="light"] body {
+  background: var(--bg) !important;
+  color: var(--fg) !important;
+}
+:root[data-theme="light"] .nav,
+:root[data-theme="light"] header,
+:root[data-theme="light"] .topbar {
+  background: var(--bg-elev) !important;
+  border-color: var(--border) !important;
+  color: var(--fg) !important;
+}
+:root[data-theme="light"] .nav-link {
+  color: var(--fg-dim) !important;
+}
+:root[data-theme="light"] .nav-link:hover,
+:root[data-theme="light"] .nav-link.active {
+  color: var(--fg) !important;
+}
+:root[data-theme="light"] .btn-secondary {
+  background: var(--bg-elev) !important;
+  color: var(--fg-mute) !important;
+  border-color: var(--border-2) !important;
+}
+:root[data-theme="light"] .card,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .container > * {
+  background: transparent;
+  color: var(--fg);
+}
+:root[data-theme="light"] .page-title {
+  color: var(--fg) !important;
+}
+
+/* Theme toggle button itself (rendered in headers via theme.js). */
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-mute);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
