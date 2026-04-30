@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ session.get('theme') or request.cookies.get('theme', 'dark') }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -73,6 +73,7 @@
     .lightbox-close{position:fixed;top:20px;right:24px;color:#aaa;font-size:32px;cursor:pointer;line-height:1;background:none;border:none;font-family:inherit}
     .lightbox-close:hover{color:#fff}
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body>
   <nav class="nav">
@@ -306,5 +307,6 @@
       else           showLock();
     })();
   </script>
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>
