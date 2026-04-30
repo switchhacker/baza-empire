@@ -1,0 +1,11 @@
+[Unit]
+Description=Baza Empire — Vision Indexer schedule (every 30 min)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=baza-vision-indexer.service
+
+[Install]
+WantedBy=timers.target

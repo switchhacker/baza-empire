@@ -1,0 +1,19 @@
+[Unit]
+Description=Baza Empire — Vision UI Indexer (qwen3-vl structured attributes)
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=oneshot
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python /home/switchhacker/baza-empire/agent-framework-v3/dashboard/vision_indexer.py
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=3h
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
