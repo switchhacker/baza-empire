@@ -97,7 +97,19 @@ def main() -> int:
                         (time.time(), row["id"]))
             continue
         if strategy == "scrape":
-            print(f"[defer-scrape] {row['taxonomy_path']} (Phase 8 will handle)")
+            try:
+                from dashboard.vision.scraper import scrape_for_path
+                pairs = scrape_for_path(row["taxonomy_path"], count=row["needed"])
+                for abs_path, origin_url in pairs:
+                    observe(abs_path, source="scraped", origin_agent="specter",
+                            origin_url=origin_url)
+                con.execute(
+                    "UPDATE seed_demand SET fulfilled_at=?, fulfilled_by='scrape' WHERE id=?",
+                    (time.time(), row["id"]),
+                )
+                fulfilled += 1
+            except Exception as e:
+                print(f"[scrape-fail] {row['taxonomy_path']}: {e}")
             continue
         if fulfill_one_generate(con, row):
             fulfilled += 1
