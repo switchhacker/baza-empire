@@ -84,6 +84,20 @@ def _face_app():
     return _FACE_APP
 
 
+def count_faces(path: str) -> int:
+    """Cheap face-presence check used by the indexer's people-only filter.
+    InsightFace SCRFD on CPU is ~100ms/image, far cheaper than a qwen3-vl
+    classification call. Returns the number of faces detected, or 0 on
+    any failure (corrupt image, missing model, etc) — failures should not
+    block the indexer."""
+    try:
+        import numpy as np
+        img = Image.open(path).convert("RGB")
+        return len(_face_app().get(np.array(img)))
+    except Exception:
+        return 0
+
+
 def _inheritable_attrs(con, parent_id: int) -> dict[str, tuple[str, float]]:
     rows = con.execute(
         "SELECT key, value, confidence FROM attributes WHERE asset_id=? AND key IN ({})".format(

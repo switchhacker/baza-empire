@@ -20,6 +20,12 @@ RETRY_FAILED_AFTER = 6 * 3600
 INTER_IMAGE_SLEEP = 0.5
 BACKOFF_ON_500 = 20
 
+# v1 focus: people only. InsightFace runs as a fast pre-filter before the
+# expensive qwen3-vl classification call — images with no detectable face
+# are marked rejected and never hit the GPU. Set False to also catalogue
+# scenes/objects/etc once we have person coverage.
+PEOPLE_ONLY = True
+
 _SHUTDOWN = False
 
 
@@ -108,6 +114,29 @@ def run(db_path: Optional[str] = None, *, force: bool = False,
         asset_id = row["id"]
         path = row["abs_path"]
         t_img = time.time()
+
+        # People-only filter: cheap face pre-check before paying for a full
+        # qwen3-vl classification. ~100ms vs ~20s. Saves the GPU when
+        # private inbound is full of receipts/scenes/objects.
+        if PEOPLE_ONLY:
+            try:
+                from dashboard.vision.cropper import count_faces
+                if count_faces(path) == 0:
+                    con.execute(
+                        "UPDATE assets SET status='rejected', classified_at=?, error=? WHERE id=?",
+                        (time.time(), "no faces detected (people-only filter)", asset_id),
+                    )
+                    con.execute(
+                        "INSERT INTO ingest_log (asset_id, step, ok, ts, detail) VALUES (?, 'classify', 0, ?, ?)",
+                        (asset_id, time.time(), "people-only-skip"),
+                    )
+                    elapsed_skip = time.time() - t_img
+                    print(f"[skip {elapsed_skip:5.2f}s] {path} — no face", flush=True)
+                    continue
+            except Exception as fe:
+                # Face detector borked — don't block the pipeline; fall through to qwen3-vl.
+                print(f"[face-detect-fail] {path}: {fe}", flush=True)
+
         try:
             attrs, model = classify(path)
         except GPUContention as e:
