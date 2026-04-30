@@ -190,3 +190,50 @@ def api_specter_seed():
         return jsonify({"ok": True, "demand_id": cur.lastrowid, "eta_seconds": 600})
     finally:
         con.close()
+
+
+@bp.route("/api/vision/asset/<int:asset_id>/thumb")
+@_require_unlocked
+def api_asset_thumb(asset_id: int):
+    init_db()
+    full = request.args.get("full") == "1"
+    con = connect()
+    try:
+        a = con.execute("SELECT abs_path FROM assets WHERE id=?", (asset_id,)).fetchone()
+        if not a:
+            abort(404)
+        path = a["abs_path"]
+        if not os.path.isfile(path):
+            abort(404)
+
+        # Re-use the existing private serve gate — defense in depth: only
+        # serve files under .private-inbound/ or .vision-* dirs.
+        allowed_prefixes = (
+            os.path.join(os.path.dirname(__file__), "artifacts", ".private-inbound"),
+            os.path.join(os.path.dirname(__file__), "artifacts", ".vision-generated"),
+            os.path.join(os.path.dirname(__file__), "artifacts", ".vision-scraped"),
+            os.path.join(os.path.dirname(__file__), "artifacts", ".vision-crops"),
+        )
+        if not any(os.path.abspath(path).startswith(p) for p in allowed_prefixes):
+            abort(403)
+
+        if full:
+            return _send_file(path)
+
+        # Generate a 256px thumbnail on the fly. Cheap with Pillow + JPEG
+        # quality 78 — typical thumb < 30 KB. No on-disk thumb cache for v1.
+        from io import BytesIO
+        from PIL import Image
+        from flask import send_file
+        img = Image.open(path).convert("RGB")
+        img.thumbnail((256, 256), Image.LANCZOS)
+        buf = BytesIO(); img.save(buf, "JPEG", quality=78); buf.seek(0)
+        return send_file(buf, mimetype="image/jpeg",
+                         download_name=f"thumb_{asset_id}.jpg")
+    finally:
+        con.close()
+
+
+def _send_file(path: str):
+    from flask import send_file
+    return send_file(path, mimetype=None, conditional=True)
