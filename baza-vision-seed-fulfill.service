@@ -1,0 +1,13 @@
+[Unit]
+Description=Baza Empire — Vision seed-fulfill (Specter mode 2, generator)
+After=baza-vision-seed-scan.service
+
+[Service]
+Type=oneshot
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python -m dashboard.vision.seed_fulfill --limit 2
+Nice=10
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=2h

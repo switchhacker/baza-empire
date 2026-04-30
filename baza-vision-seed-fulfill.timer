@@ -1,0 +1,11 @@
+[Unit]
+Description=Baza Empire — Vision seed-fulfill schedule (every 1h)
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+Unit=baza-vision-seed-fulfill.service
+
+[Install]
+WantedBy=timers.target
