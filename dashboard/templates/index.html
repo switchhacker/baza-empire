@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ session.get('theme') or request.cookies.get('theme', 'dark') }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -144,6 +144,7 @@
       .nav-submenu a{padding:14px 18px;font-size:14px}
     }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body>
 
@@ -537,5 +538,6 @@
   setInterval(refreshAll, 10000);
   refreshAll();
 </script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>
