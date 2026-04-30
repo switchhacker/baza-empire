@@ -129,6 +129,19 @@ def run(db_path: Optional[str] = None, *, force: bool = False,
 
         try:
             _persist(con, asset_id, attrs, model)
+            # Crop pass — only for person-class images with face visible.
+            if attrs.get("image_type") == "person" and "face" in (attrs.get("parts_visible") or ""):
+                try:
+                    from dashboard.vision.cropper import crop_one
+                    n = crop_one(path, asset_id, db_path=db_path)
+                    if verbose and n:
+                        print(f"          + {n} crop(s)", flush=True)
+                except Exception as ce:
+                    print(f"[crop-fail] {path}: {ce}", flush=True)
+                    con.execute(
+                        "INSERT INTO ingest_log (asset_id, step, ok, ts, detail) VALUES (?, 'crop', 0, ?, ?)",
+                        (asset_id, time.time(), str(ce)[:300]),
+                    )
             processed += 1
             elapsed = time.time() - t_img
             if verbose:
