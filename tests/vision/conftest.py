@@ -1,6 +1,5 @@
 """Shared fixtures for vision tests."""
 import os
-import sqlite3
 import tempfile
 
 import pytest
