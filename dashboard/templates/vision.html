@@ -69,6 +69,7 @@
     <a class="nav-link" href="/agents">Agents</a>
     <a class="nav-link" href="/datahub">Data Hub</a>
     <a class="nav-link active" href="/vision">Vision</a>
+    <a class="nav-link" href="/datahub/private" style="color:#e94560">🔓 Private Gallery</a>
     <div class="nav-spacer"></div>
     <button class="keep-toggle" id="keepToggle" title="When on, your unlock survives tab switches and brief browser quits for 12 hours.">🔓 <span id="keepLabel">Auto-lock</span></button>
     <button class="lock-now" id="lockNow" title="Lock now and return to passphrase screen.">🔒 Lock</button>
@@ -97,5 +98,6 @@
 
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vision.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/private_lock.js') }}"></script>
 </body>
 </html>

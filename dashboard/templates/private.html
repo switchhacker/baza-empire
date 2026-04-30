@@ -81,6 +81,7 @@
     <a class="nav-link" href="/">Dashboard</a>
     <a class="nav-link" href="/datahub">Data Hub</a>
     <a class="nav-link active" href="/datahub/private">Private</a>
+    <a class="nav-link" href="/vision" style="color:#7c3aed">👁 Vision</a>
     <a class="nav-link" href="/journal">Journal</a>
     <a class="nav-link" href="/memory">Memory</a>
     <span id="lockPill" class="lock-pill locked">🔒 Locked</span>
@@ -308,5 +309,6 @@
     })();
   </script>
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/private_lock.js') }}"></script>
 </body>
 </html>
