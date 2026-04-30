@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Vision indexer — CLI entrypoint mirroring image_indexer.py shape."""
 import argparse
+import os
 import sys
+
+# Ensure the framework root is on sys.path so `from dashboard.* import ...`
+# works when this script is invoked by absolute path (systemd) rather than
+# via `python -m`. Mirrors the pattern used in image_indexer.py.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard.vision.db import DEFAULT_DB_PATH
 from dashboard.vision.indexer import run
