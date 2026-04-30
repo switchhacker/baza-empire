@@ -41,6 +41,17 @@ DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 ARTIFACTS_DIR = os.path.join(DASHBOARD_DIR, "artifacts")
 DB_PATH       = os.path.join(DASHBOARD_DIR, "image_captions.db")
 
+# Privacy gating — Telegram-inbound media is captured into a `.private-inbound/`
+# tree and tagged with private=true in its `.meta` sidecar. The indexer must
+# skip these so personal reference photos never end up in the Data Hub search
+# index. Falls back gracefully if the helper isn't importable.
+try:
+    sys.path.insert(0, os.path.dirname(DASHBOARD_DIR))
+    from dashboard.private_inbound import is_private as _is_private
+except ImportError:
+    def _is_private(_p: str) -> bool:  # type: ignore[misc]
+        return False
+
 VISION_MODELS = ["qwen3-vl:latest", "llava:13b"]
 OLLAMA_PORTS  = [11434]  # AMD RX 6700 XT; NVIDIA (11435) reserved for SD WebUI
 
@@ -130,6 +141,9 @@ def walk_images():
     if not os.path.isdir(ARTIFACTS_DIR):
         return
     for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
+        # Skip dotted dirs — including .private-inbound/ — outright. Defense
+        # in depth: the per-file is_private check below also catches stray
+        # private-marked files that happen to live in a public dir.
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for fn in fnames:
             ext = os.path.splitext(fn)[1].lower()
@@ -143,6 +157,8 @@ def walk_images():
             except OSError:
                 continue
             if st.st_size < MIN_SIZE or st.st_size > MAX_FILE_SIZE:
+                continue
+            if _is_private(path):
                 continue
             rel = os.path.relpath(path, ARTIFACTS_DIR).replace(os.sep, "/")
             parts = rel.split("/")

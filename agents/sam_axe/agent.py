@@ -24,6 +24,7 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from core.base_agent import BaseAgent
 from core.memory import save_message, get_history
+from dashboard.private_inbound import private_inbound_dir, mark_private
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,17 @@ SHOW_PHRASES = [
     "show me", "send me", "show the", "send the", "show it", "see it",
     "view it", "display", "see what you made", "let me see",
 ]
+
+# Triggers that opt INTO the heavy architectural / room analysis on an inbound
+# photo. Without one of these in the caption, Sam stashes the photo quietly
+# (private) and waits for instructions instead of describing the room. Serge
+# was getting unsolicited "I see a kitchen with cabinets" replies during
+# reference-photo uploads — analysis is now opt-in.
+ANALYZE_TRIGGER_KEYWORDS = (
+    "analyze", "analyse", "describe", "what is this", "what's this",
+    "what do you see", "what do u see", "tell me about this",
+    "scan this", "read this",
+)
 
 # ── Character / avatar reference intake ────────────────────────────────────
 # When a photo's caption matches one of these triggers, Sam treats it as a
@@ -321,35 +333,49 @@ class SamAxe(BaseAgent):
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
         caption = update.message.caption or ""
+        caption_low = caption.lower()
 
         logger.info(f"[sam_axe] Photo received from {chat_id}, caption: {caption[:60]}")
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-        # Download photo (highest res)
+        # Download photo (highest res) into the private-inbound dir so the
+        # Data Hub indexer + search never sees Serge's personal reference
+        # photos. mark_private writes a JSON .meta sidecar with private=true.
         photo = update.message.photo[-1]
         tg_file = await photo.get_file()
         import uuid, datetime as _dt
         framework_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        artifacts_dir = os.path.join(framework_dir, "dashboard", "artifacts", "proj-ahb123")
-        os.makedirs(artifacts_dir, exist_ok=True)
+        inbound_dir = private_inbound_dir(framework_dir, self.AGENT_ID)
         filename = f"sam_axe_{_dt.datetime.now().strftime('%Y%m%d_%H%M')}_{uuid.uuid4().hex[:6]}.jpg"
-        local_path = os.path.join(artifacts_dir, filename)
+        local_path = os.path.join(inbound_dir, filename)
         await tg_file.download_to_drive(local_path)
-        try:
-            with open(local_path + ".meta", "w") as mf:
-                json.dump({"agent_id": "sam_axe", "created_at": _dt.datetime.now().isoformat()}, mf)
-        except Exception:
-            pass
+        mark_private(local_path, extra={
+            "agent_id": self.AGENT_ID,
+            "chat_id": chat_id,
+            "kind": "photo",
+            "caption": caption[:500],
+            "created_at": _dt.datetime.now().isoformat(),
+        })
 
         save_message(chat_id, self.AGENT_ID, "user", f"[Photo: {filename}] {caption}")
         self.journal("photo_received", f"Photo: {filename}", chat_id=chat_id)
 
+        # Decide whether the user actually wants analysis right now.
+        # Default is QUIET SAVE — Serge often pastes batches of reference
+        # photos and doesn't want a room-by-room readout for each one.
+        wants_analysis = any(t in caption_low for t in ANALYZE_TRIGGER_KEYWORDS)
+        is_ref_upload   = self._is_reference_upload(caption)
+        has_open_refs   = self._has_references(chat_id)
+
         # ── Reference-upload branch (avatar / character mood board) ───────────
-        if self._is_reference_upload(caption):
-            role = self._detect_ref_role(caption)
+        # An open ref session (`has_open_refs`) means Serge is mid-batch — keep
+        # accepting new photos as references even when the caption omits a
+        # `ref:` trigger.
+        if is_ref_upload or has_open_refs:
+            role = self._detect_ref_role(caption) if is_ref_upload else "general"
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"📥 Reference received (role: {role}). Analyzing facial features and style cues..."
+                text=f"📥 Reference received (role: {role}, private). Analyzing facial features and style cues..."
             )
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
@@ -388,9 +414,37 @@ class SamAxe(BaseAgent):
             await self._send_response(context.bot, chat_id, response)
             return
 
-        # Check if we've already analyzed this image (context persistence)
+        # ── Quiet-save default ────────────────────────────────────────────────
+        # No `ref:` trigger and no analyze keyword → Serge is just pasting a
+        # photo, possibly mid-thought. Stash it as a private inbound, ack
+        # briefly, and STOP. No room-architecture readout, no GPU spend.
+        # Serge can follow up with "analyze this" / "ref: face" / "edit it"
+        # to take action.
         img_hash = self._get_image_hash(local_path)
         existing_ctx = self._get_context(img_hash)
+
+        if not wants_analysis and not existing_ctx.get("description"):
+            # Track as the most recently received photo so a follow-up like
+            # "analyze it" or "edit the cabinets white" can pick it up.
+            slot = self._pending_edits.setdefault(chat_id, {})
+            slot.update({
+                "source": local_path,
+                "image_hash": img_hash,
+                "context_file": os.path.join(CONTEXT_DIR, f"{img_hash}.json"),
+                "awaiting_instructions": True,
+            })
+            self._save_pending_edits()
+            self.remember("last_received_photo", local_path, "images")
+            response = (
+                "📥 Saved (private).\n"
+                "Send another, or tell me what to do:\n"
+                "  • `ref: face` / `ref: wardrobe` — add as character reference\n"
+                "  • `analyze` — describe what's in it\n"
+                "  • `paint walls warm gray` (or any edit) — generate variants"
+            )
+            save_message(chat_id, self.AGENT_ID, "assistant", response)
+            await self._send_response(context.bot, chat_id, response)
+            return
 
         if existing_ctx.get("description"):
             # SKIP analysis — we've seen this image before

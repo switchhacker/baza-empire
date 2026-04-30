@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from dashboard.private_inbound import is_private as _is_private_path, PRIVATE_INBOUND_DIRNAME
 
 try:
     from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -747,13 +748,18 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
 
     files = []
     for root, dirs, fnames in os.walk(base_dir):
-        # Skip hidden dirs and meta files
+        # Skip hidden dirs (incl. .private-inbound) and meta files
         dirs[:] = [d for d in dirs if not d.startswith('.')]
         for fname in sorted(fnames):
             # Skip sidecar meta files
             if fname.endswith('.meta'):
                 continue
             fpath = os.path.join(root, fname)
+            # Per-file privacy gate — catches stray private-marked files in
+            # public dirs (e.g. legacy Sam inbound photos still under
+            # proj-ahb123 until the backfill moves them).
+            if _is_private_path(fpath):
+                continue
             rel   = os.path.relpath(fpath, base_dir)
             # Determine project_id from relative path structure: {project}/{file}
             parts = rel.split(os.sep)
@@ -1188,6 +1194,199 @@ def crons_page():
 def artifacts_page():
     """Legacy route — redirect to Data Hub."""
     return redirect('/datahub')
+
+
+# ── Private gallery (passphrase-locked) ──────────────────────────────────────
+# All Telegram-inbound media is marked private (see dashboard/private_inbound.py)
+# and excluded from every public Data Hub list/serve/grep route. The private
+# gallery is the *only* way to view them through the UI, gated by a session
+# unlock against a hashed passphrase stored at dashboard/.private_pass.
+
+PRIVATE_PASS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 '.private_pass')
+
+
+def _private_pass_is_set() -> bool:
+    return os.path.isfile(PRIVATE_PASS_FILE) and os.path.getsize(PRIVATE_PASS_FILE) > 0
+
+
+def _private_pass_check(passphrase: str) -> bool:
+    if not _private_pass_is_set() or not passphrase:
+        return False
+    try:
+        with open(PRIVATE_PASS_FILE, 'r', encoding='utf-8') as fh:
+            stored = fh.read().strip()
+    except OSError:
+        return False
+    return bool(stored) and check_password_hash(stored, passphrase)
+
+
+def _is_private_unlocked() -> bool:
+    return bool(session.get('private_unlocked'))
+
+
+def _list_private_files() -> list:
+    """Walk artifacts/ and return all files marked private. Includes the
+    .private-inbound/ tree (which we explicitly descend into) plus any
+    legacy private-marked files still in public project dirs."""
+    out = []
+    if not os.path.isdir(ARTIFACTS_DIR):
+        return out
+    img_ext   = {'.png','.jpg','.jpeg','.gif','.webp','.bmp','.tiff','.tif'}
+    audio_ext = {'.mp3','.wav','.ogg','.flac','.m4a','.opus'}
+    video_ext = {'.mp4','.mkv','.mov','.webm'}
+    for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
+        # Descend into dotted dirs here (we WANT .private-inbound/) — skip
+        # only DB-side scratch dirs that start with __ or .git.
+        dirs[:] = [d for d in dirs if not d.startswith('__') and d != '.git']
+        for fname in fnames:
+            if fname.endswith('.meta'):
+                continue
+            fpath = os.path.join(root, fname)
+            if not _is_private_path(fpath):
+                continue
+            try:
+                st = os.stat(fpath)
+            except OSError:
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in img_ext:
+                kind = 'image'
+            elif ext in audio_ext:
+                kind = 'audio'
+            elif ext in video_ext:
+                kind = 'video'
+            else:
+                kind = 'other'
+            # Pull caption + agent_id from the JSON .meta sidecar if present
+            caption = ''
+            agent_id = ''
+            received_at = ''
+            meta_path = fpath + '.meta'
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, 'r', encoding='utf-8', errors='replace') as fh:
+                        raw = fh.read().strip()
+                    if raw.startswith('{'):
+                        m = json.loads(raw)
+                        caption = str(m.get('caption', ''))[:300]
+                        agent_id = str(m.get('agent_id', ''))
+                        received_at = str(m.get('received_at') or m.get('created_at') or '')
+                except Exception:
+                    pass
+            rel = os.path.relpath(fpath, ARTIFACTS_DIR).replace(os.sep, '/')
+            # Token = urlsafe base64 of rel path; serve route reverses + re-checks privacy
+            import base64 as _b64
+            token = _b64.urlsafe_b64encode(rel.encode('utf-8')).decode('ascii').rstrip('=')
+            out.append({
+                'token':       token,
+                'rel_path':    rel,
+                'basename':    fname,
+                'size':        st.st_size,
+                'mtime':       st.st_mtime,
+                'modified':    datetime.datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M'),
+                'ext':         ext,
+                'kind':        kind,
+                'agent_id':    agent_id,
+                'caption':     caption,
+                'received_at': received_at,
+            })
+    out.sort(key=lambda r: r['mtime'], reverse=True)
+    return out
+
+
+def _decode_private_token(token: str):
+    """Decode a list token back to an absolute path; None if invalid or not private."""
+    import base64 as _b64
+    try:
+        pad = '=' * (-len(token) % 4)
+        rel = _b64.urlsafe_b64decode((token + pad).encode('ascii')).decode('utf-8')
+    except Exception:
+        return None
+    if '..' in rel.split('/'):
+        return None
+    fpath = os.path.realpath(os.path.join(ARTIFACTS_DIR, rel))
+    if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
+        return None
+    if not os.path.isfile(fpath):
+        return None
+    if not _is_private_path(fpath):
+        return None
+    return fpath
+
+
+@app.route('/datahub/private')
+def datahub_private_page():
+    return render_template('private.html',
+                           passphrase_set=_private_pass_is_set(),
+                           unlocked=_is_private_unlocked())
+
+
+@app.route('/api/datahub/private/status')
+def api_private_status():
+    return jsonify({
+        'passphrase_set': _private_pass_is_set(),
+        'unlocked':       _is_private_unlocked(),
+    })
+
+
+@app.route('/api/datahub/private/unlock', methods=['POST'])
+def api_private_unlock():
+    if not _private_pass_is_set():
+        return jsonify({'ok': False, 'error': 'No passphrase set. Run venv/bin/python dashboard/set_private_pass.py on the server.'}), 400
+    payload = request.get_json(silent=True) or {}
+    pp = (payload.get('passphrase') or '').strip()
+    if not pp:
+        return jsonify({'ok': False, 'error': 'Empty passphrase'}), 400
+    if not _private_pass_check(pp):
+        return jsonify({'ok': False, 'error': 'Wrong passphrase'}), 401
+    session['private_unlocked'] = True
+    session.permanent = False  # cleared when browser closes
+    return jsonify({'ok': True})
+
+
+@app.route('/api/datahub/private/lock', methods=['POST'])
+def api_private_lock():
+    session.pop('private_unlocked', None)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/datahub/private/list')
+def api_private_list():
+    if not _is_private_unlocked():
+        return jsonify({'ok': False, 'error': 'Locked'}), 401
+    files = _list_private_files()
+    return jsonify({'ok': True, 'count': len(files), 'files': files})
+
+
+@app.route('/api/datahub/private/serve/<token>')
+def api_private_serve(token):
+    if not _is_private_unlocked():
+        return jsonify({'error': 'Locked'}), 401
+    fpath = _decode_private_token(token)
+    if not fpath:
+        return jsonify({'error': 'Not found or not private'}), 404
+    return send_from_directory(os.path.dirname(fpath), os.path.basename(fpath))
+
+
+@app.route('/api/datahub/private/delete', methods=['POST'])
+def api_private_delete():
+    if not _is_private_unlocked():
+        return jsonify({'ok': False, 'error': 'Locked'}), 401
+    payload = request.get_json(silent=True) or {}
+    token = payload.get('token') or ''
+    fpath = _decode_private_token(token)
+    if not fpath:
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    try:
+        os.remove(fpath)
+        meta = fpath + '.meta'
+        if os.path.isfile(meta):
+            os.remove(meta)
+    except OSError as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+    return jsonify({'ok': True})
+
 
 @app.route('/datahub')
 def datahub_page():
@@ -1635,18 +1834,29 @@ def api_artifact_upload():
 
 @app.route('/api/artifacts/download/<project_id>/<path:filename>')
 def api_artifact_download(project_id, filename):
+    if project_id.startswith('.') or PRIVATE_INBOUND_DIRNAME in filename.split('/'):
+        return jsonify({'error': 'Private'}), 403
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
+    fpath = os.path.realpath(os.path.join(proj_dir, filename))
+    if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
+        return jsonify({'error': 'Forbidden'}), 403
+    if _is_private_path(fpath):
+        return jsonify({'error': 'Private'}), 403
     return send_from_directory(proj_dir, filename, as_attachment=True)
 
 @app.route('/api/artifacts/view/<project_id>/<path:filename>')
 def api_artifact_view(project_id, filename):
     """Read text file content for preview. Supports subpaths."""
+    if project_id.startswith('.') or PRIVATE_INBOUND_DIRNAME in filename.split('/'):
+        return jsonify({'error': 'Private'}), 403
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
     fpath = os.path.realpath(os.path.join(proj_dir, filename))
     if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
         return jsonify({'error': 'Forbidden'}), 403
     if not os.path.isfile(fpath):
         return jsonify({'error': 'File not found'}), 404
+    if _is_private_path(fpath):
+        return jsonify({'error': 'Private'}), 403
     base = os.path.basename(fpath)
     ext = os.path.splitext(base)[1].lower()
     text_exts = {'.txt','.md','.py','.sh','.js','.ts','.jsx','.tsx','.html','.htm',
@@ -1819,6 +2029,9 @@ def api_artifact_grep():
 @app.route('/api/artifacts/serve/<project_id>/<path:filename>')
 def api_artifact_serve(project_id, filename):
     """Serve file inline for browser preview (images, PDFs, etc). Supports subpaths."""
+    # Refuse any reach into the private-inbound tree or other dotted projects.
+    if project_id.startswith('.') or PRIVATE_INBOUND_DIRNAME in filename.split('/'):
+        return jsonify({'error': 'Private'}), 403
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
     fpath    = os.path.realpath(os.path.join(proj_dir, filename))
     # Path traversal guard — must stay inside ARTIFACTS_DIR
@@ -1826,6 +2039,10 @@ def api_artifact_serve(project_id, filename):
         return jsonify({'error': 'Forbidden'}), 403
     if not os.path.isfile(fpath):
         return jsonify({'error': 'Not found'}), 404
+    # Per-file privacy gate — defense in depth in case a private-marked file
+    # ever lands in a public project dir.
+    if _is_private_path(fpath):
+        return jsonify({'error': 'Private'}), 403
     return send_from_directory(os.path.dirname(fpath), os.path.basename(fpath))
 
 @app.route('/api/datahub/specter')

@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Private Gallery</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .lock-pill{margin-left:auto;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:14px;font-size:11px;font-weight:700;border:1px solid #1a1a3a}
+    .lock-pill.locked{background:#1a0606;color:#ff6666;border-color:#3a0e0e}
+    .lock-pill.unlocked{background:#061a10;color:#00d084;border-color:#0e3a1e}
+
+    .container{max-width:1600px;margin:0 auto;padding:32px 28px}
+
+    .page-header{margin-bottom:24px}
+    .page-title{font-size:26px;font-weight:800;color:#fff;display:flex;align-items:center;gap:12px}
+    .page-sub{font-size:12px;color:#666;margin-top:6px;max-width:680px;line-height:1.5}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s;font-family:inherit}
+    .btn:hover{opacity:.82}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-danger{background:#3a0e0e;color:#ff8888;border:1px solid #6a1414}
+    .btn-sm{padding:5px 11px;font-size:11px;border-radius:5px}
+
+    /* Lock screen */
+    .lock-screen{display:flex;align-items:center;justify-content:center;min-height:60vh}
+    .lock-card{background:#0d0d1e;border:1px solid #1a1a3a;border-radius:16px;padding:36px 40px;max-width:420px;width:100%;text-align:center}
+    .lock-icon{font-size:42px;margin-bottom:14px;color:#7c3aed}
+    .lock-title{font-size:18px;font-weight:800;color:#fff;margin-bottom:8px}
+    .lock-desc{font-size:12px;color:#777;margin-bottom:24px;line-height:1.6}
+    .pass-input{width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:12px 16px;color:#e0e0e0;font-size:14px;outline:none;margin-bottom:14px;font-family:inherit;letter-spacing:2px}
+    .pass-input:focus{border-color:#7c3aed}
+    .lock-error{color:#ff6666;font-size:11px;margin-bottom:14px;min-height:14px}
+    .lock-help{font-size:11px;color:#444;margin-top:18px;line-height:1.5;font-family:'SF Mono',Monaco,Consolas,monospace}
+
+    /* Toolbar */
+    .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+    .search-box{background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;padding:9px 14px;color:#e0e0e0;font-size:13px;outline:none;width:280px;font-family:inherit}
+    .search-box:focus{border-color:#7c3aed}
+    .agent-pills{display:flex;gap:6px;flex-wrap:wrap}
+    .agent-pill{padding:5px 10px;border-radius:16px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid #1a1a2e;background:#0a0a16;color:#666}
+    .agent-pill:hover,.agent-pill.active{border-color:#7c3aed;color:#c4b5fd;background:#120d22}
+    .meta-line{font-size:11px;color:#555;margin-left:auto}
+
+    /* Gallery */
+    .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+    .photo-card{background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s;position:relative}
+    .photo-card:hover{transform:translateY(-2px);border-color:#7c3aed}
+    .photo-thumb{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#000}
+    .photo-info{padding:8px 10px}
+    .photo-cap{font-size:11px;color:#aaa;line-height:1.35;max-height:30px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    .photo-meta{font-size:9px;color:#444;margin-top:4px;display:flex;justify-content:space-between}
+    .photo-agent{color:#7c3aed;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+    .empty-state{text-align:center;padding:60px 20px;color:#444;font-size:13px}
+
+    /* Lightbox */
+    .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:500;padding:32px}
+    .lightbox.show{display:flex;flex-direction:column;gap:14px}
+    .lightbox img,.lightbox video{max-width:90vw;max-height:78vh;border-radius:8px;object-fit:contain}
+    .lightbox-info{background:#0d0d1e;border:1px solid #1a1a3a;border-radius:8px;padding:12px 18px;max-width:760px;width:100%;font-size:12px}
+    .lightbox-info .lb-cap{color:#ddd;line-height:1.5;margin-bottom:6px}
+    .lightbox-info .lb-meta{color:#555;font-size:10px;display:flex;gap:14px;flex-wrap:wrap}
+    .lightbox-actions{display:flex;gap:10px;justify-content:center}
+    .lightbox-close{position:fixed;top:20px;right:24px;color:#aaa;font-size:32px;cursor:pointer;line-height:1;background:none;border:none;font-family:inherit}
+    .lightbox-close:hover{color:#fff}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Dashboard</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link active" href="/datahub/private">Private</a>
+    <a class="nav-link" href="/journal">Journal</a>
+    <a class="nav-link" href="/memory">Memory</a>
+    <span id="lockPill" class="lock-pill locked">🔒 Locked</span>
+  </nav>
+
+  <div class="container">
+
+    <!-- Lock screen (shown when not unlocked) -->
+    <div id="lockScreen" class="lock-screen" style="display:none">
+      <div class="lock-card">
+        <div class="lock-icon">🔒</div>
+        <div class="lock-title">Private Gallery</div>
+        <div class="lock-desc" id="lockDesc">
+          All Telegram-inbound photos and attachments live here. Hidden from the
+          rest of the Data Hub. Enter your passphrase to view.
+        </div>
+        <form id="unlockForm" autocomplete="off">
+          <input id="passInput" class="pass-input" type="password" placeholder="Passphrase" autofocus>
+          <div id="lockError" class="lock-error"></div>
+          <button class="btn btn-primary" type="submit" style="width:100%">Unlock</button>
+        </form>
+        <div id="lockHelp" class="lock-help" style="display:none">
+          No passphrase has been set yet. On the server, run:<br>
+          <span style="color:#7c3aed">venv/bin/python dashboard/set_private_pass.py</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gallery (shown when unlocked) -->
+    <div id="gallery" style="display:none">
+      <div class="page-header">
+        <div class="page-title">🔓 Private Gallery</div>
+        <div class="page-sub">
+          Telegram-inbound media for every agent. These files are excluded from
+          Data Hub search, the image index, and the public serve endpoint —
+          they're only viewable here. Lock the gallery when you're done.
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <input id="searchInput" class="search-box" type="text" placeholder="Filter by caption or filename...">
+        <div id="agentPills" class="agent-pills"></div>
+        <div class="meta-line"><span id="countLabel">0 files</span></div>
+        <button class="btn btn-secondary btn-sm" onclick="lockGallery()">🔒 Lock</button>
+      </div>
+
+      <div id="grid" class="gallery"></div>
+      <div id="emptyState" class="empty-state" style="display:none">No private files yet. Send a photo to any agent in Telegram.</div>
+    </div>
+  </div>
+
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox">
+    <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+    <div id="lbMedia"></div>
+    <div class="lightbox-info">
+      <div class="lb-cap" id="lbCap"></div>
+      <div class="lb-meta" id="lbMeta"></div>
+    </div>
+    <div class="lightbox-actions">
+      <a id="lbDownload" class="btn btn-secondary btn-sm" download>⬇ Download</a>
+      <button class="btn btn-danger btn-sm" onclick="deleteCurrent()">🗑 Delete</button>
+    </div>
+  </div>
+
+  <script>
+    const initialUnlocked    = {{ 'true' if unlocked else 'false' }};
+    const initialPassSet     = {{ 'true' if passphrase_set else 'false' }};
+    let allFiles    = [];
+    let activeAgent = '';
+    let activeQuery = '';
+    let currentFile = null;
+
+    function fmtSize(n){ if(n<1024)return n+'B'; if(n<1048576)return (n/1024).toFixed(1)+'K'; return (n/1048576).toFixed(1)+'M'; }
+
+    async function refreshStatus(){
+      const r = await fetch('/api/datahub/private/status');
+      const j = await r.json();
+      const pill = document.getElementById('lockPill');
+      if(j.unlocked){ pill.textContent='🔓 Unlocked'; pill.className='lock-pill unlocked'; }
+      else          { pill.textContent='🔒 Locked';   pill.className='lock-pill locked'; }
+      if(!j.passphrase_set){
+        document.getElementById('lockDesc').textContent = 'No passphrase has been set yet on this server.';
+        document.getElementById('lockHelp').style.display = 'block';
+        document.getElementById('passInput').disabled = true;
+      }
+      return j;
+    }
+
+    function showLock(){
+      document.getElementById('lockScreen').style.display = 'flex';
+      document.getElementById('gallery').style.display    = 'none';
+    }
+    function showGallery(){
+      document.getElementById('lockScreen').style.display = 'none';
+      document.getElementById('gallery').style.display    = 'block';
+      loadFiles();
+    }
+
+    async function loadFiles(){
+      const r = await fetch('/api/datahub/private/list');
+      if(r.status === 401){ showLock(); return; }
+      const j = await r.json();
+      allFiles = j.files || [];
+      renderAgentPills();
+      renderGrid();
+    }
+
+    function renderAgentPills(){
+      const counts = {};
+      allFiles.forEach(f => { const a = f.agent_id || 'unknown'; counts[a] = (counts[a]||0)+1; });
+      const pills = document.getElementById('agentPills');
+      pills.innerHTML = `<span class="agent-pill ${activeAgent===''?'active':''}" onclick="filterAgent('')">All (${allFiles.length})</span>` +
+        Object.keys(counts).sort().map(a => `<span class="agent-pill ${activeAgent===a?'active':''}" onclick="filterAgent('${a}')">${a} (${counts[a]})</span>`).join('');
+    }
+
+    function filterAgent(a){ activeAgent = a; renderAgentPills(); renderGrid(); }
+
+    function renderGrid(){
+      const q = activeQuery.toLowerCase();
+      const filtered = allFiles.filter(f => {
+        if(activeAgent && (f.agent_id||'') !== activeAgent) return false;
+        if(!q) return true;
+        return (f.caption||'').toLowerCase().includes(q) ||
+               (f.basename||'').toLowerCase().includes(q);
+      });
+      const grid = document.getElementById('grid');
+      const empty = document.getElementById('emptyState');
+      document.getElementById('countLabel').textContent = `${filtered.length} of ${allFiles.length} files`;
+      if(filtered.length === 0){
+        grid.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      grid.innerHTML = filtered.map((f,i) => {
+        const url = `/api/datahub/private/serve/${f.token}`;
+        let media;
+        if(f.kind === 'image'){
+          media = `<img class="photo-thumb" src="${url}" loading="lazy" alt="">`;
+        } else if(f.kind === 'video'){
+          media = `<video class="photo-thumb" src="${url}" muted preload="metadata"></video>`;
+        } else if(f.kind === 'audio'){
+          media = `<div class="photo-thumb" style="display:flex;align-items:center;justify-content:center;color:#7c3aed;font-size:30px">🎵</div>`;
+        } else {
+          media = `<div class="photo-thumb" style="display:flex;align-items:center;justify-content:center;color:#444;font-size:30px">📄</div>`;
+        }
+        return `<div class="photo-card" onclick="openLightbox(${i})" data-idx="${i}">
+          ${media}
+          <div class="photo-info">
+            <div class="photo-cap" title="${(f.caption||f.basename).replace(/"/g,'&quot;')}">${f.caption || f.basename}</div>
+            <div class="photo-meta"><span class="photo-agent">${f.agent_id || '?'}</span><span>${f.modified}</span></div>
+          </div>
+        </div>`;
+      }).join('');
+      // Save filtered list reference for lightbox lookups
+      window.__filtered = filtered;
+    }
+
+    function openLightbox(idx){
+      const f = (window.__filtered || allFiles)[idx];
+      if(!f) return;
+      currentFile = f;
+      const url = `/api/datahub/private/serve/${f.token}`;
+      const media = document.getElementById('lbMedia');
+      if(f.kind === 'image')      media.innerHTML = `<img src="${url}">`;
+      else if(f.kind === 'video') media.innerHTML = `<video src="${url}" controls autoplay></video>`;
+      else if(f.kind === 'audio') media.innerHTML = `<audio src="${url}" controls autoplay style="width:480px"></audio>`;
+      else                        media.innerHTML = `<div style="color:#777;padding:40px">No preview for ${f.ext}</div>`;
+      document.getElementById('lbCap').textContent  = f.caption || '(no caption)';
+      document.getElementById('lbMeta').innerHTML   = `<span>${f.agent_id||'?'}</span><span>${f.basename}</span><span>${fmtSize(f.size)}</span><span>${f.modified}</span>`;
+      const dl = document.getElementById('lbDownload');
+      dl.href = url; dl.setAttribute('download', f.basename);
+      document.getElementById('lightbox').classList.add('show');
+    }
+    function closeLightbox(){ document.getElementById('lightbox').classList.remove('show'); currentFile = null; }
+    document.getElementById('lightbox').addEventListener('click', e => { if(e.target.id === 'lightbox') closeLightbox(); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') closeLightbox(); });
+
+    async function deleteCurrent(){
+      if(!currentFile) return;
+      if(!confirm(`Delete ${currentFile.basename} permanently?`)) return;
+      const r = await fetch('/api/datahub/private/delete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({token: currentFile.token})
+      });
+      if(r.ok){ closeLightbox(); loadFiles(); }
+      else    { const j = await r.json().catch(()=>({})); alert(j.error || 'Delete failed'); }
+    }
+
+    document.getElementById('searchInput').addEventListener('input', e => {
+      activeQuery = e.target.value; renderGrid();
+    });
+
+    document.getElementById('unlockForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const pp = document.getElementById('passInput').value;
+      const errEl = document.getElementById('lockError');
+      errEl.textContent = '';
+      const r = await fetch('/api/datahub/private/unlock', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({passphrase: pp})
+      });
+      const j = await r.json();
+      if(r.ok && j.ok){
+        document.getElementById('passInput').value = '';
+        await refreshStatus();
+        showGallery();
+      } else {
+        errEl.textContent = j.error || 'Unlock failed';
+      }
+    });
+
+    async function lockGallery(){
+      await fetch('/api/datahub/private/lock', {method:'POST'});
+      await refreshStatus();
+      showLock();
+    }
+
+    // Boot
+    (async function(){
+      const s = await refreshStatus();
+      if(s.unlocked) showGallery();
+      else           showLock();
+    })();
+  </script>
+</body>
+</html>

@@ -42,6 +42,7 @@ from core.memory import (
 )
 from core.task_updater import AgentTaskManager
 from skills.shared.save_artifact import save_artifact as _save_artifact_fn, save_binary_artifact as _save_binary_artifact_fn
+from dashboard.private_inbound import private_inbound_dir, mark_private
 
 logger = logging.getLogger(__name__)
 
@@ -824,9 +825,11 @@ class BaseAgent(ContextMixin):
             return
         try:
             framework_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            upload_dir = os.path.join(framework_dir, "dashboard", "artifacts",
-                                      f"{self.AGENT_ID}-uploads")
-            os.makedirs(upload_dir, exist_ok=True)
+            # All Telegram-inbound media lands in the private-inbound tree so
+            # the Data Hub indexer + search never index personal photos. The
+            # dotted directory name (`.private-inbound/`) is also implicitly
+            # excluded from the artifact walks.
+            upload_dir = private_inbound_dir(framework_dir, self.AGENT_ID)
 
             # Pick the right file object + filename
             file_obj = None
@@ -869,17 +872,15 @@ class BaseAgent(ContextMixin):
             fpath = os.path.join(upload_dir, fname)
             await file_obj.download_to_drive(fpath)
 
-            # Sidecar meta so the dashboard's scan_artifacts_dir tags this with the right agent
-            try:
-                with open(fpath + ".meta", "w") as mf:
-                    mf.write(f"agent_id={self.AGENT_ID}\n")
-                    mf.write(f"chat_id={chat_id}\n")
-                    mf.write(f"kind={kind}\n")
-                    mf.write(f"received_at={_dt.datetime.now().isoformat()}\n")
-                    if caption:
-                        mf.write(f"caption={caption[:500]}\n")
-            except Exception:
-                pass
+            # Sidecar meta — JSON, with private=true so the indexer + Data Hub
+            # filter this out of search and serve.
+            mark_private(fpath, extra={
+                "agent_id": self.AGENT_ID,
+                "chat_id": chat_id,
+                "kind": kind,
+                "received_at": _dt.datetime.now().isoformat(),
+                "caption": caption[:500] if caption else "",
+            })
 
             logger.info(f"[{self.AGENT_ID}] saved {kind} from chat {chat_id}: {fname}")
             self.journal("attachment_received",
