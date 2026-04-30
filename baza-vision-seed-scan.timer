@@ -1,0 +1,11 @@
+[Unit]
+Description=Baza Empire — Vision seed-scan schedule (every 6h)
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=baza-vision-seed-scan.service
+
+[Install]
+WantedBy=timers.target

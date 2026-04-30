@@ -1,0 +1,11 @@
+[Unit]
+Description=Baza Empire — Vision seed-scan (Specter mode 1, gap detector)
+After=baza-vision-indexer.service
+
+[Service]
+Type=oneshot
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3-vision
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3-vision/venv/bin/python -m dashboard.vision.seed_scan
+StandardOutput=journal
+StandardError=journal
