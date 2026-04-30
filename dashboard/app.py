@@ -1315,13 +1315,6 @@ def _decode_private_token(token: str):
     return fpath
 
 
-@app.route('/datahub/private')
-def datahub_private_page():
-    return render_template('private.html',
-                           passphrase_set=_private_pass_is_set(),
-                           unlocked=_is_private_unlocked())
-
-
 @app.route('/api/datahub/private/status')
 def api_private_status():
     return jsonify({
@@ -12277,6 +12270,17 @@ def settings_theme():
     # 1y cookie so it survives session expiry. No HttpOnly: theme.js reads it.
     resp.set_cookie('theme', val, max_age=60 * 60 * 24 * 365, samesite='Lax')
     return resp
+
+
+# ── Vision UI ──────────────────────────────────────────────────────────────
+from dashboard.vision_routes import bp as vision_bp  # noqa: E402
+app.register_blueprint(vision_bp)
+
+
+@app.route("/datahub/private")
+def datahub_private_redirect():
+    """Old URL — keep redirecting old bookmarks to /vision."""
+    return redirect("/vision", code=302)
 
 
 if __name__ == '__main__':
