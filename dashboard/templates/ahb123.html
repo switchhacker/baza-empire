@@ -530,6 +530,48 @@
     .bp-sidebar{max-height:260px}
     .bp-canvas-wrap{height:60vh}
   }
+
+  /* ── Help tooltip system ─────────────────────────────────────────────
+     Usage: <span class="help" data-tip="Plain English explanation">?</span>
+     CSS-only: a small ? badge that pops a styled bubble on hover or focus. */
+  .help{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:14px;height:14px;border-radius:50%;
+    background:#1a1a2e;color:#7c3aed;border:1px solid #2a2a4a;
+    font-size:9px;font-weight:800;cursor:help;
+    margin-left:4px;vertical-align:middle;position:relative;
+    user-select:none;line-height:1;
+  }
+  .help:hover{background:#7c3aed;color:#fff;border-color:#7c3aed}
+  .help[data-tip]:hover::after,
+  .help[data-tip]:focus::after{
+    content:attr(data-tip);
+    position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);
+    background:#0a0a18;color:#e0e0e0;
+    border:1px solid #7c3aed;border-radius:8px;
+    padding:8px 12px;font-size:11px;font-weight:400;
+    line-height:1.55;letter-spacing:0;text-transform:none;
+    width:max-content;max-width:320px;white-space:pre-wrap;
+    z-index:10000;pointer-events:none;
+    box-shadow:0 8px 24px rgba(0,0,0,.6);
+    text-align:left;
+  }
+  .help[data-tip]:hover::before,
+  .help[data-tip]:focus::before{
+    content:'';position:absolute;left:50%;bottom:calc(100% + 1px);
+    transform:translateX(-50%);
+    border:5px solid transparent;border-top-color:#7c3aed;
+    z-index:10001;pointer-events:none;
+  }
+  /* Right-aligned variant for tooltips that would overflow on the right edge */
+  .help.help-left[data-tip]:hover::after,
+  .help.help-left[data-tip]:focus::after{
+    left:auto;right:0;transform:none;
+  }
+  .help.help-left[data-tip]:hover::before,
+  .help.help-left[data-tip]:focus::before{
+    left:auto;right:5px;transform:none;
+  }
   </style>
 </head>
 <body>
@@ -2237,22 +2279,22 @@
     <div style="font-size:13px;font-weight:800;color:#4da6ff;text-transform:uppercase;letter-spacing:2px;margin-bottom:14px">🦅 Annual Tax Filing Summary · <span id="us-year-label-4" style="color:#fff">2026</span></div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px">
       <div style="background:#070712;border:1px solid #1a3a5a;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Gross Revenue</div>
+        <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Gross Revenue<span class="help help-left" tabindex="0" data-tip="Money your business actually COLLECTED this year (paid invoices only — cash basis).&#10;&#10;This is the starting point on Schedule C Line 1 of your tax return. Unpaid invoices don't count yet — they show up the year they get paid.">?</span></div>
         <div id="us-summary-gross" style="font-size:26px;font-weight:800;color:#00d084;font-family:monospace">$0</div>
         <div style="font-size:10px;color:#444;margin-top:4px">paid invoices</div>
       </div>
       <div style="background:#070712;border:1px solid #1a3a5a;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">− Total Expenses</div>
+        <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">− Total Expenses<span class="help help-left" tabindex="0" data-tip="Deductible business expenses from your QuickRF receipts + payroll wages, with the right write-off % applied per category (e.g. meals at 50%, materials at 100%, vehicle by mileage).&#10;&#10;These reduce your taxable business profit dollar-for-dollar. Keep adding receipts in QuickRF — every one lowers the number above.">?</span></div>
         <div id="us-summary-expenses" style="font-size:26px;font-weight:800;color:#f5a623;font-family:monospace">$0</div>
         <div style="font-size:10px;color:#444;margin-top:4px">deductible write-offs</div>
       </div>
       <div style="background:#070712;border:2px solid #4da6ff;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:10px;color:#4da6ff;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">= Net Taxable Income</div>
+        <div style="font-size:10px;color:#4da6ff;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">= Net Taxable Income<span class="help help-left" tabindex="0" data-tip="The number you actually pay tax on. Built like this:&#10;&#10;Business profit (revenue − expenses)&#10;+ Other income (W-2, 1099, interest, etc.)&#10;− Standard deduction (based on filing status)&#10;− QBI deduction (20% off business profit if eligible)&#10;= Taxable Income&#10;&#10;Long-term capital gains are split out and taxed at lower rates separately, so this number won't include them.">?</span></div>
         <div id="us-summary-net" style="font-size:30px;font-weight:800;color:#4da6ff;font-family:monospace">$0</div>
-        <div style="font-size:10px;color:#444;margin-top:4px">Schedule C bottom line</div>
+        <div style="font-size:10px;color:#444;margin-top:4px">after std + QBI deductions</div>
       </div>
       <div style="background:#070712;border:1px solid #c19660;border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:10px;color:#c19660;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Tax Owed</div>
+        <div style="font-size:10px;color:#c19660;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Tax Owed<span class="help help-left" tabindex="0" data-tip="Estimated TOTAL tax for the year (federal + state + local + self-employment), AFTER credits.&#10;&#10;Includes:&#10;• Federal income tax (marginal brackets)&#10;• Self-employment tax (15.3% Social Security + Medicare on biz profit)&#10;• Long-term capital gains tax (0/15/20% on LTCG)&#10;• PA flat 3.07% on AGI&#10;• Philly Net Profits Tax 3.44% (only if your business address is Philly)&#10;• MINUS Child Tax Credit ($2,000 per qualifying kid)&#10;&#10;ESTIMATE ONLY — does not include AMT, EITC, retirement contributions, HSA, or many other adjustments. See a CPA for filed returns.">?</span></div>
         <div id="us-summary-tax" style="font-size:26px;font-weight:800;color:#c19660;font-family:monospace">$0</div>
         <div id="us-summary-tax-rate" style="font-size:10px;color:#444;margin-top:4px">@ 28% effective</div>
       </div>
@@ -2326,7 +2368,7 @@
   <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;padding:18px;margin-bottom:14px">
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end">
       <div>
-        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Filing Status</label>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Filing Status<span class="help" tabindex="0" data-tip="How you file your tax return. Pick:&#10;&#10;• SINGLE — unmarried, no dependents.&#10;• MARRIED FILING JOINTLY — married, one combined return with your spouse (almost always lowest tax).&#10;• MARRIED FILING SEPARATELY — married but separate returns (rare, usually higher tax).&#10;• HEAD OF HOUSEHOLD — unmarried but supporting a child or relative.&#10;• QUALIFYING SURVIVING SPOUSE — first 2 years after spouse died, with a child.&#10;&#10;Affects standard deduction (MFJ gets $30k, Single $15k) and tax brackets.">?</span></label>
         <select id="bp-filing-status" onchange="saveBusinessProfile();renderInvoiceRollup()" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
           <option value="single">Single</option>
           <option value="mfj">Married Filing Jointly</option>
@@ -2336,12 +2378,12 @@
         </select>
       </div>
       <div>
-        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Dependents (qualifying children &lt;17)</label>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Dependents (kids &lt;17)<span class="help" tabindex="0" data-tip="Number of qualifying children under age 17 you support.&#10;&#10;WHAT YOU GET: $2,000 Child Tax Credit per kid — subtracts directly from your tax bill (much better than a deduction).&#10;&#10;WHO QUALIFIES: your child, stepchild, foster child, or sibling who lived with you more than half the year, didn't provide >half their own support, and was under 17 at year-end.&#10;&#10;OLDER DEPENDENTS: kids 17+ and other relatives qualify for $500 'Credit for Other Dependents' — not modeled here, count them separately if asking your CPA.">?</span></label>
         <input id="bp-dependents" type="number" min="0" max="20" step="1" value="0" onchange="saveBusinessProfile();renderInvoiceRollup()" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px;font-family:monospace">
       </div>
       <div style="font-size:11px;color:#666;line-height:1.5">
-        Used by the tax estimate above to apply the correct standard deduction
-        and the <b style="color:#888">$2,000-per-dependent Child Tax Credit</b>.
+        Drives the standard deduction in your tax estimate above and the
+        <b style="color:#888">$2,000-per-dependent Child Tax Credit</b>.
         Estimate only — see a CPA for filed returns.
       </div>
     </div>
@@ -2352,28 +2394,30 @@
   <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;padding:18px;margin-bottom:14px">
     <div style="display:grid;grid-template-columns:1.4fr 1.6fr 1fr 1.2fr auto;gap:8px;align-items:end;margin-bottom:12px">
       <div>
-        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Kind</label>
-        <select id="oi-kind" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Kind<span class="help" tabindex="0" data-tip="Pick the income source. Each kind is taxed differently — the estimate above uses the right rules automatically.&#10;&#10;Click an option below for a quick description of when to use it. If you're not sure, pick the closest match — you can fix it later.">?</span></label>
+        <select id="oi-kind" onchange="updateOiKindHelp()" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
           <option value="w2_wages">W-2 Wages (day job)</option>
-          <option value="1099_nec">1099-NEC (contract / SE)</option>
+          <option value="1099_nec">1099-NEC (contract / freelance)</option>
           <option value="1099_misc">1099-MISC (other)</option>
-          <option value="interest">Interest (1099-INT)</option>
-          <option value="dividends">Dividends (1099-DIV)</option>
-          <option value="capital_gains">Capital Gains</option>
-          <option value="rental">Rental (Schedule E)</option>
-          <option value="social_security">Social Security</option>
+          <option value="interest">Interest (savings/CD/bond)</option>
+          <option value="dividends">Dividends (stocks)</option>
+          <option value="long_term_capital_gains">Long-Term Capital Gains (held &gt;1 year)</option>
+          <option value="short_term_capital_gains">Short-Term Capital Gains (held ≤1 year)</option>
+          <option value="rental">Rental property</option>
+          <option value="social_security">Social Security benefits</option>
           <option value="unemployment">Unemployment</option>
           <option value="retirement">Retirement / Pension</option>
           <option value="spouse_w2">Spouse W-2 Wages</option>
           <option value="other">Other</option>
         </select>
+        <div id="oi-kind-help" style="margin-top:6px;font-size:10px;color:#888;line-height:1.5;min-height:28px;padding:4px 8px;background:#070712;border:1px solid #1a1a2e;border-radius:5px"></div>
       </div>
       <div>
-        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Source / Payer</label>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Source / Payer<span class="help" tabindex="0" data-tip="Who paid you? Examples:&#10;• 'Acme Corp' for W-2 wages&#10;• 'Chase Bank' for interest&#10;• 'Vanguard' for dividends/capital gains&#10;• '123 Main St rental' for rental income&#10;&#10;Just for your records — doesn't affect the tax math.">?</span></label>
         <input id="oi-source" placeholder="e.g. Acme Corp" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
       </div>
       <div>
-        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Amount ($)</label>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Amount ($)<span class="help" tabindex="0" data-tip="The dollar amount you received this tax year.&#10;&#10;FOR W-2: use Box 1 (Wages, tips, other comp) — not gross.&#10;FOR 1099-NEC/MISC: Box 1 (Nonemployee comp) or full amount.&#10;FOR INTEREST: 1099-INT Box 1.&#10;FOR DIVIDENDS: 1099-DIV Box 1a (ordinary).&#10;FOR CAP GAINS: net profit (sold price − cost basis).&#10;FOR RENTAL: NET (rent received − expenses). The Schedule E bottom line.&#10;FOR SS: Form SSA-1099 Box 5 (gross benefits).&#10;&#10;The estimate handles the tax-treatment differences automatically.">?</span></label>
         <input id="oi-amount" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px;font-family:monospace">
       </div>
       <div>
@@ -4327,8 +4371,23 @@ async function loadProjects(){
 
 function renderProjectStats(list){
   const data=list||allProjects;
-  const totalVal=data.reduce((s,p)=>s+(p.value||p.budget_high||0),0);
-  document.getElementById('ps-total-val').textContent=fmtCurrency(totalVal);
+  // "Total Revenue" headline = COMPLETED projects in the CURRENT calendar year only
+  // (anything else is pipeline, not realized revenue). Pull year from p.year first,
+  // fall back to end_date / start_date / created_at when year isn't tagged.
+  const yr = String(new Date().getFullYear());
+  const _projectYear = (p) => {
+    return (p.year || (p.end_date||'').slice(0,4) || (p.start_date||'').slice(0,4) || (p.created_at||'').slice(0,4) || '');
+  };
+  const completedThisYear = data.filter(p => {
+    const isDone = p.status==='Completed' || p.status==='complete';
+    return isDone && _projectYear(p) === yr;
+  });
+  const totalRevenue = completedThisYear.reduce((s,p)=>s+(p.value||p.budget_high||0),0);
+  const tv = document.getElementById('ps-total-val');
+  tv.textContent = fmtCurrency(totalRevenue);
+  // Update label so the user knows the new scope
+  const lbl = tv.parentElement && tv.parentElement.querySelector('.stat-lbl');
+  if (lbl) lbl.innerHTML = 'Revenue ('+yr+' Completed) <span class="help" tabindex="0" data-tip="Sum of value for projects with status COMPLETED in the current calendar year ('+yr+'). Excludes pipeline (Planning, In Progress, Signed) and prior years.&#10;&#10;Year is taken from the project\'s year field, falling back to end date → start date → created date.">?</span>';
   document.getElementById('ps-count').textContent=data.length;
   document.getElementById('ps-estimate').textContent=data.filter(p=>p.status==='Planning'||p.status==='estimate'||p.status==='proposal').length;
   document.getElementById('ps-inprogress').textContent=data.filter(p=>p.status==='In Progress'||p.status==='in_progress'||p.status==='signed').length;
@@ -4660,8 +4719,13 @@ async function loadInvoices(){
 function renderInvoiceStats(list){
   const data=list||allInvoices;
   const sum=(s)=>data.filter(i=>(i.status||'')===s).reduce((a,i)=>a+(i.total||0),0);
-  const totalRev=data.reduce((a,i)=>a+(i.total||0),0);
-  document.getElementById('is-total').textContent=fmtCurrency(totalRev);
+  // "Total Revenue" headline = Sent + Paid (and treat "In Progress" as a sent variant).
+  // Excludes Draft/Approved/Overdue/Void — those aren't realized or in-flight collectible revenue.
+  const totalRev = sum('Paid') + sum('Sent') + sum('In Progress');
+  const tEl = document.getElementById('is-total');
+  tEl.textContent = fmtCurrency(totalRev);
+  const tLbl = tEl.parentElement && tEl.parentElement.querySelector('.stat-lbl');
+  if (tLbl) tLbl.innerHTML = 'Total Revenue (Sent + Paid) <span class="help" tabindex="0" data-tip="Sum of invoices with status SENT, IN PROGRESS, or PAID — i.e. money you\'ve already collected plus money you\'re actively expecting.&#10;&#10;Excludes Draft (not yet sent), Approved (not yet billed), and Overdue (separate stat). Void invoices not counted.">?</span>';
   document.getElementById('is-paid').textContent=fmtCurrency(sum('Paid'));
   document.getElementById('is-approved').textContent=fmtCurrency(sum('Approved'));
   document.getElementById('is-sent').textContent=fmtCurrency(sum('In Progress'));
@@ -9057,35 +9121,66 @@ function renderInvoiceRollup(){
     }
   }
 
-  // ── Real-ish tax math: use actual deductible expenses + filing status + dependents
-  //                       + per-year other-income entries from the Other Income panel.
-  // Estimate-grade only — uses 2025 federal brackets (2026 not finalized) and treats
-  // capital gains as ordinary for simplicity. Not a substitute for filed returns.
+  // ── Tax math: Schedule C + other income, with proper LTCG, QBI, and provisional SS.
+  // 2025 federal brackets (2026 not yet finalized at IRS). Estimate-grade only —
+  // does NOT model AMT, EITC phaseouts, QBI W-2/wage limits at high income, or many
+  // adjustments. Update brackets annually.
   const filingStatus = (businessProfile && businessProfile.filing_status) || 'single';
   const dependents   = parseInt((businessProfile && businessProfile.dependents) || 0, 10) || 0;
-  // Net business (Schedule C) — use actual deductibles if any; otherwise fall back to 30% baseline
+  // Schedule C net: actual receipts/payroll deductions if available, else 30% expense baseline
   const seBizNet = (deductExp > 0)
     ? Math.max(0, realized - deductExp)
     : Math.max(0, Math.round(realized * 0.7));
   // Sum other-income by tax-treatment bucket
   const oi = Array.isArray(otherIncomeRows) ? otherIncomeRows : [];
   const sumKind = (kinds) => oi.filter(o=>kinds.includes(o.kind)).reduce((a,o)=>a+(o.amount||0),0);
-  const oiW2          = sumKind(['w2_wages','spouse_w2']);  // ordinary, NOT SE
-  const oi1099nec     = sumKind(['1099_nec']);              // ordinary AND SE-taxed
-  const oiOrdinary    = sumKind(['1099_misc','interest','dividends','rental','unemployment','retirement','other','capital_gains']);
-  const oiSocSec      = sumKind(['social_security']);       // ~85% taxable for most filers (rough)
-  const oiSocSecTax   = oiSocSec * 0.85;
-  // Schedule SE applies to net SE earnings (× 0.9235), 15.3% for SS+Medicare
+  const oiW2          = sumKind(['w2_wages','spouse_w2']);              // ordinary, no SE
+  const oi1099nec     = sumKind(['1099_nec']);                          // ordinary AND SE
+  const oiSTCG        = sumKind(['short_term_capital_gains','capital_gains']); // ordinary (legacy 'capital_gains' → STCG)
+  const oiLTCG        = sumKind(['long_term_capital_gains']);           // PREFERENTIAL rates
+  const oiOrdinary    = sumKind(['1099_misc','interest','dividends','rental','unemployment','retirement','other']);
+  const oiSocSecGross = sumKind(['social_security']);                   // taxable portion computed below
+  // Schedule SE: 15.3% (SS+Medicare) on 92.35% of (Schedule C + 1099-NEC)
   const seBase   = (seBizNet + oi1099nec) * 0.9235;
   const seTax    = Math.max(0, seBase) * 0.153;
   const seTaxDed = seTax / 2;  // half of SE tax is deductible above the line
-  // AGI ≈ wages + SE net + other ordinary + taxable SS − ½ SE tax
-  const agi = oiW2 + seBizNet + oi1099nec + oiOrdinary + oiSocSecTax - seTaxDed;
-  // Standard deduction (2025): single 15,000, mfj 30,000, hoh 22,500, mfs 15,000
+  // ── Social Security taxability via PROVISIONAL INCOME method (IRC §86) ──
+  // Provisional = AGI (excluding SS) + ½ SS + tax-exempt interest (assumed 0).
+  // Below base 1: 0% taxable. Between base 1 and base 2: 50% of excess. Above base 2: up to 85%.
+  const SS_BASE = (filingStatus==='mfj' || filingStatus==='qw') ? [32000, 44000] : [25000, 34000];
+  const provisional = (oiW2 + seBizNet + oi1099nec + oiOrdinary + oiSTCG + oiLTCG - seTaxDed) + 0.5 * oiSocSecGross;
+  let oiSocSecTax = 0;
+  if (oiSocSecGross > 0) {
+    if (provisional <= SS_BASE[0])      oiSocSecTax = 0;
+    else if (provisional <= SS_BASE[1]) oiSocSecTax = Math.min(0.5 * oiSocSecGross, 0.5 * (provisional - SS_BASE[0]));
+    else {
+      const tier1 = Math.min(0.5 * oiSocSecGross, 0.5 * (SS_BASE[1] - SS_BASE[0]));
+      const tier2 = 0.85 * (provisional - SS_BASE[1]);
+      oiSocSecTax = Math.min(0.85 * oiSocSecGross, tier1 + tier2);
+    }
+  }
+  // AGI = wages + SE net + 1099-NEC + ordinary + STCG + LTCG + taxable SS − ½ SE tax
+  const agi = oiW2 + seBizNet + oi1099nec + oiOrdinary + oiSTCG + oiLTCG + oiSocSecTax - seTaxDed;
+  // Standard deduction (2025) — most people take this; we don't itemize in the estimate
   const STD_DED = {single:15000, mfj:30000, mfs:15000, hoh:22500, qw:30000};
   const stdDed = STD_DED[filingStatus] || 15000;
-  const taxableIncome = Math.max(0, agi - stdDed);
-  // 2025 federal income brackets (estimate — update annually)
+  const incomeAfterStd = Math.max(0, agi - stdDed);
+  // ── Section 199A QBI Deduction ───────────────────────────────────
+  // 20% × min(qualified business income, taxable income before QBI − net cap gains).
+  // Construction is NOT a Specified Service Trade/Business (SSTB), so no SSTB phaseout.
+  // High-income W-2/wage limits kick in above $241,950 single / $483,900 MFJ (2025) —
+  // simplified here (the wage/property test rarely binds for owner-operator LLCs).
+  const qbiThreshold = (filingStatus==='mfj' || filingStatus==='qw') ? 483900 : 241950;
+  // QBI = Schedule C net − ½ SE tax allocable. Approx as seBizNet − seTaxDed (if positive).
+  const qbiEligibleIncome = Math.max(0, seBizNet - seTaxDed);
+  const qbiCap = 0.20 * Math.max(0, incomeAfterStd - oiLTCG);  // can't exceed 20% of (taxable inc − LTCG)
+  let qbiDeduction = Math.min(0.20 * qbiEligibleIncome, qbiCap);
+  if (incomeAfterStd > qbiThreshold) qbiDeduction *= 0.7;  // crude phaseout flag for high earners
+  qbiDeduction = Math.max(0, Math.round(qbiDeduction));
+  const taxableIncome = Math.max(0, incomeAfterStd - qbiDeduction);
+  // Ordinary taxable income for bracket calc = taxable income − LTCG (LTCG taxed separately)
+  const ordinaryTaxable = Math.max(0, taxableIncome - oiLTCG);
+  // 2025 federal ordinary income brackets
   const BRACKETS = {
     single: [[0,0.10],[11925,0.12],[48475,0.22],[103350,0.24],[197300,0.32],[250525,0.35],[626350,0.37]],
     mfj:    [[0,0.10],[23850,0.12],[96950,0.22],[206700,0.24],[394600,0.32],[501050,0.35],[751600,0.37]],
@@ -9093,23 +9188,53 @@ function renderInvoiceRollup(){
     hoh:    [[0,0.10],[17000,0.12],[64850,0.22],[103350,0.24],[197300,0.32],[250500,0.35],[626350,0.37]],
     qw:     [[0,0.10],[23850,0.12],[96950,0.22],[206700,0.24],[394600,0.32],[501050,0.35],[751600,0.37]],
   };
-  function bracketTax(ti, fs){
-    const b = BRACKETS[fs] || BRACKETS.single;
+  function bracketTax(ti, brackets){
     let owed = 0;
-    for(let i=0;i<b.length;i++){
-      const lo = b[i][0], rate = b[i][1];
-      const hi = (i+1<b.length) ? b[i+1][0] : Infinity;
+    for(let i=0;i<brackets.length;i++){
+      const lo = brackets[i][0], rate = brackets[i][1];
+      const hi = (i+1<brackets.length) ? brackets[i+1][0] : Infinity;
       if(ti <= lo) break;
       owed += (Math.min(ti, hi) - lo) * rate;
     }
     return owed;
   }
-  const fedIncomeTax = Math.max(0, bracketTax(taxableIncome, filingStatus));
-  // Child Tax Credit: $2,000 per qualifying child <17 (simplified; phaseouts ignored)
+  const fedOrdinaryTax = Math.max(0, bracketTax(ordinaryTaxable, BRACKETS[filingStatus] || BRACKETS.single));
+  // ── Long-Term Capital Gains preferential brackets (2025) ─────────
+  // LTCG stacks ON TOP of ordinary income. Rate brackets are based on TOTAL taxable income.
+  const LTCG_BRACKETS = {
+    single: [[0,0],[48350,0.15],[533400,0.20]],
+    mfj:    [[0,0],[96700,0.15],[600050,0.20]],
+    mfs:    [[0,0],[48350,0.15],[300000,0.20]],
+    hoh:    [[0,0],[64750,0.15],[566700,0.20]],
+    qw:     [[0,0],[96700,0.15],[600050,0.20]],
+  };
+  function ltcgTax(ordinaryTI, ltcg, brackets){
+    if (ltcg <= 0) return 0;
+    // LTCG fills the LTCG brackets sitting on top of ordinary income
+    let owed = 0, remaining = ltcg, top = ordinaryTI;
+    for(let i=0;i<brackets.length;i++){
+      const lo = brackets[i][0], rate = brackets[i][1];
+      const hi = (i+1<brackets.length) ? brackets[i+1][0] : Infinity;
+      const bracketStart = Math.max(top, lo);
+      const bracketEnd   = hi;
+      if (top >= hi) continue;
+      const slice = Math.min(remaining, bracketEnd - bracketStart);
+      if (slice > 0) {
+        owed += slice * rate;
+        remaining -= slice;
+        top += slice;
+      }
+      if (remaining <= 0) break;
+    }
+    return owed;
+  }
+  const fedLtcgTax = Math.max(0, ltcgTax(ordinaryTaxable, oiLTCG, LTCG_BRACKETS[filingStatus] || LTCG_BRACKETS.single));
+  const fedIncomeTax = fedOrdinaryTax + fedLtcgTax;
+  // Child Tax Credit: $2,000 per qualifying child <17 (simplified — high-income phaseout ignored)
   const ctc = dependents * 2000;
-  // PA flat 3.07% on AGI (rough — PA doesn't honor the federal standard deduction)
+  // PA flat 3.07% on AGI (PA doesn't honor federal std deduction; this is the rough state share)
   const paTax = Math.max(0, agi) * 0.0307;
-  // Philly Net Profits Tax ~3.44% on net biz profit if business is Philly-based
+  // Philly Net Profits Tax 3.44% on net biz profit if business is Philly-based (residents pay BIRT separately)
   const phillyTax = inPhilly ? Math.max(0, seBizNet) * 0.0344 : 0;
   const totalTax = Math.max(0, fedIncomeTax + seTax + paTax + phillyTax - ctc);
   const finalTax = Math.round(totalTax);
@@ -9124,18 +9249,24 @@ function renderInvoiceRollup(){
   document.getElementById('us-summary-tax').textContent=fmtCurrency(finalTax);
   document.getElementById('us-summary-tax-rate').textContent='@ '+taxPctLabel+' effective ('+(inPhilly?'Philly':'PA')+', '+filingStatus.toUpperCase()+(dependents?', '+dependents+' dep':'')+')';
   const fsLabel = {single:'Single', mfj:'MFJ', mfs:'MFS', hoh:'HoH', qw:'QW'}[filingStatus]||'Single';
-  const otherIncTotal = oiW2 + oi1099nec + oiOrdinary + oiSocSecTax;
+  const otherIncTotal = oiW2 + oi1099nec + oiOrdinary + oiSTCG + oiLTCG + oiSocSecTax;
   document.getElementById('us-summary-formula').innerHTML=
     `<div style="margin-bottom:6px"><b style="color:#00d084">${fmtCurrency(realized)}</b> Biz Revenue ` +
     `<span style="color:#444">−</span> <b style="color:#f5a623">${fmtCurrency(deductExp || Math.round(realized*0.3))}</b> Deductible ` +
     `<span style="color:#444">=</span> <b style="color:#4da6ff">${fmtCurrency(seBizNet)}</b> Schedule C net</div>` +
-    (otherIncTotal>0 ? `<div style="margin-bottom:6px"><b style="color:#c4b5fd">+ ${fmtCurrency(otherIncTotal)}</b> Other Income (W-2 ${fmtCurrency(oiW2)}, 1099-NEC ${fmtCurrency(oi1099nec)}, ordinary ${fmtCurrency(oiOrdinary)}${oiSocSec?', SS taxable '+fmtCurrency(oiSocSecTax):''})</div>` : '') +
-    `<div style="margin-bottom:6px"><b style="color:#888">${fmtCurrency(agi)}</b> AGI ` +
-    `<span style="color:#444">−</span> <b style="color:#888">${fmtCurrency(stdDed)}</b> Std Deduction (${fsLabel}) ` +
-    `<span style="color:#444">=</span> <b style="color:#4da6ff">${fmtCurrency(taxableIncome)}</b> Taxable</div>` +
-    `<div><b style="color:#c19660">${fmtCurrency(Math.round(fedIncomeTax))}</b> Fed Income Tax ` +
-    `<span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(seTax))}</b> SE Tax (15.3%) ` +
-    `<span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(paTax))}</b> PA 3.07%` +
+    (otherIncTotal>0 ? `<div style="margin-bottom:6px"><b style="color:#c4b5fd">+ ${fmtCurrency(otherIncTotal)}</b> Other Income — W-2 ${fmtCurrency(oiW2)}, 1099-NEC ${fmtCurrency(oi1099nec)}, ordinary ${fmtCurrency(oiOrdinary)}` +
+        (oiSTCG ? ', STCG '+fmtCurrency(oiSTCG) : '') +
+        (oiLTCG ? ', LTCG '+fmtCurrency(oiLTCG)+' (taxed separately)' : '') +
+        (oiSocSecGross ? ', SS '+fmtCurrency(oiSocSecGross)+' → '+fmtCurrency(Math.round(oiSocSecTax))+' taxable ('+(oiSocSecGross?Math.round(oiSocSecTax/oiSocSecGross*100):0)+'%)' : '') +
+        '</div>' : '') +
+    `<div style="margin-bottom:6px"><b style="color:#888">${fmtCurrency(Math.round(agi))}</b> AGI ` +
+    `<span style="color:#444">−</span> <b style="color:#888">${fmtCurrency(stdDed)}</b> Std Deduction (${fsLabel})` +
+    (qbiDeduction>0 ? ` <span style="color:#444">−</span> <b style="color:#00d084">${fmtCurrency(qbiDeduction)}</b> QBI 20%` : '') +
+    ` <span style="color:#444">=</span> <b style="color:#4da6ff">${fmtCurrency(taxableIncome)}</b> Taxable</div>` +
+    `<div><b style="color:#c19660">${fmtCurrency(Math.round(fedOrdinaryTax))}</b> Fed Ordinary` +
+    (fedLtcgTax>0 ? ` <span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(fedLtcgTax))}</b> LTCG` : '') +
+    ` <span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(seTax))}</b> SE 15.3%` +
+    ` <span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(paTax))}</b> PA 3.07%` +
     (phillyTax>0 ? ` <span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(phillyTax))}</b> Philly NPT` : '') +
     (ctc>0 ? ` <span style="color:#444">−</span> <b style="color:#00d084">${fmtCurrency(ctc)}</b> CTC (${dependents} dep)` : '') +
     ` <span style="color:#444">=</span> <b style="color:#c19660;font-size:13px">${fmtCurrency(finalTax)}</b> Tax Owed</div>`;
@@ -9211,10 +9342,38 @@ async function loadOtherIncome(){
 
 const OI_KIND_LABELS={
   w2_wages:'W-2 Wages', '1099_nec':'1099-NEC', '1099_misc':'1099-MISC',
-  interest:'Interest', dividends:'Dividends', capital_gains:'Capital Gains',
+  interest:'Interest', dividends:'Dividends',
+  long_term_capital_gains:'Long-Term Cap Gains', short_term_capital_gains:'Short-Term Cap Gains',
+  capital_gains:'Capital Gains',  // legacy — treated as STCG in math for safety
   rental:'Rental', social_security:'Social Security', unemployment:'Unemployment',
   retirement:'Retirement', spouse_w2:'Spouse W-2', other:'Other',
 };
+
+// Plain-English help shown under the Kind dropdown — updated when user picks an option
+const OI_KIND_HELP={
+  w2_wages: "Wages from a regular employer who withholds taxes. Look at FORM W-2 BOX 1 (Wages, tips, other comp). Comes in January from the employer. Taxed as ordinary income — NO self-employment tax.",
+  '1099_nec': "Contract/freelance income where YOU pay both halves of payroll tax. Reported on FORM 1099-NEC BOX 1 (Nonemployee compensation). Hit with both income tax AND 15.3% self-employment tax. If you got a 1099-NEC for $600+ from a single payer, this is it.",
+  '1099_misc': "Miscellaneous payments (rent paid to you, royalties, prizes, awards >$600). FORM 1099-MISC. Taxed as ordinary income, NO self-employment tax. If it's contract work, use 1099-NEC instead.",
+  interest: "Interest from a bank, CD, savings account, or bond. FORM 1099-INT BOX 1 (only sent if total >$10/year, but report it either way). Taxed as ordinary income.",
+  dividends: "Dividends paid by stocks/mutual funds. FORM 1099-DIV BOX 1A (ordinary) and 1B (qualified). For estimate purposes we treat as ordinary — most qualified dividends actually get the lower LTCG rates, so your real tax may be slightly LESS than shown.",
+  long_term_capital_gains: "Profit from selling stocks/crypto/property you held MORE THAN 1 YEAR before selling. FORM 1099-B + Schedule D. Special LOWER rates: 0% / 15% / 20% depending on income. Use 'long' if you held for 366+ days.",
+  short_term_capital_gains: "Profit from selling something you held 1 YEAR OR LESS. Same forms (1099-B + Schedule D) but taxed as ORDINARY income — same rate as wages. Higher tax than long-term.",
+  rental: "NET rental income from real estate (Schedule E). Take rent received MINUS expenses (mortgage interest, repairs, depreciation, insurance, property tax) and enter the bottom line. If it's a loss, enter 0 — passive loss rules are complex.",
+  social_security: "Total Social Security benefits received. FORM SSA-1099 BOX 5 (Net benefits). Up to 85% becomes taxable depending on your other income — the calculator handles the math. Enter the GROSS benefit.",
+  unemployment: "Unemployment compensation. FORM 1099-G. Fully taxable as ordinary income at the federal level. PA and Philly DON'T tax unemployment — but the federal estimate above will.",
+  retirement: "Distributions from IRA / 401(k) / pension. FORM 1099-R BOX 2A (Taxable amount). Don't enter Box 1 (gross) if some is non-taxable. If you took the full distribution, Box 2A usually = Box 1.",
+  spouse_w2: "Your spouse's W-2 wages — only matters if you're filing JOINTLY. FORM W-2 BOX 1 from their employer. Leave blank if filing single or separately.",
+  other: "Catch-all: gambling winnings (W-2G), jury duty pay, hobby income, royalties not on 1099-MISC, prize money, alimony from pre-2019 divorces, etc. All taxed as ordinary income.",
+};
+
+function updateOiKindHelp(){
+  const sel=document.getElementById('oi-kind');
+  const box=document.getElementById('oi-kind-help');
+  if(!sel||!box) return;
+  box.textContent = OI_KIND_HELP[sel.value] || '';
+}
+// Initialize the help box on first paint when the section is rendered
+setTimeout(updateOiKindHelp, 200);
 function renderOtherIncomeList(){
   const el=document.getElementById('us-other-income-list');
   if(!el) return;
