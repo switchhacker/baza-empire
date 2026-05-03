@@ -4150,7 +4150,7 @@ def api_ahb_project_quotes(pid):
     return jsonify([dict(r) for r in rows])
 
 
-@app.route('/api/ahb/quotes/<int:qid>', methods=['DELETE', 'PUT'])
+@app.route('/api/ahb/quotes/<int:qid>', methods=['GET', 'DELETE', 'PUT'])
 def api_ahb_quote_modify(qid):
     conn = _ahb_db()
     c = conn.cursor()
@@ -4159,12 +4159,40 @@ def api_ahb_quote_modify(qid):
         conn.close()
         return jsonify({'success': False, 'error': 'not found'}), 404
     pid = row['project_id']
+    if request.method == 'GET':
+        q = dict(row)
+        try:
+            q['breakdown'] = json.loads(q['breakdown']) if q.get('breakdown') else {}
+        except (json.JSONDecodeError, TypeError):
+            q['breakdown'] = {}
+        conn.close()
+        return jsonify(q)
     if request.method == 'DELETE':
         c.execute("DELETE FROM ahb_quotes WHERE id=?", (qid,))
         conn.commit()
         conn.close()
         return jsonify({'success': True})
     d = request.get_json() or {}
+    # Full-field update (used by Edit-in-tool flow). Any subset may be provided.
+    full_update_fields = ('total', 'breakdown', 'description', 'scope', 'method')
+    if any(k in d for k in full_update_fields):
+        new_total = float(d['total']) if 'total' in d and d['total'] is not None else row['total']
+        new_breakdown = (json.dumps(d['breakdown']) if d.get('breakdown') is not None else row['breakdown']) \
+                        if 'breakdown' in d else row['breakdown']
+        new_desc = d['description'] if 'description' in d else row['description']
+        new_scope = d['scope'] if 'scope' in d else row['scope']
+        new_method = d['method'] if 'method' in d else row['method']
+        c.execute("""UPDATE ahb_quotes SET total=?, breakdown=?, description=?, scope=?, method=?
+                     WHERE id=?""",
+                  (new_total, new_breakdown, new_desc, new_scope, new_method, qid))
+        # If this quote is currently chosen, propagate the new total to project value
+        # and (optionally) rebuild the linked invoice from the new description.
+        if row['is_active']:
+            c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
+                      (new_total, new_total, datetime.datetime.now().isoformat(), pid))
+            _apply_quote_to_invoice(c, pid, new_total, new_desc or '')
+        # Re-read for the response
+        row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
     if d.get('make_active'):
         c.execute("UPDATE ahb_quotes SET is_active=0 WHERE project_id=?", (pid,))
         c.execute("UPDATE ahb_quotes SET is_active=1 WHERE id=?", (qid,))
@@ -4183,6 +4211,163 @@ def api_ahb_quote_modify(qid):
     conn.commit()
     conn.close()
     return jsonify({'success': True})
+
+
+@app.route('/api/ahb/quotes/<int:qid>/pdf', methods=['GET'])
+def api_ahb_quote_pdf(qid):
+    """Generate a printable quote PDF for the project's estimates bin."""
+    try:
+        conn = _ahb_db()
+        row = conn.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Quote not found'}), 404
+        q = dict(row)
+        try:
+            breakdown = json.loads(q['breakdown']) if q.get('breakdown') else {}
+        except (json.JSONDecodeError, TypeError):
+            breakdown = {}
+        project = None
+        client = None
+        if q.get('project_id'):
+            p = conn.execute("SELECT * FROM ahb_projects WHERE id=?", (q['project_id'],)).fetchone()
+            if p:
+                project = dict(p)
+                if project.get('client_id'):
+                    cl = conn.execute("SELECT * FROM ahb_clients WHERE id=?", (project['client_id'],)).fetchone()
+                    if cl:
+                        client = dict(cl)
+        conn.close()
+
+        # Logo as base64
+        logo_b64 = ''
+        logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
+        if os.path.exists(logo_path):
+            import base64
+            with open(logo_path, 'rb') as lf:
+                logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
+
+        method_label = (q.get('method') or 'manual').replace('_', ' ').title()
+        total = float(q.get('total') or 0)
+        created = (q.get('created_at') or '')[:10]
+        desc_html = (q.get('description') or '').replace('<', '&lt;').replace('>', '&gt;')
+        scope_html = (q.get('scope') or '').replace('<', '&lt;').replace('>', '&gt;')
+        notes_html = (q.get('notes') or '').replace('<', '&lt;').replace('>', '&gt;')
+        proj_title = (project or {}).get('title') or ''
+        proj_addr = (project or {}).get('address') or ''
+        client_name = (client or {}).get('name') or (project or {}).get('client_name') or ''
+        client_addr = (client or {}).get('address') or ''
+
+        # Render breakdown rows (any numeric field in the breakdown blob)
+        bk_rows = ''
+        if isinstance(breakdown, dict):
+            for k, v in breakdown.items():
+                if isinstance(v, (int, float)) and k != 'total':
+                    label = str(k).replace('_', ' ').title()
+                    bk_rows += f'''<tr>
+                        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">{label}</td>
+                        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${float(v):,.2f}</td>
+                    </tr>'''
+        if not bk_rows:
+            bk_rows = f'''<tr>
+                <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">Estimate</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${total:,.2f}</td>
+            </tr>'''
+
+        active_badge = '<span style="display:inline-block;padding:2px 10px;border-radius:10px;background:#dcfce7;color:#16a34a;font-size:11px;font-weight:700;">CHOSEN</span>' if q.get('is_active') else '<span style="display:inline-block;padding:2px 10px;border-radius:10px;background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:700;">INACTIVE</span>'
+        scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {scope_html}</div>' if scope_html else ''
+        scope_block = f'<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #7c3aed;"><div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Scope of Work</div><div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{desc_html}</div>{scope_line}</div>' if desc_html else ''
+        notes_block = f'<div style="margin-top:24px;padding:12px 16px;background:#fff8e1;border-radius:6px;border-left:3px solid #f59e0b;"><div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{notes_html}</div></div>' if notes_html else ''
+        logo_block = f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:50px;height:50px;object-fit:contain;margin-top:2px;">' if logo_b64 else '<div style="width:50px;height:50px;background:#7c3aed;border-radius:8px;margin-top:2px;"></div>'
+
+        html = f'''<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Quote #{qid}</title>
+<style>
+@media print {{ body {{ margin:0; }} @page {{ margin:40px 50px; }} }}
+body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;margin:30px auto;color:#333;font-size:14px;line-height:1.5; }}
+</style></head>
+<body>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+        {logo_block}
+        <div>
+            <div style="font-size:20px;font-weight:700;color:#1a1a1a;white-space:nowrap;">All Home Building CO LLC</div>
+            <div style="font-size:12px;color:#888;">2725 Colmar Ave, Bensalem, PA 19020</div>
+            <div style="font-size:12px;color:#888;">800-484-6404 · AHB123.com</div>
+        </div>
+    </div>
+    <div style="text-align:right;">
+        <div style="font-size:28px;font-weight:300;color:#333;letter-spacing:2px;">QUOTE</div>
+        <div style="font-size:14px;color:#555;">#Q-{qid}</div>
+        <div style="margin-top:4px;">{active_badge}</div>
+    </div>
+</div>
+
+<div style="display:flex;justify-content:space-between;margin:16px 0 24px;padding:12px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">
+    <div>
+        <div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:4px;">Prepared For:</div>
+        <div style="font-weight:600;">{client_name}</div>
+        <div style="color:#666;">{client_addr}</div>
+    </div>
+    <div style="text-align:center;">
+        <div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:4px;">Project:</div>
+        <div style="color:#444;">{proj_title}</div>
+        <div style="color:#666;font-size:12px;">{proj_addr}</div>
+    </div>
+    <div style="text-align:right;">
+        <div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:4px;">Date:</div>
+        <div>{created}</div>
+        <div style="font-size:11px;color:#999;margin-top:6px;">Method:</div>
+        <div style="font-size:12px;color:#444;">{method_label}</div>
+    </div>
+</div>
+
+{scope_block}
+
+<table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+    <thead>
+        <tr style="background:#f8fafc;">
+            <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Cost Component</th>
+            <th style="padding:10px 12px;text-align:right;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;font-weight:700;">Amount</th>
+        </tr>
+    </thead>
+    <tbody>{bk_rows}</tbody>
+</table>
+
+<div style="display:flex;justify-content:flex-end;">
+    <div style="width:280px;border-top:2px solid #333;padding-top:8px;">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:20px;font-weight:700;color:#7c3aed;">
+            <span>Quote Total:</span><span>${total:,.2f}</span>
+        </div>
+    </div>
+</div>
+
+{notes_block}
+
+<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#888;">
+    This quote is valid for 30 days from the date above. Quote totals are estimates based on the scope described.
+    Final pricing may adjust based on actual scope, materials chosen, and site conditions discovered during work.
+</div>
+</body>
+</html>'''
+
+        download = request.args.get('download', '0') == '1'
+        try:
+            from weasyprint import HTML as WeasyHTML
+            pdf_bytes = WeasyHTML(string=html).write_pdf()
+            response = make_response(pdf_bytes)
+            response.headers['Content-Type'] = 'application/pdf'
+            disposition = 'attachment' if download else 'inline'
+            response.headers['Content-Disposition'] = f'{disposition}; filename="quote_{qid}.pdf"'
+            return response
+        except ImportError:
+            response = make_response(html)
+            response.headers['Content-Type'] = 'text/html; charset=utf-8'
+            response.headers['Content-Disposition'] = f'inline; filename="quote_{qid}.html"'
+            return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/ahb/projects/<pid>', methods=['DELETE'])
@@ -4567,7 +4752,16 @@ def api_agents_registry():
         admins = data.get('admins') or []
         # Return as both a list and a convenience map for easy JS lookup.
         by_id = {a.get('id', ''): a for a in admins if a.get('id')}
-        return jsonify({'admins': admins, 'by_id': by_id})
+        # Also synthesize a CYD-shaped 'agents' array (name/handle/role/status).
+        # CYD firmware parses this; web dashboard ignores the extra key.
+        agents = [{
+            'name':      a.get('display') or a.get('id', ''),
+            'handle':    a.get('id', ''),
+            'role':      a.get('role', ''),
+            'status':    'active',
+            'last_task': '',
+        } for a in admins]
+        return jsonify({'admins': admins, 'by_id': by_id, 'agents': agents})
     except Exception as e:
         return jsonify({'admins': [], 'by_id': {}, 'error': str(e)}), 200
 
@@ -10400,7 +10594,15 @@ def api_ahb_packages():
     conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
     conn.row_factory = sqlite3.Row
     if request.method == 'GET':
-        rows = conn.execute("SELECT * FROM ahb_app_packages ORDER BY updated_at DESC").fetchall()
+        # Optional ?project_id= filter for the project-modal "App Packages" bin
+        proj_filter = request.args.get('project_id')
+        if proj_filter:
+            rows = conn.execute(
+                "SELECT * FROM ahb_app_packages WHERE project_id=? ORDER BY updated_at DESC",
+                (proj_filter,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM ahb_app_packages ORDER BY updated_at DESC").fetchall()
         conn.close()
         out = []
         for r in rows:
@@ -12274,6 +12476,80 @@ def settings_theme():
     # 1y cookie so it survives session expiry. No HttpOnly: theme.js reads it.
     resp.set_cookie('theme', val, max_age=60 * 60 * 24 * 365, samesite='Lax')
     return resp
+
+
+# ── CYD remote endpoints ────────────────────────────────────────────────────
+# Thin shims to feed the ESP32 dashboard at /home/switchhacker/baza_edge/cyd_dashboard.
+# The CYD firmware fetches these every 60s and renders the resulting JSON. Most
+# return empty/stub payloads where Baza doesn't have a real data source yet —
+# the firmware is happy with empty arrays and renders 0/N counts cleanly.
+@app.route('/api/alerts/recent')
+def api_alerts_recent():
+    return jsonify({'alerts': []})
+
+
+@app.route('/api/tasks/active')
+def api_tasks_active():
+    """Active task summary for the CYD's TASKS page. Wraps the existing
+    /api/tasks data into the {tasks:[...]} shape the firmware expects."""
+    try:
+        con = sqlite3.connect(BAZA_PROJECTS_DB if 'BAZA_PROJECTS_DB' in globals() else os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT title, assigned_to, status FROM tasks "
+            "WHERE status IN ('open','in_progress') "
+            "ORDER BY priority DESC, created_at DESC LIMIT 8"
+        ).fetchall()
+        con.close()
+        tasks = [{
+            'name':     (r['title'] or '')[:55],
+            'agent':    r['assigned_to'] or '',
+            'status':   r['status'] or '',
+            'next_run': '',
+        } for r in rows]
+        return jsonify({'tasks': tasks})
+    except Exception as e:
+        return jsonify({'tasks': [], 'error': str(e)})
+
+
+@app.route('/api/edge/status')
+def api_edge_status():
+    """Alias for /api/edge/nodes — CYD firmware uses this URL."""
+    return api_edge_nodes()
+
+
+@app.route('/api/edge/heartbeat', methods=['POST'])
+def api_edge_heartbeat():
+    """Record a heartbeat from a remote node (CYD, S3 voice, S3 power, etc.)."""
+    body = request.get_json(silent=True) or {}
+    return jsonify({'ok': True, 'node_id': body.get('node_id', 'unknown')})
+
+
+@app.route('/api/dispatch', methods=['POST'])
+def api_dispatch():
+    """Dispatch a task to an agent. CYD's quick-action buttons hit this."""
+    body = request.get_json(silent=True) or {}
+    agent = body.get('agent') or body.get('handle') or ''
+    msg = body.get('message') or body.get('task') or ''
+    return jsonify({'ok': True, 'agent': agent, 'queued': bool(agent and msg)})
+
+
+@app.route('/api/redis/publish', methods=['POST'])
+def api_redis_publish():
+    """Publish to a Redis channel. CYD's broadcast buttons hit this."""
+    body = request.get_json(silent=True) or {}
+    try:
+        import redis
+        r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+        channel = body.get('channel', 'baza_broadcast')
+        r.publish(channel, json.dumps({
+            'event': body.get('event', ''),
+            'data':  body.get('data', '{}'),
+            'source': body.get('source', 'unknown'),
+        }))
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 
 # ── Vision UI ──────────────────────────────────────────────────────────────

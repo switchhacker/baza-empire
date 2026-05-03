@@ -575,6 +575,7 @@
   <a class="nav-link" href="/infra">Infra</a>
   <a class="nav-link" href="/explore">Explore</a>
   <a class="nav-link" href="/comms">Comms</a>
+  <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">Fluid</a>
   <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
   <a class="nav-link" href="/settings">Settings</a>
@@ -3771,11 +3772,20 @@
         <div class="panel-header">
           <h3>Linked Invoice</h3>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-sm btn-secondary" onclick="viewProjectInvoicePDF()">View PDF</button>
+            <button class="btn btn-sm btn-secondary" onclick="viewProjectInvoicePDF()">📄 View PDF</button>
+            <button class="btn btn-sm btn-secondary" style="background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" onclick="editProjectInvoice()" title="Open this invoice in InvoiceIT for editing">✎ Edit in InvoiceIT</button>
             <button class="btn btn-sm btn-secondary" onclick="syncInvoiceFromPhases()">Sync Line Items</button>
           </div>
         </div>
         <div id="pd-invoice-info" style="font-size:13px;color:#888"></div>
+      </div>
+      <!-- App Packages (DocPrep) -->
+      <div class="panel">
+        <div class="panel-header">
+          <h3>App Packages</h3>
+          <button class="btn btn-sm btn-primary" onclick="closeModal('projectDetailModal');switchTab('docprep');" title="Open DocPrep to create a new package">+ New Package</button>
+        </div>
+        <div id="pd-packages" style="font-size:12px"></div>
       </div>
       <!-- Scheduling -->
       <div class="panel" style="border-color:#4da6ff">
@@ -6790,8 +6800,15 @@ function pdToggleQuoteEstimator(){
   const open=el.style.display==='none';
   el.style.display=open?'block':'none';
   btn.textContent=open?'× Hide Estimator':'+ Add Quote';
-  // Pre-fill quote basis from project details
-  if(open && currentProjectDetail){
+  // Manual toggle clears any in-flight edit context
+  if(!open && window._pdEditingQid){
+    window._pdEditingQid=null;
+    window._pdEditingMethod=null;
+    window._pdEditingPid=null;
+    const b=document.getElementById('pd-edit-banner'); if(b) b.remove();
+  }
+  // Pre-fill quote basis from project details (only on a fresh open, not when reopening for edit)
+  if(open && currentProjectDetail && !window._pdEditingQid){
     const d=document.getElementById('pd-quote-desc');
     const s=document.getElementById('pd-quote-scope');
     if(d) d.value=currentProjectDetail.description||'';
@@ -7017,12 +7034,177 @@ async function pdLoadQuotes(pid){
           ${q.notes?'<div style="font-size:10px;color:#666;margin-top:3px">'+escHtml(q.notes)+'</div>':''}
           ${q.description?'<div style="font-size:10px;color:#555;margin-top:2px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(q.description)+'">Basis: '+escHtml(q.description).substring(0,80)+(q.description.length>80?'...':'')+'</div>':''}
         </div>
-        <div style="display:flex;gap:4px">
+        <div style="display:flex;gap:4px;align-items:center">
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="View this quote as PDF" onclick="pdViewQuotePDF(${q.id})">📄 PDF</button>
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" title="Edit this quote in the ${escHtml((q.method||'manual').replace(/_/g,' '))} tool" onclick="pdEditQuote(${q.id},'${pid}')">✎ Edit</button>
           <button class="btn-icon del" title="Delete" onclick="pdDeleteQuote(${q.id},'${pid}')">&#10005;</button>
         </div>
       </div>`;
     }).join('');
   }catch(e){el.innerHTML='<div style="color:#ff6b6b">Error loading quotes</div>';}
+}
+
+function pdViewQuotePDF(qid){
+  // Open the quote PDF in a new browser tab (inline; weasyprint renders it server-side).
+  window.open('/api/ahb/quotes/'+qid+'/pdf','_blank');
+}
+
+async function pdEditQuote(qid, pid){
+  // Load the quote, open the project-modal estimator, switch to the matching method
+  // tab, prefill description/scope (and Method-4 form fields from breakdown), and
+  // stash the qid so Save offers an "Update" path instead of creating a new row.
+  try{
+    const r=await fetch('/api/ahb/quotes/'+qid);
+    if(!r.ok){showToast('Could not load quote','error');return;}
+    const q=await r.json();
+
+    // Open the estimator panel if collapsed
+    const est=document.getElementById('pd-quote-estimator');
+    const btn=document.getElementById('pd-quote-toggle-btn');
+    if(est && est.style.display==='none'){
+      est.style.display='block';
+      if(btn) btn.textContent='× Hide Estimator';
+    }
+
+    // Stash editing context — read by pdSaveQuote / pdUpdateQuote
+    window._pdEditingQid = qid;
+    window._pdEditingMethod = q.method || 'manual';
+    window._pdEditingPid = pid;
+
+    // Prefill quote basis (description + scope)
+    const dEl=document.getElementById('pd-quote-desc');
+    const sEl=document.getElementById('pd-quote-scope');
+    if(dEl) dEl.value = q.description || '';
+    if(sEl) sEl.value = q.scope || '';
+
+    // Map stored method label → method tab number
+    const m = q.method || 'manual';
+    let tab = 4;
+    if(m==='time_x_crew') tab=1;
+    else if(m==='specter') tab=2;
+    else if(m==='range') tab=3;
+    else if(m==='custom') tab=4;
+    else if(m==='manual') tab=4; // dump manual into Custom Pricing for editability
+    pdSwitchEstMethod(tab);
+
+    // Method-4 (custom): restore breakdown into FLAT-mode fields so the displayed
+    // total matches the saved quote exactly. The user can still flip a section
+    // back to Crew Calc / % mode if they want to recompute.
+    const bk = q.breakdown || {};
+    if(tab===4 && bk && typeof bk === 'object'){
+      const setVal=(id,v)=>{const e=document.getElementById(id); if(e && (v||v===0)) e.value=v;};
+      setVal('pd-m4-mat-cost', bk.materials || 0);
+      // Force labor → manual flat mode
+      if(typeof pdM4LaborTab==='function') pdM4LaborTab('manual');
+      setVal('pd-m4-lab-manual-amt', bk.labor || 0);
+      // Profit & overhead → flat mode
+      if(typeof pdM4ProfitMode==='function') pdM4ProfitMode('flat');
+      setVal('pd-m4-profit-flat', bk.profit || 0);
+      if(typeof pdM4OhMode==='function') pdM4OhMode('flat');
+      setVal('pd-m4-oh-flat', bk.overhead || 0);
+      setVal('pd-m4-cont-flat', bk.contingency || 0);
+      // Equipment is harder to round-trip per-row — bundle it into the flat-equipment slot if present
+      // (we leave any existing rental rows alone; user can add/remove as needed)
+      if(typeof recalcPdM4==='function') recalcPdM4();
+    }
+    // Method-1 (time × crew): if breakdown has the raw inputs, restore them
+    if(tab===1 && bk && typeof bk === 'object'){
+      const setVal=(id,v)=>{const e=document.getElementById(id); if(e && (v||v===0)) e.value=v;};
+      // The /api/ahb/estimator/method1 response echoes inputs in the breakdown
+      // when present; if not, the user just re-enters days/crew and re-runs.
+      setVal('pd-m1-days', bk.days);
+      setVal('pd-m1-leads', bk.lead_count);
+      setVal('pd-m1-crew', bk.crew_count);
+      setVal('pd-m1-helpers', bk.helper_count);
+      setVal('pd-m1-subdays', bk.sub_days);
+      setVal('pd-m1-materials', bk.materials);
+      setVal('pd-m1-permits', bk.permits);
+    }
+
+    // Render the edit-mode banner inside the results pane so the user knows
+    // they're editing rather than creating a new quote.
+    pdRenderEditBanner(q);
+
+    // Scroll the estimator into view inside the modal
+    if(est && est.scrollIntoView) est.scrollIntoView({behavior:'smooth', block:'start'});
+    showToast('Editing Quote #'+qid+' — modify and click Update Quote');
+  }catch(e){showToast('Edit failed: '+e.message,'error');}
+}
+
+function pdRenderEditBanner(q){
+  const out=document.getElementById('pd-est-results');
+  if(!out) return;
+  const bannerId='pd-edit-banner';
+  // Remove any prior banner
+  const old=document.getElementById(bannerId); if(old) old.remove();
+  const banner=document.createElement('div');
+  banner.id=bannerId;
+  banner.style.cssText='background:linear-gradient(135deg,#7c3aed22,#e9456022);border:1px solid #7c3aed;border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px';
+  banner.innerHTML=`<div style="font-size:11px;color:#c4b5fd">
+      <b>📝 Editing Quote #${q.id}</b> · was ${fmtCurrency(q.total)} via ${escHtml((q.method||'manual').replace(/_/g,' '))}
+      <div style="color:#888;margin-top:2px;font-size:10px">Re-run a method below to compute a new total, then click <b>Update Quote</b> to overwrite — or <b>Save as New Quote</b> to keep both.</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button class="btn btn-sm btn-primary" style="padding:4px 10px;font-size:10px" onclick="pdUpdateQuote()" title="Save changes back to Quote #${q.id}">💾 Update Quote</button>
+      <button class="btn btn-sm btn-secondary" style="padding:4px 10px;font-size:10px" onclick="pdCancelEditQuote()">Cancel Edit</button>
+    </div>`;
+  out.parentNode.insertBefore(banner, out);
+}
+
+function pdCancelEditQuote(){
+  window._pdEditingQid=null;
+  window._pdEditingMethod=null;
+  window._pdEditingPid=null;
+  const b=document.getElementById('pd-edit-banner'); if(b) b.remove();
+  showToast('Edit cancelled');
+}
+
+async function pdUpdateQuote(){
+  const qid=window._pdEditingQid;
+  if(!qid){showToast('No quote selected for edit','error');return;}
+  const pid=window._pdEditingPid || document.getElementById('pd-id').value;
+  // Prefer the freshly-computed quote (from the most recent pdRunMethod call);
+  // if the user didn't re-run a method, fall back to current basis fields and
+  // compute the total from Method-4 if it's the active tab.
+  let payload = window._pdLastQuote || null;
+  if(!payload){
+    // Try Method-4 live recalc as a fallback
+    if(typeof recalcPdM4==='function'){
+      const b=recalcPdM4();
+      if(b && b.total){
+        payload={
+          total:b.total, method:'custom',
+          breakdown:{materials:b.mat,labor:b.lab,equipment:b.eq,direct_cost:b.direct,overhead:b.oh,contingency:b.cont,profit:b.profit,total:b.total},
+          scope:(document.getElementById('pd-quote-scope')||{}).value||'',
+          description:(document.getElementById('pd-quote-desc')||{}).value||'',
+        };
+      }
+    }
+  }
+  if(!payload || !payload.total){showToast('Run a method first to compute a new total, then click Update','error');return;}
+  try{
+    const r=await fetch('/api/ahb/quotes/'+qid,{
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        total:payload.total,
+        method:payload.method||window._pdEditingMethod||'custom',
+        breakdown:payload.breakdown||{},
+        description:payload.description||'',
+        scope:payload.scope||'',
+      })
+    });
+    const d=await r.json();
+    if(d.success===false){showToast(d.error||'Update failed','error');return;}
+    showToast('Quote #'+qid+' updated');
+    // Clear edit context, reload quote list and project (in case is_active propagated value)
+    window._pdEditingQid=null;
+    window._pdEditingMethod=null;
+    window._pdEditingPid=null;
+    const b=document.getElementById('pd-edit-banner'); if(b) b.remove();
+    pdLoadQuotes(pid);
+    openProjectDetail(pid);
+    loadProjects();
+  }catch(e){showToast('Update failed: '+e.message,'error');}
 }
 
 async function pdToggleQuoteActive(qid, pid, activate){
@@ -7192,6 +7374,13 @@ async function pdSaveQuote(total, method, makeActive){
       breakdown:q.breakdown, make_active:!!makeActive
     })
   });
+  // "Save as new" exits edit mode (a fresh row was just created)
+  if(window._pdEditingQid){
+    window._pdEditingQid=null;
+    window._pdEditingMethod=null;
+    window._pdEditingPid=null;
+    const b=document.getElementById('pd-edit-banner'); if(b) b.remove();
+  }
   showToast(makeActive?'Quote saved as ACTIVE — project value updated':'Quote saved');
   pdLoadQuotes(pid);
   if(makeActive){openProjectDetail(pid);loadProjects();}
@@ -9411,9 +9600,27 @@ async function openProjectDetail(pid){
     renderProjectDocs(files.filter(f=>f.document_type),'');
     // Curated documents (from ahb_documents — Phil's Telegram intake)
     renderCuratedDocs(p.documents||[]);
-    // Receipts
+    // Receipts — with explicit View (opens receipt image) + Edit (opens QuickRF detail) buttons
     const rcpEl=document.getElementById('pd-receipts');
-    rcpEl.innerHTML=(p.receipts||[]).length?(p.receipts).map(r=>`<div class="dash-breakdown-row" style="cursor:pointer" onclick="closeModal('projectDetailModal');switchTab('receipts');setTimeout(()=>openReceiptDetail('${r.id}'),500)"><span style="color:#ddd">${r.image_path?'&#128247; ':''}${escHtml(r.store_name||r.vendor||'Unknown')}</span><span style="color:#00d084">${fmtCurrency(r.total||r.amount)} &middot; ${fmtDate(r.receipt_date)}</span></div>`).join(''):'<span style="color:#444">No receipts linked to this project</span>';
+    rcpEl.innerHTML=(p.receipts||[]).length?(p.receipts).map(r=>{
+      const hasImg=!!r.image_path;
+      const imgUrl=hasImg ? '/api/ahb/receipts/image/'+r.id : '';
+      const viewBtn = hasImg
+        ? `<button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="View receipt image" onclick="event.stopPropagation();window.open('${imgUrl}','_blank')">📄 View</button>`
+        : `<button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;opacity:0.4" title="No image attached" disabled>📄 View</button>`;
+      return `<div class="dash-breakdown-row" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px" onclick="pdEditReceipt('${r.id}')">
+        <div style="flex:1;min-width:0">
+          <span style="color:#ddd">${hasImg?'&#128247; ':''}${escHtml(r.store_name||r.vendor||'Unknown')}</span>
+          <span style="color:#00d084;margin-left:8px">${fmtCurrency(r.total||r.amount)} &middot; ${fmtDate(r.receipt_date)}</span>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          ${viewBtn}
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" title="Open in QuickRF for editing" onclick="event.stopPropagation();pdEditReceipt('${r.id}')">✎ Edit</button>
+        </div>
+      </div>`;
+    }).join(''):'<span style="color:#444">No receipts linked to this project</span>';
+    // App Packages (DocPrep) for this project
+    pdLoadPackages(pid);
     // Details (editable fields)
     document.getElementById('pd-details').innerHTML=`
       <div class="form-row" style="margin-bottom:8px">
@@ -9637,6 +9844,63 @@ function viewProjectInvoicePDF(){
   const invId=document.getElementById('pd-invoice-id').value;
   if(!invId){showToast('No invoice linked','error');return;}
   window.open('/api/ahb/invoices/'+invId+'/pdf','_blank');
+}
+
+function editProjectInvoice(){
+  // Open the linked invoice in InvoiceIT for editing — mirrors the project-modal
+  // → quote-tool flow: close this modal, switch tabs, then load the editor.
+  const invId=document.getElementById('pd-invoice-id').value;
+  if(!invId){showToast('No invoice linked — generate one first','error');return;}
+  closeModal('projectDetailModal');
+  switchTab('invoices');
+  setTimeout(()=>{ if(typeof editInvoice==='function') editInvoice(invId); }, 400);
+}
+
+function pdEditReceipt(rid){
+  // Mirrors row-click navigation but lets us reuse from explicit Edit button.
+  closeModal('projectDetailModal');
+  switchTab('receipts');
+  setTimeout(()=>{ if(typeof openReceiptDetail==='function') openReceiptDetail(rid); }, 400);
+}
+
+async function pdLoadPackages(pid){
+  const el=document.getElementById('pd-packages');
+  if(!el) return;
+  try{
+    const r=await fetch('/api/ahb/packages?project_id='+encodeURIComponent(pid));
+    const pkgs=await r.json();
+    if(!Array.isArray(pkgs) || !pkgs.length){
+      el.innerHTML='<span style="color:#444">No app packages for this project — click + New Package to start one in DocPrep</span>';
+      return;
+    }
+    const statusColors={draft:'#888',submitted:'#4da6ff',approved:'#00d084',rejected:'#ff6b6b'};
+    el.innerHTML=pkgs.map(p=>{
+      const sc=statusColors[(p.status||'').toLowerCase()]||'#888';
+      const ptype=p.package_type?escHtml(p.package_type):'';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;margin-bottom:6px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="color:#fff;font-weight:700">${escHtml(p.name||'Untitled Package')}</span>
+            ${ptype?`<span style="font-size:10px;color:#888;background:#1a1a2e;padding:2px 7px;border-radius:10px">${ptype}</span>`:''}
+            <span style="font-size:10px;color:${sc};background:${sc}22;border:1px solid ${sc};padding:2px 8px;border-radius:10px;font-weight:700">${escHtml((p.status||'draft').toUpperCase())}</span>
+            ${p.permit_number?`<span style="font-size:10px;color:#c4b5fd">Permit: ${escHtml(p.permit_number)}</span>`:''}
+            <span style="font-size:10px;color:#444">${fmtDate(p.updated_at||p.created_at)}</span>
+          </div>
+          ${p.notes?`<div style="font-size:10px;color:#666;margin-top:3px;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.notes)}</div>`:''}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="View this package as PDF" onclick="window.open('/api/ahb/packages/${p.id}/pdf','_blank')">📄 PDF</button>
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" title="Edit this package in DocPrep" onclick="pdEditPackage(${p.id})">✎ Edit</button>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<div style="color:#ff6b6b">Error loading packages</div>';}
+}
+
+function pdEditPackage(pkgId){
+  closeModal('projectDetailModal');
+  switchTab('docprep');
+  setTimeout(()=>{ if(typeof openPackageDetail==='function') openPackageDetail(pkgId); }, 400);
 }
 function shareProject(){
   const p=currentProjectDetail;if(!p)return;
@@ -12604,5 +12868,6 @@ async function bpLoadRenders(){
   </div>
 </div>
 
+<script>document.querySelectorAll("[data-fluid-link]").forEach(a=>{const p=location.protocol==="https:"?8443:8889;a.href=`${location.protocol}//${location.hostname}:${p}/fluid`;});</script>
 </body>
 </html>
