@@ -2178,7 +2178,7 @@
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <label style="font-size:10px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:1px">Tax Year:</label>
-      <select id="us-year" onchange="renderInvoiceRollup()" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;font-weight:700;font-family:monospace"></select>
+      <select id="us-year" onchange="loadOtherIncome();renderInvoiceRollup()" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;font-weight:700;font-family:monospace"></select>
       <button class="btn-secondary" onclick="openTaxModal()">+ Custom Reminder</button>
       <button class="btn-secondary" onclick="openSummaryGenerator()">📄 Generate Summary</button>
     </div>
@@ -2319,6 +2319,71 @@
       </label>
       <button class="btn-primary btn-sm" style="margin-left:auto" onclick="saveBusinessProfile()">Save Profile</button>
     </div>
+  </div>
+
+  <!-- ── Section 2B: Personal Tax Filing (filing status, dependents) ─── -->
+  <div style="font-size:13px;font-weight:800;color:#888;margin:24px 0 10px;text-transform:uppercase;letter-spacing:1.5px">👨‍👩‍👧 Personal Tax Filing</div>
+  <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;padding:18px;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end">
+      <div>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Filing Status</label>
+        <select id="bp-filing-status" onchange="saveBusinessProfile();renderInvoiceRollup()" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
+          <option value="single">Single</option>
+          <option value="mfj">Married Filing Jointly</option>
+          <option value="mfs">Married Filing Separately</option>
+          <option value="hoh">Head of Household</option>
+          <option value="qw">Qualifying Surviving Spouse</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Dependents (qualifying children &lt;17)</label>
+        <input id="bp-dependents" type="number" min="0" max="20" step="1" value="0" onchange="saveBusinessProfile();renderInvoiceRollup()" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px;font-family:monospace">
+      </div>
+      <div style="font-size:11px;color:#666;line-height:1.5">
+        Used by the tax estimate above to apply the correct standard deduction
+        and the <b style="color:#888">$2,000-per-dependent Child Tax Credit</b>.
+        Estimate only — see a CPA for filed returns.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 2C: Other Income (W-2 day job, 1099, dividends, rental, etc.) ── -->
+  <div style="font-size:13px;font-weight:800;color:#888;margin:24px 0 10px;text-transform:uppercase;letter-spacing:1.5px">💵 Other Income · <span id="us-oi-year-label" style="color:#fff">2026</span></div>
+  <div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;padding:18px;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:1.4fr 1.6fr 1fr 1.2fr auto;gap:8px;align-items:end;margin-bottom:12px">
+      <div>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Kind</label>
+        <select id="oi-kind" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
+          <option value="w2_wages">W-2 Wages (day job)</option>
+          <option value="1099_nec">1099-NEC (contract / SE)</option>
+          <option value="1099_misc">1099-MISC (other)</option>
+          <option value="interest">Interest (1099-INT)</option>
+          <option value="dividends">Dividends (1099-DIV)</option>
+          <option value="capital_gains">Capital Gains</option>
+          <option value="rental">Rental (Schedule E)</option>
+          <option value="social_security">Social Security</option>
+          <option value="unemployment">Unemployment</option>
+          <option value="retirement">Retirement / Pension</option>
+          <option value="spouse_w2">Spouse W-2 Wages</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Source / Payer</label>
+        <input id="oi-source" placeholder="e.g. Acme Corp" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Amount ($)</label>
+        <input id="oi-amount" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px;font-family:monospace">
+      </div>
+      <div>
+        <label style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase">Notes</label>
+        <input id="oi-notes" placeholder="optional" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#e0e0e0;font-size:12px">
+      </div>
+      <button class="btn btn-sm btn-primary" style="height:34px;white-space:nowrap" onclick="addOtherIncome()">+ Add</button>
+    </div>
+    <div id="us-other-income-list" style="font-size:12px"></div>
+    <div id="us-oi-summary" style="margin-top:10px;padding:8px 12px;background:#070712;border-radius:6px;font-size:11px;color:#888;display:none"></div>
   </div>
 
   <!-- ── Section 3: PA LLC Tax Requirements ─────────────────────── -->
@@ -4555,6 +4620,18 @@ async function deleteProject(id){
   }catch(e){showToast('Error: '+e.message,'error');}
 }
 
+async function deleteInvoice(id, num){
+  const label = num ? ('invoice #'+num) : 'this invoice';
+  if(!confirm('Delete '+label+'?\n\nThis cannot be undone. Linked payments and project references will be orphaned.')) return;
+  try{
+    const r=await fetch('/api/ahb/invoices/'+id,{method:'DELETE'});
+    const d=await r.json().catch(()=>({}));
+    if(d && d.success===false){showToast(d.error||'Delete failed','error');return;}
+    showToast('Invoice deleted');
+    loadInvoices();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
 function populateProjectDropdowns(){
   const selectors=['invoice-project','receipt-project','payroll-project'];
   selectors.forEach(selId=>{
@@ -4612,6 +4689,7 @@ function renderInvoices(invoices){
           <button class="btn-icon" onclick="event.stopPropagation();exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
           <button class="btn-icon" onclick="event.stopPropagation();downloadInvoicePDF('${i.id}')" title="Download PDF">&#11015;</button>
           <button class="btn-icon" onclick="event.stopPropagation();shareInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Share">&#128279;</button>
+          <button class="btn-icon del" onclick="event.stopPropagation();deleteInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Delete">&#10005;</button>
         </div>
       </td>
     </tr>
@@ -5264,8 +5342,9 @@ function renderProjectKanban(filtered){
     return `<div class="kanban-col">
       <div class="kanban-col-header"><span>${st}</span><span class="col-count">${cards.length}</span></div>
       <div class="kanban-col-body">${cards.length?cards.map(p=>`
-        <div class="kanban-card" onclick="editProject('${p.id}')">
-          <div class="kanban-card-title">${escHtml(p.title)}</div>
+        <div class="kanban-card" style="position:relative" onclick="editProject('${p.id}')">
+          <button class="btn-icon del" style="position:absolute;top:6px;right:6px;font-size:11px;padding:2px 6px" onclick="event.stopPropagation();deleteProject('${p.id}')" title="Delete project">&#10005;</button>
+          <div class="kanban-card-title" style="padding-right:22px">${escHtml(p.title)}</div>
           <div class="kanban-card-meta">${escHtml(p.client_name||'')}</div>
           ${p.value?'<div class="kanban-card-amount">'+fmtCurrency(p.value)+'</div>':''}
         </div>`).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">No projects</div>'}</div>
@@ -5292,8 +5371,9 @@ function renderInvoiceKanban(){
     return `<div class="kanban-col">
       <div class="kanban-col-header"><span>${st}</span><span class="col-count">${cards.length}</span></div>
       <div class="kanban-col-body">${cards.length?cards.map(i=>`
-        <div class="kanban-card">
-          <div class="kanban-card-title">${escHtml(i.invoice_number||'—')}</div>
+        <div class="kanban-card" style="position:relative;cursor:pointer" onclick="editInvoice('${i.id}')">
+          <button class="btn-icon del" style="position:absolute;top:6px;right:6px;font-size:11px;padding:2px 6px" onclick="event.stopPropagation();deleteInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Delete invoice">&#10005;</button>
+          <div class="kanban-card-title" style="padding-right:22px">${escHtml(i.invoice_number||'—')}</div>
           <div class="kanban-card-meta">${escHtml(i.client_name||i.project_name||'')}</div>
           <div class="kanban-card-amount">${fmtCurrency(i.total)}</div>
         </div>`).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">None</div>'}</div>
@@ -8977,33 +9057,88 @@ function renderInvoiceRollup(){
     }
   }
 
-  // Final tax math: use actual deductible expenses if present, fallback to generic 30%
-  let finalNet, finalTax;
-  if(deductExp > 0){
-    finalNet = netIncome;                    // realized − deductible
-    finalTax = Math.round(finalNet * taxRate);
-  } else {
-    finalNet = Math.round(realized * 0.7);   // generic 30% expense assumption
-    finalTax = Math.round(finalNet * taxRate);
+  // ── Real-ish tax math: use actual deductible expenses + filing status + dependents
+  //                       + per-year other-income entries from the Other Income panel.
+  // Estimate-grade only — uses 2025 federal brackets (2026 not finalized) and treats
+  // capital gains as ordinary for simplicity. Not a substitute for filed returns.
+  const filingStatus = (businessProfile && businessProfile.filing_status) || 'single';
+  const dependents   = parseInt((businessProfile && businessProfile.dependents) || 0, 10) || 0;
+  // Net business (Schedule C) — use actual deductibles if any; otherwise fall back to 30% baseline
+  const seBizNet = (deductExp > 0)
+    ? Math.max(0, realized - deductExp)
+    : Math.max(0, Math.round(realized * 0.7));
+  // Sum other-income by tax-treatment bucket
+  const oi = Array.isArray(otherIncomeRows) ? otherIncomeRows : [];
+  const sumKind = (kinds) => oi.filter(o=>kinds.includes(o.kind)).reduce((a,o)=>a+(o.amount||0),0);
+  const oiW2          = sumKind(['w2_wages','spouse_w2']);  // ordinary, NOT SE
+  const oi1099nec     = sumKind(['1099_nec']);              // ordinary AND SE-taxed
+  const oiOrdinary    = sumKind(['1099_misc','interest','dividends','rental','unemployment','retirement','other','capital_gains']);
+  const oiSocSec      = sumKind(['social_security']);       // ~85% taxable for most filers (rough)
+  const oiSocSecTax   = oiSocSec * 0.85;
+  // Schedule SE applies to net SE earnings (× 0.9235), 15.3% for SS+Medicare
+  const seBase   = (seBizNet + oi1099nec) * 0.9235;
+  const seTax    = Math.max(0, seBase) * 0.153;
+  const seTaxDed = seTax / 2;  // half of SE tax is deductible above the line
+  // AGI ≈ wages + SE net + other ordinary + taxable SS − ½ SE tax
+  const agi = oiW2 + seBizNet + oi1099nec + oiOrdinary + oiSocSecTax - seTaxDed;
+  // Standard deduction (2025): single 15,000, mfj 30,000, hoh 22,500, mfs 15,000
+  const STD_DED = {single:15000, mfj:30000, mfs:15000, hoh:22500, qw:30000};
+  const stdDed = STD_DED[filingStatus] || 15000;
+  const taxableIncome = Math.max(0, agi - stdDed);
+  // 2025 federal income brackets (estimate — update annually)
+  const BRACKETS = {
+    single: [[0,0.10],[11925,0.12],[48475,0.22],[103350,0.24],[197300,0.32],[250525,0.35],[626350,0.37]],
+    mfj:    [[0,0.10],[23850,0.12],[96950,0.22],[206700,0.24],[394600,0.32],[501050,0.35],[751600,0.37]],
+    mfs:    [[0,0.10],[11925,0.12],[48475,0.22],[103350,0.24],[197300,0.32],[250525,0.35],[375800,0.37]],
+    hoh:    [[0,0.10],[17000,0.12],[64850,0.22],[103350,0.24],[197300,0.32],[250500,0.35],[626350,0.37]],
+    qw:     [[0,0.10],[23850,0.12],[96950,0.22],[206700,0.24],[394600,0.32],[501050,0.35],[751600,0.37]],
+  };
+  function bracketTax(ti, fs){
+    const b = BRACKETS[fs] || BRACKETS.single;
+    let owed = 0;
+    for(let i=0;i<b.length;i++){
+      const lo = b[i][0], rate = b[i][1];
+      const hi = (i+1<b.length) ? b[i+1][0] : Infinity;
+      if(ti <= lo) break;
+      owed += (Math.min(ti, hi) - lo) * rate;
+    }
+    return owed;
   }
+  const fedIncomeTax = Math.max(0, bracketTax(taxableIncome, filingStatus));
+  // Child Tax Credit: $2,000 per qualifying child <17 (simplified; phaseouts ignored)
+  const ctc = dependents * 2000;
+  // PA flat 3.07% on AGI (rough — PA doesn't honor the federal standard deduction)
+  const paTax = Math.max(0, agi) * 0.0307;
+  // Philly Net Profits Tax ~3.44% on net biz profit if business is Philly-based
+  const phillyTax = inPhilly ? Math.max(0, seBizNet) * 0.0344 : 0;
+  const totalTax = Math.max(0, fedIncomeTax + seTax + paTax + phillyTax - ctc);
+  const finalTax = Math.round(totalTax);
+  const finalNet = Math.round(taxableIncome);
+  const effectiveRate = (agi > 0) ? (finalTax / agi) : taxRate;
 
   // ── Populate the Annual Filing Summary headline panel ──────────────
-  const taxPctLabel=(taxRate*100).toFixed(0)+'%';
+  const taxPctLabel=(effectiveRate*100).toFixed(0)+'%';
   document.getElementById('us-summary-gross').textContent=fmtCurrency(realized);
   document.getElementById('us-summary-expenses').textContent=fmtCurrency(deductExp);
   document.getElementById('us-summary-net').textContent=fmtCurrency(finalNet);
   document.getElementById('us-summary-tax').textContent=fmtCurrency(finalTax);
-  document.getElementById('us-summary-tax-rate').textContent='@ '+taxPctLabel+' effective ('+(inPhilly?'Philly':'PA')+')';
+  document.getElementById('us-summary-tax-rate').textContent='@ '+taxPctLabel+' effective ('+(inPhilly?'Philly':'PA')+', '+filingStatus.toUpperCase()+(dependents?', '+dependents+' dep':'')+')';
+  const fsLabel = {single:'Single', mfj:'MFJ', mfs:'MFS', hoh:'HoH', qw:'QW'}[filingStatus]||'Single';
+  const otherIncTotal = oiW2 + oi1099nec + oiOrdinary + oiSocSecTax;
   document.getElementById('us-summary-formula').innerHTML=
-    `<b style="color:#00d084">${fmtCurrency(realized)}</b> Gross Revenue ` +
-    `<span style="color:#444">−</span> ` +
-    `<b style="color:#f5a623">${fmtCurrency(deductExp)}</b> Deductible Expenses ` +
-    `<span style="color:#444">=</span> ` +
-    `<b style="color:#4da6ff">${fmtCurrency(finalNet)}</b> Net Taxable Income ` +
-    `<span style="color:#444">×</span> ` +
-    `<b style="color:#fff">${taxPctLabel}</b> ` +
-    `<span style="color:#444">=</span> ` +
-    `<b style="color:#c19660">${fmtCurrency(finalTax)}</b> Tax Owed`;
+    `<div style="margin-bottom:6px"><b style="color:#00d084">${fmtCurrency(realized)}</b> Biz Revenue ` +
+    `<span style="color:#444">−</span> <b style="color:#f5a623">${fmtCurrency(deductExp || Math.round(realized*0.3))}</b> Deductible ` +
+    `<span style="color:#444">=</span> <b style="color:#4da6ff">${fmtCurrency(seBizNet)}</b> Schedule C net</div>` +
+    (otherIncTotal>0 ? `<div style="margin-bottom:6px"><b style="color:#c4b5fd">+ ${fmtCurrency(otherIncTotal)}</b> Other Income (W-2 ${fmtCurrency(oiW2)}, 1099-NEC ${fmtCurrency(oi1099nec)}, ordinary ${fmtCurrency(oiOrdinary)}${oiSocSec?', SS taxable '+fmtCurrency(oiSocSecTax):''})</div>` : '') +
+    `<div style="margin-bottom:6px"><b style="color:#888">${fmtCurrency(agi)}</b> AGI ` +
+    `<span style="color:#444">−</span> <b style="color:#888">${fmtCurrency(stdDed)}</b> Std Deduction (${fsLabel}) ` +
+    `<span style="color:#444">=</span> <b style="color:#4da6ff">${fmtCurrency(taxableIncome)}</b> Taxable</div>` +
+    `<div><b style="color:#c19660">${fmtCurrency(Math.round(fedIncomeTax))}</b> Fed Income Tax ` +
+    `<span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(seTax))}</b> SE Tax (15.3%) ` +
+    `<span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(paTax))}</b> PA 3.07%` +
+    (phillyTax>0 ? ` <span style="color:#444">+</span> <b style="color:#c19660">${fmtCurrency(Math.round(phillyTax))}</b> Philly NPT` : '') +
+    (ctc>0 ? ` <span style="color:#444">−</span> <b style="color:#00d084">${fmtCurrency(ctc)}</b> CTC (${dependents} dep)` : '') +
+    ` <span style="color:#444">=</span> <b style="color:#c19660;font-size:13px">${fmtCurrency(finalTax)}</b> Tax Owed</div>`;
 
   // Note explaining the math
   const note=document.getElementById('us-tax-recalc-note');
@@ -9052,7 +9187,92 @@ async function loadBusinessProfile(){
     if(document.getElementById('bp-accounting')) document.getElementById('bp-accounting').value=businessProfile.accounting_method||'cash';
     setChk('bp-has-employees','has_employees');
     setChk('bp-collects-sales-tax','collects_sales_tax');
+    // Personal tax filing inputs (filing_status, dependents)
+    if(document.getElementById('bp-filing-status')) document.getElementById('bp-filing-status').value=businessProfile.filing_status||'single';
+    if(document.getElementById('bp-dependents'))    document.getElementById('bp-dependents').value=(businessProfile.dependents!=null?businessProfile.dependents:0);
   }catch(e){}
+  // Other-income list is year-scoped — load it for the currently-selected tax year
+  loadOtherIncome();
+}
+
+// ── Other Income CRUD (per-year, used by tax estimate) ──────────────
+let otherIncomeRows=[];
+async function loadOtherIncome(){
+  const year=document.getElementById('us-year')?.value||String(new Date().getFullYear());
+  const lbl=document.getElementById('us-oi-year-label'); if(lbl) lbl.textContent=year;
+  try{
+    const r=await fetch('/api/ahb/other-income?year='+encodeURIComponent(year));
+    otherIncomeRows=await r.json();
+  }catch(e){otherIncomeRows=[];}
+  renderOtherIncomeList();
+  // Re-render tax rollup so the estimate reflects the new income totals
+  if(typeof renderInvoiceRollup==='function') renderInvoiceRollup();
+}
+
+const OI_KIND_LABELS={
+  w2_wages:'W-2 Wages', '1099_nec':'1099-NEC', '1099_misc':'1099-MISC',
+  interest:'Interest', dividends:'Dividends', capital_gains:'Capital Gains',
+  rental:'Rental', social_security:'Social Security', unemployment:'Unemployment',
+  retirement:'Retirement', spouse_w2:'Spouse W-2', other:'Other',
+};
+function renderOtherIncomeList(){
+  const el=document.getElementById('us-other-income-list');
+  if(!el) return;
+  if(!otherIncomeRows.length){
+    el.innerHTML='<div style="color:#444;padding:8px 0;font-size:11px">No other income entries for this year. Add W-2 wages, 1099-NEC contracts, dividends, rental income, etc. to improve the tax estimate.</div>';
+    document.getElementById('us-oi-summary').style.display='none';
+    return;
+  }
+  el.innerHTML=otherIncomeRows.map(o=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#070712;border:1px solid #1a1a2e;border-radius:7px;margin-bottom:5px">
+    <div style="flex:1;min-width:0">
+      <span style="font-size:10px;color:#c4b5fd;background:#1a0a3a;border:1px solid #7c3aed;padding:2px 8px;border-radius:10px;font-weight:700">${escHtml(OI_KIND_LABELS[o.kind]||o.kind)}</span>
+      <span style="color:#ddd;margin-left:8px">${escHtml(o.source||'—')}</span>
+      ${o.notes?`<span style="color:#666;font-size:10px;margin-left:8px">${escHtml(o.notes)}</span>`:''}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="color:#00d084;font-weight:700;font-family:monospace">${fmtCurrency(o.amount||0)}</span>
+      <button class="btn-icon del" onclick="deleteOtherIncome(${o.id})" title="Delete entry">&#10005;</button>
+    </div>
+  </div>`).join('');
+  // Summary by category for the tax-math context
+  const total=otherIncomeRows.reduce((a,o)=>a+(o.amount||0),0);
+  const seTotal=otherIncomeRows.filter(o=>o.kind==='1099_nec').reduce((a,o)=>a+(o.amount||0),0);
+  const wagesTotal=otherIncomeRows.filter(o=>o.kind==='w2_wages'||o.kind==='spouse_w2').reduce((a,o)=>a+(o.amount||0),0);
+  const sum=document.getElementById('us-oi-summary');
+  sum.style.display='block';
+  sum.innerHTML=`Total other income: <b style="color:#00d084">${fmtCurrency(total)}</b> · W-2 wages: <b style="color:#fff">${fmtCurrency(wagesTotal)}</b> · 1099-NEC (also SE-taxed): <b style="color:#fff">${fmtCurrency(seTotal)}</b>`;
+}
+
+async function addOtherIncome(){
+  const year=document.getElementById('us-year')?.value||String(new Date().getFullYear());
+  const kind=document.getElementById('oi-kind').value;
+  const source=document.getElementById('oi-source').value.trim();
+  const amountRaw=document.getElementById('oi-amount').value;
+  const notes=document.getElementById('oi-notes').value.trim();
+  const amount=parseFloat(amountRaw);
+  if(!amount||amount<=0){showToast('Enter an amount > 0','error');return;}
+  try{
+    const r=await fetch('/api/ahb/other-income',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({year,kind,source,amount,notes})
+    });
+    const d=await r.json();
+    if(d.success===false){showToast(d.error||'Add failed','error');return;}
+    document.getElementById('oi-source').value='';
+    document.getElementById('oi-amount').value='';
+    document.getElementById('oi-notes').value='';
+    showToast('Added '+(OI_KIND_LABELS[kind]||kind)+' '+fmtCurrency(amount));
+    loadOtherIncome();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function deleteOtherIncome(id){
+  if(!confirm('Delete this income entry?'))return;
+  try{
+    await fetch('/api/ahb/other-income/'+id,{method:'DELETE'});
+    showToast('Deleted');
+    loadOtherIncome();
+  }catch(e){showToast('Error: '+e.message,'error');}
 }
 
 async function saveBusinessProfile(){
@@ -9074,6 +9294,8 @@ async function saveBusinessProfile(){
     accounting_method:document.getElementById('bp-accounting').value,
     has_employees:document.getElementById('bp-has-employees').checked?1:0,
     collects_sales_tax:document.getElementById('bp-collects-sales-tax').checked?1:0,
+    filing_status:(document.getElementById('bp-filing-status')||{value:'single'}).value,
+    dependents:parseInt((document.getElementById('bp-dependents')||{value:'0'}).value,10)||0,
   };
   try{
     await fetch('/api/ahb/business-profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

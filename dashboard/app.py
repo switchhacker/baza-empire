@@ -11315,6 +11315,13 @@ def _ensure_business_profile_table():
         collects_sales_tax INTEGER DEFAULT 0,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )""")
+    # Add household tax inputs (for tax estimate). Idempotent ALTER for existing DBs.
+    for col, ddl in (
+        ('filing_status', "ALTER TABLE ahb_business_profile ADD COLUMN filing_status TEXT DEFAULT 'single'"),
+        ('dependents',    "ALTER TABLE ahb_business_profile ADD COLUMN dependents INTEGER DEFAULT 0"),
+    ):
+        try: conn.execute(ddl)
+        except sqlite3.OperationalError: pass  # column already exists
     conn.execute("""CREATE TABLE IF NOT EXISTS ahb_tax_filings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         requirement_id TEXT NOT NULL,
@@ -11325,6 +11332,18 @@ def _ensure_business_profile_table():
         notes TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )""")
+    # Per-year personal "other income" entries used by the Uncle Sam tax estimate
+    # (W-2 wages from a day job, 1099 contract, dividends, interest, rental, etc.)
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_other_income (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        year TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        source TEXT,
+        amount REAL NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_other_income_year ON ahb_other_income(year)")
     # Seed empty row
     conn.execute("INSERT OR IGNORE INTO ahb_business_profile (id, legal_name) VALUES (1, 'All Home Building Co LLC')")
     conn.commit()
@@ -11564,7 +11583,8 @@ def api_ahb_business_profile_put():
               'formation_date','registered_agent','business_address','business_phone',
               'business_email','fiscal_year_end','accounting_method','naics_code',
               'hic_number','hic_expires','pa_tax_id','philly_tax_account',
-              'has_employees','collects_sales_tax']
+              'has_employees','collects_sales_tax',
+              'filing_status','dependents']
     sets, vals = [], []
     for k in fields:
         if k in body:
@@ -11574,6 +11594,70 @@ def api_ahb_business_profile_put():
     sets.append("updated_at=?"); vals.append(datetime.datetime.now().isoformat())
     conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
     conn.execute(f"UPDATE ahb_business_profile SET {','.join(sets)} WHERE id=1", vals)
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/other-income', methods=['GET', 'POST'])
+def api_ahb_other_income():
+    """Per-year personal 'other income' entries used by the Uncle Sam tax estimate.
+    GET ?year=2026 returns rows for that year.
+    POST body: {year, kind, source, amount, notes}."""
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        year = request.args.get('year') or str(datetime.datetime.now().year)
+        rows = conn.execute(
+            "SELECT * FROM ahb_other_income WHERE year=? ORDER BY id DESC", (year,)
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    body = request.get_json() or {}
+    year = str(body.get('year') or datetime.datetime.now().year)
+    kind = body.get('kind') or 'other'
+    source = body.get('source') or ''
+    try:
+        amount = float(body.get('amount') or 0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    notes = body.get('notes') or ''
+    cur = conn.execute(
+        """INSERT INTO ahb_other_income (year, kind, source, amount, notes)
+           VALUES (?,?,?,?,?)""",
+        (year, kind, source, amount, notes)
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    row = conn.execute("SELECT * FROM ahb_other_income WHERE id=?", (new_id,)).fetchone()
+    conn.close()
+    return jsonify({'success': True, 'entry': dict(row)})
+
+
+@app.route('/api/ahb/other-income/<int:oid>', methods=['PUT', 'DELETE'])
+def api_ahb_other_income_modify(oid):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM ahb_other_income WHERE id=?", (oid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'success': False, 'error': 'not found'}), 404
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM ahb_other_income WHERE id=?", (oid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    body = request.get_json() or {}
+    sets, vals = [], []
+    for k in ('year', 'kind', 'source', 'amount', 'notes'):
+        if k in body:
+            sets.append(f"{k}=?")
+            vals.append(float(body[k]) if k == 'amount' else body[k])
+    if not sets:
+        conn.close()
+        return jsonify({'success': False, 'error': 'no fields'}), 400
+    vals.append(oid)
+    conn.execute(f"UPDATE ahb_other_income SET {','.join(sets)} WHERE id=?", vals)
     conn.commit()
     conn.close()
     return jsonify({'success': True})
