@@ -1,0 +1,165 @@
+[1mdiff --git a/dashboard/app.py b/dashboard/app.py[m
+[1mindex ca9fceb..d133f97 100644[m
+[1m--- a/dashboard/app.py[m
+[1m+++ b/dashboard/app.py[m
+[36m@@ -3336,6 +3336,103 @@[m [mdef api_baza_project_file_put(project_id):[m
+     return jsonify({"saved": True, "info": info})[m
+ [m
+ [m
+[32m+[m[32m@app.route('/api/baza/projects/<project_id>/render', methods=['POST'])[m
+[32m+[m[32mdef api_baza_project_render(project_id):[m
+[32m+[m[32m    """Generate a visual via Stable Diffusion (uses Sam's existing infra) and[m
+[32m+[m[32m    save into the project's artifacts/ dir."""[m
+[32m+[m[32m    bp = _baza_projects()[m
+[32m+[m[32m    proj = bp.get_project(project_id)[m
+[32m+[m[32m    if not proj:[m
+[32m+[m[32m        return jsonify({"error": "project not found"}), 404[m
+[32m+[m[32m    data = request.get_json(silent=True) or {}[m
+[32m+[m[32m    prompt = (data.get('prompt') or '').strip()[m
+[32m+[m[32m    if not prompt:[m
+[32m+[m[32m        return jsonify({"error": "prompt is required"}), 400[m
+[32m+[m
+[32m+[m[32m    parent = None[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        from core import task_events as te[m
+[32m+[m[32m        parent = te.emit("tool_call", project_id=project_id, agent_id="user",[m
+[32m+[m[32m                         payload={"tool": "render.txt2img", "args": {"prompt": prompt[:200]}})[m
+[32m+[m[32m    except Exception:[m
+[32m+[m[32m        pass[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        import base64[m
+[32m+[m[32m        import requests as _req[m
+[32m+[m[32m        resp = _req.post('http://localhost:7860/sdapi/v1/txt2img', json={[m
+[32m+[m[32m            'prompt': prompt,[m
+[32m+[m[32m            'negative_prompt': data.get('negative_prompt', ''),[m
+[32m+[m[32m            'width':  int(data.get('width', 1024)),[m
+[32m+[m[32m            'height': int(data.get('height', 1024)),[m
+[32m+[m[32m            'steps':  int(data.get('steps', 30)),[m
+[32m+[m[32m            'cfg_scale': float(data.get('cfg_scale', 7)),[m
+[32m+[m[32m            'sampler_name': data.get('sampler') or 'DPM++ 2M Karras',[m
+[32m+[m[32m        }, timeout=180)[m
+[32m+[m[32m        result = resp.json()[m
+[32m+[m[32m        images = result.get('images') or [][m
+[32m+[m[32m        out_dir = os.path.join(proj["path"], "artifacts")[m
+[32m+[m[32m        os.makedirs(out_dir, exist_ok=True)[m
+[32m+[m[32m        saved_urls = [][m
+[32m+[m[32m        saved_files = [][m
+[32m+[m[32m        for img_b64 in images:[m
+[32m+[m[32m            fname = f"render_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.png"[m
+[32m+[m[32m            fpath = os.path.join(out_dir, fname)[m
+[32m+[m[32m            with open(fpath, "wb") as fp:[m
+[32m+[m[32m                fp.write(base64.b64decode(img_b64))[m
+[32m+[m[32m            saved_files.append(fname)[m
+[32m+[m[32m            saved_urls.append(f"/api/artifacts/serve/{project_id}/{fname}")[m
+[32m+[m[32m            try:[m
+[32m+[m[32m                from core import task_events as te[m
+[32m+[m[32m                te.emit("artifact_saved", project_id=project_id, agent_id="user",[m
+[32m+[m[32m                        payload={"path": fpath, "filename": fname,[m
+[32m+[m[32m                                 "kind": "render", "bytes": os.path.getsize(fpath)})[m
+[32m+[m[32m            except Exception:[m
+[32m+[m[32m                pass[m
+[32m+[m
+[32m+[m[32m        try:[m
+[32m+[m[32m            from core import task_events as te[m
+[32m+[m[32m            te.emit("tool_result", project_id=project_id, agent_id="user",[m
+[32m+[m[32m                    payload={"tool": "render.txt2img", "ok": True,[m
+[32m+[m[32m                             "result_snippet": f"saved {len(saved_files)} image(s)"},[m
+[32m+[m[32m                    parent_event_id=parent)[m
+[32m+[m[32m        except Exception:[m
+[32m+[m[32m            pass[m
+[32m+[m[32m        return jsonify({"success": True, "files": saved_files, "urls": saved_urls})[m
+[32m+[m[32m    except Exception as e:[m
+[32m+[m[32m        try:[m
+[32m+[m[32m            from core import task_events as te[m
+[32m+[m[32m            te.emit("tool_result", project_id=project_id, agent_id="user",[m
+[32m+[m[32m                    payload={"tool": "render.txt2img", "ok": False, "error": str(e)[:300]},[m
+[32m+[m[32m                    parent_event_id=parent)[m
+[32m+[m[32m        except Exception:[m
+[32m+[m[32m            pass[m
+[32m+[m[32m        return jsonify({"success": False, "error": str(e)}), 500[m
+[32m+[m
+[32m+[m
+[32m+[m[32m@app.route('/api/baza/projects/<project_id>/renders')[m
+[32m+[m[32mdef api_baza_project_renders(project_id):[m
+[32m+[m[32m    """List render images saved in the project's artifacts/ dir."""[m
+[32m+[m[32m    bp = _baza_projects()[m
+[32m+[m[32m    proj = bp.get_project(project_id)[m
+[32m+[m[32m    if not proj:[m
+[32m+[m[32m        return jsonify({"renders": []})[m
+[32m+[m[32m    art_dir = os.path.join(proj["path"], "artifacts")[m
+[32m+[m[32m    if not os.path.isdir(art_dir):[m
+[32m+[m[32m        return jsonify({"renders": []})[m
+[32m+[m[32m    out = [][m
+[32m+[m[32m    for name in sorted(os.listdir(art_dir), reverse=True):[m
+[32m+[m[32m        if name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):[m
+[32m+[m[32m            p = os.path.join(art_dir, name)[m
+[32m+[m[32m            out.append({[m
+[32m+[m[32m                "name": name,[m
+[32m+[m[32m                "url": f"/api/artifacts/serve/{project_id}/{name}",[m
+[32m+[m[32m                "size": os.path.getsize(p),[m
+[32m+[m[32m                "modified": datetime.datetime.fromtimestamp(os.path.getmtime(p)).isoformat(),[m
+[32m+[m[32m            })[m
+[32m+[m[32m    return jsonify({"renders": out[:60]})[m
+[32m+[m
+[32m+[m
+ @app.route('/api/baza/projects/<project_id>/preview/start', methods=['POST'])[m
+ def api_baza_preview_start(project_id):[m
+     from core import preview_supervisor as ps[m
+[36m@@ -3435,12 +3532,42 @@[m [mdef api_intents_help():[m
+ [m
+ @app.route('/api/intents', methods=['POST'])[m
+ def api_intents_dispatch():[m
+[31m-    """Parse text, dispatch known intents, return result."""[m
+[32m+[m[32m    """Parse text, dispatch known intents, return result. Also handles the[m
+[32m+[m[32m    AHB project create flow because that's HTTP-side state."""[m
+     from core.intent_router import parse_intent[m
+[32m+[m[32m    from core.intent_dispatcher import dispatch as _dispatch[m
+     data = request.get_json(silent=True) or {}[m
+     text = (data.get('text') or '').strip()[m
+[31m-    extra = data.get('extra') or {}  # for callers who want to pre-fill args[m
+[32m+[m[32m    extra = data.get('extra') or {}[m
+     env = parse_intent(text)[m
+[32m+[m
+[32m+[m[32m    # AHB project create needs the dashboard's existing endpoint — not in core.[m
+[32m+[m[32m    if env.get('intent') == 'create_ahb_project':[m
+[32m+[m[32m        if env['errors']:[m
+[32m+[m[32m            return jsonify({"envelope": env, "result": None}), 400[m
+[32m+[m[32m        try:[m
+[32m+[m[32m            ahb_payload = {"title": env['args'].get('name') or 'New AHB Project'}[m
+[32m+[m[32m            if env['args'].get('client_id'):[m
+[32m+[m[32m                ahb_payload["client_id"] = env['args']['client_id'][m
+[32m+[m[32m            if env['args'].get('description'):[m
+[32m+[m[32m                ahb_payload["description"] = env['args']['description'][m
+[32m+[m[32m            with app.test_client() as tc:[m
+[32m+[m[32m                r = tc.post('/api/ahb/projects', json=ahb_payload)[m
+[32m+[m[32m                ok = (r.status_code in (200, 201))[m
+[32m+[m[32m                return jsonify({[m
+[32m+[m[32m                    "envelope": env,[m
+[32m+[m[32m                    "result": {"ok": ok, "status": r.status_code, "body": r.get_json(silent=True) or {}},[m
+[32m+[m[32m                }), (200 if ok else 400)[m
+[32m+[m[32m        except Exception as e:[m
+[32m+[m[32m            return jsonify({"envelope": env, "result": {"error": str(e)}}), 500[m
+[32m+[m
+[32m+[m[32m    out = _dispatch(env, extra=extra)[m
+[32m+[m[32m    return jsonify({"envelope": out["envelope"], "result": out["result"]}), out["status"][m
+[32m+[m
+[32m+[m
+[32m+[m[32m# Legacy in-flask dispatcher kept below for reference but no longer reached[m
+[32m+[m[32m# (the early return above covers all paths).[m
+[32m+[m[32mdef _legacy_intents_dispatch_unused(env, extra):[m
+     if env.get('errors') and env.get('intent') in ('unknown', None):[m
+         return jsonify({"envelope": env, "result": None}), 400[m
+ [m
+[1mdiff --git a/dashboard/templates/mobile.html b/dashboard/templates/mobile.html[m
+[1mindex 3f62a23..f634b94 100644[m
+[1m--- a/dashboard/templates/mobile.html[m
+[1m+++ b/dashboard/templates/mobile.html[m
+[36m@@ -571,6 +571,7 @@[m [mimg{max-width:100%;display:block}[m
+ [m
+       <div class="more-section-title">AI Tools</div>[m
+       <div class="more-grid">[m
+[32m+[m[32m        <div class="more-item" onclick="window.location=(location.protocol==='https:'?'https://'+location.hostname+':8443':'http://'+location.hostname+':8889')+'/fluid'"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5" opacity=".5"/><circle cx="12" cy="12" r="2" fill="var(--accent2)"/></svg><span>Fluid</span></div>[m
+         <div class="more-item" onclick="openArchitectView()"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span>Architect</span></div>[m
+         <div class="more-item" onclick="openVoiceView()"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v1a7 7 0 01-14 0v-1M12 19v4M8 23h8"/></svg><span>Voice</span></div>[m
+         <div class="more-item" onclick="openEstimatorView()"><svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span>Estimator</span></div>[m
