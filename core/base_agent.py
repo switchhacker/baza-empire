@@ -1855,10 +1855,27 @@ class BaseAgent(ContextMixin):
         return text.strip()
 
     async def _send_response(self, bot: Bot, chat_id: int, text: str):
-        """Send response, splitting into chunks if > 4096 chars (Telegram limit)."""
+        """Send response, splitting into chunks if > 4096 chars (Telegram limit).
+
+        Anti-hallucination post-check: tag completion claims with no matching
+        artifact in the last 2h. Disable per-message by setting
+        BAZA_VERIFY_TELEGRAM=0 env. Failures of the verifier never block sends.
+        """
         # Guard: never send raw dicts/objects to Telegram
         if not isinstance(text, str):
             text = str(text)
+        if os.environ.get("BAZA_VERIFY_TELEGRAM", "1") not in ("0", "false", "no"):
+            try:
+                from core.claim_verifier import annotate_unverified
+                text, report = annotate_unverified(text, hours=2, agent=self.AGENT_ID)
+                if not report["verified"]:
+                    logger.info(
+                        f"[{self.AGENT_ID}] post-check: {report['unbacked_count']} "
+                        f"unbacked claim(s) tagged (artifacts in window: "
+                        f"{report['artifact_count']})"
+                    )
+            except Exception as e:
+                logger.debug(f"[{self.AGENT_ID}] claim_verifier skipped: {e}")
         text = self._strip_markdown(text)
         MAX_LEN = 4000
         if len(text) <= MAX_LEN:

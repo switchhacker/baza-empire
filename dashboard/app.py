@@ -1430,6 +1430,116 @@ def settings_page():
 
 # ── Routes — Agent API ────────────────────────────────────────────────────────
 
+@app.route('/empire-pulse')
+def empire_pulse_page():
+    return render_template('empire_pulse.html')
+
+
+@app.route('/api/empire-pulse')
+def api_empire_pulse():
+    """Per-agent talk-vs-ship ratio over the last N days.
+
+    talked_count: assistant messages in journal containing completion verbs
+    shipped_count: artifacts saved in the same window attributed to that agent
+    ratio = shipped / talked (capped at 1.0). Lower = more hallucination.
+    """
+    days = int(request.args.get('days', 7) or 7)
+    days = max(1, min(days, 30))
+    hours = days * 24
+    cutoff = datetime.datetime.now().timestamp() - hours * 3600
+
+    # Real artifacts per agent
+    by_agent_files: dict[str, int] = {}
+    for proj in os.listdir(ARTIFACTS_DIR):
+        proj_dir = os.path.join(ARTIFACTS_DIR, proj)
+        if not os.path.isdir(proj_dir):
+            continue
+        for fname in os.listdir(proj_dir):
+            if fname.endswith('.meta'):
+                continue
+            full = os.path.join(proj_dir, fname)
+            if not os.path.isfile(full):
+                continue
+            if os.path.getmtime(full) < cutoff:
+                continue
+            ag = ""
+            try:
+                with open(full + ".meta") as mf:
+                    ag = (json.load(mf) or {}).get("agent_id", "")
+            except Exception:
+                head = fname.split("_", 2)
+                if len(head) >= 2 and head[0] in (
+                    "simon", "claw", "sam", "nova", "phil", "rex", "duke", "scout"
+                ):
+                    ag = "_".join(head[:2])
+            if ag:
+                by_agent_files[ag] = by_agent_files.get(ag, 0) + 1
+
+    # Talked-about-completion counts from task_journal
+    by_agent_talked: dict[str, int] = {}
+    try:
+        from core.context_db import get_conn, release_conn
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT agent_id, count(*) FROM task_journal "
+            "WHERE created_at > now() - interval %s "
+            "AND (lower(result) LIKE %s OR lower(result) LIKE %s "
+            "    OR lower(result) LIKE %s OR lower(result) LIKE %s "
+            "    OR lower(result) LIKE %s OR lower(result) LIKE %s) "
+            "GROUP BY agent_id",
+            (
+                f"{hours} hours",
+                "%complete%", "%done%", "%delivered%",
+                "%shipped%", "%finalized%", "%finished%",
+            ),
+        )
+        for ag, n in cur.fetchall():
+            if ag:
+                by_agent_talked[ag] = n
+        cur.close()
+        release_conn(conn)
+    except Exception as e:
+        return jsonify({"error": f"task_journal read failed: {e}"})
+
+    # Filter to actual agent ids (firstname_surname pattern), drop test/path noise
+    import re as _re
+    AGENT_RE = _re.compile(r"^[a-z][a-z0-9]+_[a-z][a-z0-9]+$")
+    all_agents = sorted(set(list(by_agent_files.keys()) + list(by_agent_talked.keys())))
+    all_agents = [a for a in all_agents if AGENT_RE.match(a or "")]
+    rows = []
+    for ag in all_agents:
+        talked = by_agent_talked.get(ag, 0)
+        shipped = by_agent_files.get(ag, 0)
+        ratio = (min(shipped, talked) / talked) if talked else 1.0
+        rows.append({
+            "agent_id": ag,
+            "talked_about_completing": talked,
+            "shipped": shipped,
+            "ratio": round(ratio, 2),
+            # Health: green if shipped >= talked, yellow if shipped > 0 but < talked,
+            # red if shipped == 0 and talked > 0
+            "health": (
+                "green" if shipped >= talked
+                else "red" if shipped == 0 and talked > 0
+                else "yellow"
+            ),
+        })
+    rows.sort(key=lambda r: (r["health"] == "red", -r["talked_about_completing"]), reverse=True)
+    rows.sort(key=lambda r: ({"red": 0, "yellow": 1, "green": 2}[r["health"]],
+                              -r["talked_about_completing"]))
+    return jsonify({
+        "days": days,
+        "agents": rows,
+        "totals": {
+            "agents": len(rows),
+            "shipping": sum(1 for r in rows if r["health"] == "green"),
+            "drifting": sum(1 for r in rows if r["health"] == "yellow"),
+            "all_talk": sum(1 for r in rows if r["health"] == "red"),
+        },
+    })
+
+
 @app.route('/api/agents/<agent_id>/recent-artifacts')
 def api_agent_recent_artifacts(agent_id):
     """List artifacts attributed to this agent in the last N hours.
@@ -1485,8 +1595,10 @@ def api_agent_recent_artifacts(agent_id):
         cur.execute(
             "SELECT count(*) FROM task_journal WHERE agent_id=%s "
             "AND created_at > now() - interval %s "
-            "AND (lower(result) LIKE '%complete%' OR lower(result) LIKE '%done%' OR lower(result) LIKE '%delivered%' OR lower(result) LIKE '%shipped%')",
-            (agent_id, f"{hours} hours")
+            "AND (lower(result) LIKE %s OR lower(result) LIKE %s "
+            "    OR lower(result) LIKE %s OR lower(result) LIKE %s)",
+            (agent_id, f"{hours} hours",
+             "%complete%", "%done%", "%delivered%", "%shipped%"),
         )
         talked_about_completing = cur.fetchone()[0]
         cur.close()

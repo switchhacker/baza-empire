@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Pulse</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:1300px;margin:0 auto;padding:24px 28px}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px;margin-bottom:18px}
+    .controls{display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
+    .pill{padding:6px 14px;font-size:11px;font-weight:700;color:#888;border:1px solid #1a1a2e;border-radius:14px;cursor:pointer;background:#0a0a14;letter-spacing:.5px;text-transform:uppercase}
+    .pill.active{color:#fff;background:#7c3aed;border-color:#7c3aed}
+
+    .summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px}
+    .stat{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px 16px;text-align:center}
+    .stat-val{font-size:26px;font-weight:800}
+    .stat-lbl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+    .stat.green .stat-val{color:#00d084}
+    .stat.yellow .stat-val{color:#ffaa00}
+    .stat.red .stat-val{color:#ff5555}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:16px}
+    .card.green{border-left:4px solid #00d084}
+    .card.yellow{border-left:4px solid #ffaa00}
+    .card.red{border-left:4px solid #ff5555}
+    .card h3{font-size:15px;font-weight:700;color:#fff}
+    .card .who{font-size:10px;color:#444;font-family:monospace;margin-top:2px}
+    .ratio{font-size:34px;font-weight:800;margin:14px 0 4px}
+    .ratio-lbl{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1px}
+    .nums{display:flex;justify-content:space-between;margin-top:14px;font-size:11px;color:#888;font-family:monospace}
+    .nums span{display:block}
+    .nums b{color:#fff;font-size:14px;display:block}
+    .bar{height:6px;background:#1a1a2e;border-radius:3px;overflow:hidden;margin-top:4px}
+    .bar-fill{height:100%;transition:width .4s}
+    .bar-fill.green{background:#00d084}
+    .bar-fill.yellow{background:#ffaa00}
+    .bar-fill.red{background:#ff5555}
+    .verdict{font-size:11px;color:#888;margin-top:10px;font-style:italic}
+    .empty{padding:40px;text-align:center;color:#444;border:1px dashed #1a1a2e;border-radius:10px}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Agents</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link" href="/chains">Chains</a>
+    <a class="nav-link" href="/projects">Projects</a>
+    <a class="nav-link" href="/approvals">Approvals</a>
+    <a class="nav-link active" href="/empire-pulse">Pulse</a>
+  </nav>
+
+  <div class="container">
+    <div class="page-title">Empire Pulse</div>
+    <div class="page-sub">Talk vs ship per agent. Green = shipped what they claimed. Yellow = partial. Red = claimed completion but produced zero artifacts (likely hallucinating).</div>
+
+    <div class="controls">
+      <div class="pill active" data-d="7" onclick="setDays(7,this)">7 days</div>
+      <div class="pill" data-d="3" onclick="setDays(3,this)">3 days</div>
+      <div class="pill" data-d="1" onclick="setDays(1,this)">1 day</div>
+      <div class="pill" data-d="14" onclick="setDays(14,this)">14 days</div>
+      <div class="pill" data-d="30" onclick="setDays(30,this)">30 days</div>
+    </div>
+
+    <div class="summary" id="summary"></div>
+    <div class="grid" id="grid"><div class="empty">loading…</div></div>
+  </div>
+
+<script>
+let DAYS = 7;
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function setDays(n, el){
+  DAYS = n;
+  document.querySelectorAll('.pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  load();
+}
+
+async function load(){
+  let d;
+  try {
+    const r = await fetch('/api/empire-pulse?days=' + DAYS);
+    if(!r.ok){
+      document.getElementById('grid').innerHTML = `<div class="empty">Endpoint returned ${r.status}. Restart baza-dashboard if you just deployed.</div>`;
+      return;
+    }
+    d = await r.json();
+  } catch(e){
+    document.getElementById('grid').innerHTML = '<div class="empty">Network error.</div>';
+    return;
+  }
+  if(d.error){
+    document.getElementById('grid').innerHTML = '<div class="empty">' + escapeHtml(d.error) + '</div>';
+    return;
+  }
+  const t = d.totals || {};
+  document.getElementById('summary').innerHTML = `
+    <div class="stat green"><div class="stat-val">${t.shipping||0}</div><div class="stat-lbl">Shipping</div></div>
+    <div class="stat yellow"><div class="stat-val">${t.drifting||0}</div><div class="stat-lbl">Drifting</div></div>
+    <div class="stat red"><div class="stat-val">${t.all_talk||0}</div><div class="stat-lbl">All-Talk</div></div>
+    <div class="stat"><div class="stat-val">${t.agents||0}</div><div class="stat-lbl">Agents Tracked</div></div>
+  `;
+  const grid = document.getElementById('grid');
+  if(!(d.agents||[]).length){
+    grid.innerHTML = '<div class="empty">No agent activity in this window.</div>';
+    return;
+  }
+  grid.innerHTML = d.agents.map(a => {
+    const pct = Math.round(a.ratio * 100);
+    const verdict = a.health === 'green' ? 'Shipping what they claim — keep going.'
+                  : a.health === 'yellow' ? 'Some output, but more talk than ship — push harder.'
+                  : 'No artifacts despite completion claims — likely hallucinating. Investigate.';
+    return `<div class="card ${a.health}" onclick="window.location='/agent/${escapeHtml(a.agent_id)}'" style="cursor:pointer">
+      <h3>${escapeHtml(a.agent_id.replace(/_/g,' '))}</h3>
+      <div class="who">${escapeHtml(a.agent_id)}</div>
+      <div class="ratio">${pct}%</div>
+      <div class="ratio-lbl">ship / talk ratio</div>
+      <div class="bar"><div class="bar-fill ${a.health}" style="width:${pct}%"></div></div>
+      <div class="nums">
+        <span>claimed completions<b>${a.talked_about_completing}</b></span>
+        <span>artifacts shipped<b>${a.shipped}</b></span>
+      </div>
+      <div class="verdict">${verdict}</div>
+    </div>`;
+  }).join('');
+}
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

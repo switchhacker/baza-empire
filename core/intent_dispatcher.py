@@ -141,7 +141,24 @@ def _handle_develop_or_iterate(envelope: dict, args: dict, intent: str) -> dict[
     if not proj:
         return {"envelope": envelope, "result": {"error": f"project not found: {project_id}"}, "status": 404}
 
-    agent_id = args.get("agent") or DEFAULT_DEV_AGENT
+    # Smart routing: caller can pin via args.agent, otherwise we route by
+    # keyword on the goal text using Duke's ROUTING map (shared with the
+    # roadmap skill so the two surfaces stay consistent). Firmware project
+    # types always go to dev — the goal text is irrelevant. For other
+    # types we route purely on the goal so "research X" goes to Scout
+    # whether the project is a library or a web-app.
+    agent_id = args.get("agent")
+    if not agent_id:
+        try:
+            from skills.shared.duke_roadmap import route_for as _route_for
+            ptype = (proj.get("type") or "").lower()
+            if ptype in ("esp-firmware", "stm-firmware", "lora-test"):
+                agent_id = "claw_batto"
+            else:
+                agent_id = _route_for(goal)
+        except Exception:
+            agent_id = DEFAULT_DEV_AGENT
+    agent_id = agent_id or DEFAULT_DEV_AGENT
     priority = args.get("priority") or "high"
 
     # Build a task description that bakes in the skill-call pattern. Any agent
