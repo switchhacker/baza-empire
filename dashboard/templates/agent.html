@@ -201,33 +201,55 @@
   const agentId = "{{ agent_id }}";
 
   async function loadArtifacts() {
+    const list = document.getElementById('artifact-list');
+    const warn = document.getElementById('artifact-warning');
+    let r;
     try {
-      const r = await fetch('/api/agents/' + agentId + '/recent-artifacts?hours=24');
-      const d = await r.json();
-      const list = document.getElementById('artifact-list');
-      const warn = document.getElementById('artifact-warning');
-      const arts = d.artifacts || [];
-      if (!arts.length) {
-        list.innerHTML = '<div style="color:#444;padding:12px 0">No artifacts produced in the last 24h.</div>';
-      } else {
-        list.innerHTML = arts.map(a => {
-          const ts = (a.modified || '').slice(0,16).replace('T', ' ');
-          const kb = Math.max(1, Math.round(a.size/1024));
-          return `<div style="padding:4px 0;border-bottom:1px solid #111">
-            <a href="${a.url}" target="_blank" style="color:#7c3aed;text-decoration:none">${escapeHtml(a.project_id)}/${escapeHtml(a.name)}</a>
-            <span style="float:right;color:#444">${kb} KB · ${ts}</span>
-          </div>`;
-        }).join('');
-      }
-      const cw = d.claim_warnings || {};
-      if (cw.talked_about_completing > 0 && cw.actually_produced === 0) {
-        warn.style.display = 'block';
-        warn.textContent = `⚠ ${cw.talked_about_completing} message(s) in journal claim completion but NO artifacts saved. Possible hallucination — verify before trusting.`;
-      } else {
-        warn.style.display = 'none';
-      }
+      r = await fetch('/api/agents/' + agentId + '/recent-artifacts?hours=24');
     } catch (e) {
-      document.getElementById('artifact-list').textContent = 'Error loading artifacts: ' + e;
+      list.textContent = 'Network error loading artifacts.';
+      return;
+    }
+    if (!r.ok) {
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      // 404 likely means dashboard hasn't been restarted yet — explain that
+      if (r.status === 404) {
+        list.innerHTML = '<div style="color:#888;padding:12px 0;line-height:1.5">'
+          + 'Endpoint not active yet — restart <code style="color:#7c3aed">baza-dashboard</code> '
+          + 'to enable the artifact panel.</div>';
+      } else {
+        list.textContent = `Endpoint returned ${r.status}${ct.includes('json') ? '' : ' (non-JSON)'}.`;
+      }
+      warn.style.display = 'none';
+      return;
+    }
+    let d;
+    try {
+      d = await r.json();
+    } catch (e) {
+      list.textContent = 'Endpoint returned non-JSON response.';
+      warn.style.display = 'none';
+      return;
+    }
+    const arts = d.artifacts || [];
+    if (!arts.length) {
+      list.innerHTML = '<div style="color:#444;padding:12px 0">No artifacts produced in the last 24h.</div>';
+    } else {
+      list.innerHTML = arts.map(a => {
+        const ts = (a.modified || '').slice(0,16).replace('T', ' ');
+        const kb = Math.max(1, Math.round(a.size/1024));
+        return `<div style="padding:4px 0;border-bottom:1px solid #111">
+          <a href="${a.url}" target="_blank" style="color:#7c3aed;text-decoration:none">${escapeHtml(a.project_id)}/${escapeHtml(a.name)}</a>
+          <span style="float:right;color:#444">${kb} KB · ${ts}</span>
+        </div>`;
+      }).join('');
+    }
+    const cw = d.claim_warnings || {};
+    if (cw.talked_about_completing > 0 && cw.actually_produced === 0) {
+      warn.style.display = 'block';
+      warn.textContent = `⚠ ${cw.talked_about_completing} message(s) in journal claim completion but NO artifacts saved. Possible hallucination — verify before trusting.`;
+    } else {
+      warn.style.display = 'none';
     }
   }
 
