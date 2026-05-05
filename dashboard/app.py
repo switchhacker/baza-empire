@@ -3376,6 +3376,146 @@ def api_baza_project_run(project_id):
     return jsonify(result)
 
 
+# ── Routes — Intent Router (sub-project #2) ───────────────────────────────────
+
+@app.route('/api/intents/parse', methods=['POST'])
+def api_intents_parse():
+    """Parse text into a structured intent envelope (no execution)."""
+    from core.intent_router import parse_intent
+    text = (request.get_json(silent=True) or {}).get('text', '')
+    return jsonify(parse_intent(text))
+
+
+@app.route('/api/intents/help')
+def api_intents_help():
+    from core.intent_router import help_text
+    return jsonify({"help": help_text()})
+
+
+@app.route('/api/intents', methods=['POST'])
+def api_intents_dispatch():
+    """Parse text, dispatch known intents, return result."""
+    from core.intent_router import parse_intent
+    data = request.get_json(silent=True) or {}
+    text = (data.get('text') or '').strip()
+    extra = data.get('extra') or {}  # for callers who want to pre-fill args
+    env = parse_intent(text)
+    if env.get('errors') and env.get('intent') in ('unknown', None):
+        return jsonify({"envelope": env, "result": None}), 400
+
+    # Emit a parsed event so chains pipeline shows what came in
+    try:
+        from core import task_events as te
+        te.emit("intent_parsed", agent_id=(extra.get('agent_id') or 'user'),
+                payload={"intent": env.get('intent'), "args": env.get('args', {}), "raw": env.get('raw', '')})
+    except Exception:
+        pass
+
+    intent = env.get('intent')
+    args = {**env.get('args', {}), **(extra or {})}
+
+    if intent == 'help':
+        from core.intent_router import help_text
+        return jsonify({"envelope": env, "result": {"help": help_text()}})
+
+    if intent == 'create_baza_project':
+        if env['errors']:
+            return jsonify({"envelope": env, "result": None}), 400
+        bp = _baza_projects()
+        try:
+            proj = bp.create_project(
+                name=args.get('name') or '',
+                type_=args.get('type') or 'web-app',
+                description=args.get('description') or '',
+                created_by=args.get('agent_id') or extra.get('agent_id') or 'user',
+            )
+        except (ValueError, FileExistsError) as e:
+            return jsonify({"envelope": env, "result": {"error": str(e)}}), 400
+        return jsonify({
+            "envelope": env,
+            "result": {"project": proj, "url": f"/projects/{proj['id']}"},
+        }), 201
+
+    if intent == 'create_ahb_project':
+        # Reuse the existing AHB endpoint internally — minimum payload
+        try:
+            from urllib.parse import urlencode
+            ahb_payload = {"title": args.get('name') or 'New AHB Project"'}
+            if args.get('client_id'):
+                ahb_payload["client_id"] = args['client_id']
+            if args.get('description'):
+                ahb_payload["description"] = args['description']
+            with app.test_client() as tc:
+                r = tc.post('/api/ahb/projects', json=ahb_payload)
+                ok = (r.status_code in (200, 201))
+                return jsonify({
+                    "envelope": env,
+                    "result": {"ok": ok, "status": r.status_code, "body": r.get_json(silent=True) or {}},
+                }), (200 if ok else 400)
+        except Exception as e:
+            return jsonify({"envelope": env, "result": {"error": str(e)}}), 500
+
+    if intent == 'test':
+        if env['errors']:
+            return jsonify({"envelope": env, "result": None}), 400
+        bp = _baza_projects()
+        try:
+            res = bp.run_command(args['project_id'], 'test')
+        except FileNotFoundError:
+            return jsonify({"envelope": env, "result": {"error": "project not found"}}), 404
+        return jsonify({"envelope": env, "result": res})
+
+    if intent == 'deploy':
+        if env['errors']:
+            return jsonify({"envelope": env, "result": None}), 400
+        approved = bool(args.get('approved'))
+        if not approved:
+            try:
+                from core import task_events as te
+                te.emit(
+                    "approval_requested", project_id=args['project_id'],
+                    agent_id=(args.get('agent_id') or 'user'),
+                    payload={"action": "deploy", "details": args},
+                )
+            except Exception:
+                pass
+            return jsonify({
+                "envelope": env,
+                "result": {
+                    "approval_required": True,
+                    "action": "deploy",
+                    "project_id": args['project_id'],
+                    "hint": "POST again with approved=true in extra",
+                },
+            }), 202
+        bp = _baza_projects()
+        res = bp.run_command(args['project_id'], 'deploy', approved=True)
+        return jsonify({"envelope": env, "result": res})
+
+    if intent in ('flash', 'render', 'preview', 'debug', 'develop', 'iterate'):
+        # Not yet implemented end-to-end — reply with clear status so callers
+        # can show the user what's pending and which sub-project will deliver it.
+        followup_map = {
+            'flash':   '#4.8 ESP/STM/LoRa runtime',
+            'render':  '#4.6 Render sub-tab',
+            'preview': '#4.5 Long-running preview/run',
+            'debug':   '#4.x Debug logs view',
+            'develop': '#5 Agent project access',
+            'iterate': '#5 Agent project access',
+        }
+        return jsonify({
+            "envelope": env,
+            "result": {
+                "pending": True,
+                "intent": intent,
+                "follow_up": followup_map[intent],
+                "message": f"{intent} is recognized but its handler is not implemented yet ({followup_map[intent]}).",
+            },
+        }), 202
+
+    return jsonify({"envelope": env, "result": None}), 400
+
+
 # ── Routes — Skills Lab ────────────────────────────────────────────────────────
 
 @app.route('/skills')
