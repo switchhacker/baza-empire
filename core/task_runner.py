@@ -67,6 +67,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 OLLAMA_URL     = os.getenv("OLLAMA_URL", "http://localhost:11434")
+# Cold-load of a 14B+ model over Vulkan can take 60-120s before tokens flow.
+# Default 300s leaves headroom; override via env for tuning. A single retry on
+# timeout reuses this same value (so worst-case wait = 2 * timeout).
+LLM_REQUEST_TIMEOUT = int(os.getenv("BAZA_OLLAMA_REQUEST_TIMEOUT", "300"))
+LLM_RETRY_ON_TIMEOUT = os.getenv("BAZA_OLLAMA_RETRY_ON_TIMEOUT", "1") not in ("0", "false", "no", "")
 
 
 def is_ollama_busy(timeout: int = 3) -> bool:
@@ -158,22 +163,49 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
         f"Produce the full deliverable. Be specific and complete."
     )
 
+    payload = {
+        "model": model,
+        "stream": False,
+        "options": {"num_predict": 2000, "temperature": 0.3},
+        "messages": [
+            {"role": "system",  "content": system},
+            {"role": "user",    "content": user_msg},
+        ],
+    }
+
+    attempts = 2 if LLM_RETRY_ON_TIMEOUT else 1
+    last_err: Exception | None = None
+    output = ""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(
+                f"{OLLAMA_URL}/api/chat",
+                json=payload,
+                timeout=LLM_REQUEST_TIMEOUT,
+            )
+            resp.raise_for_status()
+            output = resp.json()["message"]["content"].strip()
+            last_err = None
+            break
+        except requests.exceptions.ReadTimeout as e:
+            last_err = e
+            logger.warning(
+                f"Ollama read-timeout for {agent_id} task {task['id'][:8]} "
+                f"after {LLM_REQUEST_TIMEOUT}s (attempt {attempt}/{attempts})"
+            )
+            # On first timeout, give cold-loaded model a moment before retry
+            if attempt < attempts:
+                time.sleep(5)
+                continue
+        except Exception as e:
+            last_err = e
+            break  # non-timeout errors don't benefit from retry
+
+    if last_err is not None:
+        logger.error(f"LLM error for {agent_id} task {task['id'][:8]}: {last_err}")
+        return {"success": False, "output": str(last_err), "completed": False}
+
     try:
-        resp = requests.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": model,
-                "stream": False,
-                "options": {"num_predict": 2000, "temperature": 0.3},
-                "messages": [
-                    {"role": "system",  "content": system},
-                    {"role": "user",    "content": user_msg},
-                ]
-            },
-            timeout=90
-        )
-        resp.raise_for_status()
-        output = resp.json()["message"]["content"].strip()
 
         # Parse completion signal
         completed  = "TASK_COMPLETE" in output
@@ -204,9 +236,9 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
         }
 
     except Exception as e:
-        logger.error(f"LLM error for {agent_id} task {task['id'][:8]}: {e}")
-        _emit("task_error", task=task, agent_id=agent_id,
-              payload={"error": str(e)[:500]})
+        # task_error event is emitted by the upstream "else" branch in
+        # run_agent_tasks() so we don't duplicate it here.
+        logger.error(f"LLM parse error for {agent_id} task {task['id'][:8]}: {e}")
         return {"success": False, "output": str(e), "completed": False}
 
 

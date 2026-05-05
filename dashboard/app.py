@@ -4010,17 +4010,21 @@ def api_syshealth():
 
 @app.route('/api/taskrunner/run', methods=['POST'])
 def api_taskrunner_run():
-    """Manually trigger the task runner."""
+    """Manually trigger the task runner. Accepts optional `agent` and `task_id`."""
     data = request.json or {}
-    agent = data.get('agent', '')
+    agent = data.get('agent', '') or ''
+    task_id = data.get('task_id', '') or ''
     cmd = [VENV_PYTHON, os.path.join(FRAMEWORK_DIR, "core", "task_runner.py")]
     if agent:
         cmd += ["--agent", agent]
+    if task_id:
+        cmd += ["--task-id", task_id]
     log_path = os.path.join(LOGS_DIR, "task_runner_manual.log")
     try:
         proc = subprocess.Popen(cmd, cwd=FRAMEWORK_DIR,
                                 stdout=open(log_path, 'a'), stderr=subprocess.STDOUT)
-        return jsonify({'success': True, 'pid': proc.pid, 'log': log_path})
+        return jsonify({'success': True, 'pid': proc.pid, 'log': log_path,
+                        'agent': agent, 'task_id': task_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 

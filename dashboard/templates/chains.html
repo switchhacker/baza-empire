@@ -79,6 +79,8 @@
     .empty{padding:24px;color:#555;font-size:13px;text-align:center}
     .new-event-flash{animation:flash 1.5s ease-out}
     @keyframes flash{0%{background:#1a0d3a}100%{background:transparent}}
+    .btn-retry{background:#1a0d2a;color:#c08aff;border:1px solid #5a3a7a;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
+    .btn-retry:hover{opacity:.8}
   </style>
 </head>
 <body>
@@ -182,6 +184,20 @@ function renderList(chains){
 }
 
 function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return String(s||'').replace(/['"\\]/g,''); }
+async function retryTask(taskId, agentId){
+  if(!confirm('Re-run task ' + taskId + ' for ' + agentId + '?\nThis launches the task runner in the background.')) return;
+  const r = await fetch('/api/taskrunner/run', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({agent: agentId, task_id: taskId})});
+  const d = await r.json();
+  if(d.success){
+    const dot = document.getElementById('liveDot');
+    const txt = document.getElementById('liveText');
+    txt.textContent = 'retry pid ' + d.pid + ' — watching live…';
+  } else {
+    alert('Retry failed: ' + (d.error || 'unknown'));
+  }
+}
 
 async function openChain(tid){
   CURRENT_TASK = tid;
@@ -200,14 +216,24 @@ function renderChain(d){
     return;
   }
   const t = d.task || {};
+  const hasFailure = (d.chain || []).some(ev => ['task_error','task_blocked'].includes(ev.kind))
+                  || ((d.chain || []).flatMap(ev => ev.children || []).some(ev => ['task_error','task_blocked'].includes(ev.kind)));
+  const retryBtn = (hasFailure && t.assigned_to)
+    ? `<button class="btn-retry" onclick="retryTask('${escapeAttr(d.task_id)}','${escapeAttr(t.assigned_to)}')">↻ Retry</button>`
+    : '';
   const header = `<div class="chain-header">
-    <div class="chain-title">${escapeHtml(t.title || d.task_id)}</div>
-    <div class="chain-meta">
-      <span>id: <code>${d.task_id}</code></span>
-      ${t.assigned_to ? `<span>agent: ${escapeHtml(t.assigned_to)}</span>` : ''}
-      ${t.status ? `<span>status: ${escapeHtml(t.status)}</span>` : ''}
-      ${t.project_id ? `<span>project: ${escapeHtml(t.project_id)}</span>` : ''}
-      ${t.priority ? `<span>priority: ${escapeHtml(t.priority)}</span>` : ''}
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div>
+        <div class="chain-title">${escapeHtml(t.title || d.task_id)}</div>
+        <div class="chain-meta">
+          <span>id: <code>${d.task_id}</code></span>
+          ${t.assigned_to ? `<span>agent: ${escapeHtml(t.assigned_to)}</span>` : ''}
+          ${t.status ? `<span>status: ${escapeHtml(t.status)}</span>` : ''}
+          ${t.project_id ? `<span>project: ${escapeHtml(t.project_id)}</span>` : ''}
+          ${t.priority ? `<span>priority: ${escapeHtml(t.priority)}</span>` : ''}
+        </div>
+      </div>
+      ${retryBtn}
     </div>
   </div>`;
   panel.innerHTML = header + d.chain.map(renderEvent).join('');
