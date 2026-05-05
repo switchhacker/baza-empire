@@ -530,6 +530,13 @@ try:
 except Exception as _e:
     print(f"[task_events] schema init skipped: {_e}", file=sys.stderr)
 
+# ── Baza Projects (sub-project #4) — schema init ──────────────────────────────
+try:
+    from core.baza_projects import ensure_schema as _ensure_baza_projects_schema
+    _ensure_baza_projects_schema()
+except Exception as _e:
+    print(f"[baza_projects] schema init skipped: {_e}", file=sys.stderr)
+
 # Cloud upload directory
 CLOUD_UPLOAD_DIR = os.path.join(DASHBOARD_DIR, 'uploads', 'cloud')
 os.makedirs(CLOUD_UPLOAD_DIR, exist_ok=True)
@@ -3206,6 +3213,167 @@ def api_projects_list():
         rows = []
     conn.close()
     return jsonify(rows)
+
+
+# ── Routes — Baza Projects (sub-project #4) ──────────────────────────────────
+
+def _baza_projects():
+    from core import baza_projects as bp
+    return bp
+
+
+def _emit_project_event(kind, project_id, payload=None, agent_id="user"):
+    try:
+        from core import task_events as te
+        te.emit(kind, project_id=project_id, agent_id=agent_id, payload=payload or {})
+    except Exception:
+        pass
+
+
+@app.route('/projects')
+def projects_page():
+    """Baza Projects developer UI — list view."""
+    return render_template('projects.html')
+
+
+@app.route('/projects/<project_id>')
+def project_detail_page(project_id):
+    """Baza Projects developer UI — detail view with sub-tabs."""
+    return render_template('project_detail.html', project_id=project_id)
+
+
+@app.route('/api/baza/projects', methods=['GET'])
+def api_baza_projects_list():
+    bp = _baza_projects()
+    return jsonify({"projects": bp.list_projects(kind=request.args.get('kind') or 'baza-dev')})
+
+
+@app.route('/api/baza/projects', methods=['POST'])
+def api_baza_projects_create():
+    bp = _baza_projects()
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    type_ = (data.get('type') or 'web-app').strip()
+    description = (data.get('description') or '').strip()
+    project_id = (data.get('id') or '').strip() or None
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    try:
+        proj = bp.create_project(
+            name=name, type_=type_, description=description,
+            created_by=data.get('created_by') or 'user', project_id=project_id,
+        )
+    except FileExistsError as e:
+        return jsonify({"error": str(e)}), 409
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    _emit_project_event(
+        "intent_parsed", proj["id"],
+        payload={"intent": "create_baza_project", "name": name, "type": type_},
+    )
+    return jsonify({"project": proj}), 201
+
+
+@app.route('/api/baza/projects/<project_id>', methods=['GET'])
+def api_baza_project_get(project_id):
+    bp = _baza_projects()
+    proj = bp.get_project(project_id)
+    if not proj:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"project": proj})
+
+
+@app.route('/api/baza/projects/<project_id>', methods=['PUT'])
+def api_baza_project_update(project_id):
+    bp = _baza_projects()
+    patch = request.get_json(silent=True) or {}
+    try:
+        manifest = bp.update_manifest(project_id, patch)
+    except FileNotFoundError:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"manifest": manifest})
+
+
+@app.route('/api/baza/projects/<project_id>', methods=['DELETE'])
+def api_baza_project_delete(project_id):
+    bp = _baza_projects()
+    hard = (request.args.get('hard') or '').lower() in ('1', 'true', 'yes')
+    ok = bp.delete_project(project_id, hard=hard)
+    return jsonify({"deleted": ok})
+
+
+@app.route('/api/baza/projects/<project_id>/files')
+def api_baza_project_files(project_id):
+    bp = _baza_projects()
+    subpath = request.args.get('path', '')
+    return jsonify({"files": bp.list_files(project_id, subpath)})
+
+
+@app.route('/api/baza/projects/<project_id>/file', methods=['GET'])
+def api_baza_project_file_get(project_id):
+    bp = _baza_projects()
+    relpath = request.args.get('path', '')
+    if not relpath:
+        return jsonify({"error": "path is required"}), 400
+    content = bp.read_file(project_id, relpath)
+    if content is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"path": relpath, "content": content})
+
+
+@app.route('/api/baza/projects/<project_id>/file', methods=['POST'])
+def api_baza_project_file_put(project_id):
+    bp = _baza_projects()
+    data = request.get_json(silent=True) or {}
+    relpath = data.get('path') or ''
+    content = data.get('content') or ''
+    if not relpath:
+        return jsonify({"error": "path is required"}), 400
+    try:
+        info = bp.write_file(project_id, relpath, content)
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    return jsonify({"saved": True, "info": info})
+
+
+@app.route('/api/baza/projects/<project_id>/run', methods=['POST'])
+def api_baza_project_run(project_id):
+    """Run a manifest command slot. Long-running run/preview are not handled here."""
+    bp = _baza_projects()
+    data = request.get_json(silent=True) or {}
+    slot = (data.get('slot') or '').strip()
+    approved = bool(data.get('approved'))
+    if not slot:
+        return jsonify({"error": "slot is required"}), 400
+    # Emit lifecycle events
+    parent = None
+    try:
+        from core import task_events as te
+        parent = te.emit(
+            "tool_call", project_id=project_id, agent_id="user",
+            payload={"tool": f"baza_projects.run.{slot}", "args": {}},
+        )
+    except Exception:
+        pass
+    try:
+        result = bp.run_command(project_id, slot, approved=approved)
+    except FileNotFoundError:
+        return jsonify({"error": "project not found"}), 404
+    try:
+        from core import task_events as te
+        te.emit(
+            "tool_result", project_id=project_id, agent_id="user",
+            payload={
+                "tool": f"baza_projects.run.{slot}",
+                "ok": bool(result.get("success")),
+                "result_snippet": (result.get("stdout") or result.get("error") or "")[:600],
+                "exit_code": result.get("exit_code", -1),
+            },
+            parent_event_id=parent,
+        )
+    except Exception:
+        pass
+    return jsonify(result)
 
 
 # ── Routes — Skills Lab ────────────────────────────────────────────────────────

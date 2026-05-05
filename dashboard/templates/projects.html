@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Projects</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+
+    .container{max-width:1500px;margin:0 auto;padding:24px 28px}
+
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:16px;flex-wrap:wrap}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s}
+    .btn:hover{opacity:.85}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+    .pcard{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:18px;transition:border-color .15s, transform .1s;cursor:pointer;position:relative;overflow:hidden}
+    .pcard::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#e94560,#7c3aed);opacity:0;transition:opacity .2s}
+    .pcard:hover{border-color:#2a2a4a;transform:translateY(-2px)}
+    .pcard:hover::before{opacity:1}
+    .pcard .row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+    .pcard .name{font-size:16px;font-weight:700;color:#fff;line-height:1.3}
+    .pcard .id{font-size:11px;color:#444;font-family:monospace;margin-top:2px}
+    .pcard .desc{font-size:12px;color:#888;line-height:1.5;margin-top:10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .pcard .meta{font-size:10px;color:#444;margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+    .type-pill{font-size:10px;padding:3px 9px;border-radius:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a}
+    .type-pill.t-web-app{background:#0a1a2a;color:#7cccff;border-color:#1a3a5a}
+    .type-pill.t-dashboard{background:#1a0a2a;color:#c08aff;border-color:#3a1a5a}
+    .type-pill.t-esp-firmware,.type-pill.t-stm-firmware{background:#2a1a06;color:#ffaa55;border-color:#5a3a1a}
+    .type-pill.t-lora-test{background:#2a0a1a;color:#ff7aa0;border-color:#5a1a2a}
+    .type-pill.t-library{background:#0a2a1a;color:#7ce0a0;border-color:#1a5a3a}
+
+    /* Modal */
+    .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:none;align-items:center;justify-content:center;padding:20px}
+    .modal-back.show{display:flex}
+    .modal{background:#0e0e1e;border:1px solid #2a2a4a;border-radius:14px;width:520px;max-width:100%;padding:24px}
+    .modal h2{font-size:18px;font-weight:800;color:#fff;margin-bottom:8px}
+    .modal p{font-size:12px;color:#888;margin-bottom:16px}
+    .field{margin-bottom:14px}
+    .field label{display:block;font-size:11px;color:#888;margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+    .field input,.field select,.field textarea{width:100%;padding:9px 12px;border-radius:7px;background:#0a0a14;border:1px solid #1e1e30;color:#ddd;font-size:13px;font-family:inherit}
+    .field textarea{resize:vertical;min-height:70px}
+    .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+
+    .empty{padding:40px;text-align:center;color:#444;border:1px dashed #1a1a2e;border-radius:10px}
+    .toast{position:fixed;bottom:30px;right:30px;background:#0e0e1e;border:1px solid #1a1a2e;color:#ccc;padding:12px 18px;border-radius:8px;font-size:12px;z-index:400;display:none}
+    .toast.show{display:block}
+    .toast.err{border-color:#3a1a1a;color:#ff8888}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Agents</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link" href="/chains">Chains</a>
+    <a class="nav-link active" href="/projects">Projects</a>
+    <a class="nav-link" href="/tasks">Tasks</a>
+    <a class="nav-link" href="/journal">Journal</a>
+    <a class="nav-link" href="/ahb123">AHB123</a>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Baza Projects</div>
+        <div class="page-sub">Developer workspaces — apps, dashboards, firmware. Brainstorm → develop → test → deploy.</div>
+      </div>
+      <button class="btn btn-primary" onclick="openCreate()">+ New Project</button>
+    </div>
+
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty" style="display:none">No Baza projects yet. Create one to get started.</div>
+  </div>
+
+  <div id="modal" class="modal-back" onclick="if(event.target===this)closeCreate()">
+    <div class="modal">
+      <h2>New Baza Project</h2>
+      <p>Creates a sandbox dir under <code>~/baza-empire/projects/</code> with a manifest, README, and git repo.</p>
+      <div class="field">
+        <label>Name</label>
+        <input id="fName" type="text" placeholder="e.g. Acme Dashboard" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <select id="fType">
+          <option value="web-app">Web App (Node/React)</option>
+          <option value="dashboard">Dashboard (Python/Flask)</option>
+          <option value="library">Library (Python)</option>
+          <option value="esp-firmware">ESP Firmware (ESP-IDF)</option>
+          <option value="stm-firmware">STM Firmware (Make)</option>
+          <option value="lora-test">LoRa Hardware Test</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Description (optional)</label>
+        <textarea id="fDesc" placeholder="What is this project for?"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeCreate()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitCreate()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, kind){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'+(kind==='err'?' err':''); setTimeout(()=>t.classList.remove('show'),3000); }
+
+async function loadProjects(){
+  const r = await fetch('/api/baza/projects');
+  const d = await r.json();
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  const list = d.projects || [];
+  if(!list.length){ grid.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  grid.innerHTML = list.map(p=>`
+    <div class="pcard" onclick="openProject('${p.id}')">
+      <div class="row">
+        <div>
+          <div class="name">${escapeHtml(p.name)}</div>
+          <div class="id">${escapeHtml(p.id)}</div>
+        </div>
+        <span class="type-pill t-${p.type}">${escapeHtml(p.type)}</span>
+      </div>
+      <div class="desc">${escapeHtml(p.description||'(no description)')}</div>
+      <div class="meta">
+        <span>by ${escapeHtml(p.created_by||'?')}</span>
+        <span>${escapeHtml((p.created_at||'').slice(0,10))}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openProject(id){ window.location = '/projects/' + encodeURIComponent(id); }
+function openCreate(){ document.getElementById('modal').classList.add('show'); document.getElementById('fName').focus(); }
+function closeCreate(){ document.getElementById('modal').classList.remove('show'); }
+
+async function submitCreate(){
+  const name = document.getElementById('fName').value.trim();
+  const type = document.getElementById('fType').value;
+  const desc = document.getElementById('fDesc').value.trim();
+  if(!name){ toast('Name is required','err'); return; }
+  const r = await fetch('/api/baza/projects',{method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, type, description: desc})});
+  const d = await r.json();
+  if(r.ok && d.project){
+    closeCreate();
+    toast('Created: ' + d.project.id);
+    setTimeout(()=>window.location='/projects/' + d.project.id, 600);
+  } else {
+    toast(d.error || 'Create failed', 'err');
+  }
+}
+
+loadProjects();
+</script>
+</body>
+</html>

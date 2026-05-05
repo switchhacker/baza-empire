@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Project</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+
+    .container{max-width:1500px;margin:0 auto;padding:20px 28px}
+
+    .head-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+    .crumbs{font-size:11px;color:#444;margin-bottom:6px}
+    .crumbs a{color:#7c3aed}
+    .ptitle{font-size:24px;font-weight:800;color:#fff}
+    .pmeta{font-size:11px;color:#666;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap}
+    .pmeta code{background:#0e0e1e;border:1px solid #1a1a2e;padding:1px 7px;border-radius:4px;font-size:11px;color:#aaa}
+    .type-pill{font-size:10px;padding:3px 9px;border-radius:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a}
+
+    .btn{padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:none}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
+    .btn-danger{background:#2a0e0e;color:#ff7777;border:1px solid #5a1a1a}
+    .btn-warn{background:#2a1a0a;color:#ffaa55;border:1px solid #5a3a1a}
+    .btn:hover{opacity:.85}
+
+    .tabs{display:flex;gap:0;margin:14px 0 18px;border-bottom:1px solid #1a1a2e;overflow-x:auto;scrollbar-width:thin}
+    .tab{padding:10px 18px;font-size:12px;font-weight:700;color:#555;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+    .tab.active{color:#fff;border-bottom-color:#e94560}
+    .tab:hover{color:#bbb}
+
+    .panel{display:none;background:#0a0a14;border:1px solid #1a1a2e;border-radius:10px;padding:18px;min-height:340px}
+    .panel.active{display:block}
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width:980px){.grid2{grid-template-columns:1fr}}
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px}
+    .card h3{font-size:12px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+    .kv{display:grid;grid-template-columns:120px 1fr;gap:6px 12px;font-size:12px}
+    .kv .k{color:#666}
+    .kv .v{color:#ddd;word-break:break-word}
+    .kv .v code{background:#0a0a14;border:1px solid #1a1a2e;padding:1px 6px;border-radius:4px;font-size:11px}
+
+    .commands-grid{display:grid;grid-template-columns:140px 1fr 130px;gap:8px;align-items:center}
+    .commands-grid .slot{font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.5px}
+    .commands-grid input{padding:7px 10px;background:#0a0a14;border:1px solid #1a1a2e;border-radius:5px;color:#ddd;font-size:12px;font-family:monospace}
+    .commands-grid .btn{font-size:11px;padding:6px 10px}
+
+    .filetree{font-family:monospace;font-size:12px}
+    .filetree .row{padding:4px 8px;color:#aaa;cursor:pointer;border-radius:4px;display:flex;justify-content:space-between;gap:10px}
+    .filetree .row:hover{background:#11111e;color:#fff}
+    .filetree .row.dir{color:#7c3aed}
+    .filetree .size{color:#444;font-size:10px}
+
+    pre{background:#0a0a14;border:1px solid #1a1a2e;border-radius:6px;padding:12px;font-size:11px;color:#aaa;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+    .stdout-block{margin-top:10px}
+    .stdout-block .lbl{font-size:10px;color:#666;text-transform:uppercase;margin-bottom:4px}
+
+    textarea.editor{width:100%;min-height:280px;padding:12px;background:#06060e;border:1px solid #1a1a2e;border-radius:6px;color:#ddd;font-family:monospace;font-size:12px;line-height:1.5;resize:vertical}
+    .ed-toolbar{display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap}
+    .ed-toolbar .path{font-size:11px;color:#666;font-family:monospace}
+
+    .placeholder{color:#444;font-size:13px;text-align:center;padding:40px;border:1px dashed #1a1a2e;border-radius:8px}
+
+    .toast{position:fixed;bottom:30px;right:30px;background:#0e0e1e;border:1px solid #1a1a2e;color:#ccc;padding:12px 18px;border-radius:8px;font-size:12px;z-index:400;display:none}
+    .toast.show{display:block}
+    .toast.err{border-color:#3a1a1a;color:#ff8888}
+    .toast.ok{border-color:#1a3a2a;color:#00d084}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Agents</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link" href="/chains">Chains</a>
+    <a class="nav-link active" href="/projects">Projects</a>
+    <a class="nav-link" href="/tasks">Tasks</a>
+  </nav>
+
+  <div class="container">
+    <div class="crumbs"><a href="/projects">← All projects</a></div>
+    <div class="head-row">
+      <div>
+        <div class="ptitle" id="pName">Loading…</div>
+        <div class="pmeta">
+          <span>id <code id="pId">{{ project_id }}</code></span>
+          <span id="pType"></span>
+          <span id="pCreated"></span>
+          <span id="pGit"></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="reload()">↻ Refresh</button>
+        <button class="btn btn-danger" onclick="deleteProject()">Delete</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
+      <div class="tab" data-tab="brainstorm" onclick="setTab('brainstorm')">Brainstorm</div>
+      <div class="tab" data-tab="develop" onclick="setTab('develop')">Develop</div>
+      <div class="tab" data-tab="render" onclick="setTab('render')">Render</div>
+      <div class="tab" data-tab="preview" onclick="setTab('preview')">Preview</div>
+      <div class="tab" data-tab="explore" onclick="setTab('explore')">Explore</div>
+      <div class="tab" data-tab="test" onclick="setTab('test')">Test</div>
+      <div class="tab" data-tab="debug" onclick="setTab('debug')">Debug</div>
+      <div class="tab" data-tab="deploy" onclick="setTab('deploy')">Deploy</div>
+      <div class="tab" data-tab="iterate" onclick="setTab('iterate')">Iterate</div>
+    </div>
+
+    <!-- Overview -->
+    <div class="panel active" id="panel-overview">
+      <div class="grid2">
+        <div class="card">
+          <h3>Manifest</h3>
+          <div class="kv">
+            <div class="k">name</div><div class="v" id="mName">—</div>
+            <div class="k">type</div><div class="v" id="mType">—</div>
+            <div class="k">kind</div><div class="v" id="mKind">—</div>
+            <div class="k">created_by</div><div class="v" id="mBy">—</div>
+            <div class="k">created_at</div><div class="v" id="mAt">—</div>
+            <div class="k">path</div><div class="v"><code id="mPath">—</code></div>
+            <div class="k">description</div><div class="v" id="mDesc">—</div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Commands</h3>
+          <div class="commands-grid" id="commands"></div>
+          <div class="stdout-block" id="cmdOut" style="display:none">
+            <div class="lbl">last run</div>
+            <pre id="cmdOutPre"></pre>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Git</h3>
+        <div class="kv">
+          <div class="k">branch</div><div class="v"><code id="gBranch">—</code></div>
+          <div class="k">commits</div><div class="v" id="gCommits">—</div>
+          <div class="k">HEAD</div><div class="v"><code id="gHead">—</code></div>
+          <div class="k">dirty</div><div class="v" id="gDirty">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Brainstorm -->
+    <div class="panel" id="panel-brainstorm">
+      <div class="card">
+        <h3>Brainstorm Notes</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">Free-form notes, ideas, requirements. Saved to <code>BRAINSTORM.md</code> in the project root.</p>
+        <div class="ed-toolbar">
+          <span class="path">BRAINSTORM.md</span>
+          <button class="btn btn-primary" onclick="saveBrainstorm()">Save</button>
+        </div>
+        <textarea id="brainstormEd" class="editor" placeholder="What are we building? What's the goal? Constraints? Success criteria?"></textarea>
+      </div>
+    </div>
+
+    <!-- Develop -->
+    <div class="panel" id="panel-develop">
+      <div class="grid2">
+        <div class="card">
+          <h3>Files</h3>
+          <div class="filetree" id="filetree">Loading…</div>
+        </div>
+        <div class="card">
+          <h3>Editor</h3>
+          <div class="ed-toolbar">
+            <span class="path" id="edPath">(no file selected)</span>
+            <button class="btn btn-primary" id="edSaveBtn" onclick="saveCurrentFile()" style="display:none">Save</button>
+          </div>
+          <textarea id="editor" class="editor" placeholder="Click a file on the left to open it."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Render -->
+    <div class="panel" id="panel-render">
+      <div class="placeholder">Render — generate visual previews (mockups, diagrams, blueprints) for this project. Coming in #4.x follow-up.</div>
+    </div>
+
+    <!-- Preview -->
+    <div class="panel" id="panel-preview">
+      <div class="placeholder">Preview — ephemeral local server with isolated port. Coming in #4.x follow-up. For now, run the project's <code>preview</code> command from your terminal.</div>
+    </div>
+
+    <!-- Explore -->
+    <div class="panel" id="panel-explore">
+      <div class="placeholder">Explore — terminal/REPL into the project sandbox. Coming in #4.x follow-up.</div>
+    </div>
+
+    <!-- Test -->
+    <div class="panel" id="panel-test">
+      <div class="card">
+        <h3>Run tests</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">Executes the <code>test</code> command from the manifest.</p>
+        <button class="btn btn-primary" onclick="runSlot('test', false, 'testOut')">Run tests</button>
+        <div class="stdout-block" id="testOutBlock" style="display:none">
+          <div class="lbl">output</div>
+          <pre id="testOut"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Debug -->
+    <div class="panel" id="panel-debug">
+      <div class="placeholder">Debug — logs/journal stream for this project. Coming in #4.x follow-up.</div>
+    </div>
+
+    <!-- Deploy -->
+    <div class="panel" id="panel-deploy">
+      <div class="card">
+        <h3>Deploy (privileged)</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">Runs the manifest <code>deploy</code> command. Requires explicit approval — destructive or shared-state actions are gated.</p>
+        <button class="btn btn-warn" onclick="runSlot('deploy', true, 'deployOut')">Approve &amp; Deploy</button>
+        <div class="stdout-block" id="deployOutBlock" style="display:none">
+          <div class="lbl">output</div>
+          <pre id="deployOut"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Iterate -->
+    <div class="panel" id="panel-iterate">
+      <div class="placeholder">Iterate — assign tasks to agents to extend or fix this project. Coming in #5 (agent project access).</div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+const PROJECT_ID = {{ project_id|tojson }};
+let CURRENT_FILE = null;
+
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, kind){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>t.classList.remove('show'),3500); }
+
+function setTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
+  if(name==='develop' && !CURRENT_FILE){ loadFiles(''); }
+  if(name==='brainstorm') loadBrainstorm();
+}
+
+async function reload(){
+  const r = await fetch('/api/baza/projects/' + encodeURIComponent(PROJECT_ID));
+  if(!r.ok){ toast('Project not found','err'); return; }
+  const d = await r.json();
+  const p = d.project;
+  document.getElementById('pName').textContent = p.name;
+  document.getElementById('pType').innerHTML = `<span class="type-pill">${escapeHtml(p.type)}</span>`;
+  document.getElementById('pCreated').textContent = (p.manifest.created_at || '').slice(0,16).replace('T',' ');
+  const g = p.git || {};
+  document.getElementById('pGit').textContent = (g.branch || '?') + ' · ' + (g.commits||0) + ' commits' + (g.dirty?' · DIRTY':'');
+  // Manifest card
+  const m = p.manifest || {};
+  document.getElementById('mName').textContent = m.name || '—';
+  document.getElementById('mType').textContent = m.type || '—';
+  document.getElementById('mKind').textContent = m.kind || '—';
+  document.getElementById('mBy').textContent = m.created_by || '—';
+  document.getElementById('mAt').textContent = m.created_at || '—';
+  document.getElementById('mPath').textContent = p.path || '—';
+  document.getElementById('mDesc').textContent = m.description || '(no description)';
+  // Commands
+  const cmds = m.commands || {};
+  const order = ['build','test','run','preview','deploy'];
+  document.getElementById('commands').innerHTML = order.map(slot => {
+    const cmd = cmds[slot] || '';
+    const danger = (slot==='deploy');
+    return `<div class="slot">${slot}</div>
+      <input data-slot="${slot}" value="${escapeHtml(cmd)}" placeholder="(empty)">
+      <button class="btn ${danger?'btn-warn':'btn-secondary'}" onclick="runSlot('${slot}', ${danger?'true':'false'}, 'cmdOutPre')">Run</button>`;
+  }).join('');
+  // Git card
+  document.getElementById('gBranch').textContent = g.branch || '—';
+  document.getElementById('gCommits').textContent = g.commits ?? '—';
+  document.getElementById('gHead').textContent = g.head || '—';
+  document.getElementById('gDirty').textContent = g.dirty ? 'yes' : 'no';
+}
+
+async function deleteProject(){
+  if(!confirm('Soft-delete this project? The directory is renamed, not removed. Use hard=true to fully remove.')) return;
+  const r = await fetch('/api/baza/projects/' + encodeURIComponent(PROJECT_ID), {method:'DELETE'});
+  const d = await r.json();
+  if(d.deleted){ toast('Deleted','ok'); setTimeout(()=>location.href='/projects', 600); }
+  else toast('Delete failed','err');
+}
+
+async function runSlot(slot, approved, outId){
+  const r = await fetch('/api/baza/projects/' + encodeURIComponent(PROJECT_ID) + '/run',
+    {method:'POST', headers:{'Content-Type':'application/json'},
+     body: JSON.stringify({slot, approved})});
+  const d = await r.json();
+  const block = document.getElementById('cmdOut');
+  if(block) block.style.display = 'block';
+  const tb = document.getElementById('testOutBlock'); if(tb && outId==='testOut') tb.style.display='block';
+  const db = document.getElementById('deployOutBlock'); if(db && outId==='deployOut') db.style.display='block';
+  const out = document.getElementById(outId);
+  const text = (d.error ? 'ERROR: '+d.error+'\n' : '')
+    + 'exit: ' + (d.exit_code ?? '?') + '\n'
+    + '$ ' + (d.command || slot) + '\n\n'
+    + (d.stdout || '') + (d.stderr ? '\nSTDERR:\n'+d.stderr : '');
+  out.textContent = text;
+  toast((d.success?'OK':'FAIL') + ' ' + slot, d.success?'ok':'err');
+}
+
+async function loadFiles(sub){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/files?path=${encodeURIComponent(sub||'')}`);
+  const d = await r.json();
+  const tree = document.getElementById('filetree');
+  const files = d.files || [];
+  if(!files.length){ tree.innerHTML = '<div style="color:#444">empty</div>'; return; }
+  let html = '';
+  if(sub){
+    const parent = sub.split('/').slice(0,-1).join('/');
+    html += `<div class="row dir" onclick="loadFiles('${parent}')">.. (up)</div>`;
+  }
+  for(const f of files){
+    const full = (sub ? sub + '/' : '') + f.name;
+    if(f.is_dir){
+      html += `<div class="row dir" onclick="loadFiles('${full}')">${escapeHtml(f.name)}/</div>`;
+    } else {
+      html += `<div class="row" onclick="openFile('${full}')"><span>${escapeHtml(f.name)}</span><span class="size">${f.size}b</span></div>`;
+    }
+  }
+  tree.innerHTML = html;
+}
+
+async function openFile(path){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/file?path=${encodeURIComponent(path)}`);
+  if(!r.ok){ toast('Cannot open','err'); return; }
+  const d = await r.json();
+  CURRENT_FILE = path;
+  document.getElementById('edPath').textContent = path;
+  document.getElementById('editor').value = d.content || '';
+  document.getElementById('edSaveBtn').style.display = '';
+}
+
+async function saveCurrentFile(){
+  if(!CURRENT_FILE){ toast('No file open','err'); return; }
+  const content = document.getElementById('editor').value;
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/file`,
+    {method:'POST', headers:{'Content-Type':'application/json'},
+     body: JSON.stringify({path: CURRENT_FILE, content})});
+  const d = await r.json();
+  if(d.saved) toast('Saved ' + CURRENT_FILE, 'ok'); else toast('Save failed','err');
+}
+
+async function loadBrainstorm(){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/file?path=BRAINSTORM.md`);
+  if(r.status===404){ document.getElementById('brainstormEd').value = ''; return; }
+  const d = await r.json();
+  document.getElementById('brainstormEd').value = d.content || '';
+}
+
+async function saveBrainstorm(){
+  const content = document.getElementById('brainstormEd').value;
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/file`,
+    {method:'POST', headers:{'Content-Type':'application/json'},
+     body: JSON.stringify({path: 'BRAINSTORM.md', content})});
+  const d = await r.json();
+  if(d.saved) toast('Saved BRAINSTORM.md','ok'); else toast('Save failed','err');
+}
+
+reload();
+</script>
+</body>
+</html>
