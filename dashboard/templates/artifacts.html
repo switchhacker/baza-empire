@@ -199,44 +199,8 @@
 </head>
 <body>
 
-<nav class="nav">
-  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
-  <a class="nav-link" href="/">Agents</a>
-  <div class="nav-dropdown">
-    <a class="nav-link" href="/ahb123">AHB123</a>
-    <div class="nav-submenu">
-      <a href="/ahb123/dashboard">Dashboard</a>
-      <a href="/ahb123/clients">Clients</a>
-      <a href="/ahb123/projects">Projects</a>
-      <a href="/ahb123/architect">ArchiteCT</a>
-      <a href="/ahb123/invoices">InvoiceIT</a>
-      <a href="/ahb123/docprep">DocPrep</a>
-      <a href="/ahb123/changeorders">Change Orders</a>
-      <a href="/ahb123/billing">Billing</a>
-      <a href="/ahb123/receipts">QuickRF</a>
-      <a href="/ahb123/payroll">Payrolling</a>
-      <a href="/ahb123/taxdocs">Uncle Sam</a>
-      <a href="/ahb123/ipay">Debt</a>
-      <a href="/ahb123/employees">Employees</a>
-      <a href="/ahb123/estimator">EstimatOR</a>
-      <a href="/ahb123/schedule">Schedule</a>
-      <a href="/ahb123/noted">NoteD</a>
-      <a href="/ahb123/voice">Voice</a>
-      <a href="/ahb123/chatdept">Chat Dept</a>
-      <a href="/ahb123/photos">Photos</a>
-      <a href="/ahb123/reviews">Reviews</a>
-    </div>
-  </div>
-  <a class="nav-link" href="/crons">Cron Hub</a>
-  <a class="nav-link active" href="/artifacts">Artifacts</a>
-  <a class="nav-link" href="/email">Email</a>
-  <a class="nav-link" href="/infra">Infra Map</a>
-  <a class="nav-link" href="/explore">Explore</a>
-  <a class="nav-link" href="/comms">Comms</a>
-  <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">Fluid</a>
-  <a class="nav-link" href="/cloud">Cloud</a>
-  <a class="nav-link" href="/settings">Settings</a>
-</nav>
+{% set nav_active = 'datahub' %}
+{% include "_nav.html" %}
 
 <div class="container">
 
@@ -1218,6 +1182,6 @@ function sendToAgent() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadArtifacts();
 </script>
-<script>document.querySelectorAll("[data-fluid-link]").forEach(a=>{const p=location.protocol==="https:"?8443:8889;a.href=`${location.protocol}//${location.hostname}:${p}/fluid`;});</script>
+
 </body>
 </html>

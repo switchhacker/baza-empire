@@ -76,14 +76,8 @@
   </style>
 </head>
 <body>
-  <nav class="nav">
-    <div class="nav-brand"><h1>BAZA</h1></div>
-    <a class="nav-link" href="/">Agents</a>
-    <a class="nav-link" href="/datahub">Data Hub</a>
-    <a class="nav-link" href="/chains">Chains</a>
-    <a class="nav-link active" href="/projects">Projects</a>
-    <a class="nav-link" href="/tasks">Tasks</a>
-  </nav>
+  {% set nav_active = 'projects' %}
+{% include "_nav.html" %}
 
   <div class="container">
     <div class="crumbs"><a href="/projects">← All projects</a></div>
@@ -336,6 +330,22 @@ async function reload(){
   document.getElementById('pCreated').textContent = (p.manifest.created_at || '').slice(0,16).replace('T',' ');
   const g = p.git || {};
   document.getElementById('pGit').textContent = (g.branch || '?') + ' · ' + (g.commits||0) + ' commits' + (g.dirty?' · DIRTY':'');
+  // Lock indicator
+  const lock = p.lock || {};
+  let lockEl = document.getElementById('lockBadge');
+  if(!lockEl){
+    lockEl = document.createElement('span');
+    lockEl.id = 'lockBadge';
+    lockEl.style.cssText = 'font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;letter-spacing:.5px;text-transform:uppercase;margin-left:8px';
+    document.querySelector('.pmeta').appendChild(lockEl);
+  }
+  if(lock.is_locked){
+    lockEl.textContent = '🔒 ' + lock.held_by;
+    lockEl.style.background = '#2a1a06'; lockEl.style.color = '#ffaa00'; lockEl.style.border='1px solid #5a3a1a';
+  } else {
+    lockEl.textContent = '🔓 unlocked';
+    lockEl.style.background = '#061a10'; lockEl.style.color = '#00d084'; lockEl.style.border='1px solid #0d3a22';
+  }
   // Manifest card
   const m = p.manifest || {};
   document.getElementById('mName').textContent = m.name || '—';

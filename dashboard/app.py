@@ -1549,11 +1549,27 @@ def api_empire_pulse():
         # reads chronologically left-to-right (oldest → newest = today).
         ship_buckets   = list(reversed(by_agent_files_daily.get(ag, [0] * days)))
         talked_buckets = list(reversed(by_agent_talked_daily.get(ag, [0] * days)))
+        # Drift score (0-100, higher = more drift between claim and ship):
+        # 60% weight on (1 - ratio) — directly captures hallucination
+        # 30% weight on volatility of daily ship/talk gap — captures sliding
+        # 10% weight on volume — high-volume agents drifting hurt more
+        gap_per_day = [max(0, t - s) for s, t in zip(ship_buckets, talked_buckets)]
+        if any(gap_per_day):
+            mean_gap = sum(gap_per_day) / len(gap_per_day)
+            variance = sum((g - mean_gap) ** 2 for g in gap_per_day) / len(gap_per_day)
+            volatility = min(1.0, (variance ** 0.5) / max(1.0, mean_gap + 1))
+        else:
+            volatility = 0.0
+        volume_factor = min(1.0, talked / 10.0)  # caps at 10 claims = full weight
+        drift_score = round(
+            100 * (0.60 * (1 - ratio) + 0.30 * volatility + 0.10 * volume_factor), 1
+        )
         rows.append({
             "agent_id": ag,
             "talked_about_completing": talked,
             "shipped": shipped,
             "ratio": round(ratio, 2),
+            "drift_score": drift_score,
             # Health: green if shipped >= talked, yellow if shipped > 0 but < talked,
             # red if shipped == 0 and talked > 0
             "health": (
@@ -3569,13 +3585,40 @@ def api_baza_project_file_put(project_id):
     data = request.get_json(silent=True) or {}
     relpath = data.get('path') or ''
     content = data.get('content') or ''
+    agent_id = data.get('agent_id') or None
+    force = bool(data.get('force'))
     if not relpath:
         return jsonify({"error": "path is required"}), 400
     try:
-        info = bp.write_file(project_id, relpath, content)
+        info = bp.write_file(project_id, relpath, content, agent_id=agent_id, force=force)
     except PermissionError as e:
-        return jsonify({"error": str(e)}), 403
-    return jsonify({"saved": True, "info": info})
+        # Surface holder so the caller can decide to wait or force
+        msg = str(e)
+        return jsonify({"error": msg, "lock_holder": bp.current_lock_holder(project_id)}), 423 if "locked" in msg else 403
+    return jsonify({"saved": True, "info": info, "lock": {"held_by": bp.current_lock_holder(project_id)}})
+
+
+@app.route('/api/baza/projects/<project_id>/lock', methods=['GET'])
+def api_baza_project_lock_status(project_id):
+    bp = _baza_projects()
+    h = bp.current_lock_holder(project_id)
+    return jsonify({"held_by": h, "is_locked": bool(h)})
+
+
+@app.route('/api/baza/projects/<project_id>/lock', methods=['POST'])
+def api_baza_project_lock_acquire(project_id):
+    bp = _baza_projects()
+    agent_id = (request.get_json(silent=True) or {}).get('agent_id') or 'user'
+    return jsonify(bp.acquire_lock(project_id, agent_id))
+
+
+@app.route('/api/baza/projects/<project_id>/lock', methods=['DELETE'])
+def api_baza_project_lock_release(project_id):
+    bp = _baza_projects()
+    agent_id = (request.args.get('agent_id') or
+                ((request.get_json(silent=True) or {}).get('agent_id')) or 'user')
+    released = bp.release_lock(project_id, agent_id)
+    return jsonify({"released": released, "held_by": bp.current_lock_holder(project_id)})
 
 
 @app.route('/api/baza/projects/<project_id>/git/status')

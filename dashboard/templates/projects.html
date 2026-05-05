@@ -71,16 +71,8 @@
   </style>
 </head>
 <body>
-  <nav class="nav">
-    <div class="nav-brand"><h1>BAZA</h1></div>
-    <a class="nav-link" href="/">Agents</a>
-    <a class="nav-link" href="/datahub">Data Hub</a>
-    <a class="nav-link" href="/chains">Chains</a>
-    <a class="nav-link active" href="/projects">Projects</a>
-    <a class="nav-link" href="/tasks">Tasks</a>
-    <a class="nav-link" href="/journal">Journal</a>
-    <a class="nav-link" href="/ahb123">AHB123</a>
-  </nav>
+  {% set nav_active = 'projects' %}
+{% include "_nav.html" %}
 
   <div class="container">
     <div class="page-header">

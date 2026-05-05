@@ -50,15 +50,8 @@
   </style>
 </head>
 <body>
-  <nav class="nav">
-    <div class="nav-brand"><h1>BAZA</h1></div>
-    <a class="nav-link" href="/">Agents</a>
-    <a class="nav-link" href="/datahub">Data Hub</a>
-    <a class="nav-link" href="/chains">Chains</a>
-    <a class="nav-link" href="/projects">Projects</a>
-    <a class="nav-link" href="/approvals">Approvals</a>
-    <a class="nav-link active" href="/empire-pulse">Pulse</a>
-  </nav>
+  {% set nav_active = 'pulse' %}
+{% include "_nav.html" %}
 
   <div class="container">
     <div class="page-title">Empire Pulse</div>
@@ -104,6 +97,9 @@ async function load(){
     return;
   }
   const t = d.totals || {};
+  // Top-3 drifters by drift_score (only flag if score >= 30)
+  const driftSorted = (d.agents || []).slice().sort((a,b) => (b.drift_score||0) - (a.drift_score||0));
+  const TOP_DRIFTERS = new Set(driftSorted.slice(0, 3).filter(a => (a.drift_score||0) >= 30).map(a => a.agent_id));
   document.getElementById('summary').innerHTML = `
     <div class="stat green"><div class="stat-val">${t.shipping||0}</div><div class="stat-lbl">Shipping</div></div>
     <div class="stat yellow"><div class="stat-val">${t.drifting||0}</div><div class="stat-lbl">Drifting</div></div>
@@ -121,9 +117,17 @@ async function load(){
                   : a.health === 'yellow' ? 'Some output, but more talk than ship — push harder.'
                   : 'No artifacts despite completion claims — likely hallucinating. Investigate.';
     const sparkline = renderSparkline(a.ship_daily || [], a.talked_daily || [], 200, 48);
-    return `<div class="card ${a.health}" onclick="window.location='/agent/${escapeHtml(a.agent_id)}'" style="cursor:pointer">
+    const isTopDrifter = TOP_DRIFTERS.has(a.agent_id);
+    const driftBadge = isTopDrifter
+      ? `<span style="position:absolute;top:10px;right:10px;background:#3a0d0d;color:#ff8888;border:1px solid #5a1a1a;padding:3px 8px;border-radius:10px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase">⚠ TOP DRIFTER</span>`
+      : '';
+    const driftScore = (a.drift_score != null)
+      ? `<span style="font-size:10px;color:#666;font-family:monospace">drift ${a.drift_score}</span>`
+      : '';
+    return `<div class="card ${a.health}" onclick="window.location='/agent/${escapeHtml(a.agent_id)}'" style="cursor:pointer;position:relative">
+      ${driftBadge}
       <h3>${escapeHtml(a.agent_id.replace(/_/g,' '))}</h3>
-      <div class="who">${escapeHtml(a.agent_id)}</div>
+      <div class="who">${escapeHtml(a.agent_id)} ${driftScore}</div>
       <div class="ratio">${pct}%</div>
       <div class="ratio-lbl">ship / talk ratio</div>
       <div class="bar"><div class="bar-fill ${a.health}" style="width:${pct}%"></div></div>

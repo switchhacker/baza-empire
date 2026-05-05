@@ -197,6 +197,13 @@ def main() -> int:
     else:
         body = {k: v for k, v in payload.items() if k not in used and k != "approved"}
 
+    # Project ownership/locking: when an agent writes a file, pass our
+    # AGENT_ID so the dashboard's cooperative lock picks us up. If the
+    # project is held by another agent, the dashboard returns 423 and we
+    # surface that to the caller — agents can choose to wait or force.
+    if action == "file_write" and isinstance(body, dict) and "agent_id" not in body:
+        body["agent_id"] = os.environ.get("AGENT_ID", "skill")
+
     parent = _emit(
         "tool_call",
         {

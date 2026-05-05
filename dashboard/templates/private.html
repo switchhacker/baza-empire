@@ -79,17 +79,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body>
-  <nav class="nav">
-    <div class="nav-brand"><h1>BAZA</h1></div>
-    <a class="nav-link" href="/">Dashboard</a>
-    <a class="nav-link" href="/datahub">Data Hub</a>
-    <a class="nav-link active" href="/datahub/private">Private</a>
-    <a class="nav-link" href="/vision" style="color:#7c3aed">👁 Vision</a>
-    <a class="nav-link" href="/journal">Journal</a>
-    <a class="nav-link" href="/memory">Memory</a>
-    <span id="lockPill" class="lock-pill locked">🔒 Locked</span>
-    <button class="keep-toggle" id="keepToggle" title="When OFF (default): the page auto-locks 30s after you switch away from this tab. When ON: stays unlocked for 12h across tab switches.">🔒 <span id="keepLabel">Auto-lock 30s</span></button>
-  </nav>
+  {% set nav_active = 'datahub' %}
+{% include "_nav.html" %}
 
   <div class="container">
 

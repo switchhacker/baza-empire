@@ -576,56 +576,8 @@
 </head>
 <body>
 
-<nav class="nav">
-  <div class="nav-brand"><span>&#9889;</span><h1>BAZA EMPIRE</h1></div>
-  <div class="nav-dropdown">
-    <a class="nav-link" href="/">Agents</a>
-    <div class="nav-submenu">
-      <a href="/crons">Crons</a>
-      <a href="/tasks">Tasks</a>
-      <a href="/skills">Skills</a>
-      <a href="/journal">Journal</a>
-      <a href="/memory">Memory</a>
-    </div>
-  </div>
-  <div class="nav-dropdown">
-    <a class="nav-link" href="/ahb123" style="color:#e94560;border-bottom-color:#e94560">AHB123</a>
-    <div class="nav-submenu">
-      <a href="#" onclick="switchTab('dashboard');return false">Dashboard</a>
-      <a href="#" onclick="switchTab('clients');return false">Clients</a>
-      <a href="#" onclick="switchTab('projects');return false">Projects</a>
-      <a href="#" onclick="switchTab('architect');return false">ArchiteCT</a>
-      <a href="#" onclick="switchTab('invoices');return false">InvoiceIT</a>
-      <a href="#" onclick="switchTab('docprep');return false">DocPrep</a>
-      <a href="#" onclick="switchTab('changeorders');return false">Change Orders</a>
-      <a href="#" onclick="switchTab('billing');return false">Billing</a>
-      <a href="#" onclick="switchTab('receipts');return false">QuickRF</a>
-      <a href="#" onclick="switchTab('payroll');return false">Payrolling</a>
-      <a href="#" onclick="switchTab('taxdocs');return false">Uncle Sam</a>
-      <a href="#" onclick="switchTab('ipay');return false">Debt</a>
-      <a href="#" onclick="switchTab('employees');return false">Employees</a>
-      <a href="#" onclick="switchTab('estimator');return false">EstimatOR</a>
-      <a href="#" onclick="switchTab('schedule');return false">Schedule</a>
-      <a href="#" onclick="switchTab('noted');return false">NoteD</a>
-      <a href="#" onclick="switchTab('voice');return false">Voice</a>
-      <a href="#" onclick="switchTab('chatdept');return false">Chat Dept</a>
-      <a href="#" onclick="switchTab('photos');return false">Photos</a>
-      <a href="#" onclick="switchTab('reviews');return false">Reviews</a>
-    </div>
-  </div>
-  <a class="nav-link" href="/datahub">Data Hub</a>
-  <a class="nav-link" href="/infra">Infra</a>
-  <a class="nav-link" href="/explore">Explore</a>
-  <a class="nav-link" href="/comms">Comms</a>
-  <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">Fluid</a>
-  <a class="nav-link" href="/cloud">Cloud</a>
-  <a class="nav-link" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
-  <a class="nav-link" href="/settings">Settings</a>
-  <div class="nav-right">
-    <span class="activity-btn" onclick="toggleActivityFeed()">Activity <span class="pulse" id="af-pulse" style="display:none"></span></span>
-    <span class="nav-status" id="nav-clock">&mdash;</span>
-  </div>
-</nav>
+{% set nav_active = 'ahb123' %}
+{% include "_nav.html" %}
 
 <!-- Sub Navigation Tabs -->
 <div class="sub-nav">
@@ -13249,6 +13201,6 @@ async function bpLoadRenders(){
   </div>
 </div>
 
-<script>document.querySelectorAll("[data-fluid-link]").forEach(a=>{const p=location.protocol==="https:"?8443:8889;a.href=`${location.protocol}//${location.hostname}:${p}/fluid`;});</script>
+
 </body>
 </html>

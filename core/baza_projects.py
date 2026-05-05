@@ -295,6 +295,7 @@ def get_project(project_id: str) -> dict[str, Any] | None:
         logger.warning(f"manifest read failed for {project_id}: {e}")
         return None
     git_summary = _git_summary(proj_dir)
+    holder = current_lock_holder(project_id)
     return {
         "id": project_id,
         "name": manifest.get("name", project_id),
@@ -304,6 +305,7 @@ def get_project(project_id: str) -> dict[str, Any] | None:
         "manifest": manifest,
         "path": proj_dir,
         "git": git_summary,
+        "lock": {"held_by": holder, "is_locked": bool(holder)},
     }
 
 
@@ -382,14 +384,109 @@ def read_file(project_id: str, relpath: str, max_bytes: int = 256 * 1024) -> str
     return data.decode("utf-8", errors="replace")
 
 
-def write_file(project_id: str, relpath: str, content: str) -> dict[str, Any]:
+def write_file(project_id: str, relpath: str, content: str,
+               agent_id: str | None = None, force: bool = False) -> dict[str, Any]:
     p = _safe_join(project_id, relpath)
     if not p:
         raise PermissionError("path escapes project sandbox")
+    # Cooperative lock: if a different agent currently holds the lock and
+    # the caller didn't pass force=True, refuse the write so two agents
+    # don't trample each other's work mid-task.
+    if agent_id and not force:
+        holder = current_lock_holder(project_id)
+        if holder and holder != agent_id:
+            raise PermissionError(
+                f"project '{project_id}' is currently locked by {holder}; "
+                f"caller is {agent_id}. Pass force=True to override (and warn)."
+            )
+        if not holder:
+            acquire_lock(project_id, agent_id)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
         f.write(content)
+    # Refresh the lock heartbeat so it stays held while work continues
+    if agent_id:
+        acquire_lock(project_id, agent_id)
     return {"path": p, "bytes": len(content.encode("utf-8"))}
+
+
+# ── Cooperative project ownership/locking (sub-project N) ───────────────────
+LOCK_FILENAME = ".baza-lock.json"
+LOCK_TTL_SECONDS = int(os.environ.get("BAZA_PROJECT_LOCK_TTL", "1800"))  # 30 min
+
+
+def _lock_path(project_id: str) -> str | None:
+    proj_dir = os.path.join(PROJECTS_ROOT, project_id)
+    if not os.path.isdir(proj_dir):
+        return None
+    return os.path.join(proj_dir, LOCK_FILENAME)
+
+
+def current_lock_holder(project_id: str) -> str | None:
+    """Return the agent_id currently holding the lock, or None if free.
+
+    Stale locks (older than LOCK_TTL_SECONDS) are auto-cleaned so a crashed
+    agent doesn't permanently freeze a project.
+    """
+    p = _lock_path(project_id)
+    if not p or not os.path.isfile(p):
+        return None
+    try:
+        with open(p) as f:
+            info = json.load(f) or {}
+        ts = info.get("acquired_at_ts", 0)
+        if isinstance(ts, str):
+            try:
+                from datetime import datetime as _dt
+                ts = _dt.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                ts = 0
+        import time as _t
+        if _t.time() - ts > LOCK_TTL_SECONDS:
+            try:
+                os.unlink(p)
+            except FileNotFoundError:
+                pass
+            return None
+        return info.get("agent_id")
+    except Exception:
+        return None
+
+
+def acquire_lock(project_id: str, agent_id: str) -> dict[str, Any]:
+    """Acquire/refresh the cooperative lock for this project. If another agent
+    holds it (and it's still fresh), this is a no-op + returns holder info."""
+    p = _lock_path(project_id)
+    if not p:
+        return {"ok": False, "error": "project not found"}
+    holder = current_lock_holder(project_id)
+    if holder and holder != agent_id:
+        return {"ok": False, "holder": holder, "yours": False}
+    import time as _t
+    info = {
+        "agent_id": agent_id,
+        "acquired_at_ts": _t.time(),
+        "acquired_at": _now_iso(),
+        "ttl_seconds": LOCK_TTL_SECONDS,
+    }
+    with open(p, "w") as f:
+        json.dump(info, f, indent=2)
+    return {"ok": True, "holder": agent_id, "yours": True}
+
+
+def release_lock(project_id: str, agent_id: str) -> bool:
+    """Drop the lock if `agent_id` holds it. Returns True if released."""
+    p = _lock_path(project_id)
+    if not p or not os.path.isfile(p):
+        return False
+    holder = current_lock_holder(project_id)
+    if holder != agent_id:
+        return False
+    try:
+        os.unlink(p)
+        return True
+    except Exception:
+        return False
 
 
 # ── Run a command from the manifest ──────────────────────────────────────────

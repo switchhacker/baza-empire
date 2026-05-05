@@ -1,0 +1,76 @@
+{# Canonical Baza dashboard nav. All pages include this so tabs stay
+   persistent across navigations. Each page sets `nav_active` to its
+   short key at the top, e.g. {% set nav_active = 'chains' %}.
+
+   Keys: agents, ahb123, datahub, chains, projects, approvals, pulse,
+         infra, explore, comms, fluid, cloud, shell, settings,
+         crons, tasks, skills, journal, memory, vision, email, artifacts.
+
+   The styling classes (.nav, .nav-link, .nav-dropdown, .nav-submenu,
+   .nav-brand, .nav-right) must already be defined in the host page's
+   CSS. Every legacy template already includes these classes.
+#}
+{% set _act = nav_active|default('') %}
+<nav class="nav">
+  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <div class="nav-dropdown">
+    <a class="nav-link {% if _act == 'agents' %}active{% endif %}" href="/">Agents</a>
+    <div class="nav-submenu">
+      <a href="/crons" class="{% if _act == 'crons' %}active{% endif %}">Crons</a>
+      <a href="/tasks" class="{% if _act == 'tasks' %}active{% endif %}">Tasks</a>
+      <a href="/skills" class="{% if _act == 'skills' %}active{% endif %}">Skills</a>
+      <a href="/journal" class="{% if _act == 'journal' %}active{% endif %}">Journal</a>
+      <a href="/memory" class="{% if _act == 'memory' %}active{% endif %}">Memory</a>
+    </div>
+  </div>
+  <div class="nav-dropdown">
+    <a class="nav-link {% if _act == 'ahb123' %}active{% endif %}" href="/ahb123">AHB123</a>
+    <div class="nav-submenu">
+      <a href="/ahb123/dashboard">Dashboard</a>
+      <a href="/ahb123/clients">Clients</a>
+      <a href="/ahb123/projects">Projects</a>
+      <a href="/ahb123/architect">ArchiteCT</a>
+      <a href="/ahb123/invoices">InvoiceIT</a>
+      <a href="/ahb123/docprep">DocPrep</a>
+      <a href="/ahb123/changeorders">Change Orders</a>
+      <a href="/ahb123/billing">Billing</a>
+      <a href="/ahb123/receipts">QuickRF</a>
+      <a href="/ahb123/payroll">Payrolling</a>
+      <a href="/ahb123/taxdocs">Uncle Sam</a>
+      <a href="/ahb123/ipay">Debt</a>
+      <a href="/ahb123/employees">Employees</a>
+      <a href="/ahb123/estimator">EstimatOR</a>
+      <a href="/ahb123/schedule">Schedule</a>
+      <a href="/ahb123/noted">NoteD</a>
+      <a href="/ahb123/voice">Voice</a>
+      <a href="/ahb123/chatdept">Chat Dept</a>
+      <a href="/ahb123/photos">Photos</a>
+      <a href="/ahb123/reviews">Reviews</a>
+    </div>
+  </div>
+  <a class="nav-link {% if _act == 'datahub' %}active{% endif %}" href="/datahub">Data Hub</a>
+  <a class="nav-link {% if _act == 'chains' %}active{% endif %}" href="/chains">Chains</a>
+  <a class="nav-link {% if _act == 'projects' %}active{% endif %}" href="/projects" title="Baza Projects — developer workspaces">Projects</a>
+  <a class="nav-link {% if _act == 'approvals' %}active{% endif %}" href="/approvals" title="Privileged action approvals">Approvals</a>
+  <a class="nav-link {% if _act == 'pulse' %}active{% endif %}" href="/empire-pulse" title="Per-agent talk-vs-ship ratio">Pulse</a>
+  <a class="nav-link {% if _act == 'infra' %}active{% endif %}" href="/infra">Infra</a>
+  <a class="nav-link {% if _act == 'explore' %}active{% endif %}" href="/explore">Explore</a>
+  <a class="nav-link {% if _act == 'comms' %}active{% endif %}" href="/comms">Comms</a>
+  <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">Fluid</a>
+  <a class="nav-link {% if _act == 'vision' %}active{% endif %}" href="/vision" title="Vision catalogue">&#128274; Vision</a>
+  <a class="nav-link {% if _act == 'email' %}active{% endif %}" href="/email">Email</a>
+  <a class="nav-link {% if _act == 'cloud' %}active{% endif %}" href="/cloud">Cloud</a>
+  <a class="nav-link {% if _act == 'shell' %}active{% endif %}" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
+  <a class="nav-link {% if _act == 'settings' %}active{% endif %}" href="/settings">Settings</a>
+  <div class="nav-right">
+    <span class="nav-status" id="nav-clock">—</span>
+    <span class="nav-status" id="agents-online-count" style="display:none">— agents online</span>
+  </div>
+</nav>
+{# Wire the Fluid link to localhost:<port>/fluid based on current host. #}
+<script>
+document.querySelectorAll("[data-fluid-link]").forEach(a => {
+  const p = location.protocol === "https:" ? 8443 : 8889;
+  a.href = `${location.protocol}//${location.hostname}:${p}/fluid`;
+});
+</script>
