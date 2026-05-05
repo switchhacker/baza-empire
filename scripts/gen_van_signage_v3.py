@@ -58,16 +58,21 @@ BRAND = {
 # Numbers come from looking at where the white body panel actually sits in
 # each photo. Tweak here if a future photo crops differently.
 PANEL: dict[str, tuple[float, float, float, float]] = {
-    # van side 2.jpeg — passenger profile, rear-quarter angle
-    # body panel below windows, between rear wheel arch and rear corner
-    "side_passenger":   (0.40, 0.36, 0.95, 0.66),
-    # van side.jpeg — driver rear-quarter angle, similar geometry
-    "side_rearquarter": (0.32, 0.40, 0.92, 0.70),
-    # van rear.jpeg — straight-on rear: door panels block, between
-    # the upper vent and the bottom trim, inside the door edges.
-    # Tightened from the wider initial estimate so text doesn't overrun
-    # onto the rear-light fenders or into the lower trim/brake light area.
-    "rear":             (0.36, 0.32, 0.74, 0.72),
+    # v4 placement: text shifted FORWARD (toward the front of the van) and
+    # UP closer to the high-roof extension line right beneath the side
+    # windows. Wrap professionals call this the "primary brand band" — it
+    # reads at eye-level for pedestrians and at headlight level for cars
+    # behind. Numbers are tighter than v3 so glyphs stop hanging over
+    # door seams, wheel arches, or rear corner lights.
+    #
+    # van side 2.jpeg — passenger profile (front is to the LEFT in the photo)
+    "side_passenger":   (0.20, 0.30, 0.70, 0.50),
+    # van side.jpeg — rear-quarter from passenger side (front is to the LEFT)
+    "side_rearquarter": (0.22, 0.34, 0.70, 0.56),
+    # van rear.jpeg — straight-on rear: text moved UP so it sits in the
+    # upper portion of the door panel, just below the roof spoiler line,
+    # leaving the lower door (with handles + brake-light area) clear.
+    "rear":             (0.36, 0.22, 0.74, 0.60),
 }
 
 
