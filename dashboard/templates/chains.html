@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Activity Chains</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200;flex-wrap:nowrap;overflow:visible}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s;white-space:nowrap;flex-shrink:0}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+
+    .container{max-width:1500px;margin:0 auto;padding:24px 28px}
+
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:16px;flex-wrap:wrap}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px}
+
+    .live-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#0a0a16;border:1px solid #1a1a2e;border-radius:18px;font-size:11px;font-weight:600;color:#888}
+    .live-dot{width:8px;height:8px;border-radius:50%;background:#444}
+    .live-dot.on{background:#00d084;box-shadow:0 0 6px #00d084;animation:pulse 1.6s infinite}
+    .live-dot.bad{background:#ff5555}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+    .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+    .filter-input,.filter-select{padding:7px 11px;border-radius:6px;background:#0a0a16;border:1px solid #1e1e30;color:#ccc;font-size:12px}
+    .filter-input{min-width:200px}
+    .btn{padding:7px 13px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+    .btn-secondary{background:#0e0e1e;color:#aaa;border:1px solid #2a2a4a}
+    .btn-ghost{background:transparent;color:#7c3aed;border:1px solid #7c3aed}
+
+    .layout{display:grid;grid-template-columns:minmax(360px,420px) 1fr;gap:16px}
+    @media (max-width:1024px){.layout{grid-template-columns:1fr}}
+
+    /* Task list (left) */
+    .task-list{display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 220px);overflow-y:auto;padding-right:6px}
+    .task-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:12px 14px;cursor:pointer;transition:border-color .15s, transform .1s}
+    .task-card:hover{border-color:#2a2a4a}
+    .task-card.active{border-color:#7c3aed;box-shadow:0 0 0 1px #7c3aed inset}
+    .task-card .row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+    .task-card .agent{font-size:10px;font-weight:700;color:#e94560;text-transform:uppercase;letter-spacing:1px}
+    .task-card .title{font-size:13px;color:#eee;margin-top:3px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .task-card .meta{font-size:10px;color:#555;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
+    .badge{font-size:9px;padding:2px 8px;border-radius:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase}
+    .b-completed{background:#061a10;color:#00d084;border:1px solid #0d3a22}
+    .b-blocked{background:#1a0606;color:#ff6666;border:1px solid #3a0d0d}
+    .b-error{background:#1a0d00;color:#ffaa00;border:1px solid #3a1d00}
+    .b-progress{background:#0a0d20;color:#7c8aff;border:1px solid #1a2050}
+
+    /* Chain panel (right) */
+    .chain-panel{background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;padding:16px;min-height:400px}
+    .chain-header{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #1a1a2e}
+    .chain-title{font-size:15px;font-weight:700;color:#fff;line-height:1.4}
+    .chain-meta{font-size:11px;color:#666;margin-top:6px;display:flex;gap:12px;flex-wrap:wrap}
+
+    .ev{margin-left:0;padding:8px 0;border-left:2px solid #1a1a2e;padding-left:12px;position:relative}
+    .ev::before{content:"";position:absolute;left:-5px;top:14px;width:8px;height:8px;border-radius:50%;background:#2a2a4a}
+    .ev.k-task_started::before{background:#7c3aed}
+    .ev.k-task_completed::before{background:#00d084}
+    .ev.k-task_blocked::before{background:#ff5555}
+    .ev.k-task_error::before{background:#ffaa00}
+    .ev.k-skill_invoked::before{background:#0088ff}
+    .ev.k-skill_result::before{background:#0088ff}
+    .ev.k-artifact_saved::before{background:#7c3aed}
+    .ev.k-dispatch_sent::before{background:#e94560}
+    .ev .row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .ev .kind{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#aaa}
+    .ev .ts{font-size:10px;color:#444;font-family:monospace}
+    .ev .who{font-size:10px;color:#777}
+    .ev .payload{margin-top:4px;font-size:12px;color:#bbb;word-break:break-word}
+    .ev .payload code{background:#11111e;border:1px solid #1a1a2e;color:#aaa;padding:1px 5px;border-radius:3px;font-size:11px}
+    .ev .children{margin-top:6px;margin-left:14px}
+
+    .empty{padding:24px;color:#555;font-size:13px;text-align:center}
+    .new-event-flash{animation:flash 1.5s ease-out}
+    @keyframes flash{0%{background:#1a0d3a}100%{background:transparent}}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Agents</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link active" href="/chains">Chains</a>
+    <a class="nav-link" href="/tasks">Tasks</a>
+    <a class="nav-link" href="/artifacts">Artifacts</a>
+    <a class="nav-link" href="/journal">Journal</a>
+    <a class="nav-link" href="/ahb123">AHB123</a>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Activity Chains</div>
+        <div class="page-sub">Per-task chain of events — task_started → tool/skill calls → artifacts → completed/blocked</div>
+      </div>
+      <div class="live-pill">
+        <span id="liveDot" class="live-dot"></span>
+        <span id="liveText">connecting…</span>
+      </div>
+    </div>
+
+    <div class="filters">
+      <input id="fAgent" class="filter-input" type="text" placeholder="agent_id (e.g. claw_batto)">
+      <input id="fProject" class="filter-input" type="text" placeholder="project_id">
+      <select id="fLimit" class="filter-select">
+        <option value="50">50 tasks</option>
+        <option value="100">100 tasks</option>
+        <option value="200">200 tasks</option>
+      </select>
+      <button class="btn btn-secondary" onclick="refreshList()">Refresh</button>
+      <button class="btn btn-ghost" onclick="clearFilters()">Clear</button>
+    </div>
+
+    <div class="layout">
+      <div id="taskList" class="task-list">
+        <div class="empty">Loading task chains…</div>
+      </div>
+      <div id="chainPanel" class="chain-panel">
+        <div class="empty">Select a task on the left to view its chain.</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let CURRENT_TASK = null;
+let SSE = null;
+let TASK_INDEX = {};  // task_id -> task summary
+
+function fmtTs(s){ if(!s) return ''; const d=new Date(s.replace(' ','T')+'Z'); return d.toLocaleString(); }
+function shortTs(s){ if(!s) return ''; const d=new Date(s.replace(' ','T')+'Z'); return d.toLocaleTimeString(); }
+
+function badgeFor(task){
+  if(task.has_error) return '<span class="badge b-error">error</span>';
+  if(task.has_blocked) return '<span class="badge b-blocked">blocked</span>';
+  if(task.has_completed) return '<span class="badge b-completed">completed</span>';
+  return '<span class="badge b-progress">in progress</span>';
+}
+
+async function refreshList(){
+  const params = new URLSearchParams();
+  const a = document.getElementById('fAgent').value.trim();
+  const p = document.getElementById('fProject').value.trim();
+  const lim = document.getElementById('fLimit').value || '50';
+  if(a) params.set('agent_id', a);
+  if(p) params.set('project_id', p);
+  params.set('limit', lim);
+  const r = await fetch('/api/datahub/chains?' + params.toString());
+  const d = await r.json();
+  TASK_INDEX = {};
+  renderList(d.chains || []);
+}
+
+function renderList(chains){
+  const el = document.getElementById('taskList');
+  if(!chains.length){
+    el.innerHTML = '<div class="empty">No tasks with events yet. Run an agent task and refresh.</div>';
+    return;
+  }
+  el.innerHTML = chains.map(c=>{
+    TASK_INDEX[c.task_id] = c;
+    const title = c.title || c.task_id;
+    const cls = (CURRENT_TASK === c.task_id) ? 'task-card active' : 'task-card';
+    return `<div class="${cls}" data-tid="${c.task_id}" onclick="openChain('${c.task_id}')">
+      <div class="row">
+        <div class="agent">${c.agent_id || 'unknown'}</div>
+        ${badgeFor(c)}
+      </div>
+      <div class="title">${escapeHtml(title)}</div>
+      <div class="meta">
+        <span>${c.event_count} events</span>
+        <span>last ${shortTs(c.last_ts)}</span>
+        ${c.project_id ? `<span>${escapeHtml(c.project_id)}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function openChain(tid){
+  CURRENT_TASK = tid;
+  document.querySelectorAll('.task-card').forEach(c=>{
+    c.classList.toggle('active', c.dataset.tid === tid);
+  });
+  const r = await fetch('/api/datahub/chain/' + encodeURIComponent(tid));
+  const d = await r.json();
+  renderChain(d);
+}
+
+function renderChain(d){
+  const panel = document.getElementById('chainPanel');
+  if(!d.chain || !d.chain.length){
+    panel.innerHTML = '<div class="empty">No events for this task.</div>';
+    return;
+  }
+  const t = d.task || {};
+  const header = `<div class="chain-header">
+    <div class="chain-title">${escapeHtml(t.title || d.task_id)}</div>
+    <div class="chain-meta">
+      <span>id: <code>${d.task_id}</code></span>
+      ${t.assigned_to ? `<span>agent: ${escapeHtml(t.assigned_to)}</span>` : ''}
+      ${t.status ? `<span>status: ${escapeHtml(t.status)}</span>` : ''}
+      ${t.project_id ? `<span>project: ${escapeHtml(t.project_id)}</span>` : ''}
+      ${t.priority ? `<span>priority: ${escapeHtml(t.priority)}</span>` : ''}
+    </div>
+  </div>`;
+  panel.innerHTML = header + d.chain.map(renderEvent).join('');
+}
+
+function renderEvent(ev){
+  const kind = ev.kind || '';
+  const ts = shortTs(ev.ts);
+  const who = ev.agent_id || '';
+  const summary = summarizeEvent(ev);
+  const children = (ev.children || []).map(renderEvent).join('');
+  return `<div class="ev k-${kind}" data-eid="${ev.id}">
+    <div class="row1">
+      <span class="kind">${kind.replace(/_/g,' ')}</span>
+      <span class="ts">${ts}</span>
+      ${who ? `<span class="who">${escapeHtml(who)}</span>` : ''}
+    </div>
+    <div class="payload">${summary}</div>
+    ${children ? `<div class="children">${children}</div>` : ''}
+  </div>`;
+}
+
+function summarizeEvent(ev){
+  const p = ev.payload || {};
+  switch(ev.kind){
+    case 'task_started': return `<code>${escapeHtml(p.title || '')}</code>`;
+    case 'task_completed': return escapeHtml(p.notes_snippet || '(no notes)');
+    case 'task_blocked': return `<strong style="color:#ff8888">blocked:</strong> ${escapeHtml(p.reason || '')}`;
+    case 'task_error': return `<strong style="color:#ffaa00">error:</strong> ${escapeHtml(p.error || '')}`;
+    case 'task_progress': return escapeHtml(p.notes_snippet || '');
+    case 'skill_invoked': return `skill <code>${escapeHtml(p.name || '')}</code> args=<code>${escapeHtml(JSON.stringify(p.args || {}))}</code>`;
+    case 'skill_result': return `skill <code>${escapeHtml(p.name || '')}</code> ${p.ok ? 'ok' : 'failed'}${p.duration_ms ? ' ('+p.duration_ms+'ms)' : ''}<br><span style="color:#777">${escapeHtml((p.output_snippet || p.error || '').slice(0, 300))}</span>`;
+    case 'artifact_saved': return `saved <code>${escapeHtml(p.filename || p.path || '')}</code> · ${p.bytes || 0} bytes${p.project_id ? ' · '+escapeHtml(p.project_id) : ''}`;
+    case 'dispatch_sent': return `→ <code>${escapeHtml(p.to_agent || '')}</code>: ${escapeHtml((p.instruction_snippet || '').slice(0, 200))}`;
+    case 'tool_call': return `tool <code>${escapeHtml(p.tool || '')}</code> ${escapeHtml(JSON.stringify(p.args_snippet || {}).slice(0, 200))}`;
+    case 'tool_result': return `tool <code>${escapeHtml(p.tool || '')}</code> ${p.ok ? 'ok' : 'failed'}: ${escapeHtml((p.result_snippet || '').slice(0, 200))}`;
+    case 'approval_requested': return `<strong>approval:</strong> ${escapeHtml(p.action || '')}`;
+    case 'deploy_started': return `deploy → ${escapeHtml(p.target || '')}`;
+    case 'deploy_completed': return `deployed ${escapeHtml(p.target || '')} v${escapeHtml(p.version || '')}`;
+    default: return `<code style="color:#666">${escapeHtml(JSON.stringify(p).slice(0, 240))}</code>`;
+  }
+}
+
+function clearFilters(){
+  document.getElementById('fAgent').value='';
+  document.getElementById('fProject').value='';
+  refreshList();
+}
+
+function setLive(state, text){
+  const dot = document.getElementById('liveDot');
+  const txt = document.getElementById('liveText');
+  dot.className = 'live-dot' + (state === 'on' ? ' on' : state === 'bad' ? ' bad' : '');
+  txt.textContent = text;
+}
+
+function startSSE(){
+  if(SSE){ try{SSE.close()}catch(e){} }
+  setLive('off', 'connecting…');
+  try{
+    SSE = new EventSource('/api/datahub/events/stream');
+    SSE.onopen = ()=> setLive('on', 'live');
+    SSE.onerror = ()=> setLive('bad', 'reconnecting…');
+    SSE.onmessage = (m)=>{
+      try{
+        const ev = JSON.parse(m.data);
+        onLiveEvent(ev);
+      }catch(e){}
+    };
+  }catch(e){
+    setLive('bad', 'unavailable');
+  }
+}
+
+function onLiveEvent(ev){
+  // Update task index summary, refresh card if visible.
+  const tid = ev.task_id || '';
+  if(!tid) return;
+  let summary = TASK_INDEX[tid];
+  if(!summary){
+    // New task — refresh whole list (simplest approach for v1)
+    refreshList();
+    return;
+  }
+  summary.event_count = (summary.event_count || 0) + 1;
+  summary.last_ts = ev.ts || new Date().toISOString();
+  if(ev.kind === 'task_completed') summary.has_completed = 1;
+  if(ev.kind === 'task_blocked') summary.has_blocked = 1;
+  if(ev.kind === 'task_error') summary.has_error = 1;
+  // Re-render that one card in place
+  const card = document.querySelector(`.task-card[data-tid="${tid}"]`);
+  if(card){
+    card.classList.add('new-event-flash');
+    setTimeout(()=>card.classList.remove('new-event-flash'), 1500);
+  }
+  // If currently viewing this task, refresh its chain.
+  if(CURRENT_TASK === tid){
+    openChain(tid);
+  }
+}
+
+refreshList();
+startSSE();
+setInterval(refreshList, 60000);  // periodic refresh in case SSE missed
+</script>
+</body>
+</html>

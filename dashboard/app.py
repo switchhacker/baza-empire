@@ -523,6 +523,13 @@ def init_cloud_tables():
 
 init_cloud_tables()
 
+# ── Task Events (visibility pipeline) — schema init ───────────────────────────
+try:
+    from core.task_events import init_schema as _init_task_events_schema
+    _init_task_events_schema()
+except Exception as _e:
+    print(f"[task_events] schema init skipped: {_e}", file=sys.stderr)
+
 # Cloud upload directory
 CLOUD_UPLOAD_DIR = os.path.join(DASHBOARD_DIR, 'uploads', 'cloud')
 os.makedirs(CLOUD_UPLOAD_DIR, exist_ok=True)
@@ -1385,6 +1392,12 @@ def api_private_delete():
     return jsonify({'ok': True})
 
 
+@app.route('/chains')
+def chains_page():
+    """Activity Chains — visibility pipeline #1 UI."""
+    return render_template('chains.html')
+
+
 @app.route('/datahub')
 def datahub_page():
     project_id = request.args.get('project_id', '')
@@ -2161,6 +2174,136 @@ def api_datahub_feed():
     # Sort by timestamp/modified
     feed.sort(key=lambda x: x.get('timestamp') or x.get('modified', ''), reverse=True)
     return jsonify(feed[:limit])
+
+
+# ── Activity Chains (visibility pipeline #1) ──────────────────────────────────
+
+@app.route('/api/datahub/events')
+def api_datahub_events():
+    """Filtered list of task_events. Reverse chronological."""
+    try:
+        from core import task_events as te
+    except Exception as e:
+        return jsonify({"events": [], "error": f"task_events unavailable: {e}"})
+    kinds_arg = request.args.get('kinds', '')
+    kinds = [k.strip() for k in kinds_arg.split(',') if k.strip()] or None
+    events = te.list_events(
+        task_id=request.args.get('task_id') or None,
+        project_id=request.args.get('project_id') or None,
+        agent_id=request.args.get('agent_id') or None,
+        kinds=kinds,
+        since=request.args.get('since') or None,
+        limit=int(request.args.get('limit', 100) or 100),
+    )
+    return jsonify({"events": events})
+
+
+@app.route('/api/datahub/chain/<task_id>')
+def api_datahub_chain(task_id):
+    """Time-ascending chain for one task with parent/child nesting."""
+    try:
+        from core import task_events as te
+    except Exception as e:
+        return jsonify({"chain": [], "error": f"task_events unavailable: {e}"})
+    chain = te.chain_for_task(task_id)
+    # Pull task metadata from baza_projects.db tasks table for header
+    meta = {}
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, project_id, title, assigned_to, status, priority, due_date FROM tasks WHERE id=?",
+            (task_id,),
+        ).fetchone()
+        if row:
+            meta = dict(row)
+        conn.close()
+    except Exception:
+        pass
+    return jsonify({"task_id": task_id, "task": meta, "chain": chain})
+
+
+@app.route('/api/datahub/chains')
+def api_datahub_chains():
+    """Recent task summaries — one row per task_id, newest activity first."""
+    try:
+        from core import task_events as te
+    except Exception as e:
+        return jsonify({"chains": [], "error": f"task_events unavailable: {e}"})
+    rows = te.recent_task_summaries(limit=int(request.args.get('limit', 50) or 50))
+    # Optional filter by agent_id at the call site
+    agent_id = request.args.get('agent_id') or ''
+    project_id = request.args.get('project_id') or ''
+    if agent_id:
+        rows = [r for r in rows if (r.get('agent_id') or '') == agent_id]
+    if project_id:
+        rows = [r for r in rows if (r.get('project_id') or '') == project_id]
+    # Enrich with task title from tasks table
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        ids = [r['task_id'] for r in rows]
+        if ids:
+            placeholders = ','.join(['?'] * len(ids))
+            for trow in conn.execute(
+                f"SELECT id, title, status FROM tasks WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall():
+                for r in rows:
+                    if r['task_id'] == trow['id']:
+                        r['title'] = trow['title']
+                        r['task_status'] = trow['status']
+        conn.close()
+    except Exception:
+        pass
+    return jsonify({"chains": rows})
+
+
+@app.route('/api/datahub/events/stream')
+def api_datahub_events_stream():
+    """Server-Sent Events feed: replays last 50 events then streams live via Redis."""
+    try:
+        from core import task_events as te
+    except Exception:
+        return jsonify({"error": "task_events unavailable"}), 503
+
+    def generate():
+        # Replay last 50 events (oldest first so UI renders in order)
+        recent = list(reversed(te.list_events(limit=50)))
+        for ev in recent:
+            yield f"data: {json.dumps(ev, default=str)}\n\n"
+        yield ":replay-done\n\n"
+        # Live tail via Redis
+        try:
+            import redis
+        except Exception:
+            yield ":redis-unavailable\n\n"
+            return
+        try:
+            r = redis.Redis.from_url(te.REDIS_URL, decode_responses=True)
+            pubsub = r.pubsub()
+            pubsub.subscribe(te.REDIS_CHANNEL)
+            last_hb = datetime.datetime.utcnow()
+            for message in pubsub.listen():
+                if message.get('type') == 'message':
+                    data = message.get('data') or '{}'
+                    yield f"data: {data}\n\n"
+                # Heartbeat at most every 15s
+                now = datetime.datetime.utcnow()
+                if (now - last_hb).total_seconds() >= 15:
+                    yield f":hb {now.isoformat()}Z\n\n"
+                    last_hb = now
+        except GeneratorExit:
+            return
+        except Exception as exc:
+            yield f":stream-error {exc}\n\n"
+
+    resp = make_response(generate(), 200)
+    resp.headers['Content-Type'] = 'text/event-stream'
+    resp.headers['Cache-Control'] = 'no-cache, no-transform'
+    resp.headers['X-Accel-Buffering'] = 'no'
+    return resp
+
 
 @app.route('/api/datahub/agent-chat', methods=['POST'])
 def api_datahub_agent_chat():
@@ -3635,7 +3778,7 @@ def mobile_sw():
     no offline support; the SW exists only to satisfy the install criteria
     and to speed up cold loads of static assets."""
     sw = """
-const CACHE = 'baza-shell-v3';
+const CACHE = 'baza-shell-v4';
 const SHELL = ['/static/img/ahb_logo.jpeg', '/static/quickrf-editor.js', '/mobile/manifest.json'];
 self.addEventListener('install', e => {
   self.skipWaiting();

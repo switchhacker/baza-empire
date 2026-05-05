@@ -37,6 +37,28 @@ from core.task_updater import (
     get_my_tasks, update_task, complete_task,
     start_task, get_project_stats, get_task_by_id
 )
+try:
+    from core import task_events as _task_events  # visibility pipeline #1
+except Exception:
+    _task_events = None
+
+
+def _emit(kind: str, task: dict | None = None, agent_id: str | None = None,
+          payload: dict | None = None, parent_event_id: int | None = None):
+    """Best-effort emit. Never raises, never blocks the caller."""
+    if _task_events is None:
+        return None
+    try:
+        return _task_events.emit(
+            kind,
+            task_id=(task or {}).get("id"),
+            project_id=(task or {}).get("project_id"),
+            agent_id=agent_id,
+            payload=payload or {},
+            parent_event_id=parent_event_id,
+        )
+    except Exception:
+        return None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -183,6 +205,8 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
 
     except Exception as e:
         logger.error(f"LLM error for {agent_id} task {task['id'][:8]}: {e}")
+        _emit("task_error", task=task, agent_id=agent_id,
+              payload={"error": str(e)[:500]})
         return {"success": False, "output": str(e), "completed": False}
 
 
@@ -221,6 +245,18 @@ def _execute_skill_saves(agent_id: str, output: str) -> int:
             if result.get('success'):
                 saved += 1
                 logger.info(f"  📁 Skill-save: {args.get('filename')}")
+                if _task_events is not None:
+                    _task_events.emit(
+                        "artifact_saved",
+                        agent_id=agent_id,
+                        project_id=args.get('project_id', 'shared'),
+                        payload={
+                            "path": result.get('path') or args.get('filename', ''),
+                            "filename": args.get('filename', ''),
+                            "kind": "skill_save",
+                            "bytes": len(args.get('content', '') or ''),
+                        },
+                    )
             else:
                 logger.warning(f"  Skill-save failed: {result.get('error','')}")
         except Exception as e:
@@ -262,6 +298,13 @@ def _save_artifact(agent_id: str, task: dict, content: str):
         )
         if result.get("success"):
             logger.info(f"  📁 Artifact saved: {filename} → {proj_id}")
+            _emit("artifact_saved", task=task, agent_id=agent_id,
+                  payload={
+                      "path": result.get('path') or filename,
+                      "filename": filename, "kind": "task_deliverable",
+                      "bytes": len((content or '')),
+                      "project_id": proj_id,
+                  })
         else:
             raise Exception(result.get("error", "API error"))
     except Exception as e:
@@ -278,6 +321,12 @@ def _save_artifact(agent_id: str, task: dict, content: str):
                 f.write(f"Agent: {agent_id}  \nCompleted: {datetime.now().isoformat()}\n\n---\n\n")
                 f.write(content)
             logger.info(f"  📁 Artifact saved (direct): {filename}")
+            _emit("artifact_saved", task=task, agent_id=agent_id,
+                  payload={
+                      "path": os.path.join("dashboard", "artifacts", proj_id, filename),
+                      "filename": filename, "kind": "task_deliverable_fallback",
+                      "bytes": len((content or '')),
+                  })
         except Exception as e2:
             logger.warning(f"  Artifact save failed: {e2}")
 
@@ -362,6 +411,8 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
 
         # Mark in_progress before running
         start_task(task_id)
+        _emit("task_started", task=task, agent_id=agent_id,
+              payload={"title": task_title})
 
         result = run_task_with_llm(agent_id, agent_cfg, task)
 
@@ -372,6 +423,8 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
             if result["completed"]:
                 complete_task(task_id, notes=notes)
                 logger.info(f"  ✅ COMPLETED: {task_title[:50]}")
+                _emit("task_completed", task=task, agent_id=agent_id,
+                      payload={"notes_snippet": (notes or "")[:600]})
                 try:
                     from core.event_bus import publish_sync
                     publish_sync(agent_id, "task_completed", {
@@ -410,6 +463,8 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
                     "notes": f"BLOCKED: {result['block_reason']}"
                 })
                 logger.info(f"  🔴 BLOCKED: {task_title[:50]} — {result['block_reason']}")
+                _emit("task_blocked", task=task, agent_id=agent_id,
+                      payload={"reason": (result.get("block_reason") or "")[:600]})
                 results.append({"task": task_title, "status": "blocked", "reason": result["block_reason"]})
                 try:
                     from core.context_db import journal_log
@@ -423,9 +478,13 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
             else:
                 update_task(task_id, {"status": "in_progress", "notes": notes})
                 logger.info(f"  🟡 IN PROGRESS: {task_title[:50]}")
+                _emit("task_progress", task=task, agent_id=agent_id,
+                      payload={"notes_snippet": (notes or "")[:600]})
                 results.append({"task": task_title, "status": "in_progress", "output": notes})
         else:
             logger.error(f"  LLM failed for {task_title[:50]}: {result['output'][:100]}")
+            _emit("task_error", task=task, agent_id=agent_id,
+                  payload={"error": (result.get("output") or "")[:500]})
             results.append({"task": task_title, "status": "error", "output": result["output"]})
 
         # Brief pause between tasks so Ollama isn't hammered
@@ -477,6 +536,15 @@ def process_dispatch_lines(output: str, source_agent: str):
                 notify_agent(target, msg)
                 dispatched.append(target)
                 logger.info(f"  DISPATCH → {target}: {instruction[:60]}")
+                if _task_events is not None:
+                    _task_events.emit(
+                        "dispatch_sent",
+                        agent_id=source_agent,
+                        payload={
+                            "to_agent": target,
+                            "instruction_snippet": instruction[:600],
+                        },
+                    )
     return dispatched
 
 

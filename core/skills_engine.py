@@ -1,6 +1,10 @@
 import os, re, json, subprocess, logging, time
 from typing import Optional
 from core.context_db import get_skills, skill_ran, journal_log
+try:
+    from core import task_events as _task_events  # visibility pipeline #1
+except Exception:  # pragma: no cover — defensive; pipeline is best-effort
+    _task_events = None
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,7 +66,7 @@ class SkillsEngine:
                 if os.path.exists(path): return path
         return None
 
-    def run(self, skill_name, args={}, chat_id=None):
+    def run(self, skill_name, args={}, chat_id=None, task_id=None, project_id=None):
         path = self.skill_path(skill_name)
         if not path:
             return {
@@ -77,6 +81,13 @@ class SkillsEngine:
                 )
             }
         start = time.time()
+        invoke_event_id = None
+        if _task_events is not None:
+            invoke_event_id = _task_events.emit(
+                "skill_invoked",
+                task_id=task_id, project_id=project_id, agent_id=self.agent_id,
+                payload={"name": skill_name, "args": args},
+            )
         try:
             env = os.environ.copy()
             env["SKILL_ARGS"] = json.dumps(args)
@@ -100,13 +111,37 @@ class SkillsEngine:
                 # Always populate `error` on failure so callers don't KeyError
                 result["error"] = stderr_clean or stdout_clean or f"skill exited with code {proc.returncode}"
                 logger.error(f"[skills_engine] {skill_name} failed (exit {proc.returncode}): {result['error'][:300]}")
+            if _task_events is not None:
+                _task_events.emit(
+                    "skill_result",
+                    task_id=task_id, project_id=project_id, agent_id=self.agent_id,
+                    payload={
+                        "name": skill_name, "ok": success,
+                        "output_snippet": output[:600], "duration_ms": duration_ms,
+                    },
+                    parent_event_id=invoke_event_id,
+                )
             return result
         except subprocess.TimeoutExpired:
+            if _task_events is not None:
+                _task_events.emit(
+                    "skill_result",
+                    task_id=task_id, project_id=project_id, agent_id=self.agent_id,
+                    payload={"name": skill_name, "ok": False, "error": "timeout"},
+                    parent_event_id=invoke_event_id,
+                )
             return {"success": False, "error": f"Skill '{skill_name}' timed out", "output": ""}
         except Exception as e:
+            if _task_events is not None:
+                _task_events.emit(
+                    "skill_result",
+                    task_id=task_id, project_id=project_id, agent_id=self.agent_id,
+                    payload={"name": skill_name, "ok": False, "error": str(e)[:600]},
+                    parent_event_id=invoke_event_id,
+                )
             return {"success": False, "error": str(e), "output": ""}
 
-    def parse_and_run(self, llm_output, chat_id=None):
+    def parse_and_run(self, llm_output, chat_id=None, task_id=None, project_id=None):
         """Find every ##SKILL:name{...}## call, execute it, and splice the result back into the text.
 
         Brace-aware: handles nested JSON objects in skill args (e.g. `{"payload": {"k": "v"}}`).
@@ -139,7 +174,8 @@ class SkillsEngine:
                 result = {"success": False, "error": parse_error, "skill": skill_name}
                 logger.warning(f"[skills_engine] {skill_name}: {parse_error}")
             else:
-                result = self.run(skill_name, args, chat_id=chat_id)
+                result = self.run(skill_name, args, chat_id=chat_id,
+                                  task_id=task_id, project_id=project_id)
             results.append(result)
             if result.get("success"):
                 pieces.append(f"\n[SKILL RESULT: {skill_name}]\n{result.get('output','')}\n")
