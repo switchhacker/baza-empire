@@ -3358,6 +3358,110 @@ def api_tasks_list():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/tasks/capacity')
+def api_tasks_capacity():
+    """Per-agent open-task load + recommended next routing per Duke's map.
+
+    Returns:
+      agents: [{agent_id, pending, in_progress, blocked, total, max_capacity}]
+      total_open: int
+    """
+    if not os.path.exists(DB_PATH):
+        return jsonify({"agents": [], "total_open": 0})
+    max_cap = int(request.args.get('max_capacity', 5) or 5)
+    conn = get_tasks_db()
+    try:
+        rows = conn.execute(
+            "SELECT assigned_to, status, COUNT(*) FROM tasks "
+            "WHERE status IN ('pending','in_progress','blocked') "
+            "GROUP BY assigned_to, status"
+        ).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+    conn.close()
+    by_agent: dict[str, dict] = {}
+    for r in rows:
+        ag = (r["assigned_to"] or "_unassigned")
+        d = by_agent.setdefault(ag, {"pending": 0, "in_progress": 0, "blocked": 0})
+        d[r["status"]] = r["COUNT(*)"] if "COUNT(*)" in r.keys() else r[2]
+    out = []
+    for ag, d in sorted(by_agent.items()):
+        total = d["pending"] + d["in_progress"] + d["blocked"]
+        out.append({
+            "agent_id": ag,
+            "pending": d["pending"],
+            "in_progress": d["in_progress"],
+            "blocked": d["blocked"],
+            "total": total,
+            "max_capacity": max_cap,
+            "load_pct": min(100, round(100 * total / max_cap)),
+            "overloaded": total > max_cap,
+        })
+    out.sort(key=lambda r: -r["total"])
+    return jsonify({
+        "agents": out,
+        "total_open": sum(r["total"] for r in out),
+        "max_capacity": max_cap,
+    })
+
+
+@app.route('/api/tasks/bulk', methods=['POST'])
+def api_tasks_bulk():
+    """Bulk operations: archive | reassign | delete | set_priority.
+
+    Body: {"task_ids": [...], "op": "archive"|"reassign"|"delete"|"set_priority",
+           "value": <new value if applicable>}
+    """
+    if not os.path.exists(DB_PATH):
+        return jsonify({"error": "DB not found"}), 404
+    data = request.get_json(silent=True) or {}
+    ids = data.get('task_ids') or []
+    op = (data.get('op') or '').strip().lower()
+    value = data.get('value')
+    if not ids or op not in ("archive", "reassign", "delete", "set_priority"):
+        return jsonify({"error": "task_ids and op (archive|reassign|delete|set_priority) required"}), 400
+    if op == "reassign" and not value:
+        return jsonify({"error": "reassign requires value=<agent_id>"}), 400
+    if op == "set_priority" and value not in ("low", "medium", "high"):
+        return jsonify({"error": "set_priority requires value in low|medium|high"}), 400
+
+    conn = get_tasks_db()
+    placeholders = ",".join(["?"] * len(ids))
+    now = datetime.datetime.utcnow().isoformat()
+    affected = 0
+    try:
+        if op == "delete":
+            cur = conn.execute(f"DELETE FROM tasks WHERE id IN ({placeholders})", ids)
+            affected = cur.rowcount
+        elif op == "archive":
+            cur = conn.execute(
+                f"UPDATE tasks SET status='archived', updated_at=?, "
+                f"  notes = COALESCE(notes,'') || ? "
+                f"WHERE id IN ({placeholders})",
+                [now, f"\n[ARCHIVED {now[:10]} via bulk-op]\n"] + list(ids),
+            )
+            affected = cur.rowcount
+        elif op == "reassign":
+            cur = conn.execute(
+                f"UPDATE tasks SET assigned_to=?, updated_at=? WHERE id IN ({placeholders})",
+                [value, now] + list(ids),
+            )
+            affected = cur.rowcount
+        elif op == "set_priority":
+            cur = conn.execute(
+                f"UPDATE tasks SET priority=?, updated_at=? WHERE id IN ({placeholders})",
+                [value, now] + list(ids),
+            )
+            affected = cur.rowcount
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 500
+    conn.close()
+    return jsonify({"op": op, "affected": affected, "ids": ids, "value": value})
+
+
 @app.route('/api/tasks/<task_id>', methods=['GET'])
 def api_task_get(task_id):
     if not os.path.exists(DB_PATH):

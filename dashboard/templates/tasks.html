@@ -66,6 +66,7 @@
     .tasks-table td{padding:12px 16px;font-size:13px;border-bottom:1px solid #0d0d1e;vertical-align:middle}
     .tasks-table tr:last-child td{border-bottom:none}
     .tasks-table tr:hover td{background:#111122}
+    .tasks-table tr.selected td{background:#1a0d3a !important}
 
     .task-title{font-weight:600;color:#ddd;cursor:pointer;transition:color .2s}
     .task-title:hover{color:#c4b5fd}
@@ -193,6 +194,25 @@
     <div class="stat-card stat-blocked"><div class="stat-val" id="stat-blocked">—</div><div class="stat-lbl">Blocked</div></div>
   </div>
 
+  <!-- Per-agent capacity bars -->
+  <div style="background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px 16px;margin-bottom:18px">
+    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <span>Agent Capacity (open tasks)</span>
+      <span style="font-size:10px;color:#666;font-weight:400;text-transform:none;letter-spacing:0">red = overloaded · click bar to filter table by that agent</span>
+    </div>
+    <div id="capacityRows" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
+
+  <!-- Bulk action bar -->
+  <div id="bulkBar" style="display:none;background:#1a0d3a;border:1px solid #5a3a7a;color:#c4b5fd;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px;align-items:center;gap:10px;flex-wrap:wrap">
+    <span id="bulkCount" style="font-weight:700"></span>
+    <button class="btn btn-secondary" onclick="bulkOp('archive')">Archive</button>
+    <button class="btn btn-secondary" onclick="bulkOp('reassign')">Reassign…</button>
+    <button class="btn btn-secondary" onclick="bulkOp('set_priority')">Set priority…</button>
+    <button class="btn btn-secondary" style="border-color:#5a1a1a;color:#ff8888" onclick="bulkOp('delete')">Delete</button>
+    <button class="btn btn-secondary" style="margin-left:auto" onclick="clearSelection()">Clear</button>
+  </div>
+
   <!-- Toolbar -->
   <div class="toolbar">
     <input class="search-box" type="text" id="search-input" placeholder="🔍 Search tasks..." oninput="filterTasks()">
@@ -224,6 +244,7 @@
     <table class="tasks-table" id="tasks-table">
       <thead>
         <tr>
+          <th style="width:34px"><input type="checkbox" id="selAll" onchange="toggleSelectAll(this)" title="Select all"></th>
           <th style="width:40px"></th>
           <th>Task</th>
           <th>Status</th>
@@ -234,7 +255,7 @@
         </tr>
       </thead>
       <tbody id="tasks-tbody">
-        <tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading tasks...</td></tr>
+        <tr><td colspan="8" style="text-align:center;padding:40px;color:#333">Loading tasks...</td></tr>
       </tbody>
     </table>
   </div>
@@ -377,15 +398,18 @@ function setView(v){
 // ── Data Loading ──
 async function loadTasks(){
   try{
-    const [tasksRes, statsRes, projRes] = await Promise.all([
+    const [tasksRes, statsRes, projRes, capRes] = await Promise.all([
       fetch('/api/tasks?limit=200'),
       fetch('/api/tasks/stats'),
-      fetch('/api/projects')
+      fetch('/api/projects'),
+      fetch('/api/tasks/capacity')
     ]);
     allTasks = await tasksRes.json();
     const stats = await statsRes.json();
     projects = await projRes.json();
+    const cap = await capRes.json();
     renderStats(stats);
+    renderCapacity(cap);
     populateProjectFilter();
     populateAgentFilter();
     const filtered = getFiltered();
@@ -394,6 +418,90 @@ async function loadTasks(){
   }catch(e){
     console.error(e);
   }
+}
+
+// ── Capacity bars ──
+function renderCapacity(cap){
+  const root = document.getElementById('capacityRows');
+  if(!root) return;
+  const agents = cap.agents || [];
+  if(!agents.length){
+    root.innerHTML = '<div style="color:#444;font-size:12px;padding:6px 0">No open tasks across any agent.</div>';
+    return;
+  }
+  root.innerHTML = agents.map(a => {
+    const color = a.overloaded ? '#ff5555' : (a.load_pct >= 70 ? '#ffaa00' : '#00d084');
+    return `
+      <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="filterByAgent('${a.agent_id}')">
+        <div style="width:140px;font-size:11px;color:#aaa;font-family:monospace">${a.agent_id}</div>
+        <div style="flex:1;background:#1a1a2e;height:18px;border-radius:9px;overflow:hidden;position:relative">
+          <div style="width:${a.load_pct}%;height:100%;background:${color};transition:width .3s"></div>
+          <div style="position:absolute;left:10px;top:0;bottom:0;display:flex;align-items:center;font-size:10px;font-weight:700;color:#fff;text-shadow:0 0 3px rgba(0,0,0,.8)">
+            ${a.total} / ${a.max_capacity}
+            ${a.in_progress ? `<span style="color:#7c8aff;margin-left:8px">${a.in_progress} active</span>` : ''}
+            ${a.blocked ? `<span style="color:#ff8888;margin-left:8px">${a.blocked} blocked</span>` : ''}
+          </div>
+        </div>
+        ${a.overloaded ? '<span style="font-size:10px;font-weight:700;color:#ff5555;letter-spacing:.5px">OVERLOADED</span>' : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function filterByAgent(agentId){
+  const sel = document.getElementById('filter-agent');
+  if(sel){
+    sel.value = agentId;
+    sel.dispatchEvent(new Event('change'));
+  }
+}
+
+// ── Bulk operations ──
+let SELECTED_IDS = new Set();
+function toggleSelect(id, el){
+  if(SELECTED_IDS.has(id)) SELECTED_IDS.delete(id);
+  else SELECTED_IDS.add(id);
+  if(el) el.classList.toggle('selected', SELECTED_IDS.has(id));
+  refreshBulkBar();
+}
+function clearSelection(){
+  SELECTED_IDS.clear();
+  document.querySelectorAll('tr.selected').forEach(r => r.classList.remove('selected'));
+  refreshBulkBar();
+}
+function refreshBulkBar(){
+  const bar = document.getElementById('bulkBar');
+  const cnt = document.getElementById('bulkCount');
+  if(!bar) return;
+  if(SELECTED_IDS.size === 0){
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  cnt.textContent = `${SELECTED_IDS.size} task${SELECTED_IDS.size===1?'':'s'} selected`;
+}
+async function bulkOp(op){
+  if(SELECTED_IDS.size === 0) return;
+  let value = null;
+  if(op === 'reassign'){
+    value = prompt('Reassign to which agent_id?');
+    if(!value) return;
+  } else if(op === 'set_priority'){
+    value = prompt('New priority (low/medium/high)?', 'high');
+    if(!value || !['low','medium','high'].includes(value)) return;
+  } else if(op === 'delete'){
+    if(!confirm(`Delete ${SELECTED_IDS.size} task(s)? This is permanent.`)) return;
+  } else if(op === 'archive'){
+    if(!confirm(`Archive ${SELECTED_IDS.size} task(s)? They'll stop running but stay in the DB.`)) return;
+  }
+  const r = await fetch('/api/tasks/bulk', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({task_ids: Array.from(SELECTED_IDS), op, value})
+  });
+  const d = await r.json();
+  if(d.error){ alert('failed: ' + d.error); return; }
+  clearSelection();
+  loadTasks();
 }
 
 function renderStats(stats){
@@ -427,12 +535,15 @@ function populateAgentFilter(){
 function renderTasks(tasks){
   const tbody = document.getElementById('tasks-tbody');
   if(!tasks.length){
-    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📋</div><h3>No tasks found</h3><p>Create your first task or let Duke create from roadmap</p></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📋</div><h3>No tasks found</h3><p>Create your first task or let Duke create from roadmap</p></div></td></tr>';
     return;
   }
   tbody.innerHTML = tasks.map(t=>{
     const agent = t.assigned_to || '';
-    return `<tr>
+    const checked = SELECTED_IDS.has(t.id) ? 'checked' : '';
+    const sel = SELECTED_IDS.has(t.id) ? 'selected' : '';
+    return `<tr class="${sel}" data-tid="${t.id}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onchange="toggleSelect('${t.id}', this.closest('tr'))"></td>
       <td><span class="priority-dot p-${t.priority||'medium'}"></span></td>
       <td>
         <div class="task-title" onclick="openDetail('${t.id}')">${escHtml(t.title)}</div>
@@ -448,6 +559,25 @@ function renderTasks(tasks){
       </div></td>
     </tr>`;
   }).join('');
+}
+
+function toggleSelectAll(cb){
+  const rows = document.querySelectorAll('#tasks-tbody tr[data-tid]');
+  if(cb.checked){
+    rows.forEach(r => {
+      const tid = r.dataset.tid;
+      if(tid) SELECTED_IDS.add(tid);
+      r.classList.add('selected');
+      const c = r.querySelector('input[type=checkbox]'); if(c) c.checked = true;
+    });
+  } else {
+    SELECTED_IDS.clear();
+    rows.forEach(r => {
+      r.classList.remove('selected');
+      const c = r.querySelector('input[type=checkbox]'); if(c) c.checked = false;
+    });
+  }
+  refreshBulkBar();
 }
 
 function renderKanban(tasks){
