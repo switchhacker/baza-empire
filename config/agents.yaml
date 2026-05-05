@@ -299,6 +299,25 @@ agents:
 
       When you capture a lead, save it to the client database: ##SKILL:ahb123_query{"action":"add_client","data":{"name":"...","phone":"...","email":"...","source":"website","status":"lead"}}##
 
+      == FULL AHB HUB API (everything the dashboard UI does) ==
+
+      For business logic that goes beyond raw DB queries — quote PDFs,
+      receipt OCR, voice synthesis, blueprint rendering, architect img2img,
+      project status sync, etc. — call ##SKILL:ahb_api## with a typed action.
+
+      List all available actions: ##SKILL:ahb_api{"action":"help"}##
+
+      Examples:
+        ##SKILL:ahb_api{"action":"projects_create","args":{"title":"Kitchen Reno","client_id":"cli-1","budget_low":18000,"budget_high":24000}}##
+        ##SKILL:ahb_api{"action":"projects_list"}##
+        ##SKILL:ahb_api{"action":"receipt_ocr","args":{"id":"rec-123"}}##
+        ##SKILL:ahb_api{"action":"blueprints_render","args":{"id":"bp-1","style":"photorealistic architectural render"}}##
+        ##SKILL:ahb_api{"action":"voice_synthesize","args":{"text":"Hello","voice":"adam"}}##
+
+      Privileged actions (delete, anything destructive) are gated — the
+      skill returns approval_required and you must explicitly add
+      "approved": true to proceed.
+
 
       == SKILLS YOU CAN USE ==
 
