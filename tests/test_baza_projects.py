@@ -118,3 +118,46 @@ def test_create_duplicate_raises(projects):
     projects.create_project(name="Dup", type_="library", project_id="dup-1")
     with pytest.raises(FileExistsError):
         projects.create_project(name="Dup", type_="library", project_id="dup-1")
+
+
+def test_exec_in_project_runs_in_sandbox(projects):
+    p = projects.create_project(name="Sandbox Exec", type_="library")
+    res = projects.exec_in_project(p["id"], "pwd && ls -la README.md")
+    assert res["success"] is True
+    assert p["path"] in res["stdout"]
+    assert "README.md" in res["stdout"]
+
+
+def test_exec_empty_command(projects):
+    p = projects.create_project(name="Sandbox Empty", type_="library")
+    res = projects.exec_in_project(p["id"], "")
+    assert res["success"] is False
+    assert "empty command" in res["error"]
+
+
+def test_exec_unknown_project(projects):
+    with pytest.raises(FileNotFoundError):
+        projects.exec_in_project("not-a-real-project", "pwd")
+
+
+def test_flash_slot_gated(projects):
+    p = projects.create_project(name="Firmware", type_="esp-firmware")
+    # Flash is privileged — must refuse without approval
+    res = projects.run_command(p["id"], "flash", approved=False)
+    assert res["success"] is False
+    assert "approved=True" in (res.get("error") or "")
+
+
+def test_firmware_manifest_has_flash_slot(projects):
+    p = projects.create_project(name="ESP One", type_="esp-firmware")
+    detail = projects.get_project(p["id"])
+    cmds = detail["manifest"]["commands"]
+    assert "flash" in cmds and "idf.py" in cmds["flash"]
+
+
+def test_library_manifest_no_flash_slot(projects):
+    p = projects.create_project(name="Lib One", type_="library")
+    detail = projects.get_project(p["id"])
+    cmds = detail["manifest"]["commands"]
+    # library type doesn't get a flash slot
+    assert cmds.get("flash", "") == ""

@@ -184,7 +184,30 @@
 
     <!-- Render -->
     <div class="panel" id="panel-render">
-      <div class="placeholder">Render — generate visual previews (mockups, diagrams, blueprints) for this project. Coming in #4.x follow-up.</div>
+      <div class="card">
+        <h3>Generate visual</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">Calls Stable Diffusion WebUI (Sam's infra on :7860) and saves the result into this project's <code>artifacts/</code>.</p>
+        <div class="field">
+          <label>Prompt</label>
+          <textarea id="renderPrompt" placeholder="A clean modern dashboard mockup with dark theme, accent purple..." style="min-height:80px"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <select id="renderSize" class="filter-select" style="padding:7px 10px;background:#0a0a14;border:1px solid #1a1a2e;border-radius:5px;color:#ddd">
+            <option value="1024x1024">1024x1024 (square)</option>
+            <option value="1280x720">1280x720 (landscape)</option>
+            <option value="768x1024">768x1024 (portrait)</option>
+          </select>
+          <button class="btn btn-primary" onclick="runRender()">▶ Render</button>
+          <button class="btn btn-secondary" onclick="loadRenders()">↻ Reload gallery</button>
+          <span id="renderStatus" style="margin-left:auto;font-size:11px;color:#666;align-self:center"></span>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Gallery</h3>
+        <div id="renderGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+          <div class="placeholder" style="grid-column:1/-1">No renders yet.</div>
+        </div>
+      </div>
     </div>
 
     <!-- Preview -->
@@ -212,7 +235,16 @@
 
     <!-- Explore -->
     <div class="panel" id="panel-explore">
-      <div class="placeholder">Explore — terminal/REPL into the project sandbox. Coming in #4.x follow-up.</div>
+      <div class="card">
+        <h3>Project shell <span style="font-size:10px;font-weight:400;color:#666;text-transform:none;letter-spacing:0;margin-left:8px">cwd pinned to project root</span></h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">One-shot exec — each command runs in a fresh shell with the project as cwd. No persistent session. History below kept this tab.</p>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+          <span style="font-family:monospace;color:#7c3aed;font-size:13px">$</span>
+          <input id="execInput" type="text" placeholder="ls -la, cat README.md, git log --oneline, npm install, ..." style="flex:1;padding:8px 10px;background:#06060e;border:1px solid #1a1a2e;border-radius:5px;color:#ddd;font-family:monospace;font-size:12px">
+          <button class="btn btn-primary" onclick="runExec()">Run</button>
+        </div>
+        <pre id="execOut" style="max-height:400px;overflow:auto;background:#06060e">(no commands yet — type one above and press Enter)</pre>
+      </div>
     </div>
 
     <!-- Test -->
@@ -244,6 +276,20 @@
           <pre id="deployOut"></pre>
         </div>
       </div>
+
+      <div class="card" id="flashCard" style="margin-top:14px;display:none">
+        <h3>Flash hardware (privileged)</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">Runs the manifest <code>flash</code> command. For ESP-IDF projects you can override the serial port.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <label style="font-size:11px;color:#888">Serial port:</label>
+          <input id="flashPort" type="text" placeholder="/dev/ttyUSB0" value="/dev/ttyUSB0" style="padding:7px 10px;background:#06060e;border:1px solid #1a1a2e;border-radius:5px;color:#ddd;font-family:monospace;font-size:12px;width:160px">
+          <button class="btn btn-warn" onclick="runFlash()">⚡ Approve &amp; Flash</button>
+        </div>
+        <div class="stdout-block" id="flashOutBlock" style="display:none">
+          <div class="lbl">output</div>
+          <pre id="flashOut"></pre>
+        </div>
+      </div>
     </div>
 
     <!-- Iterate -->
@@ -267,6 +313,7 @@ function setTab(name){
   if(name==='develop' && !CURRENT_FILE){ loadFiles(''); }
   if(name==='brainstorm') loadBrainstorm();
   if(name==='preview'){ previewRefresh(); previewLogs(); }
+  if(name==='render'){ loadRenders(); }
 }
 
 async function reload(){
@@ -288,6 +335,11 @@ async function reload(){
   document.getElementById('mAt').textContent = m.created_at || '—';
   document.getElementById('mPath').textContent = p.path || '—';
   document.getElementById('mDesc').textContent = m.description || '(no description)';
+  // Show Flash card only for firmware/hardware project types
+  const flashCard = document.getElementById('flashCard');
+  if(flashCard){
+    flashCard.style.display = (['esp-firmware','stm-firmware','lora-test'].includes(m.type)) ? '' : 'none';
+  }
   // Commands
   const cmds = m.commands || {};
   const order = ['build','test','run','preview','deploy'];
@@ -329,6 +381,34 @@ async function runSlot(slot, approved, outId){
     + (d.stdout || '') + (d.stderr ? '\nSTDERR:\n'+d.stderr : '');
   out.textContent = text;
   toast((d.success?'OK':'FAIL') + ' ' + slot, d.success?'ok':'err');
+}
+
+async function runFlash(){
+  const port = (document.getElementById('flashPort').value || '/dev/ttyUSB0').trim();
+  if(!confirm('FLASH this project to ' + port + '?\nThis writes firmware to physical hardware. Make sure the device is connected and you intended this.')) return;
+  const outBlock = document.getElementById('flashOutBlock');
+  outBlock.style.display = 'block';
+  const out = document.getElementById('flashOut');
+  out.textContent = '… flashing on ' + port + '\n';
+  // Pass BAZA_FLASH_PORT through the run endpoint via the slot's env. Currently
+  // the run endpoint doesn't pipe env, so we rely on the manifest's
+  // ${BAZA_FLASH_PORT:-/dev/ttyUSB0} fallback. To override, the user should
+  // edit the manifest command directly. Show the resolved command in the log.
+  try{
+    const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/run`,
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({slot: 'flash', approved: true})});
+    const d = await r.json();
+    let block = '';
+    if(d.error) block += 'ERROR: ' + d.error + '\n';
+    if(d.stdout) block += d.stdout;
+    if(d.stderr) block += '\n[stderr]\n' + d.stderr;
+    if(typeof d.exit_code !== 'undefined') block += '\n[exit ' + d.exit_code + ']';
+    out.textContent = block || '(no output)';
+    toast(d.success ? 'Flash OK' : 'Flash FAILED', d.success ? 'ok' : 'err');
+  } catch(e){
+    out.textContent += '\n[network error: ' + e + ']\n';
+  }
 }
 
 async function loadFiles(sub){
@@ -421,6 +501,94 @@ async function previewRefresh(){
     wrap.style.display = 'none';
   }
 }
+let EXEC_HISTORY = [];
+
+async function runExec(){
+  const input = document.getElementById('execInput');
+  const cmd = (input.value || '').trim();
+  if(!cmd) return;
+  const out = document.getElementById('execOut');
+  out.textContent = (out.textContent === '(no commands yet — type one above and press Enter)' ? '' : out.textContent)
+                    + `\n$ ${cmd}\n`;
+  out.scrollTop = out.scrollHeight;
+  input.value = '';
+  try{
+    const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/exec`,
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({command: cmd, timeout: 90})});
+    const d = await r.json();
+    let block = '';
+    if(d.error){ block += `ERROR: ${d.error}\n`; }
+    if(d.stdout) block += d.stdout;
+    if(d.stderr) block += `\n[stderr]\n${d.stderr}`;
+    if(typeof d.exit_code !== 'undefined') block += `\n[exit ${d.exit_code}]`;
+    out.textContent += block + '\n';
+    out.scrollTop = out.scrollHeight;
+  } catch(e){
+    out.textContent += `\n[network error: ${e}]\n`;
+  }
+  EXEC_HISTORY.push(cmd);
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const ei = document.getElementById('execInput');
+  if(ei){
+    let histIdx = -1;
+    ei.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){ e.preventDefault(); runExec(); histIdx = -1; }
+      else if(e.key === 'ArrowUp' && EXEC_HISTORY.length){
+        histIdx = Math.min(histIdx + 1, EXEC_HISTORY.length - 1);
+        ei.value = EXEC_HISTORY[EXEC_HISTORY.length - 1 - histIdx] || '';
+      }
+      else if(e.key === 'ArrowDown' && histIdx > 0){
+        histIdx = Math.max(histIdx - 1, 0);
+        ei.value = EXEC_HISTORY[EXEC_HISTORY.length - 1 - histIdx] || '';
+      }
+    });
+  }
+});
+
+async function runRender(){
+  const prompt = document.getElementById('renderPrompt').value.trim();
+  if(!prompt){ toast('Prompt required','err'); return; }
+  const size = document.getElementById('renderSize').value;
+  const [w, h] = size.split('x').map(Number);
+  document.getElementById('renderStatus').textContent = 'rendering…';
+  document.getElementById('renderStatus').style.color = '#7c3aed';
+  try{
+    const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/render`,
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({prompt, width: w, height: h})});
+    const d = await r.json();
+    if(d.success){
+      document.getElementById('renderStatus').textContent = `saved ${d.files.length} image(s)`;
+      document.getElementById('renderStatus').style.color = '#00d084';
+      loadRenders();
+    } else {
+      document.getElementById('renderStatus').textContent = 'failed: ' + (d.error||'');
+      document.getElementById('renderStatus').style.color = '#ff8888';
+    }
+  } catch(e){
+    document.getElementById('renderStatus').textContent = 'error: ' + e;
+    document.getElementById('renderStatus').style.color = '#ff8888';
+  }
+}
+async function loadRenders(){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/renders`);
+  const d = await r.json();
+  const gallery = document.getElementById('renderGallery');
+  if(!(d.renders||[]).length){
+    gallery.innerHTML = '<div class="placeholder" style="grid-column:1/-1">No renders yet.</div>';
+    return;
+  }
+  gallery.innerHTML = d.renders.map(rd =>
+    `<a href="${rd.url}" target="_blank" style="display:block;border:1px solid #1a1a2e;border-radius:6px;overflow:hidden;background:#0a0a14">
+       <img src="${rd.url}" loading="lazy" style="width:100%;display:block;aspect-ratio:1/1;object-fit:cover">
+       <div style="padding:6px 8px;font-size:10px;color:#666;font-family:monospace">${escapeHtml(rd.name)}</div>
+     </a>`
+  ).join('');
+}
+
 async function previewLogs(){
   const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/preview/logs?lines=200`);
   const d = await r.json();

@@ -142,7 +142,8 @@ def _default_commands(type_: str) -> dict[str, str]:
             "test": "idf.py build && echo 'firmware build OK'",
             "run": "",
             "preview": "",
-            "deploy": "idf.py flash  # PRIVILEGED",
+            "deploy": "echo 'configure deploy target in manifest'",
+            "flash": "idf.py -p ${BAZA_FLASH_PORT:-/dev/ttyUSB0} flash",
         }
     if type_ == "stm-firmware":
         return {
@@ -150,7 +151,8 @@ def _default_commands(type_: str) -> dict[str, str]:
             "test": "make test || true",
             "run": "",
             "preview": "",
-            "deploy": "make flash  # PRIVILEGED",
+            "deploy": "echo 'configure deploy target in manifest'",
+            "flash": "make flash",
         }
     if type_ == "lora-test":
         return {
@@ -159,6 +161,7 @@ def _default_commands(type_: str) -> dict[str, str]:
             "run": "",
             "preview": "",
             "deploy": "",
+            "flash": "echo 'lora-test flash hook — set device-specific command in manifest'",
         }
     return {"build": "", "test": "", "run": "", "preview": "", "deploy": ""}
 
@@ -364,12 +367,51 @@ def write_file(project_id: str, relpath: str, content: str) -> dict[str, Any]:
 
 # ── Run a command from the manifest ──────────────────────────────────────────
 
+def exec_in_project(project_id: str, command: str, *, timeout: int = 60) -> dict[str, Any]:
+    """Run an arbitrary shell command inside the project sandbox dir.
+
+    The command is executed with the project root as cwd. Output and exit
+    code are returned. Used by the Explore tab so the user can poke around
+    a project's tree without leaving the dashboard.
+
+    NOTE: this is **not** a security boundary against the agent — agents
+    already have host shell access via the existing `shell` skill. The
+    cwd-pin keeps the user's mental model "I am inside this project" and
+    avoids accidental writes to sibling projects.
+    """
+    proj = get_project(project_id)
+    if not proj:
+        raise FileNotFoundError(project_id)
+    cmd = (command or "").strip()
+    if not cmd:
+        return {"success": False, "error": "empty command"}
+    try:
+        proc = subprocess.run(
+            cmd, shell=True, cwd=proj["path"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return {
+            "success": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "stdout": (proc.stdout or "")[:8000],
+            "stderr": (proc.stderr or "")[:4000],
+            "command": cmd,
+        }
+    except subprocess.TimeoutExpired as e:
+        return {
+            "success": False, "exit_code": -1, "error": f"timeout after {timeout}s",
+            "stdout": (e.stdout or b"").decode("utf-8", errors="replace")[:8000] if isinstance(e.stdout, bytes) else (e.stdout or "")[:8000],
+            "stderr": (e.stderr or b"").decode("utf-8", errors="replace")[:4000] if isinstance(e.stderr, bytes) else (e.stderr or "")[:4000],
+            "command": cmd,
+        }
+
+
 def run_command(project_id: str, slot: str, *, approved: bool = False, timeout: int = 300) -> dict[str, Any]:
     """Run one of the manifest commands (build|test|run|preview|deploy).
 
-    `deploy` is gated — refuses unless approved=True. Returns dict with
-    success/output/exit_code. Long-running `run`/`preview` are not supported
-    here yet; this is a one-shot exec for v1.
+    `deploy` and `flash` are gated — refuses unless approved=True. Returns
+    dict with success/output/exit_code. Long-running `run`/`preview` are
+    not supported here; use core.preview_supervisor for those.
     """
     proj = get_project(project_id)
     if not proj:
@@ -379,10 +421,10 @@ def run_command(project_id: str, slot: str, *, approved: bool = False, timeout: 
     cmd = cmds.get(slot, "").strip()
     if not cmd:
         return {"success": False, "error": f"no command configured for slot={slot}"}
-    if slot == "deploy" and not approved:
-        return {"success": False, "error": "deploy requires approved=True (privileged)"}
+    if slot in ("deploy", "flash") and not approved:
+        return {"success": False, "error": f"{slot} requires approved=True (privileged)"}
     if slot in ("run", "preview"):
-        return {"success": False, "error": f"{slot} is long-running; use the preview launcher (#4.x follow-up)"}
+        return {"success": False, "error": f"{slot} is long-running; use core.preview_supervisor.start"}
 
     proj_dir = proj["path"]
     try:

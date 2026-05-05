@@ -489,6 +489,29 @@ class BaseAgent(ContextMixin):
         return None
 
 
+    # ── Directive Intent Handling ────────────────────────────────────────────
+
+    def _maybe_handle_directive(self, text: str) -> str | None:
+        """If `text` parses as a known directive, dispatch and return a
+        Telegram-formatted reply. Returns None to fall through to LLM."""
+        try:
+            from core.intent_router import parse_intent
+            from core.intent_dispatcher import dispatch, telegram_format
+        except Exception:
+            return None
+        env = parse_intent(text)
+        intent = env.get("intent")
+        # Only intercept clearly-known directives. Unknown / empty falls through
+        # to the LLM so casual messages like "/me will check" don't get hijacked.
+        if intent in ("unknown", None):
+            return None
+        try:
+            out = dispatch(env, extra={"agent_id": self.AGENT_ID})
+        except Exception as e:
+            return f"directive failed: {e}"
+        return telegram_format(out)
+
+
     # ── Print Request Handling ───────────────────────────────────────────────
 
     def _is_print_request(self, text: str) -> bool:
@@ -1534,6 +1557,16 @@ class BaseAgent(ContextMixin):
             save_message(chat_id, self.AGENT_ID, "assistant", reply)
             await self._send_response(context.bot, chat_id, reply)
             return
+
+        # ── Directive intent intercept (fires for ALL agents) ─────────────
+        if text.lstrip().startswith("/"):
+            directive_reply = self._maybe_handle_directive(text)
+            if directive_reply is not None:
+                save_message(chat_id, self.AGENT_ID, "user", text)
+                save_message(chat_id, self.AGENT_ID, "assistant", directive_reply)
+                self.journal("directive_handled", text[:200], chat_id=chat_id)
+                await self._send_response(context.bot, chat_id, directive_reply)
+                return
 
         # Save incoming message to DB
         save_message(chat_id, self.AGENT_ID, "user", text)

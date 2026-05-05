@@ -3336,6 +3336,135 @@ def api_baza_project_file_put(project_id):
     return jsonify({"saved": True, "info": info})
 
 
+@app.route('/api/baza/projects/<project_id>/exec', methods=['POST'])
+def api_baza_project_exec(project_id):
+    """Run an arbitrary shell command pinned to the project sandbox dir."""
+    bp = _baza_projects()
+    data = request.get_json(silent=True) or {}
+    cmd = (data.get('command') or '').strip()
+    timeout = int(data.get('timeout') or 60)
+    if not cmd:
+        return jsonify({"error": "command is required"}), 400
+    parent = None
+    try:
+        from core import task_events as te
+        parent = te.emit("tool_call", project_id=project_id, agent_id="user",
+                         payload={"tool": "explore.exec", "args": {"command": cmd[:200]}})
+    except Exception:
+        pass
+    try:
+        res = bp.exec_in_project(project_id, cmd, timeout=timeout)
+    except FileNotFoundError:
+        return jsonify({"error": "project not found"}), 404
+    try:
+        from core import task_events as te
+        te.emit("tool_result", project_id=project_id, agent_id="user",
+                payload={"tool": "explore.exec", "ok": bool(res.get("success")),
+                         "exit_code": res.get("exit_code", -1),
+                         "result_snippet": (res.get("stdout") or res.get("error") or "")[:600]},
+                parent_event_id=parent)
+    except Exception:
+        pass
+    return jsonify(res)
+
+
+@app.route('/api/baza/projects/<project_id>/render', methods=['POST'])
+def api_baza_project_render(project_id):
+    """Generate a visual via Stable Diffusion (uses Sam's existing infra) and
+    save into the project's artifacts/ dir."""
+    bp = _baza_projects()
+    proj = bp.get_project(project_id)
+    if not proj:
+        return jsonify({"error": "project not found"}), 404
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get('prompt') or '').strip()
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    parent = None
+    try:
+        from core import task_events as te
+        parent = te.emit("tool_call", project_id=project_id, agent_id="user",
+                         payload={"tool": "render.txt2img", "args": {"prompt": prompt[:200]}})
+    except Exception:
+        pass
+
+    try:
+        import base64
+        import requests as _req
+        resp = _req.post('http://localhost:7860/sdapi/v1/txt2img', json={
+            'prompt': prompt,
+            'negative_prompt': data.get('negative_prompt', ''),
+            'width':  int(data.get('width', 1024)),
+            'height': int(data.get('height', 1024)),
+            'steps':  int(data.get('steps', 30)),
+            'cfg_scale': float(data.get('cfg_scale', 7)),
+            'sampler_name': data.get('sampler') or 'DPM++ 2M Karras',
+        }, timeout=180)
+        result = resp.json()
+        images = result.get('images') or []
+        out_dir = os.path.join(proj["path"], "artifacts")
+        os.makedirs(out_dir, exist_ok=True)
+        saved_urls = []
+        saved_files = []
+        for img_b64 in images:
+            fname = f"render_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.png"
+            fpath = os.path.join(out_dir, fname)
+            with open(fpath, "wb") as fp:
+                fp.write(base64.b64decode(img_b64))
+            saved_files.append(fname)
+            saved_urls.append(f"/api/artifacts/serve/{project_id}/{fname}")
+            try:
+                from core import task_events as te
+                te.emit("artifact_saved", project_id=project_id, agent_id="user",
+                        payload={"path": fpath, "filename": fname,
+                                 "kind": "render", "bytes": os.path.getsize(fpath)})
+            except Exception:
+                pass
+
+        try:
+            from core import task_events as te
+            te.emit("tool_result", project_id=project_id, agent_id="user",
+                    payload={"tool": "render.txt2img", "ok": True,
+                             "result_snippet": f"saved {len(saved_files)} image(s)"},
+                    parent_event_id=parent)
+        except Exception:
+            pass
+        return jsonify({"success": True, "files": saved_files, "urls": saved_urls})
+    except Exception as e:
+        try:
+            from core import task_events as te
+            te.emit("tool_result", project_id=project_id, agent_id="user",
+                    payload={"tool": "render.txt2img", "ok": False, "error": str(e)[:300]},
+                    parent_event_id=parent)
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/baza/projects/<project_id>/renders')
+def api_baza_project_renders(project_id):
+    """List render images saved in the project's artifacts/ dir."""
+    bp = _baza_projects()
+    proj = bp.get_project(project_id)
+    if not proj:
+        return jsonify({"renders": []})
+    art_dir = os.path.join(proj["path"], "artifacts")
+    if not os.path.isdir(art_dir):
+        return jsonify({"renders": []})
+    out = []
+    for name in sorted(os.listdir(art_dir), reverse=True):
+        if name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            p = os.path.join(art_dir, name)
+            out.append({
+                "name": name,
+                "url": f"/api/artifacts/serve/{project_id}/{name}",
+                "size": os.path.getsize(p),
+                "modified": datetime.datetime.fromtimestamp(os.path.getmtime(p)).isoformat(),
+            })
+    return jsonify({"renders": out[:60]})
+
+
 @app.route('/api/baza/projects/<project_id>/preview/start', methods=['POST'])
 def api_baza_preview_start(project_id):
     from core import preview_supervisor as ps
@@ -3435,57 +3564,25 @@ def api_intents_help():
 
 @app.route('/api/intents', methods=['POST'])
 def api_intents_dispatch():
-    """Parse text, dispatch known intents, return result."""
+    """Parse text, dispatch known intents, return result. Also handles the
+    AHB project create flow because that's HTTP-side state."""
     from core.intent_router import parse_intent
+    from core.intent_dispatcher import dispatch as _dispatch
     data = request.get_json(silent=True) or {}
     text = (data.get('text') or '').strip()
-    extra = data.get('extra') or {}  # for callers who want to pre-fill args
+    extra = data.get('extra') or {}
     env = parse_intent(text)
-    if env.get('errors') and env.get('intent') in ('unknown', None):
-        return jsonify({"envelope": env, "result": None}), 400
 
-    # Emit a parsed event so chains pipeline shows what came in
-    try:
-        from core import task_events as te
-        te.emit("intent_parsed", agent_id=(extra.get('agent_id') or 'user'),
-                payload={"intent": env.get('intent'), "args": env.get('args', {}), "raw": env.get('raw', '')})
-    except Exception:
-        pass
-
-    intent = env.get('intent')
-    args = {**env.get('args', {}), **(extra or {})}
-
-    if intent == 'help':
-        from core.intent_router import help_text
-        return jsonify({"envelope": env, "result": {"help": help_text()}})
-
-    if intent == 'create_baza_project':
+    # AHB project create needs the dashboard's existing endpoint — not in core.
+    if env.get('intent') == 'create_ahb_project':
         if env['errors']:
             return jsonify({"envelope": env, "result": None}), 400
-        bp = _baza_projects()
         try:
-            proj = bp.create_project(
-                name=args.get('name') or '',
-                type_=args.get('type') or 'web-app',
-                description=args.get('description') or '',
-                created_by=args.get('agent_id') or extra.get('agent_id') or 'user',
-            )
-        except (ValueError, FileExistsError) as e:
-            return jsonify({"envelope": env, "result": {"error": str(e)}}), 400
-        return jsonify({
-            "envelope": env,
-            "result": {"project": proj, "url": f"/projects/{proj['id']}"},
-        }), 201
-
-    if intent == 'create_ahb_project':
-        # Reuse the existing AHB endpoint internally — minimum payload
-        try:
-            from urllib.parse import urlencode
-            ahb_payload = {"title": args.get('name') or 'New AHB Project"'}
-            if args.get('client_id'):
-                ahb_payload["client_id"] = args['client_id']
-            if args.get('description'):
-                ahb_payload["description"] = args['description']
+            ahb_payload = {"title": env['args'].get('name') or 'New AHB Project'}
+            if env['args'].get('client_id'):
+                ahb_payload["client_id"] = env['args']['client_id']
+            if env['args'].get('description'):
+                ahb_payload["description"] = env['args']['description']
             with app.test_client() as tc:
                 r = tc.post('/api/ahb/projects', json=ahb_payload)
                 ok = (r.status_code in (200, 201))
@@ -3496,65 +3593,8 @@ def api_intents_dispatch():
         except Exception as e:
             return jsonify({"envelope": env, "result": {"error": str(e)}}), 500
 
-    if intent == 'test':
-        if env['errors']:
-            return jsonify({"envelope": env, "result": None}), 400
-        bp = _baza_projects()
-        try:
-            res = bp.run_command(args['project_id'], 'test')
-        except FileNotFoundError:
-            return jsonify({"envelope": env, "result": {"error": "project not found"}}), 404
-        return jsonify({"envelope": env, "result": res})
-
-    if intent == 'deploy':
-        if env['errors']:
-            return jsonify({"envelope": env, "result": None}), 400
-        approved = bool(args.get('approved'))
-        if not approved:
-            try:
-                from core import task_events as te
-                te.emit(
-                    "approval_requested", project_id=args['project_id'],
-                    agent_id=(args.get('agent_id') or 'user'),
-                    payload={"action": "deploy", "details": args},
-                )
-            except Exception:
-                pass
-            return jsonify({
-                "envelope": env,
-                "result": {
-                    "approval_required": True,
-                    "action": "deploy",
-                    "project_id": args['project_id'],
-                    "hint": "POST again with approved=true in extra",
-                },
-            }), 202
-        bp = _baza_projects()
-        res = bp.run_command(args['project_id'], 'deploy', approved=True)
-        return jsonify({"envelope": env, "result": res})
-
-    if intent in ('flash', 'render', 'preview', 'debug', 'develop', 'iterate'):
-        # Not yet implemented end-to-end — reply with clear status so callers
-        # can show the user what's pending and which sub-project will deliver it.
-        followup_map = {
-            'flash':   '#4.8 ESP/STM/LoRa runtime',
-            'render':  '#4.6 Render sub-tab',
-            'preview': '#4.5 Long-running preview/run',
-            'debug':   '#4.x Debug logs view',
-            'develop': '#5 Agent project access',
-            'iterate': '#5 Agent project access',
-        }
-        return jsonify({
-            "envelope": env,
-            "result": {
-                "pending": True,
-                "intent": intent,
-                "follow_up": followup_map[intent],
-                "message": f"{intent} is recognized but its handler is not implemented yet ({followup_map[intent]}).",
-            },
-        }), 202
-
-    return jsonify({"envelope": env, "result": None}), 400
+    out = _dispatch(env, extra=extra)
+    return jsonify({"envelope": out["envelope"], "result": out["result"]}), out["status"]
 
 
 # ── Routes — Skills Lab ────────────────────────────────────────────────────────
