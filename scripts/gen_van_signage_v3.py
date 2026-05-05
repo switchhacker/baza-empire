@@ -74,13 +74,25 @@ PANEL: dict[str, tuple[float, float, float, float]] = {
     # van side 2.jpeg — passenger profile (front is to the LEFT in the photo)
     # Cargo body in this photo runs roughly x=0.40-0.95; we put text in
     # the front portion of that band.
-    "side_passenger":   (0.34, 0.28, 0.74, 0.46),
-    # van side.jpeg — rear-quarter from passenger side (front is to the LEFT)
-    "side_rearquarter": (0.30, 0.30, 0.70, 0.48),
-    # van rear.jpeg — recentered on the van. Doors span x=0.345-0.727
-    # (center 0.536). Panel x=0.34-0.74 → mid 0.54, matched. Pushed up
-    # so text sits in the upper door panel just under the roof spoiler.
-    "rear":             (0.34, 0.20, 0.74, 0.56),
+    # v6 nudges per Serge:
+    #   passenger side: pull right 10%
+    #   driver side: pull to front 4%, made larger, rotated CCW 4°
+    #   rear: 4.5% left, 2.7% lower
+    "side_passenger":   (0.44, 0.28, 0.84, 0.46),
+    "side_rearquarter": (0.22, 0.27, 0.68, 0.51),
+    "rear":             (0.295, 0.227, 0.695, 0.587),
+}
+
+# Optional per-panel rotation in DEGREES, counter-clockwise positive.
+# Text glyphs are first rendered onto a transparent layer at the panel's
+# bounding rectangle, then the layer is rotated about the panel center,
+# then alpha-composited back onto the canvas. This corrects for slight
+# tilt in the source photo so the lettering reads true to the panel
+# rather than skewed to the photo's frame.
+ROTATION: dict[str, float] = {
+    "side_passenger":   0.0,
+    "side_rearquarter": 4.0,   # CCW 4° per Serge
+    "rear":             0.0,
 }
 
 
@@ -286,15 +298,31 @@ def main() -> int:
         if not os.path.isfile(src):
             print(f"  ! source missing: {src}")
             continue
-        canvas = upscale(Image.open(src), target_w=1400)
-        if kind == "side":
-            draw_side(canvas, PANEL[panel_key])
+        canvas = upscale(Image.open(src), target_w=1400).convert("RGBA")
+        rot = ROTATION.get(panel_key, 0.0)
+        if rot != 0.0:
+            # Render text onto a transparent layer, rotate about panel center,
+            # then composite onto the photo. Preserves pixel-perfect text.
+            layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+            if kind == "side":
+                draw_side(layer, PANEL[panel_key])
+            else:
+                draw_rear(layer, PANEL[panel_key])
+            x0, y0, x1, y1 = PANEL[panel_key]
+            cx = int(canvas.size[0] * (x0 + x1) / 2)
+            cy = int(canvas.size[1] * (y0 + y1) / 2)
+            layer = layer.rotate(rot, center=(cx, cy), resample=Image.BICUBIC)
+            canvas = Image.alpha_composite(canvas, layer)
         else:
-            draw_rear(canvas, PANEL[panel_key])
-        canvas.save(out, "PNG", optimize=True)
+            if kind == "side":
+                draw_side(canvas, PANEL[panel_key])
+            else:
+                draw_rear(canvas, PANEL[panel_key])
+        canvas.convert("RGB").save(out, "PNG", optimize=True)
         write_meta(out, label, src)
         w, h = canvas.size
-        print(f"  ✓ {out_name}  ({w}x{h}, {os.path.getsize(out)//1024} KB, panel={PANEL[panel_key]})")
+        print(f"  ✓ {out_name}  ({w}x{h}, {os.path.getsize(out)//1024} KB, "
+              f"panel={PANEL[panel_key]}, rot={rot}°)")
 
     print(f"\nDone. View at: http://localhost:8888/datahub  (project=proj-ahb123)")
     return 0
