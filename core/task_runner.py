@@ -72,6 +72,10 @@ OLLAMA_URL     = os.getenv("OLLAMA_URL", "http://localhost:11434")
 # timeout reuses this same value (so worst-case wait = 2 * timeout).
 LLM_REQUEST_TIMEOUT = int(os.getenv("BAZA_OLLAMA_REQUEST_TIMEOUT", "300"))
 LLM_RETRY_ON_TIMEOUT = os.getenv("BAZA_OLLAMA_RETRY_ON_TIMEOUT", "1") not in ("0", "false", "no", "")
+# Max times to re-prompt a single task within one cron tick when the LLM
+# returned TASK_IN_PROGRESS. Each iteration feeds the prior output back so
+# the agent can keep going. Cap exists to prevent runaway loops.
+MAX_TASK_ITERATIONS = int(os.getenv("BAZA_MAX_TASK_ITERATIONS", "3"))
 
 
 def is_ollama_busy(timeout: int = 3) -> bool:
@@ -128,10 +132,13 @@ def is_llm_actionable(task: dict) -> bool:
     return any(kw in title for kw in LLM_ACTIONABLE)
 
 
-def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
+def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: str = "") -> dict:
     """
     Send a task to Ollama with the agent's persona.
     Returns {"success": bool, "output": str, "completed": bool}
+
+    `prior_output` carries forward the previous iteration's response so the
+    agent can pick up where it left off when iterating on TASK_IN_PROGRESS.
     """
     model       = agent_cfg.get("model", "qwen2.5:14b")
     agent_name  = agent_cfg.get("name", agent_id)
@@ -140,8 +147,12 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
     proj_id = task.get("project_id", "shared")
     system = (
         f"{system_base}\n\n"
-        "TASK EXECUTION MODE:\n"
-        "You have been assigned a task. Execute it fully and produce the real deliverable.\n\n"
+        "TASK EXECUTION MODE — AUTONOMOUS:\n"
+        "You have been assigned a task. Execute it FULLY and produce the real deliverable.\n"
+        "Do not ask for clarification. If something is ambiguous, pick the most\n"
+        "probable interpretation, document the assumption inline, and continue.\n"
+        "If you genuinely lack a hard prerequisite (credentials, external access),\n"
+        "use TASK_BLOCKED with a one-line reason. Otherwise: keep going.\n\n"
         "MANDATORY: Save ALL deliverables as artifacts using this exact syntax:\n"
         f"  ##SKILL:artifact_save{{\"filename\":\"deliverable.md\",\"content\":\"...\",\"project_id\":\"{proj_id}\"}}##\n"
         "For research tasks: save research notes, then a plan, then the final report — all as separate artifacts.\n"
@@ -154,14 +165,24 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict) -> dict:
         "Plain text only in chat summary. No markdown headers. No ** bold. Use emoji for structure."
     )
 
-    user_msg = (
-        f"Execute this task now:\n\n"
-        f"Title: {task['title']}\n"
-        f"Description: {task.get('description', '')}\n"
-        f"Due: {task.get('due_date', 'ASAP')}\n"
-        f"Priority: {task.get('priority', 'medium')}\n\n"
-        f"Produce the full deliverable. Be specific and complete."
-    )
+    if prior_output:
+        user_msg = (
+            f"You are continuing this task. Here is what you produced so far:\n\n"
+            f"--- PRIOR OUTPUT ---\n{prior_output[:6000]}\n--- END PRIOR ---\n\n"
+            f"Now finish the task. If everything is already done, write TASK_COMPLETE.\n"
+            f"Otherwise, do the next concrete step that drives toward completion.\n\n"
+            f"Task title: {task['title']}\n"
+            f"Description: {task.get('description', '')}\n"
+        )
+    else:
+        user_msg = (
+            f"Execute this task now:\n\n"
+            f"Title: {task['title']}\n"
+            f"Description: {task.get('description', '')}\n"
+            f"Due: {task.get('due_date', 'ASAP')}\n"
+            f"Priority: {task.get('priority', 'medium')}\n\n"
+            f"Produce the full deliverable. Be specific and complete."
+        )
 
     payload = {
         "model": model,
@@ -446,7 +467,32 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
         _emit("task_started", task=task, agent_id=agent_id,
               payload={"title": task_title})
 
+        # Iterate: run, and if LLM said TASK_IN_PROGRESS, re-prompt up to
+        # MAX_TASK_ITERATIONS times feeding prior output back. Stops on
+        # TASK_COMPLETE, TASK_BLOCKED, or LLM failure.
         result = run_task_with_llm(agent_id, agent_cfg, task)
+        accumulated = result.get("output", "")
+        iterations = 1
+        while (
+            result.get("success")
+            and result.get("in_progress")
+            and not result.get("completed")
+            and not result.get("blocked")
+            and iterations < MAX_TASK_ITERATIONS
+        ):
+            iterations += 1
+            logger.info(f"  ↻ ITERATING {task_title[:50]} ({iterations}/{MAX_TASK_ITERATIONS})")
+            _emit("task_progress", task=task, agent_id=agent_id,
+                  payload={"notes_snippet": (accumulated or "")[:300],
+                           "iteration": iterations})
+            # Brief breath so we don't hammer Ollama back-to-back
+            time.sleep(2)
+            result = run_task_with_llm(agent_id, agent_cfg, task, prior_output=accumulated)
+            if result.get("success"):
+                accumulated = (accumulated + "\n\n--- next iteration ---\n\n"
+                               + (result.get("output") or ""))[-12000:]
+                # Make later branches see the merged transcript
+                result["output"] = accumulated
 
         if result["success"]:
             # Save output as notes (truncated to fit DB)
