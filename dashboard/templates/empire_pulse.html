@@ -120,6 +120,7 @@ async function load(){
     const verdict = a.health === 'green' ? 'Shipping what they claim — keep going.'
                   : a.health === 'yellow' ? 'Some output, but more talk than ship — push harder.'
                   : 'No artifacts despite completion claims — likely hallucinating. Investigate.';
+    const sparkline = renderSparkline(a.ship_daily || [], a.talked_daily || [], 200, 48);
     return `<div class="card ${a.health}" onclick="window.location='/agent/${escapeHtml(a.agent_id)}'" style="cursor:pointer">
       <h3>${escapeHtml(a.agent_id.replace(/_/g,' '))}</h3>
       <div class="who">${escapeHtml(a.agent_id)}</div>
@@ -130,9 +131,32 @@ async function load(){
         <span>claimed completions<b>${a.talked_about_completing}</b></span>
         <span>artifacts shipped<b>${a.shipped}</b></span>
       </div>
+      <div style="margin-top:10px">${sparkline}</div>
       <div class="verdict">${verdict}</div>
     </div>`;
   }).join('');
+}
+
+// SVG sparkline: green line = ships per day, red dashed = claims per day
+function renderSparkline(ship, talked, w, h) {
+  const n = Math.max(ship.length, talked.length, 1);
+  if (n < 2) return '';
+  const max = Math.max(1, ...ship, ...talked);
+  const dx = w / (n - 1);
+  const sy = (v) => h - 4 - (h - 8) * (v / max);
+  const path = (arr) => arr.map((v, i) => `${i === 0 ? 'M' : 'L'} ${(i * dx).toFixed(1)} ${sy(v).toFixed(1)}`).join(' ');
+  const shipLabel = (ship[ship.length - 1] || 0);
+  const talkLabel = (talked[talked.length - 1] || 0);
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible">
+      <path d="${path(talked)}" fill="none" stroke="#ff5555" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.7"/>
+      <path d="${path(ship)}" fill="none" stroke="#00d084" stroke-width="2"/>
+    </svg>
+    <div style="font-size:9px;color:#666;line-height:1.4">
+      <div style="color:#00d084">█ ship today: ${shipLabel}</div>
+      <div style="color:#ff5555">█ claim today: ${talkLabel}</div>
+    </div>
+  </div>`;
 }
 
 load();

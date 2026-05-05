@@ -246,6 +246,17 @@ async function dispatchDirective(){
     setTimeout(()=>window.location = result.url, 700);
     return;
   }
+  if((env.intent === 'develop' || env.intent === 'iterate') && result.task_id){
+    let block = `✓ ${env.intent} task queued: ${result.task_id}\nagent: ${result.agent}\nproject: ${result.project_id}\nwatch: ${result.url}`;
+    if(result.sync_run){
+      const sr = result.sync_run;
+      block += `\n\n— first iteration (inline) —\n`;
+      block += sr.ok ? `ok in ${sr.duration_s}s\n` : `failed: ${sr.error || 'see chains'}\n`;
+      if(sr.output_tail) block += `\n${sr.output_tail}`;
+    }
+    showDirOut(block, true);
+    return;
+  }
   if(env.intent === 'help'){
     showDirOut(result.help || '(no help)', true);
     return;

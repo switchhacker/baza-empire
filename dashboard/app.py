@@ -1448,8 +1448,10 @@ def api_empire_pulse():
     hours = days * 24
     cutoff = datetime.datetime.now().timestamp() - hours * 3600
 
-    # Real artifacts per agent
+    # Real artifacts per agent + per-day buckets for sparklines
     by_agent_files: dict[str, int] = {}
+    by_agent_files_daily: dict[str, list[int]] = {}  # newest-first list of len=days
+    now_ts = datetime.datetime.now().timestamp()
     for proj in os.listdir(ARTIFACTS_DIR):
         proj_dir = os.path.join(ARTIFACTS_DIR, proj)
         if not os.path.isdir(proj_dir):
@@ -1460,7 +1462,8 @@ def api_empire_pulse():
             full = os.path.join(proj_dir, fname)
             if not os.path.isfile(full):
                 continue
-            if os.path.getmtime(full) < cutoff:
+            mt = os.path.getmtime(full)
+            if mt < cutoff:
                 continue
             ag = ""
             try:
@@ -1472,11 +1475,17 @@ def api_empire_pulse():
                     "simon", "claw", "sam", "nova", "phil", "rex", "duke", "scout"
                 ):
                     ag = "_".join(head[:2])
-            if ag:
-                by_agent_files[ag] = by_agent_files.get(ag, 0) + 1
+            if not ag:
+                continue
+            by_agent_files[ag] = by_agent_files.get(ag, 0) + 1
+            day_idx = int((now_ts - mt) // 86400)  # 0 = today, 1 = yesterday…
+            if 0 <= day_idx < days:
+                buckets = by_agent_files_daily.setdefault(ag, [0] * days)
+                buckets[day_idx] += 1
 
-    # Talked-about-completion counts from task_journal
+    # Talked-about-completion counts from task_journal + daily buckets
     by_agent_talked: dict[str, int] = {}
+    by_agent_talked_daily: dict[str, list[int]] = {}
     try:
         from core.context_db import get_conn, release_conn
         conn = get_conn()
@@ -1497,6 +1506,30 @@ def api_empire_pulse():
         for ag, n in cur.fetchall():
             if ag:
                 by_agent_talked[ag] = n
+        # Per-day daily counts for sparklines (one query, group by day index)
+        cur.execute(
+            "SELECT agent_id, "
+            "       FLOOR(EXTRACT(EPOCH FROM (now() - created_at)) / 86400)::int AS d, "
+            "       count(*) "
+            "FROM task_journal "
+            "WHERE created_at > now() - interval %s "
+            "AND (lower(result) LIKE %s OR lower(result) LIKE %s "
+            "    OR lower(result) LIKE %s OR lower(result) LIKE %s "
+            "    OR lower(result) LIKE %s OR lower(result) LIKE %s) "
+            "GROUP BY agent_id, d",
+            (
+                f"{hours} hours",
+                "%complete%", "%done%", "%delivered%",
+                "%shipped%", "%finalized%", "%finished%",
+            ),
+        )
+        for ag, d, n in cur.fetchall():
+            if not ag:
+                continue
+            buckets = by_agent_talked_daily.setdefault(ag, [0] * days)
+            d = int(d)
+            if 0 <= d < days:
+                buckets[d] += n
         cur.close()
         release_conn(conn)
     except Exception as e:
@@ -1512,6 +1545,10 @@ def api_empire_pulse():
         talked = by_agent_talked.get(ag, 0)
         shipped = by_agent_files.get(ag, 0)
         ratio = (min(shipped, talked) / talked) if talked else 1.0
+        # Sparklines stored newest-day-LEFT in DB style; flip so the chart
+        # reads chronologically left-to-right (oldest → newest = today).
+        ship_buckets   = list(reversed(by_agent_files_daily.get(ag, [0] * days)))
+        talked_buckets = list(reversed(by_agent_talked_daily.get(ag, [0] * days)))
         rows.append({
             "agent_id": ag,
             "talked_about_completing": talked,
@@ -1524,6 +1561,8 @@ def api_empire_pulse():
                 else "red" if shipped == 0 and talked > 0
                 else "yellow"
             ),
+            "ship_daily":   ship_buckets,
+            "talked_daily": talked_buckets,
         })
     rows.sort(key=lambda r: (r["health"] == "red", -r["talked_about_completing"]), reverse=True)
     rows.sort(key=lambda r: ({"red": 0, "yellow": 1, "green": 2}[r["health"]],

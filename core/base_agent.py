@@ -1874,6 +1874,34 @@ class BaseAgent(ContextMixin):
                         f"unbacked claim(s) tagged (artifacts in window: "
                         f"{report['artifact_count']})"
                     )
+                    # Auto-DISPATCH self-correction: when an agent claims work
+                    # done with no artifact, append a DISPATCH line that the
+                    # task_runner picks up as a forwarded directive. The agent
+                    # is dispatched to itself with a clear "re-do and actually
+                    # save the deliverable" instruction. Disable per-process
+                    # via BAZA_AUTO_DISPATCH_ON_HALLUCINATION=0.
+                    auto = os.environ.get("BAZA_AUTO_DISPATCH_ON_HALLUCINATION", "1")
+                    if auto not in ("0", "false", "no") and report["unbacked_count"] > 0:
+                        unbacked = [c for c in report["claims"] if not c["backed"]]
+                        first = unbacked[0]["sentence"][:160] if unbacked else ""
+                        text += (
+                            f"\n\nDISPATCH:{self.AGENT_ID}:Re-do and actually "
+                            f"save the deliverable for: {first}. Use "
+                            f"##SKILL:artifact_save## with a concrete file. "
+                            f"Reply with the artifact path."
+                        )
+                        try:
+                            from core import task_events as _te
+                            _te.emit("dispatch_sent",
+                                     agent_id=self.AGENT_ID,
+                                     payload={
+                                         "to_agent": self.AGENT_ID,
+                                         "instruction_snippet": "auto-dispatch: hallucination self-correction",
+                                         "trigger": "claim_verifier",
+                                         "unbacked_count": report["unbacked_count"],
+                                     })
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.debug(f"[{self.AGENT_ID}] claim_verifier skipped: {e}")
         text = self._strip_markdown(text)

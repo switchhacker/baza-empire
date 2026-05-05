@@ -222,8 +222,21 @@ def _handle_develop_or_iterate(envelope: dict, args: dict, intent: str) -> dict[
     except Exception:
         pass
 
-    # Optionally kick task_runner immediately if BAZA_AUTO_RUN_DEVELOP=1
-    if _os.environ.get("BAZA_AUTO_RUN_DEVELOP", "0") in ("1", "true", "yes"):
+    # SYNC mode: run the first task_runner iteration inline so the directive
+    # bar shows immediate output. Capped via BAZA_DEVELOP_SYNC_TIMEOUT (default
+    # 90s — short enough not to hang the dashboard, long enough for a warm
+    # model. Cold-loaded models will fall through to queued mode.)
+    sync_mode = (
+        bool(args.get("sync"))
+        or _os.environ.get("BAZA_DEVELOP_SYNC", "0") in ("1", "true", "yes")
+    )
+    sync_result = None
+    if sync_mode:
+        sync_result = _run_first_iteration_inline(agent_id, task_id, title, description, project_id)
+
+    # Otherwise (or in addition), kick task_runner in the background if
+    # BAZA_AUTO_RUN_DEVELOP=1. Sync mode supersedes since it already ran.
+    if not sync_mode and _os.environ.get("BAZA_AUTO_RUN_DEVELOP", "0") in ("1", "true", "yes"):
         try:
             import subprocess as _sp
             framework_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
@@ -249,10 +262,58 @@ def _handle_develop_or_iterate(envelope: dict, args: dict, intent: str) -> dict[
             "url": f"/chains?task_id={task_id}",
             "task_url": f"/tasks#{task_id}",
             "auto_run": _os.environ.get("BAZA_AUTO_RUN_DEVELOP", "0") in ("1", "true", "yes"),
-            "hint": "Task queued. Will run on next baza-task-runner tick (or set BAZA_AUTO_RUN_DEVELOP=1 to kick immediately).",
+            "sync_run": sync_result,
+            "hint": (
+                "First iteration ran inline (see sync_run.output)."
+                if sync_result and sync_result.get("ok")
+                else "Task queued. Will run on next baza-task-runner tick "
+                     "(or set BAZA_AUTO_RUN_DEVELOP=1 to kick immediately, "
+                     "or BAZA_DEVELOP_SYNC=1 for inline first iteration)."
+            ),
         },
         "status": 201,
     }
+
+
+def _run_first_iteration_inline(agent_id: str, task_id: str, title: str,
+                                  description: str, project_id: str) -> dict[str, Any]:
+    """Run a single task_runner iteration inline, return stdout/exit/duration.
+
+    Capped at BAZA_DEVELOP_SYNC_TIMEOUT seconds so the dashboard request
+    doesn't hang on a cold model. On timeout/error, returns ok=False — the
+    task stays pending and the next cron tick (or user retry) handles it.
+    """
+    import os as _os
+    import subprocess as _sp
+    import time as _time
+    timeout = int(_os.environ.get("BAZA_DEVELOP_SYNC_TIMEOUT", "90"))
+    framework_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    venv_py = _os.path.join(framework_dir, "venv", "bin", "python")
+    if not _os.path.exists(venv_py):
+        venv_py = "python3"
+    cmd = [venv_py, _os.path.join(framework_dir, "core", "task_runner.py"),
+           "--agent", agent_id, "--task-id", task_id]
+    t0 = _time.time()
+    try:
+        proc = _sp.run(cmd, cwd=framework_dir, capture_output=True,
+                       text=True, timeout=timeout)
+        dt = _time.time() - t0
+        return {
+            "ok": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "duration_s": round(dt, 1),
+            "output_tail": (proc.stdout or "")[-1500:],
+            "stderr_tail": (proc.stderr or "")[-500:],
+        }
+    except _sp.TimeoutExpired as e:
+        return {
+            "ok": False,
+            "error": f"sync run timed out after {timeout}s — task stays queued",
+            "duration_s": timeout,
+            "output_tail": (e.stdout or "")[-800:] if isinstance(e.stdout, str) else "",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def _now_iso() -> str:
