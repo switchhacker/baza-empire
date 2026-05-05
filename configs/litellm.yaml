@@ -255,3 +255,34 @@ model_list:
     litellm_params:
       model: ollama/devstral:cloud
       api_base: http://localhost:11434
+
+  # ── Cloud models added 2026-05-03 (Ollama Cloud :cloud namespace) ──────
+  - model_name: cloud/kimi-k2.6
+    litellm_params:
+      model: ollama/kimi-k2.6:cloud
+      api_base: http://localhost:11434
+
+  - model_name: cloud/deepseek-v3.2
+    litellm_params:
+      model: ollama/deepseek-v3.2:cloud
+      api_base: http://localhost:11434
+
+  - model_name: cloud/minimax-m2
+    litellm_params:
+      model: ollama/minimax-m2:cloud
+      api_base: http://localhost:11434
+
+  - model_name: cloud/gpt-oss-120b-cloud
+    litellm_params:
+      model: ollama/gpt-oss:120b-cloud
+      api_base: http://localhost:11434
+
+  - model_name: cloud/qwen3-coder-480b-cloud
+    litellm_params:
+      model: ollama/qwen3-coder:480b-cloud
+      api_base: http://localhost:11434
+
+  - model_name: cloud/gemma3-27b
+    litellm_params:
+      model: ollama/gemma3:27b-cloud
+      api_base: http://localhost:11434
