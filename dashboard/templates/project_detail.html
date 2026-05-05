@@ -189,7 +189,25 @@
 
     <!-- Preview -->
     <div class="panel" id="panel-preview">
-      <div class="placeholder">Preview — ephemeral local server with isolated port. Coming in #4.x follow-up. For now, run the project's <code>preview</code> command from your terminal.</div>
+      <div class="card">
+        <h3>Preview server</h3>
+        <p style="font-size:12px;color:#888;margin-bottom:10px">Starts the manifest <code>preview</code> command in the project sandbox on a free port (9000-9099). Process survives requests; logs tail below.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-primary" onclick="previewStart('preview')">▶ Start preview</button>
+          <button class="btn btn-secondary" onclick="previewStart('run')">▶ Start run</button>
+          <button class="btn btn-warn" onclick="previewStop()">■ Stop</button>
+          <button class="btn btn-secondary" onclick="previewRefresh()">↻ Status</button>
+          <span id="previewBadge" style="margin-left:auto;font-size:11px;color:#666;align-self:center"></span>
+        </div>
+        <div id="previewIframeWrap" style="display:none">
+          <div style="font-size:11px;color:#888;margin-bottom:6px">URL: <a id="previewUrl" target="_blank" style="color:#7c3aed">—</a></div>
+          <iframe id="previewIframe" style="width:100%;height:480px;border:1px solid #1a1a2e;border-radius:6px;background:#fff"></iframe>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Logs (tail)</h3>
+        <pre id="previewLogs" style="max-height:300px;overflow:auto">(no logs yet)</pre>
+      </div>
     </div>
 
     <!-- Explore -->
@@ -248,6 +266,7 @@ function setTab(name){
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
   if(name==='develop' && !CURRENT_FILE){ loadFiles(''); }
   if(name==='brainstorm') loadBrainstorm();
+  if(name==='preview'){ previewRefresh(); previewLogs(); }
 }
 
 async function reload(){
@@ -369,6 +388,49 @@ async function saveBrainstorm(){
   const d = await r.json();
   if(d.saved) toast('Saved BRAINSTORM.md','ok'); else toast('Save failed','err');
 }
+
+async function previewStart(slot){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/preview/start`,
+    {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({slot})});
+  const d = await r.json();
+  if(d.started){ toast(`started ${slot} on :${d.port}`,'ok'); previewRefresh(); previewLogs(); }
+  else toast(d.error || 'start failed','err');
+}
+async function previewStop(){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/preview/stop`, {method:'POST'});
+  const d = await r.json();
+  if(d.stopped){ toast('stopped','ok'); previewRefresh(); }
+  else toast(d.error || 'stop failed','err');
+}
+async function previewRefresh(){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/preview/status`);
+  const d = await r.json();
+  const badge = document.getElementById('previewBadge');
+  const wrap = document.getElementById('previewIframeWrap');
+  if(d.running){
+    badge.textContent = `running pid ${d.pid} · :${d.port} · slot=${d.slot} · since ${(d.started_at||'').replace('T',' ')}`;
+    badge.style.color = '#00d084';
+    wrap.style.display = 'block';
+    const url = `http://${location.hostname}:${d.port}`;
+    const a = document.getElementById('previewUrl');
+    a.textContent = url; a.href = url;
+    document.getElementById('previewIframe').src = url;
+  } else {
+    badge.textContent = d.error ? `not running — ${d.error}` : 'not running';
+    badge.style.color = '#666';
+    wrap.style.display = 'none';
+  }
+}
+async function previewLogs(){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/preview/logs?lines=200`);
+  const d = await r.json();
+  document.getElementById('previewLogs').textContent = d.logs || '(no logs yet)';
+}
+// Auto-refresh logs while on preview tab
+setInterval(()=>{
+  const active = document.querySelector('.tab.active');
+  if(active && active.dataset.tab === 'preview') previewLogs();
+}, 4000);
 
 reload();
 </script>

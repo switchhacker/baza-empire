@@ -3336,6 +3336,47 @@ def api_baza_project_file_put(project_id):
     return jsonify({"saved": True, "info": info})
 
 
+@app.route('/api/baza/projects/<project_id>/preview/start', methods=['POST'])
+def api_baza_preview_start(project_id):
+    from core import preview_supervisor as ps
+    slot = (request.get_json(silent=True) or {}).get('slot') or 'preview'
+    res = ps.start(project_id, slot=slot)
+    try:
+        from core import task_events as te
+        te.emit("tool_call", project_id=project_id, agent_id="user",
+                payload={"tool": f"preview.start.{slot}", "args": res})
+    except Exception:
+        pass
+    return jsonify(res), (200 if res.get('started') else 409 if 'already' in (res.get('error') or '') else 400)
+
+
+@app.route('/api/baza/projects/<project_id>/preview/stop', methods=['POST'])
+def api_baza_preview_stop(project_id):
+    from core import preview_supervisor as ps
+    hard = (request.args.get('hard') or '').lower() in ('1', 'true', 'yes')
+    res = ps.stop(project_id, hard=hard)
+    try:
+        from core import task_events as te
+        te.emit("tool_call", project_id=project_id, agent_id="user",
+                payload={"tool": "preview.stop", "args": {"hard": hard}, "ok": bool(res.get('stopped'))})
+    except Exception:
+        pass
+    return jsonify(res)
+
+
+@app.route('/api/baza/projects/<project_id>/preview/status')
+def api_baza_preview_status(project_id):
+    from core import preview_supervisor as ps
+    return jsonify(ps.status(project_id))
+
+
+@app.route('/api/baza/projects/<project_id>/preview/logs')
+def api_baza_preview_logs(project_id):
+    from core import preview_supervisor as ps
+    lines = int(request.args.get('lines', 200) or 200)
+    return jsonify({"logs": ps.tail_logs(project_id, lines=lines)})
+
+
 @app.route('/api/baza/projects/<project_id>/run', methods=['POST'])
 def api_baza_project_run(project_id):
     """Run a manifest command slot. Long-running run/preview are not handled here."""
