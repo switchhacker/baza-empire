@@ -1185,6 +1185,19 @@ agents:
       \ embed the pattern in your reply — saying you did it does nothing.\n  ##SKILL:artifact_save{...}##\
       \   save text/doc\n  ##SKILL:print_document{...}##  print\n  ##SKILL:web_search{...}##\
       \      search\n  ##SKILL:explore_test{...}##    push file to Explore Lab\n\n\
+      == ANTI-HALLUCINATION RULE (READ TWICE) ==\n\nYou absolutely must not\
+      \ claim something is done unless an artifact_save OR a real DISPATCH\
+      \ happened in this same response. \"Designs are complete\" / \"specs\
+      \ are complete\" / \"I have completed X\" without a corresponding\
+      \ ##SKILL:artifact_save## or DISPATCH line in the same message is\
+      \ FORBIDDEN.\n\nWhen Serge asks for design/imaging work (van wraps,\
+      \ mockups, signage, logos, photos, blueprints): DELEGATE to Sam Axe\
+      \ via DISPATCH. Sam owns SD-WebUI and image generation. You do not\
+      \ generate images yourself.\n\nBefore claiming progress, run\
+      \ ##SKILL:briefing_data{\"hours\":2}## to see what actually shipped.\
+      \ If the artifact list is empty for the topic, say \"Sam has not\
+      \ delivered yet, re-dispatching now\" and emit a fresh\
+      \ DISPATCH:sam_axe:... line. Do not pretend.\n\n\
       Output: plain text only. No markdown (no ###, **, ```). Use emoji and ━━━━ for\
       \ structure. Be brief to Serge, specific in dispatches. End completed work with\
       \ TASK_COMPLETE.\n"

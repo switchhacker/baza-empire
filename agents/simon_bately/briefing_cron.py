@@ -161,24 +161,44 @@ def get_recent_activity() -> str:
         return f"RECENT ACTIVITY: error reading context DB ({str(e)[:80]})"
 
 def get_artifacts_summary() -> str:
-    """Count recent artifacts produced."""
+    """Use the canonical briefing_data skill for the Recent Wins source.
+
+    This is the ONLY source Simon should cite as a "win" — it shows real
+    files modified in the last 2 hours. If empty, the briefing must say
+    so plainly. No invented completions.
+    """
     arts_dir = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts")
-    if not os.path.exists(arts_dir): return "ARTIFACTS: none"
-    total = 0
-    recent = []
-    cutoff = datetime.datetime.now().timestamp() - 86400  # last 24h
+    if not os.path.exists(arts_dir): return "ARTIFACTS_REAL_LAST_2H: none"
+    cutoff = datetime.datetime.now().timestamp() - 7200  # last 2 hours (briefing window)
+    rows = []
     for proj in os.listdir(arts_dir):
         proj_dir = os.path.join(arts_dir, proj)
         if not os.path.isdir(proj_dir): continue
         for fname in os.listdir(proj_dir):
+            if fname.endswith('.meta'): continue
             fpath = os.path.join(proj_dir, fname)
-            if os.path.isfile(fpath):
-                total += 1
-                if os.path.getmtime(fpath) > cutoff:
-                    recent.append(f"{proj}/{fname}")
-    lines = [f"ARTIFACTS: {total} total, {len(recent)} in last 24h"]
-    for a in recent[:5]:
-        lines.append(f"  {a}")
+            if not os.path.isfile(fpath): continue
+            mt = os.path.getmtime(fpath)
+            if mt < cutoff: continue
+            # Try to read the .meta sidecar for agent attribution
+            agent = ""
+            try:
+                with open(fpath + ".meta") as mf:
+                    agent = (json.load(mf) or {}).get("agent_id", "")
+            except Exception:
+                head = fname.split("_", 2)
+                if len(head) >= 2 and head[0] in ("simon","claw","sam","nova","phil","rex","duke","scout"):
+                    agent = "_".join(head[:2])
+            rows.append((mt, proj, fname, agent, os.path.getsize(fpath)))
+    rows.sort(reverse=True)
+    if not rows:
+        return ("ARTIFACTS_REAL_LAST_2H: NONE — no files saved in the last 2h.\n"
+                "  → Briefing must say 'no completed deliverables this cycle' "
+                "and NOT invent wins.")
+    lines = [f"ARTIFACTS_REAL_LAST_2H: {len(rows)} file(s) — these are the ONLY items you may cite as Recent Wins:"]
+    for mt, proj, fname, agent, size in rows[:15]:
+        ts = datetime.datetime.fromtimestamp(mt).strftime("%H:%M")
+        lines.append(f"  - {proj}/{fname} ({size//1024} KB, {agent or 'unknown'}, {ts})")
     return "\n".join(lines)
 
 def get_mining_quick() -> str:
@@ -217,18 +237,30 @@ STRICT FORMAT RULES — NO EXCEPTIONS:
 - Max 35 lines. Keep it sharp and actionable.
 - Serge is the boss. Simon = commander. You command the team TO PLEASE SERGE.
 
+ANTI-HALLUCINATION RULES — VIOLATING THESE MEANS THE BRIEFING IS WRONG:
+- "Recent Wins" MUST come from the ARTIFACTS_REAL_LAST_2H block below. If it
+  says NONE, you write "No completed deliverables this cycle" — DO NOT
+  invent wins, designs, or completions. Cite filenames when you do have wins.
+- "Active Tasks" / "Command from Simon" MUST reference real entries from the
+  TASK_STATE / RECENT_ACTIVITY blocks. You cannot say "Sam completed X" if
+  no artifact for X exists in the artifact list.
+- Theatrical phrasing ("I've dispatched Claw to...") is allowed ONLY if you
+  also emit a real DISPATCH:<agent_id>:<directive> line at the bottom of the
+  briefing for the runner to forward. Otherwise drop the theater.
+- If a section has nothing real, write "Nothing to report" rather than filler.
+
 YOU MUST COVER:
-1. Empire pulse: who is online, who is offline right now
-2. Active tasks: what is being worked on across all projects, by whom
-3. What you (Simon) are commanding the team to do RIGHT NOW based on the task board
-4. Any blockers or issues the team is hitting
-5. Recent wins: what got done in the last 2 hours
+1. Empire pulse: who is online, who is offline right now (from team_status block)
+2. Active tasks: only what TASK_STATE shows
+3. What Simon is dispatching RIGHT NOW — must be real DISPATCH lines
+4. Any blockers or issues — only if visible in the data
+5. Recent wins: only from ARTIFACTS_REAL_LAST_2H — say NONE if NONE
 6. Quick metrics: crypto, mining, weather (from live data)
 7. Your flag: one urgent action item for Serge
 
-TONE: You are a sharp, confident commander — not a reporter. You don't just describe what's happening. 
-You tell Serge what you're DOING about it. "I've dispatched Claw to fix X", "I'm holding Phil to the deadline on Y", etc.
-This is a real-time command report, not a status summary.
+TONE: Sharp, confident commander — but factual. You don't invent wins to
+sound like you're winning. If the team did nothing this cycle, that's the
+briefing.
 
 LIVE DATA:
 {live_data}
