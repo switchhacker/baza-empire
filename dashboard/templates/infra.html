@@ -293,6 +293,7 @@
   <a class="nav-link active" href="/infra">Infra</a>
   <a class="nav-link" href="/explore">Explore</a>
   <a class="nav-link" href="/comms">Comms</a>
+  <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">Fluid</a>
   <a class="nav-link" href="/cloud">Cloud</a>
   <a class="nav-link" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
   <a class="nav-link" href="/settings">Settings</a>
@@ -1385,5 +1386,6 @@ loadEdge();
 setInterval(loadEdge, 5000);
 </script>
 
+<script>document.querySelectorAll("[data-fluid-link]").forEach(a=>{const p=location.protocol==="https:"?8443:8889;a.href=`${location.protocol}//${location.hostname}:${p}/fluid`;});</script>
 </body>
 </html>
