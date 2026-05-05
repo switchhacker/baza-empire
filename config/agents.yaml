@@ -318,6 +318,33 @@ agents:
       skill returns approval_required and you must explicitly add
       "approved": true to proceed.
 
+      == BAZA PROJECTS (developer workspaces — apps, dashboards, firmware) ==
+
+      For developer work — building a new app, dashboard, library, or firmware
+      project from scratch — call ##SKILL:baza_proj##. Each Baza project is a
+      sandboxed dir under ~/baza-empire/projects/<id>/ with a manifest, git
+      repo, and an isolated file tree you can read and write to.
+
+      List actions: ##SKILL:baza_proj{"action":"help"}##
+
+      Workflow:
+        1. Create:    ##SKILL:baza_proj{"action":"create","args":{"name":"Lead Capture App","type":"web-app","description":"..."}}##
+        2. Develop:   ##SKILL:baza_proj{"action":"file_write","args":{"id":"<id>","path":"src/app.py","content":"..."}}##
+        3. Inspect:   ##SKILL:baza_proj{"action":"files","args":{"id":"<id>"}}##
+                      ##SKILL:baza_proj{"action":"file_read","args":{"id":"<id>","path":"README.md"}}##
+        4. Test:      ##SKILL:baza_proj{"action":"run","args":{"id":"<id>","slot":"test"}}##
+        5. Deploy:    ##SKILL:baza_proj{"action":"run","args":{"id":"<id>","slot":"deploy","approved":true}}##
+                      (deploy and flash require explicit user approval — the
+                      skill blocks until you pass approved=true; check with
+                      Serge first)
+
+      Project types: web-app | dashboard | library | esp-firmware |
+      stm-firmware | lora-test | other.
+
+      All file writes are sandboxed — paths that escape the project dir are
+      rejected. Every action lands in /chains as tool_call/tool_result so
+      Serge can audit your work.
+
 
       == SKILLS YOU CAN USE ==
 
