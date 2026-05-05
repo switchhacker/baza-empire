@@ -65,14 +65,22 @@ PANEL: dict[str, tuple[float, float, float, float]] = {
     # behind. Numbers are tighter than v3 so glyphs stop hanging over
     # door seams, wheel arches, or rear corner lights.
     #
+    # v5 placement: anchored at the FORWARD half of the cargo body (just
+    # behind the driver door / B-pillar) and pushed up so the band starts
+    # right at the high-roof extension crease, ending in the upper third
+    # of the side panel — not the middle. Door areas, rear corner pillars,
+    # and the lower rocker stay clean.
+    #
     # van side 2.jpeg — passenger profile (front is to the LEFT in the photo)
-    "side_passenger":   (0.20, 0.30, 0.70, 0.50),
+    # Cargo body in this photo runs roughly x=0.40-0.95; we put text in
+    # the front portion of that band.
+    "side_passenger":   (0.34, 0.28, 0.74, 0.46),
     # van side.jpeg — rear-quarter from passenger side (front is to the LEFT)
-    "side_rearquarter": (0.22, 0.34, 0.70, 0.56),
-    # van rear.jpeg — straight-on rear: text moved UP so it sits in the
-    # upper portion of the door panel, just below the roof spoiler line,
-    # leaving the lower door (with handles + brake-light area) clear.
-    "rear":             (0.36, 0.22, 0.74, 0.60),
+    "side_rearquarter": (0.30, 0.30, 0.70, 0.48),
+    # van rear.jpeg — recentered on the van. Doors span x=0.345-0.727
+    # (center 0.536). Panel x=0.34-0.74 → mid 0.54, matched. Pushed up
+    # so text sits in the upper door panel just under the roof spoiler.
+    "rear":             (0.34, 0.20, 0.74, 0.56),
 }
 
 
