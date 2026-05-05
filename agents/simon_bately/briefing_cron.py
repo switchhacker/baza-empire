@@ -417,6 +417,17 @@ def main():
                 "⚠️ LLM output language drifted — raw snapshot below.\n\n"
                 f"{team_status}\n\n{tasks}"
             )
+    # Anti-hallucination post-check: tag any "completed/done/ready" claim
+    # that has no matching artifact in the last 2h with [unverified].
+    try:
+        from core.claim_verifier import annotate_unverified
+        briefing, report = annotate_unverified(briefing, hours=2)
+        if not report["verified"]:
+            log.warning(f"Briefing had {report['unbacked_count']} unverified claim(s) "
+                        f"(artifacts in window: {report['artifact_count']}); marked.")
+    except Exception as e:
+        log.warning(f"claim_verifier failed (briefing sent unverified): {e}")
+
     log.info(f"Briefing built ({len(briefing)} chars). Sending to Serge...")
     send_telegram(briefing)
     log.info("Done.")

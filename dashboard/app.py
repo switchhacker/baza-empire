@@ -1430,6 +1430,82 @@ def settings_page():
 
 # ── Routes — Agent API ────────────────────────────────────────────────────────
 
+@app.route('/api/agents/<agent_id>/recent-artifacts')
+def api_agent_recent_artifacts(agent_id):
+    """List artifacts attributed to this agent in the last N hours.
+
+    Anti-hallucination check: at-a-glance "did this agent actually produce
+    anything today, or just talk about producing things?"
+    """
+    hours = int(request.args.get('hours', 24) or 24)
+    hours = max(1, min(hours, 168))
+    cutoff = datetime.datetime.now().timestamp() - hours * 3600
+    rows = []
+    for proj in os.listdir(ARTIFACTS_DIR):
+        proj_dir = os.path.join(ARTIFACTS_DIR, proj)
+        if not os.path.isdir(proj_dir):
+            continue
+        for fname in os.listdir(proj_dir):
+            if fname.endswith('.meta'):
+                continue
+            full = os.path.join(proj_dir, fname)
+            if not os.path.isfile(full):
+                continue
+            mt = os.path.getmtime(full)
+            if mt < cutoff:
+                continue
+            # Attribution from .meta sidecar; fallback to filename prefix
+            ag = ""
+            try:
+                with open(full + ".meta") as mf:
+                    ag = (json.load(mf) or {}).get("agent_id", "")
+            except Exception:
+                head = fname.split("_", 2)
+                if len(head) >= 2 and head[0] in (
+                    "simon", "claw", "sam", "nova", "phil", "rex", "duke", "scout"
+                ):
+                    ag = "_".join(head[:2])
+            if ag != agent_id:
+                continue
+            rows.append({
+                "name": fname,
+                "project_id": proj,
+                "size": os.path.getsize(full),
+                "modified": datetime.datetime.fromtimestamp(mt).isoformat(),
+                "url": f"/api/artifacts/serve/{proj}/{fname}",
+                "ext": os.path.splitext(fname)[1].lower(),
+            })
+    rows.sort(key=lambda r: r["modified"], reverse=True)
+    # Quick claim verification across recent journal entries for this agent
+    talked_about_completing = 0
+    try:
+        from core.context_db import get_conn, release_conn
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT count(*) FROM task_journal WHERE agent_id=%s "
+            "AND created_at > now() - interval %s "
+            "AND (lower(result) LIKE '%complete%' OR lower(result) LIKE '%done%' OR lower(result) LIKE '%delivered%' OR lower(result) LIKE '%shipped%')",
+            (agent_id, f"{hours} hours")
+        )
+        talked_about_completing = cur.fetchone()[0]
+        cur.close()
+        release_conn(conn)
+    except Exception:
+        pass
+    return jsonify({
+        "agent_id": agent_id,
+        "hours": hours,
+        "count": len(rows),
+        "artifacts": rows[:60],
+        "claim_warnings": {
+            "talked_about_completing": talked_about_completing,
+            "actually_produced": len(rows),
+            "ratio_ok": (len(rows) > 0) if talked_about_completing else True,
+        },
+    })
+
+
 @app.route('/agent/<agent_id>/restart', methods=['POST'])
 def restart_agent_route(agent_id):
     try:

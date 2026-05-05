@@ -177,6 +177,14 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Recent Artifacts <span style="font-size:10px;font-weight:400;color:#666;text-transform:none;letter-spacing:0;margin-left:8px">last 24h — what this agent actually produced</span>
+          <button onclick="loadArtifacts()" style="float:right;background:none;border:none;color:#555;cursor:pointer;font-size:12px;">↻</button>
+        </div>
+        <div id="artifact-warning" style="display:none;background:#2a1a06;color:#ffaa00;border:1px solid #5a3a1a;padding:8px 12px;border-radius:6px;font-size:11px;margin-bottom:10px;font-family:monospace"></div>
+        <div id="artifact-list" style="font-size:12px;color:#aaa;font-family:monospace;max-height:240px;overflow-y:auto">loading…</div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Service Logs
           <button onclick="refreshLogs()" style="float:right;background:none;border:none;color:#555;cursor:pointer;font-size:12px;">↻ Refresh</button>
         </div>
@@ -191,6 +199,39 @@
 
 <script>
   const agentId = "{{ agent_id }}";
+
+  async function loadArtifacts() {
+    try {
+      const r = await fetch('/api/agents/' + agentId + '/recent-artifacts?hours=24');
+      const d = await r.json();
+      const list = document.getElementById('artifact-list');
+      const warn = document.getElementById('artifact-warning');
+      const arts = d.artifacts || [];
+      if (!arts.length) {
+        list.innerHTML = '<div style="color:#444;padding:12px 0">No artifacts produced in the last 24h.</div>';
+      } else {
+        list.innerHTML = arts.map(a => {
+          const ts = (a.modified || '').slice(0,16).replace('T', ' ');
+          const kb = Math.max(1, Math.round(a.size/1024));
+          return `<div style="padding:4px 0;border-bottom:1px solid #111">
+            <a href="${a.url}" target="_blank" style="color:#7c3aed;text-decoration:none">${escapeHtml(a.project_id)}/${escapeHtml(a.name)}</a>
+            <span style="float:right;color:#444">${kb} KB · ${ts}</span>
+          </div>`;
+        }).join('');
+      }
+      const cw = d.claim_warnings || {};
+      if (cw.talked_about_completing > 0 && cw.actually_produced === 0) {
+        warn.style.display = 'block';
+        warn.textContent = `⚠ ${cw.talked_about_completing} message(s) in journal claim completion but NO artifacts saved. Possible hallucination — verify before trusting.`;
+      } else {
+        warn.style.display = 'none';
+      }
+    } catch (e) {
+      document.getElementById('artifact-list').textContent = 'Error loading artifacts: ' + e;
+    }
+  }
+
+  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   function saveConfig() {
     const data = {
@@ -257,6 +298,8 @@
   }
 
   setInterval(refreshStatus, 15000);
+  loadArtifacts();
+  setInterval(loadArtifacts, 30000);
 </script>
 
 </body>
