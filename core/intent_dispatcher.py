@@ -96,14 +96,15 @@ def dispatch(envelope: dict, extra: dict | None = None) -> dict[str, Any]:
         res = bp.run_command(args["project_id"], "deploy", approved=True)
         return {"envelope": envelope, "result": res, "status": 200}
 
-    if intent in ("flash", "render", "preview", "debug", "develop", "iterate"):
+    if intent in ("develop", "iterate"):
+        return _handle_develop_or_iterate(envelope, args, intent)
+
+    if intent in ("flash", "render", "preview", "debug"):
         followup_map = {
-            "flash":   "#4.8 ESP/STM/LoRa runtime",
+            "flash":   "use the Deploy tab Flash card on firmware projects",
             "render":  "use the Render tab in /projects/<id>",
             "preview": "use the Preview tab in /projects/<id>",
             "debug":   "#4.x Debug logs view",
-            "develop": "#5 Agent project access",
-            "iterate": "#5 Agent project access",
         }
         return {
             "envelope": envelope,
@@ -111,12 +112,135 @@ def dispatch(envelope: dict, extra: dict | None = None) -> dict[str, Any]:
                 "pending": True,
                 "intent": intent,
                 "follow_up": followup_map[intent],
-                "message": f"{intent} is recognized but its handler is not yet implemented end-to-end ({followup_map[intent]}).",
+                "message": f"{intent} is recognized but better used via UI ({followup_map[intent]}).",
             },
             "status": 202,
         }
 
     return {"envelope": envelope, "result": None, "status": 400}
+
+
+# ── /develop and /iterate — create a task, hand to an agent ──────────────────
+
+DEFAULT_DEV_AGENT = "claw_batto"
+
+
+def _handle_develop_or_iterate(envelope: dict, args: dict, intent: str) -> dict[str, Any]:
+    """Create a task in baza_projects.db, structured so any agent can pick it
+    up and use the baza_proj skill to do the work."""
+    project_id = args.get("project_id")
+    goal = (args.get("goal") or "").strip()
+    if not project_id:
+        return {"envelope": envelope, "result": {"error": "project_id is required"}, "status": 400}
+    if not goal:
+        return {"envelope": envelope, "result": {"error": "goal is required (after project_id)"}, "status": 400}
+
+    # Verify project exists
+    from core import baza_projects as bp
+    proj = bp.get_project(project_id)
+    if not proj:
+        return {"envelope": envelope, "result": {"error": f"project not found: {project_id}"}, "status": 404}
+
+    agent_id = args.get("agent") or DEFAULT_DEV_AGENT
+    priority = args.get("priority") or "high"
+
+    # Build a task description that bakes in the skill-call pattern. Any agent
+    # inheriting from base_agent has the BAZA PROJECTS section in its system
+    # prompt; the description gives it the concrete project_id + goal.
+    title = (f"Develop: {goal[:80]}" if intent == "develop"
+             else f"Iterate: {goal[:80]}")
+    files_hint = "  ##SKILL:baza_proj{\"action\":\"files\",\"args\":{\"id\":\"" + project_id + "\"}}##"
+    write_hint = ("  ##SKILL:baza_proj{\"action\":\"file_write\",\"args\":"
+                  "{\"id\":\"" + project_id + "\",\"path\":\"<rel/path>\",\"content\":\"<content>\"}}##")
+    test_hint = ("  ##SKILL:baza_proj{\"action\":\"run\",\"args\":"
+                 "{\"id\":\"" + project_id + "\",\"slot\":\"test\"}}##")
+    description = (
+        f"Project: {proj['id']}  ({proj['type']})\n"
+        f"Path:    {proj['path']}\n"
+        f"Goal:    {goal}\n\n"
+        "Use the baza_proj skill to read/write files and run tests in this "
+        "project. The project has its own git repo and sandboxed file tree.\n\n"
+        f"List existing files:\n{files_hint}\n\n"
+        f"Write code:\n{write_hint}\n\n"
+        f"Run tests:\n{test_hint}\n\n"
+        "Save any documentation/notes as artifacts via ##SKILL:artifact_save## "
+        f"with project_id=\"{project_id}\". When fully done, end your response "
+        "with TASK_COMPLETE."
+    )
+
+    # Insert the task directly into baza_projects.db (avoid HTTP roundtrip)
+    import os as _os
+    import sqlite3 as _sqlite3
+    import uuid as _uuid
+    db_path = _os.environ.get(
+        "BAZA_TASK_EVENTS_DB",
+        _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                      "dashboard", "baza_projects.db"),
+    )
+    task_id = str(_uuid.uuid4())[:8]
+    now = _now_iso()
+    try:
+        conn = _sqlite3.connect(db_path, timeout=10)
+        conn.execute(
+            """
+            INSERT INTO tasks
+              (id, project_id, title, description, assigned_to, status, priority,
+               notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, '', ?, ?)
+            """,
+            (task_id, project_id, title, description, agent_id, priority, now, now),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return {"envelope": envelope, "result": {"error": f"task insert failed: {e}"}, "status": 500}
+
+    # Emit a chain-spine event so /chains has a row to render right away
+    try:
+        from core import task_events as te
+        te.emit("intent_parsed", project_id=project_id, agent_id=agent_id,
+                payload={"intent": intent, "task_id": task_id, "goal": goal})
+        te.emit("task_started", task_id=task_id, project_id=project_id, agent_id=agent_id,
+                payload={"title": title, "queued": True})
+    except Exception:
+        pass
+
+    # Optionally kick task_runner immediately if BAZA_AUTO_RUN_DEVELOP=1
+    if _os.environ.get("BAZA_AUTO_RUN_DEVELOP", "0") in ("1", "true", "yes"):
+        try:
+            import subprocess as _sp
+            framework_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+            venv_py = _os.path.join(framework_dir, "venv", "bin", "python")
+            if not _os.path.exists(venv_py):
+                venv_py = "python3"
+            _sp.Popen(
+                [venv_py, _os.path.join(framework_dir, "core", "task_runner.py"),
+                 "--agent", agent_id, "--task-id", task_id],
+                cwd=framework_dir, start_new_session=True,
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        except Exception:
+            pass  # cron tick will pick it up
+
+    return {
+        "envelope": envelope,
+        "result": {
+            "task_id": task_id,
+            "agent": agent_id,
+            "project_id": project_id,
+            "title": title,
+            "url": f"/chains?task_id={task_id}",
+            "task_url": f"/tasks#{task_id}",
+            "auto_run": _os.environ.get("BAZA_AUTO_RUN_DEVELOP", "0") in ("1", "true", "yes"),
+            "hint": "Task queued. Will run on next baza-task-runner tick (or set BAZA_AUTO_RUN_DEVELOP=1 to kick immediately).",
+        },
+        "status": 201,
+    }
+
+
+def _now_iso() -> str:
+    import datetime as _dt
+    return _dt.datetime.utcnow().replace(microsecond=0).isoformat()
 
 
 def telegram_format(out: dict) -> str:
@@ -145,6 +269,10 @@ def telegram_format(out: dict) -> str:
                     f"Reply: /deploy {result.get('project_id')} approved=true to confirm.")
         ok = result.get("success")
         return ("✓ deploy ok\n" if ok else "✗ deploy failed\n") + f"```\n{(result.get('stdout') or result.get('error') or '')[:1500]}\n```"
+    if intent in ("develop", "iterate") and result.get("task_id"):
+        return (f"✓ {intent} task queued: `{result['task_id']}`\n"
+                f"agent: {result['agent']}\nproject: {result['project_id']}\n"
+                f"watch: {result['url']}")
     if result.get("pending"):
         return f"⏳ {result.get('message','')}\nfollow-up: {result.get('follow_up','')}"
     if result.get("error"):

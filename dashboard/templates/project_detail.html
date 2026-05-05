@@ -180,6 +180,15 @@
           <textarea id="editor" class="editor" placeholder="Click a file on the left to open it."></textarea>
         </div>
       </div>
+      <div class="card" style="margin-top:14px">
+        <h3>Git <span style="font-size:10px;font-weight:400;color:#666;text-transform:none;letter-spacing:0;margin-left:8px">stage all + commit</span></h3>
+        <div id="gitFiles" style="font-family:monospace;font-size:11px;color:#aaa;max-height:200px;overflow:auto;margin-bottom:10px;background:#06060e;border:1px solid #1a1a2e;padding:8px;border-radius:6px">(loading…)</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="commitMsg" type="text" placeholder="commit message" style="flex:1;min-width:240px;padding:8px 10px;background:#06060e;border:1px solid #1a1a2e;border-radius:5px;color:#ddd;font-size:12px">
+          <button class="btn btn-primary" onclick="commitChanges()">Stage all &amp; commit</button>
+          <button class="btn btn-secondary" onclick="loadGitStatus()">↻</button>
+        </div>
+      </div>
     </div>
 
     <!-- Render -->
@@ -311,6 +320,7 @@ function setTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
   if(name==='develop' && !CURRENT_FILE){ loadFiles(''); }
+  if(name==='develop'){ loadGitStatus(); }
   if(name==='brainstorm') loadBrainstorm();
   if(name==='preview'){ previewRefresh(); previewLogs(); }
   if(name==='render'){ loadRenders(); }
@@ -381,6 +391,44 @@ async function runSlot(slot, approved, outId){
     + (d.stdout || '') + (d.stderr ? '\nSTDERR:\n'+d.stderr : '');
   out.textContent = text;
   toast((d.success?'OK':'FAIL') + ' ' + slot, d.success?'ok':'err');
+}
+
+async function loadGitStatus(){
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/git/status`);
+  const d = await r.json();
+  const el = document.getElementById('gitFiles');
+  if(d.error){ el.textContent = 'error: ' + d.error; return; }
+  const files = d.files || [];
+  if(!files.length){
+    el.innerHTML = '<span style="color:#00d084">working tree clean — nothing to commit</span>';
+  } else {
+    el.innerHTML = files.map(f=>{
+      const color = f.untracked ? '#ffaa55' : (f.staged ? '#00d084' : '#c08aff');
+      return `<div style="color:${color}">${escapeHtml(f.status)}  ${escapeHtml(f.path)}</div>`;
+    }).join('');
+  }
+  // Also refresh the header git summary
+  if(d.head) document.getElementById('gHead').textContent = d.head;
+  if(typeof d.commits === 'number') document.getElementById('gCommits').textContent = d.commits;
+  if(d.branch) document.getElementById('gBranch').textContent = d.branch;
+  if(typeof d.dirty === 'boolean') document.getElementById('gDirty').textContent = d.dirty ? 'yes' : 'no';
+}
+
+async function commitChanges(){
+  const msg = document.getElementById('commitMsg').value.trim();
+  if(!msg){ toast('commit message required','err'); return; }
+  const r = await fetch(`/api/baza/projects/${encodeURIComponent(PROJECT_ID)}/git/commit`,
+    {method:'POST', headers:{'Content-Type':'application/json'},
+     body: JSON.stringify({message: msg, stage_all: true})});
+  const d = await r.json();
+  if(d.committed){
+    toast('committed: ' + (d.head || ''), 'ok');
+    document.getElementById('commitMsg').value = '';
+    loadGitStatus();
+    reload();
+  } else {
+    toast('commit failed: ' + (d.error || ''), 'err');
+  }
 }
 
 async function runFlash(){

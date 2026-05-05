@@ -76,10 +76,34 @@ def test_deploy_approved_passes_through(dispatcher):
 
 
 def test_pending_intent_returns_202(dispatcher):
+    """render/preview/debug/flash all return pending. develop now creates a task."""
     d, r, _ = dispatcher
-    out = d.dispatch(r.parse_intent("/develop x Add a thing"))
+    out = d.dispatch(r.parse_intent("/render some-proj"))
     assert out["status"] == 202
     assert out["result"]["pending"] is True
+
+
+def test_develop_now_creates_task(dispatcher):
+    """develop is no longer pending — it creates a task. Project must exist."""
+    d, r, bp = dispatcher
+    # Need both a tasks table and a real project for dispatcher to insert
+    import sqlite3, os
+    db = os.environ["BAZA_TASK_EVENTS_DB"]
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+      CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT,
+        title TEXT, description TEXT, assigned_to TEXT, status TEXT,
+        priority TEXT, due_date TEXT, notes TEXT, updated_at TEXT,
+        is_subtask INTEGER, parent_task_id TEXT, created_at TEXT,
+        depends_on TEXT, dispatch_count INTEGER, last_dispatched_at TEXT,
+        dispatch_history TEXT, reassignment_count INTEGER);
+    """)
+    conn.close()
+    p = bp.create_project(name="DevTest", type_="library")
+    out = d.dispatch(r.parse_intent(f"/develop {p['id']} Add a thing"))
+    assert out["status"] == 201
+    assert out["result"]["task_id"]
+    assert out["result"]["agent"] == "claw_batto"
 
 
 def test_telegram_format_help(dispatcher):

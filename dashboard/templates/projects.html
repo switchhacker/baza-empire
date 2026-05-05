@@ -111,6 +111,12 @@
         <input id="fName" type="text" placeholder="e.g. Acme Dashboard" autocomplete="off">
       </div>
       <div class="field">
+        <label>Template (optional)</label>
+        <select id="fTemplate">
+          <option value="">— Empty project (no scaffold) —</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Type</label>
         <select id="fType">
           <option value="web-app">Web App (Node/React)</option>
@@ -169,13 +175,34 @@ function openProject(id){ window.location = '/projects/' + encodeURIComponent(id
 function openCreate(){ document.getElementById('modal').classList.add('show'); document.getElementById('fName').focus(); }
 function closeCreate(){ document.getElementById('modal').classList.remove('show'); }
 
+async function loadTemplates(){
+  try {
+    const r = await fetch('/api/baza/templates');
+    const d = await r.json();
+    const sel = document.getElementById('fTemplate');
+    for(const t of (d.templates||[])){
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.dataset.type = t.type;
+      opt.textContent = `${t.name} (${t.type}) — ${t.description.slice(0,60)}`;
+      sel.appendChild(opt);
+    }
+    sel.addEventListener('change', ()=>{
+      const opt = sel.options[sel.selectedIndex];
+      const t = opt && opt.dataset.type;
+      if(t) document.getElementById('fType').value = t;
+    });
+  } catch(e){}
+}
+
 async function submitCreate(){
   const name = document.getElementById('fName').value.trim();
   const type = document.getElementById('fType').value;
   const desc = document.getElementById('fDesc').value.trim();
+  const template = document.getElementById('fTemplate').value;
   if(!name){ toast('Name is required','err'); return; }
   const r = await fetch('/api/baza/projects',{method:'POST',headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name, type, description: desc})});
+    body: JSON.stringify({name, type, description: desc, template})});
   const d = await r.json();
   if(r.ok && d.project){
     closeCreate();
@@ -252,6 +279,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 
 loadProjects();
+loadTemplates();
 </script>
 </body>
 </html>

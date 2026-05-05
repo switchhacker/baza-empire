@@ -253,6 +253,85 @@ def chain_for_task(task_id: str) -> list[dict[str, Any]]:
     return roots
 
 
+def list_approvals(state: str = "pending", limit: int = 100) -> list[dict[str, Any]]:
+    """Return approval_requested events with their resolution status.
+
+    state ∈ {"pending", "granted", "denied", "all"} — pending = no later
+    granted/denied event with the same agent_id+project_id+action exists.
+
+    The matching is best-effort, keyed on (agent_id, project_id, action). For
+    a stricter linkage we'd add a `decision_for_id` column; iter1 ships this.
+    """
+    limit = max(1, min(int(limit or 100), 500))
+    try:
+        with _connect() as conn:
+            req_rows = conn.execute(
+                """
+                SELECT id, ts, task_id, project_id, agent_id, payload
+                FROM task_events
+                WHERE kind = 'approval_requested'
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit * 4,),  # over-fetch so we can filter post-hoc
+            ).fetchall()
+            res_rows = conn.execute(
+                """
+                SELECT id, ts, agent_id, project_id, kind, payload
+                FROM task_events
+                WHERE kind IN ('approval_granted', 'approval_denied')
+                ORDER BY id ASC
+                """
+            ).fetchall()
+    except Exception as e:
+        logger.warning(f"task_events.list_approvals failed: {e}")
+        return []
+
+    # Build a map of (agent_id, project_id, action) -> latest decision after id X
+    decisions: dict[tuple, list[tuple[int, str, str]]] = {}
+    for r in res_rows:
+        try:
+            payload = json.loads(r["payload"] or "{}")
+        except Exception:
+            payload = {}
+        key = (r["agent_id"] or "", r["project_id"] or "", payload.get("action") or "")
+        decisions.setdefault(key, []).append((r["id"], r["kind"], r["ts"]))
+
+    out: list[dict[str, Any]] = []
+    for r in req_rows:
+        try:
+            payload = json.loads(r["payload"] or "{}")
+        except Exception:
+            payload = {}
+        key = (r["agent_id"] or "", r["project_id"] or "", payload.get("action") or "")
+        decision = None
+        for dec_id, dec_kind, dec_ts in decisions.get(key, []):
+            if dec_id > r["id"]:
+                decision = {"kind": dec_kind, "ts": dec_ts, "id": dec_id}
+                break
+        item_state = (
+            "granted" if decision and decision["kind"] == "approval_granted"
+            else "denied" if decision and decision["kind"] == "approval_denied"
+            else "pending"
+        )
+        if state != "all" and item_state != state:
+            continue
+        out.append({
+            "id": r["id"],
+            "ts": r["ts"],
+            "task_id": r["task_id"],
+            "project_id": r["project_id"],
+            "agent_id": r["agent_id"],
+            "action": payload.get("action") or "",
+            "details": payload.get("details") or {},
+            "state": item_state,
+            "decision": decision,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def recent_task_summaries(limit: int = 50) -> list[dict[str, Any]]:
     """For the chains list view: one row per task_id with stats and last event."""
     limit = max(1, min(int(limit or 50), 200))

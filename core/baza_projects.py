@@ -175,8 +175,14 @@ def _default_deploy_targets(type_: str) -> list[dict]:
 # ── Project CRUD ─────────────────────────────────────────────────────────────
 
 def create_project(name: str, type_: str = "other", description: str = "",
-                   created_by: str = "user", project_id: str | None = None) -> dict[str, Any]:
-    """Create a new Baza project on disk and register in the projects DB table."""
+                   created_by: str = "user", project_id: str | None = None,
+                   template_id: str | None = None) -> dict[str, Any]:
+    """Create a new Baza project on disk and register in the projects DB table.
+
+    If `template_id` is given, materialize that template's files into the new
+    project after the manifest+README scaffold. The template's declared type
+    overrides `type_` if `type_` was the default ("other").
+    """
     os.makedirs(PROJECTS_ROOT, exist_ok=True)
     if not project_id:
         project_id = _slug_id(name)
@@ -185,17 +191,38 @@ def create_project(name: str, type_: str = "other", description: str = "",
     proj_dir = os.path.join(PROJECTS_ROOT, project_id)
     if os.path.exists(proj_dir):
         raise FileExistsError(f"Project already exists: {project_id}")
+
+    # Template can refine the type so the manifest commands match
+    if template_id:
+        try:
+            from core import baza_project_templates as _tpl
+            tpl_type = _tpl.template_type(template_id)
+            if tpl_type and (type_ in (None, "", "other")):
+                type_ = tpl_type
+        except Exception:
+            pass
+
     os.makedirs(proj_dir)
     os.makedirs(os.path.join(proj_dir, "artifacts"), exist_ok=True)
 
     manifest = default_manifest(project_id, name, type_, created_by=created_by)
     if description:
         manifest["description"] = description
+    if template_id:
+        manifest["template"] = template_id
     with open(os.path.join(proj_dir, MANIFEST_NAME), "w") as f:
         yaml.safe_dump(manifest, f, sort_keys=False)
     with open(os.path.join(proj_dir, "README.md"), "w") as f:
         f.write(f"# {name}\n\n{description or '(no description yet)'}\n\n"
                 f"- Type: `{type_}`\n- Created: {manifest['created_at']}\n- ID: `{project_id}`\n")
+
+    # Materialize template files (best-effort; create an empty project if it fails)
+    if template_id:
+        try:
+            from core import baza_project_templates as _tpl
+            _tpl.apply_template(template_id, proj_dir, project_id)
+        except Exception as e:
+            logger.warning(f"template apply failed for {template_id}: {e}")
 
     # Touch events.jsonl for project-scoped streaming
     open(os.path.join(proj_dir, "events.jsonl"), "a").close()
@@ -486,6 +513,69 @@ def _run_quiet(argv: list[str], cwd: str) -> int:
     except Exception as e:
         logger.debug(f"run_quiet {argv}: {e}")
         return -1
+
+
+def git_status(project_id: str) -> dict[str, Any]:
+    """Detailed git status for the Develop tab."""
+    proj = get_project(project_id)
+    if not proj:
+        raise FileNotFoundError(project_id)
+    proj_dir = proj["path"]
+    files = []
+    try:
+        r = subprocess.run(["git", "status", "--porcelain=v1"], cwd=proj_dir,
+                           capture_output=True, text=True, timeout=8)
+        for line in (r.stdout or "").splitlines():
+            if not line.strip():
+                continue
+            # Format: "XY path" — XY is 2-char status, then space, then path
+            xy = line[:2]
+            path = line[3:].strip()
+            files.append({
+                "status": xy,
+                "path": path,
+                "staged": xy[0] not in (" ", "?"),
+                "modified": xy[1] not in (" ", "?"),
+                "untracked": xy == "??",
+            })
+    except Exception as e:
+        return {"error": f"git status failed: {e}", "files": []}
+    summary = _git_summary(proj_dir)
+    return {"files": files, **summary}
+
+
+def git_commit(project_id: str, message: str, *, stage_all: bool = True,
+               author_name: str = "Baza Project UI",
+               author_email: str = "baza@local") -> dict[str, Any]:
+    """Commit current changes. By default stages everything first."""
+    proj = get_project(project_id)
+    if not proj:
+        raise FileNotFoundError(project_id)
+    proj_dir = proj["path"]
+    msg = (message or "").strip()
+    if not msg:
+        return {"committed": False, "error": "commit message is required"}
+    if stage_all:
+        try:
+            subprocess.run(["git", "add", "-A"], cwd=proj_dir,
+                           capture_output=True, text=True, timeout=15, check=True)
+        except subprocess.CalledProcessError as e:
+            return {"committed": False, "error": f"git add failed: {e.stderr or e}"}
+    try:
+        r = subprocess.run(
+            ["git", "-c", f"user.name={author_name}", "-c", f"user.email={author_email}",
+             "commit", "-m", msg],
+            cwd=proj_dir, capture_output=True, text=True, timeout=15,
+        )
+    except Exception as e:
+        return {"committed": False, "error": f"git commit failed: {e}"}
+    if r.returncode != 0:
+        return {"committed": False, "error": (r.stdout or "") + (r.stderr or ""),
+                "exit": r.returncode}
+    head_r = subprocess.run(["git", "log", "-1", "--format=%h %s"], cwd=proj_dir,
+                            capture_output=True, text=True, timeout=5)
+    return {"committed": True, "head": (head_r.stdout or "").strip(),
+            "out": (r.stdout or "").strip()}
 
 
 def _git_summary(proj_dir: str) -> dict[str, Any]:

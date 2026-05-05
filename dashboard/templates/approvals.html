@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Approvals</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200}
+    .nav-brand{padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:1300px;margin:0 auto;padding:24px 28px}
+    .page-title{font-size:22px;font-weight:800;color:#fff}
+    .page-sub{font-size:12px;color:#444;margin-top:3px;margin-bottom:18px}
+
+    .filters{display:flex;gap:8px;margin-bottom:14px}
+    .pill{padding:7px 14px;font-size:11px;font-weight:700;color:#666;border:1px solid #1a1a2e;border-radius:14px;cursor:pointer;background:#0a0a14;letter-spacing:.5px;text-transform:uppercase}
+    .pill.active{color:#fff;background:#7c3aed;border-color:#7c3aed}
+
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:14px 16px;margin-bottom:10px}
+    .card.pending{border-left:4px solid #ffaa00}
+    .card.granted{border-left:4px solid #00d084}
+    .card.denied{border-left:4px solid #ff5555}
+    .card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+    .action{font-family:monospace;color:#e0e0e0;font-weight:700;font-size:14px}
+    .badge{font-size:10px;padding:2px 9px;border-radius:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .b-pending{background:#2a1a06;color:#ffaa00;border:1px solid #5a3a1a}
+    .b-granted{background:#061a10;color:#00d084;border:1px solid #0d3a22}
+    .b-denied{background:#1a0606;color:#ff6666;border:1px solid #3a0d0d}
+    .meta{font-size:11px;color:#666;margin-top:6px;display:flex;gap:14px;flex-wrap:wrap}
+    .meta code{background:#0a0a14;border:1px solid #1a1a2e;color:#aaa;padding:1px 6px;border-radius:3px;font-size:11px}
+    .details{margin-top:8px;font-family:monospace;font-size:11px;color:#888;background:#0a0a14;border:1px solid #1a1a2e;padding:8px;border-radius:6px;max-height:120px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+    .actions{display:flex;gap:8px;margin-top:12px}
+    .btn{padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:none}
+    .btn-grant{background:#0a2a1a;color:#00d084;border:1px solid #1a5a3a}
+    .btn-grant:hover{background:#0d3a22}
+    .btn-deny{background:#2a0a0a;color:#ff6666;border:1px solid #5a1a1a}
+    .btn-deny:hover{background:#3a0d0d}
+    .empty{text-align:center;color:#444;padding:60px;border:1px dashed #1a1a2e;border-radius:10px}
+    .toast{position:fixed;bottom:30px;right:30px;background:#0e0e1e;border:1px solid #1a1a2e;color:#ccc;padding:12px 18px;border-radius:8px;font-size:12px;display:none;z-index:400}
+    .toast.show{display:block}
+    .toast.ok{border-color:#1a3a2a;color:#00d084}
+    .toast.err{border-color:#3a1a1a;color:#ff8888}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-brand"><h1>BAZA</h1></div>
+    <a class="nav-link" href="/">Agents</a>
+    <a class="nav-link" href="/datahub">Data Hub</a>
+    <a class="nav-link" href="/chains">Chains</a>
+    <a class="nav-link" href="/projects">Projects</a>
+    <a class="nav-link active" href="/approvals">Approvals</a>
+    <a class="nav-link" href="/tasks">Tasks</a>
+  </nav>
+
+  <div class="container">
+    <div class="page-title">Approvals</div>
+    <div class="page-sub">Privileged actions agents (or directives) requested. Grant to re-dispatch with approval; deny to record refusal.</div>
+
+    <div class="filters">
+      <div class="pill active" data-state="pending" onclick="setState('pending', this)">Pending</div>
+      <div class="pill" data-state="granted" onclick="setState('granted', this)">Granted</div>
+      <div class="pill" data-state="denied" onclick="setState('denied', this)">Denied</div>
+      <div class="pill" data-state="all" onclick="setState('all', this)">All</div>
+    </div>
+
+    <div id="list"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+let CURRENT_STATE = 'pending';
+function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, kind){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>t.classList.remove('show'),2500); }
+
+function setState(state, el){
+  CURRENT_STATE = state;
+  document.querySelectorAll('.pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  load();
+}
+
+async function load(){
+  const r = await fetch('/api/approvals?state=' + CURRENT_STATE + '&limit=100');
+  const d = await r.json();
+  const list = d.approvals || [];
+  const root = document.getElementById('list');
+  if(!list.length){
+    root.innerHTML = '<div class="empty">No ' + CURRENT_STATE + ' approvals.</div>';
+    return;
+  }
+  root.innerHTML = list.map(a => `
+    <div class="card ${a.state}">
+      <div class="card-head">
+        <div>
+          <div class="action">${escapeHtml(a.action || '(no action)')}</div>
+          <div class="meta">
+            <span>at ${escapeHtml((a.ts||'').slice(0,16).replace('T',' '))}</span>
+            ${a.agent_id ? `<span>agent: <code>${escapeHtml(a.agent_id)}</code></span>` : ''}
+            ${a.project_id ? `<span>project: <code>${escapeHtml(a.project_id)}</code></span>` : ''}
+            ${a.task_id ? `<span>task: <code>${escapeHtml(a.task_id)}</code></span>` : ''}
+            <span>id: ${a.id}</span>
+          </div>
+        </div>
+        <span class="badge b-${a.state}">${a.state}</span>
+      </div>
+      <div class="details">${escapeHtml(JSON.stringify(a.details || {}, null, 2))}</div>
+      ${a.state === 'pending' ? `
+        <div class="actions">
+          <button class="btn btn-grant" onclick="grant(${a.id})">✓ Grant</button>
+          <button class="btn btn-deny" onclick="deny(${a.id})">✗ Deny</button>
+        </div>` : a.decision ? `
+        <div class="meta" style="margin-top:8px">decided ${escapeHtml((a.decision.ts||'').slice(0,16).replace('T',' '))}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+async function grant(id){
+  if(!confirm('Grant this approval and re-dispatch the action?')) return;
+  const r = await fetch(`/api/approvals/${id}/grant`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'user'})});
+  const d = await r.json();
+  if(d.granted){ toast('granted; re-dispatched','ok'); load(); }
+  else toast(d.error||'grant failed','err');
+}
+async function deny(id){
+  const note = prompt('Reason for denial (optional):') || '';
+  const r = await fetch(`/api/approvals/${id}/deny`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'user', note})});
+  const d = await r.json();
+  if(d.denied){ toast('denied','ok'); load(); }
+  else toast(d.error||'deny failed','err');
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

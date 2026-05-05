@@ -3253,15 +3253,23 @@ def api_baza_projects_create():
     bp = _baza_projects()
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or '').strip()
-    type_ = (data.get('type') or 'web-app').strip()
+    raw_type = (data.get('type') or '').strip()
     description = (data.get('description') or '').strip()
     project_id = (data.get('id') or '').strip() or None
+    template_id = (data.get('template') or '').strip() or None
+    # If a template is selected and the caller didn't explicitly set a type,
+    # let the template's declared type decide. Otherwise default to web-app.
+    if template_id and not raw_type:
+        type_ = "other"  # signals "use template's type"
+    else:
+        type_ = raw_type or "web-app"
     if not name:
         return jsonify({"error": "name is required"}), 400
     try:
         proj = bp.create_project(
             name=name, type_=type_, description=description,
             created_by=data.get('created_by') or 'user', project_id=project_id,
+            template_id=template_id,
         )
     except FileExistsError as e:
         return jsonify({"error": str(e)}), 409
@@ -3269,9 +3277,16 @@ def api_baza_projects_create():
         return jsonify({"error": str(e)}), 400
     _emit_project_event(
         "intent_parsed", proj["id"],
-        payload={"intent": "create_baza_project", "name": name, "type": type_},
+        payload={"intent": "create_baza_project", "name": name, "type": type_,
+                 "template": template_id},
     )
     return jsonify({"project": proj}), 201
+
+
+@app.route('/api/baza/templates')
+def api_baza_templates_list():
+    from core import baza_project_templates as tpl
+    return jsonify({"templates": tpl.list_templates()})
 
 
 @app.route('/api/baza/projects/<project_id>', methods=['GET'])
@@ -3334,6 +3349,37 @@ def api_baza_project_file_put(project_id):
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
     return jsonify({"saved": True, "info": info})
+
+
+@app.route('/api/baza/projects/<project_id>/git/status')
+def api_baza_project_git_status(project_id):
+    bp = _baza_projects()
+    try:
+        return jsonify(bp.git_status(project_id))
+    except FileNotFoundError:
+        return jsonify({"error": "project not found"}), 404
+
+
+@app.route('/api/baza/projects/<project_id>/git/commit', methods=['POST'])
+def api_baza_project_git_commit(project_id):
+    bp = _baza_projects()
+    data = request.get_json(silent=True) or {}
+    msg = (data.get('message') or '').strip()
+    stage_all = data.get('stage_all', True)
+    if not msg:
+        return jsonify({"committed": False, "error": "message is required"}), 400
+    try:
+        res = bp.git_commit(project_id, msg, stage_all=bool(stage_all))
+    except FileNotFoundError:
+        return jsonify({"error": "project not found"}), 404
+    try:
+        from core import task_events as te
+        te.emit("tool_result", project_id=project_id, agent_id="user",
+                payload={"tool": "git.commit", "ok": bool(res.get("committed")),
+                         "result_snippet": (res.get("head") or res.get("error") or "")[:300]})
+    except Exception:
+        pass
+    return jsonify(res)
 
 
 @app.route('/api/baza/projects/<project_id>/exec', methods=['POST'])
@@ -3544,6 +3590,82 @@ def api_baza_project_run(project_id):
     except Exception:
         pass
     return jsonify(result)
+
+
+# ── Routes — Approvals Inbox (#R2) ────────────────────────────────────────────
+
+@app.route('/approvals')
+def approvals_page():
+    return render_template('approvals.html')
+
+
+@app.route('/api/approvals')
+def api_approvals_list():
+    from core import task_events as te
+    state = request.args.get('state', 'pending')
+    limit = int(request.args.get('limit', 100) or 100)
+    return jsonify({"approvals": te.list_approvals(state=state, limit=limit)})
+
+
+@app.route('/api/approvals/<int:event_id>/grant', methods=['POST'])
+def api_approval_grant(event_id):
+    """Mark an approval_requested event as granted and re-dispatch the
+    underlying intent with approved=true."""
+    from core import task_events as te
+    from core.intent_router import parse_intent
+    from core.intent_dispatcher import dispatch
+    by = (request.get_json(silent=True) or {}).get('by') or 'user'
+
+    # Find the original request to know what to re-fire
+    pending = te.list_approvals(state='all', limit=500)
+    req = next((p for p in pending if p["id"] == event_id), None)
+    if not req:
+        return jsonify({"error": "approval not found"}), 404
+    if req["state"] != "pending":
+        return jsonify({"error": f"already {req['state']}"}), 409
+
+    # Emit decision event
+    te.emit("approval_granted", project_id=req["project_id"], agent_id=req["agent_id"],
+            payload={"action": req["action"], "by": by, "for_event_id": event_id})
+
+    # Re-dispatch if it's an intent we can handle
+    action = req["action"] or ""
+    details = req["details"] or {}
+    re_result = None
+    try:
+        if action == "deploy" and req["project_id"]:
+            text = f"/deploy {req['project_id']}"
+            out = dispatch(parse_intent(text), extra={"approved": True, "agent_id": by})
+            re_result = {"status": out["status"], "result": out["result"]}
+        elif action.startswith("ahb.") and details.get("id"):
+            # Privileged ahb_api action — caller can re-issue with approved=true
+            re_result = {"hint": "re-issue the original ##SKILL:ahb_api## call with approved=true"}
+        elif action.startswith("baza_proj.") and details.get("id"):
+            re_result = {"hint": "re-issue the original ##SKILL:baza_proj## call with approved=true"}
+    except Exception as e:
+        re_result = {"error": str(e)}
+
+    return jsonify({"granted": True, "approval_id": event_id, "re_dispatched": re_result})
+
+
+@app.route('/api/approvals/<int:event_id>/deny', methods=['POST'])
+def api_approval_deny(event_id):
+    from core import task_events as te
+    body = request.get_json(silent=True) or {}
+    note = (body.get('note') or '')[:300]
+    by = body.get('by') or 'user'
+
+    pending = te.list_approvals(state='all', limit=500)
+    req = next((p for p in pending if p["id"] == event_id), None)
+    if not req:
+        return jsonify({"error": "approval not found"}), 404
+    if req["state"] != "pending":
+        return jsonify({"error": f"already {req['state']}"}), 409
+
+    te.emit("approval_denied", project_id=req["project_id"], agent_id=req["agent_id"],
+            payload={"action": req["action"], "by": by, "note": note,
+                     "for_event_id": event_id})
+    return jsonify({"denied": True, "approval_id": event_id})
 
 
 # ── Routes — Intent Router (sub-project #2) ───────────────────────────────────
