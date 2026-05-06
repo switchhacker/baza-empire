@@ -1326,7 +1326,7 @@ function renderReceipts() {
     if (S.year && yearOf(r.receipt_date || r.created_at) !== S.year) return false;
     if (S.cat && (r.category || '') !== S.cat) return false;
     return true;
-  });
+  }).sort((a, b) => (b.receipt_date || b.created_at || '').localeCompare(a.receipt_date || a.created_at || ''));
   let total = 0, tax = 0;
   list.forEach(r => { total += Number(r.total||0); tax += Number(r.tax||0); });
   $('receiptStats').innerHTML = `
@@ -1340,8 +1340,29 @@ function renderReceipts() {
         <div class="list-item-title">${esc(r.vendor||r.store||'Receipt')}</div>
         <div class="list-item-sub">${esc(r.category||'')}${r.receipt_date?' · '+dateStr(r.receipt_date):''}</div>
       </div>
+      <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:transparent;border:none;color:var(--text3);padding:0 8px;font-size:14px;cursor:pointer">✎</button>
       <div class="list-item-right"><div class="list-item-val">${fmt(r.total)}</div></div>
     </div>`).join('') : '<div class="empty-state" style="padding:30px"><p>No receipts</p></div>';
+}
+
+async function renameReceiptInline(id, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  const r = (S.receipts || []).find(x => x.id === id); if (!r) return;
+  const cur = r.vendor || r.store || r.store_name || '';
+  const next = prompt('Rename receipt:', cur);
+  if (next == null || next.trim() === '' || next.trim() === cur) return;
+  const name = next.trim();
+  try {
+    const d = await api('/api/ahb/receipts/' + id, {
+      method: 'PUT',
+      headers: { 'X-Agent-Id': 'serge' },
+      body: { store_name: name, vendor: name }
+    });
+    if (d && d.error) { toast('Rename failed: ' + d.error, { err: true }); return; }
+    r.store_name = name; r.vendor = name;
+    toast('Renamed');
+    renderReceipts();
+  } catch (e) { toast('Error: ' + e.message, { err: true }); }
 }
 
 async function openReceiptDetail(rid) {

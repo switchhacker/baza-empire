@@ -5499,6 +5499,8 @@ async function loadReceipts(){
   try{
     const res=await fetch('/api/ahb/receipts');
     allReceipts=await res.json();
+    // Newest-first by receipt_date (fall back to created_at when missing).
+    allReceipts.sort((a,b)=>(b.receipt_date||b.created_at||'').localeCompare(a.receipt_date||a.created_at||''));
     // Stats
     document.getElementById('rs-total').textContent=allReceipts.length;
     document.getElementById('rs-amount').textContent=fmtCurrency(allReceipts.reduce((s,r)=>s+(r.total||r.amount||0),0));
@@ -5551,7 +5553,10 @@ function renderReceiptKanban(receipts){
       <div class="kanban-col-body">${cards.slice(0,50).map(r=>`
         <div class="kanban-card" onclick="openReceiptDetail('${r.id}')" style="cursor:pointer">
           ${r.image_path?'<div style="font-size:10px;color:#7c3aed;margin-bottom:2px">&#128247; has image</div>':''}
-          <div class="kanban-card-title">${escHtml(r.store_name||r.vendor||'Unknown')}</div>
+          <div class="kanban-card-title" style="display:flex;align-items:center;gap:6px">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escHtml(r.store_name||r.vendor||'Unknown')}</span>
+            <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:transparent;border:none;color:#888;cursor:pointer;padding:2px 4px;font-size:12px">&#9998;</button>
+          </div>
           <div class="kanban-card-meta">${fmtDate(r.receipt_date)}${r.payment_method?' &middot; '+escHtml(r.payment_method):''}</div>
           <div class="kanban-card-amount">${fmtCurrency(r.total||r.amount)}</div>
         </div>`).join('')}${cards.length>50?'<div style="text-align:center;color:#555;font-size:11px;padding:8px">+'+(cards.length-50)+' more</div>':''}</div>
@@ -5585,7 +5590,7 @@ function renderReceiptTable(receipts){
   // Ensure agent registry is loaded so created_by renders as name, not id.
   fetchAgents().then(()=>{
     tb.innerHTML=receipts.map(r=>`<tr style="cursor:pointer" onclick="openReceiptDetail('${r.id}')">
-      <td style="font-weight:600;color:#ddd">${r.image_path?'&#128247; ':''}${escHtml(r.store_name||r.vendor||'Unknown')}</td>
+      <td style="font-weight:600;color:#ddd">${r.image_path?'&#128247; ':''}<span>${escHtml(r.store_name||r.vendor||'Unknown')}</span> <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 4px;font-size:12px">&#9998;</button></td>
       <td><span class="badge badge-${(r.category||'misc').toLowerCase().replace(' ','')}">${escHtml(r.category||'—')}</span></td>
       <td style="color:#00d084;font-weight:700">${fmtCurrency(r.total||r.amount)}</td>
       <td style="font-size:12px;color:#555">${fmtDate(r.receipt_date)}</td>
@@ -5727,6 +5732,27 @@ async function saveReceiptDetail(){
     showToast('Receipt updated');
     closeModal('receiptDetailModal');
     loadReceipts();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function renameReceiptInline(id,ev){
+  if(ev){ev.stopPropagation();ev.preventDefault();}
+  const r=allReceipts.find(x=>x.id===id);if(!r)return;
+  const cur=r.store_name||r.vendor||'';
+  const next=prompt('Rename receipt:',cur);
+  if(next==null||next.trim()===''||next.trim()===cur)return;
+  const name=next.trim();
+  try{
+    const res=await fetch('/api/ahb/receipts/'+id,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json','X-Agent-Id':'serge'},
+      body:JSON.stringify({store_name:name,vendor:name}),
+    });
+    const d=await res.json().catch(()=>({}));
+    if(d&&d.error){showToast('Rename failed: '+d.error,'error');return;}
+    r.store_name=name;r.vendor=name;
+    showToast('Renamed');
+    renderReceiptsCurrentView();
   }catch(e){showToast('Error: '+e.message,'error');}
 }
 async function saveReceipt(){
