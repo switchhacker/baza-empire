@@ -45,6 +45,8 @@
         '<div style="flex:1"></div>' +
         '<button id="qrfReset" style="background:#1a1a2e;color:#eee;border:1px solid #2a2a4a;' +
           'border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer">Reset</button>' +
+        '<button id="qrfErase" title="Delete this queue item" style="background:#3a0f14;color:#ff8a8a;' +
+          'border:1px solid #5a1a22;border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer">🗑 Erase</button>' +
         '<button id="qrfSave" style="background:#7c3aed;color:#fff;border:none;' +
           'border-radius:8px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Save</button>' +
       '</div>'
@@ -101,6 +103,7 @@
 
     host.querySelector('#qrfBack').addEventListener('click', close);
     host.querySelector('#qrfReset').addEventListener('click', resetState);
+    host.querySelector('#qrfErase').addEventListener('click', erase);
     host.querySelector('#qrfSave').addEventListener('click', save);
     host.querySelector('#qrfRotL').addEventListener('click', function () { S.rotation = (S.rotation + 270) % 360; schedule(); });
     host.querySelector('#qrfRotR').addEventListener('click', function () { S.rotation = (S.rotation + 90) % 360; schedule(); });
@@ -514,6 +517,29 @@
       btn.textContent = 'Save'; btn.disabled = false;
       alert('Save failed: ' + e.message);
     });
+  }
+
+  function erase() {
+    if (!confirm('Erase this receipt? This cannot be undone.')) return;
+    var btn = host.querySelector('#qrfErase');
+    btn.textContent = 'Erasing…'; btn.disabled = true;
+    var qid = S.qid;
+    var onDeleteCb = S.opts.onDelete || S.opts.onSave;
+    fetch('/api/ahb/receipts/queue/' + qid + '/reject', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        btn.textContent = '🗑 Erase'; btn.disabled = false;
+        if (!d || !d.success) {
+          alert('Erase failed: ' + (d && d.error || 'unknown'));
+          return;
+        }
+        close();
+        if (onDeleteCb) try { onDeleteCb(qid, d); } catch (_) {}
+      })
+      .catch(function (e) {
+        btn.textContent = '🗑 Erase'; btn.disabled = false;
+        alert('Erase failed: ' + e.message);
+      });
   }
 
   function close() {
