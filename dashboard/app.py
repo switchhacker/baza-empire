@@ -4667,7 +4667,7 @@ def mobile_sw():
     no offline support; the SW exists only to satisfy the install criteria
     and to speed up cold loads of static assets."""
     sw = """
-const CACHE = 'baza-shell-v4';
+const CACHE = 'baza-shell-v5';
 const SHELL = ['/static/img/ahb_logo.jpeg', '/static/quickrf-editor.js', '/mobile/manifest.json'];
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -5766,6 +5766,32 @@ def api_ahb_receipt_update(rid):
             'changed_fields': [c[2] for c in corrections],
             'changed_by': changed_by,
         })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/<rid>', methods=['DELETE'])
+def api_ahb_receipt_delete(rid):
+    """Delete a filed receipt row and its associated image file."""
+    try:
+        conn = _ahb_db()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT image_path, file_path FROM ahb_receipts WHERE id = ?", (rid,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'not found'}), 404
+        conn.execute("DELETE FROM ahb_receipts WHERE id = ?", (rid,))
+        conn.commit()
+        conn.close()
+        for p in (row['image_path'], row['file_path']):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

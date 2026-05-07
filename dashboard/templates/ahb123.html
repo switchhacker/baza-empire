@@ -6,7 +6,7 @@
   <title>Baza Empire — AHB123 Business Hub</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/static/quickrf-editor.js" defer></script>
+  <script src="/static/quickrf-editor.js?v=20260507" defer></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#07070f;color:#f0f0f0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
@@ -5555,7 +5555,8 @@ function renderReceiptKanban(receipts){
           ${r.image_path?'<div style="font-size:10px;color:#7c3aed;margin-bottom:2px">&#128247; has image</div>':''}
           <div class="kanban-card-title" style="display:flex;align-items:center;gap:6px">
             <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escHtml(r.store_name||r.vendor||'Unknown')}</span>
-            <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:transparent;border:none;color:#888;cursor:pointer;padding:2px 4px;font-size:12px">&#9998;</button>
+            <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:#1a1a2e;border:1px solid #2a2a4a;color:#8ab4ff;cursor:pointer;padding:3px 7px;font-size:12px;border-radius:5px">&#9998;</button>
+            <button onclick="deleteReceiptInline('${r.id}',event)" title="Delete receipt" style="background:#3a0f14;border:1px solid #5a1a22;color:#ff8a8a;cursor:pointer;padding:3px 7px;font-size:12px;border-radius:5px">&#128465;</button>
           </div>
           <div class="kanban-card-meta">${fmtDate(r.receipt_date)}${r.payment_method?' &middot; '+escHtml(r.payment_method):''}</div>
           <div class="kanban-card-amount">${fmtCurrency(r.total||r.amount)}</div>
@@ -5590,7 +5591,7 @@ function renderReceiptTable(receipts){
   // Ensure agent registry is loaded so created_by renders as name, not id.
   fetchAgents().then(()=>{
     tb.innerHTML=receipts.map(r=>`<tr style="cursor:pointer" onclick="openReceiptDetail('${r.id}')">
-      <td style="font-weight:600;color:#ddd">${r.image_path?'&#128247; ':''}<span>${escHtml(r.store_name||r.vendor||'Unknown')}</span> <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:transparent;border:none;color:#888;cursor:pointer;padding:0 4px;font-size:12px">&#9998;</button></td>
+      <td style="font-weight:600;color:#ddd">${r.image_path?'&#128247; ':''}<span>${escHtml(r.store_name||r.vendor||'Unknown')}</span> <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:#1a1a2e;border:1px solid #2a2a4a;color:#8ab4ff;cursor:pointer;padding:2px 6px;font-size:11px;border-radius:5px;margin-left:4px">&#9998;</button> <button onclick="deleteReceiptInline('${r.id}',event)" title="Delete receipt" style="background:#3a0f14;border:1px solid #5a1a22;color:#ff8a8a;cursor:pointer;padding:2px 6px;font-size:11px;border-radius:5px">&#128465;</button></td>
       <td><span class="badge badge-${(r.category||'misc').toLowerCase().replace(' ','')}">${escHtml(r.category||'—')}</span></td>
       <td style="color:#00d084;font-weight:700">${fmtCurrency(r.total||r.amount)}</td>
       <td style="font-size:12px;color:#555">${fmtDate(r.receipt_date)}</td>
@@ -5753,6 +5754,23 @@ async function renameReceiptInline(id,ev){
     r.store_name=name;r.vendor=name;
     showToast('Renamed');
     renderReceiptsCurrentView();
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+async function deleteReceiptInline(id,ev){
+  if(ev){ev.stopPropagation();ev.preventDefault();}
+  const r=allReceipts.find(x=>x.id===id);if(!r)return;
+  const label=r.store_name||r.vendor||'this receipt';
+  if(!confirm('Delete '+label+'? This cannot be undone.'))return;
+  try{
+    const res=await fetch('/api/ahb/receipts/'+id,{method:'DELETE'});
+    const d=await res.json().catch(()=>({}));
+    if(!d||!d.success){showToast('Delete failed: '+((d&&d.error)||'unknown'),'error');return;}
+    allReceipts=allReceipts.filter(x=>x.id!==id);
+    showToast('Receipt deleted');
+    renderReceiptsCurrentView();
+    document.getElementById('rs-total').textContent=allReceipts.length;
+    document.getElementById('rs-amount').textContent=fmtCurrency(allReceipts.reduce((s,x)=>s+(x.total||x.amount||0),0));
   }catch(e){showToast('Error: '+e.message,'error');}
 }
 async function saveReceipt(){

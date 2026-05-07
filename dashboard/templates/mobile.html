@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="apple-touch-icon" href="/static/img/ahb_logo.jpeg">
 <link rel="manifest" href="/mobile/manifest.json">
-<script src="/static/quickrf-editor.js" defer></script>
+<script src="/static/quickrf-editor.js?v=20260507" defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden}
@@ -1340,9 +1340,22 @@ function renderReceipts() {
         <div class="list-item-title">${esc(r.vendor||r.store||'Receipt')}</div>
         <div class="list-item-sub">${esc(r.category||'')}${r.receipt_date?' · '+dateStr(r.receipt_date):''}</div>
       </div>
-      <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:transparent;border:none;color:var(--text3);padding:0 8px;font-size:14px;cursor:pointer">✎</button>
+      <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:rgba(122,138,255,.12);border:1px solid rgba(122,138,255,.35);color:#9eb1ff;padding:4px 8px;font-size:13px;cursor:pointer;border-radius:6px;margin-right:6px">✎</button>
+      <button onclick="deleteReceiptListItem('${r.id}',event)" title="Delete receipt" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#ff8a8a;padding:4px 8px;font-size:13px;cursor:pointer;border-radius:6px;margin-right:6px">🗑</button>
       <div class="list-item-right"><div class="list-item-val">${fmt(r.total)}</div></div>
     </div>`).join('') : '<div class="empty-state" style="padding:30px"><p>No receipts</p></div>';
+}
+
+async function deleteReceiptListItem(id, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  const r = (S.receipts || []).find(x => x.id === id); if (!r) return;
+  const label = r.vendor || r.store || r.store_name || 'this receipt';
+  if (!confirm('Delete ' + label + '?')) return;
+  const d = await api('/api/ahb/receipts/' + id, { method: 'DELETE' });
+  if (!d || !d.success) { toast('Delete failed: ' + ((d && d.error) || 'unknown'), { err: true }); return; }
+  S.receipts = (S.receipts || []).filter(x => x.id !== id);
+  toast('Deleted');
+  renderReceipts();
 }
 
 async function renameReceiptInline(id, ev) {
