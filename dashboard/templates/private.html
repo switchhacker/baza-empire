@@ -75,6 +75,14 @@
     .lightbox-actions{display:flex;gap:10px;justify-content:center}
     .lightbox-close{position:fixed;top:20px;right:24px;color:#aaa;font-size:32px;cursor:pointer;line-height:1;background:none;border:none;font-family:inherit}
     .lightbox-close:hover{color:#fff}
+
+    /* Multi-select overlay */
+    body.select-mode .photo-card{border-color:#3a3a6a}
+    body.select-mode .photo-card .sel-mark{display:flex}
+    .photo-card .sel-mark{display:none;position:absolute;top:8px;left:8px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.6);border:2px solid #fff;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;z-index:2;pointer-events:none}
+    .photo-card.selected{outline:3px solid #7c3aed;outline-offset:-3px}
+    .photo-card.selected .sel-mark{background:#7c3aed;border-color:#7c3aed}
+    #selectToggleBtn.on{background:#7c3aed;color:#fff;border-color:#7c3aed}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
@@ -120,12 +128,25 @@
         <input id="searchInput" class="search-box" type="text" placeholder="Filter by caption or filename...">
         <div id="agentPills" class="agent-pills"></div>
         <div class="meta-line"><span id="countLabel">0 files</span></div>
+        <button id="selectToggleBtn" class="btn btn-secondary btn-sm" onclick="toggleSelectMode()">☑ Select</button>
         <button class="btn btn-secondary btn-sm" onclick="lockGallery()">🔒 Lock</button>
       </div>
 
       <div id="grid" class="gallery"></div>
       <div id="emptyState" class="empty-state" style="display:none">No private files yet. Send a photo to any agent in Telegram.</div>
     </div>
+  </div>
+
+  <!-- Selection action bar (visible only when items are selected) -->
+  <div id="selBar" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:300;background:#0d0d1e;border-top:1px solid #2a2a4a;padding:10px 16px;display:none;align-items:center;gap:10px;flex-wrap:wrap;box-shadow:0 -8px 24px rgba(0,0,0,.55)">
+    <span id="selCount" style="font-size:13px;font-weight:700;color:#fff">0 selected</span>
+    <button class="btn btn-secondary btn-sm" onclick="selectAllVisible()">All</button>
+    <button class="btn btn-secondary btn-sm" onclick="clearSelection()">None</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-secondary btn-sm" onclick="shareSelected()">📤 Share</button>
+    <button class="btn btn-secondary btn-sm" onclick="downloadSelected()">⬇ Download</button>
+    <button class="btn btn-danger btn-sm" onclick="eraseSelected()">🗑 Erase</button>
+    <button class="btn btn-secondary btn-sm" onclick="exitSelectMode()">Done</button>
   </div>
 
   <!-- Lightbox -->
@@ -149,6 +170,8 @@
     let activeAgent = '';
     let activeQuery = '';
     let currentFile = null;
+    let selectMode  = false;
+    const selectedTokens = new Set();
 
     function fmtSize(n){ if(n<1024)return n+'B'; if(n<1048576)return (n/1024).toFixed(1)+'K'; return (n/1048576).toFixed(1)+'M'; }
 
@@ -156,8 +179,10 @@
       const r = await fetch('/api/datahub/private/status');
       const j = await r.json();
       const pill = document.getElementById('lockPill');
-      if(j.unlocked){ pill.textContent='🔓 Unlocked'; pill.className='lock-pill unlocked'; }
-      else          { pill.textContent='🔒 Locked';   pill.className='lock-pill locked'; }
+      if(pill){
+        if(j.unlocked){ pill.textContent='🔓 Unlocked'; pill.className='lock-pill unlocked'; }
+        else          { pill.textContent='🔒 Locked';   pill.className='lock-pill locked'; }
+      }
       if(!j.passphrase_set){
         document.getElementById('lockDesc').textContent = 'No passphrase has been set yet on this server.';
         document.getElementById('lockHelp').style.display = 'block';
@@ -224,7 +249,9 @@
         } else {
           media = `<div class="photo-thumb" style="display:flex;align-items:center;justify-content:center;color:#444;font-size:30px">📄</div>`;
         }
-        return `<div class="photo-card" onclick="openLightbox(${i})" data-idx="${i}">
+        const sel = selectedTokens.has(f.token) ? ' selected' : '';
+        return `<div class="photo-card${sel}" onclick="onCardClick(event,${i},'${f.token}')" data-idx="${i}" data-token="${f.token}">
+          <div class="sel-mark">✓</div>
           ${media}
           <div class="photo-info">
             <div class="photo-cap" title="${(f.caption||f.basename).replace(/"/g,'&quot;')}">${f.caption || f.basename}</div>
@@ -235,6 +262,123 @@
       // Save filtered list reference for lightbox lookups
       window.__filtered = filtered;
     }
+
+    /* Select mode wiring ---------------------------------------------- */
+    function toggleSelectMode(){ selectMode ? exitSelectMode() : enterSelectMode(); }
+    function enterSelectMode(){
+      selectMode = true;
+      document.body.classList.add('select-mode');
+      document.getElementById('selectToggleBtn').classList.add('on');
+      updateSelBar();
+    }
+    function exitSelectMode(){
+      selectMode = false;
+      selectedTokens.clear();
+      document.body.classList.remove('select-mode');
+      document.getElementById('selectToggleBtn').classList.remove('on');
+      renderGrid();
+      updateSelBar();
+    }
+    function updateSelBar(){
+      const bar = document.getElementById('selBar');
+      const n = selectedTokens.size;
+      document.getElementById('selCount').textContent = n + ' selected';
+      bar.style.display = (selectMode && n > 0) ? 'flex' : 'none';
+    }
+    function onCardClick(ev, idx, token){
+      if(selectMode){
+        ev.preventDefault(); ev.stopPropagation();
+        if(selectedTokens.has(token)) selectedTokens.delete(token);
+        else                          selectedTokens.add(token);
+        const card = ev.currentTarget;
+        card.classList.toggle('selected');
+        updateSelBar();
+        return;
+      }
+      openLightbox(idx);
+    }
+    function selectAllVisible(){
+      enterSelectMode();
+      (window.__filtered || allFiles).forEach(f => selectedTokens.add(f.token));
+      renderGrid();
+      updateSelBar();
+    }
+    function clearSelection(){
+      selectedTokens.clear();
+      renderGrid();
+      updateSelBar();
+    }
+    function getSelectedFiles(){
+      return allFiles.filter(f => selectedTokens.has(f.token));
+    }
+
+    async function shareSelected(){
+      const files = getSelectedFiles();
+      if(!files.length) return;
+      try {
+        // Web Share API (Level 2) supports sharing File blobs on most mobile browsers.
+        const blobs = await Promise.all(files.map(async f => {
+          const r = await fetch('/api/datahub/private/serve/' + f.token);
+          if(!r.ok) throw new Error('fetch ' + f.basename + ' failed');
+          const blob = await r.blob();
+          return new File([blob], f.basename, { type: blob.type || 'application/octet-stream' });
+        }));
+        if(navigator.canShare && navigator.canShare({ files: blobs })){
+          await navigator.share({ files: blobs, title: 'Private files' });
+          return;
+        }
+        // Desktop fallback: trigger downloads via temporary blob URLs.
+        blobs.forEach(b => {
+          const url = URL.createObjectURL(b);
+          const a = document.createElement('a');
+          a.href = url; a.download = b.name; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        });
+        alert('Sharing not supported on this browser — files were downloaded so you can share them manually.');
+      } catch(e){
+        if(e && e.name === 'AbortError') return;  // user cancelled the share sheet
+        alert('Share failed: ' + (e.message || e));
+      }
+    }
+
+    async function downloadSelected(){
+      const tokens = Array.from(selectedTokens);
+      if(!tokens.length) return;
+      try {
+        const r = await fetch('/api/datahub/private/zip', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ tokens })
+        });
+        if(!r.ok){ const j = await r.json().catch(()=>({})); alert(j.error || 'Download failed'); return; }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'private.zip';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch(e){
+        alert('Download failed: ' + (e.message || e));
+      }
+    }
+
+    async function eraseSelected(){
+      const tokens = Array.from(selectedTokens);
+      if(!tokens.length) return;
+      if(!confirm('Erase ' + tokens.length + ' file(s)? This cannot be undone.')) return;
+      const r = await fetch('/api/datahub/private/bulk-delete', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ tokens })
+      });
+      const j = await r.json().catch(()=>({}));
+      if(!j.ok){ alert(j.error || 'Erase failed'); return; }
+      const errs = (j.errors || []).length;
+      selectedTokens.clear();
+      await loadFiles();
+      updateSelBar();
+      if(errs) alert(errs + ' file(s) could not be deleted — see server logs.');
+    }
+    /* ------------------------------------------------------------------ */
 
     function openLightbox(idx){
       const f = (window.__filtered || allFiles)[idx];

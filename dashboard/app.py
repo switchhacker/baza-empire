@@ -1399,6 +1399,67 @@ def api_private_delete():
     return jsonify({'ok': True})
 
 
+@app.route('/api/datahub/private/bulk-delete', methods=['POST'])
+def api_private_bulk_delete():
+    """Delete a batch of private files by token. Each file's .meta sidecar
+    is removed too. Returns per-token results so the UI can refresh from
+    a partial success."""
+    if not _is_private_unlocked():
+        return jsonify({'ok': False, 'error': 'Locked'}), 401
+    payload = request.get_json(silent=True) or {}
+    tokens = payload.get('tokens') or []
+    if not isinstance(tokens, list) or not tokens:
+        return jsonify({'ok': False, 'error': 'tokens[] required'}), 400
+    deleted, errors = [], []
+    for tok in tokens:
+        fpath = _decode_private_token(tok)
+        if not fpath:
+            errors.append({'token': tok, 'error': 'not found'})
+            continue
+        try:
+            os.remove(fpath)
+            meta = fpath + '.meta'
+            if os.path.isfile(meta):
+                os.remove(meta)
+            deleted.append(tok)
+        except OSError as e:
+            errors.append({'token': tok, 'error': str(e)[:200]})
+    return jsonify({'ok': True, 'deleted': deleted, 'errors': errors})
+
+
+@app.route('/api/datahub/private/zip', methods=['POST'])
+def api_private_zip():
+    """Stream a zip of the chosen private files. Body: {tokens:[...]}."""
+    if not _is_private_unlocked():
+        return jsonify({'ok': False, 'error': 'Locked'}), 401
+    payload = request.get_json(silent=True) or {}
+    tokens = payload.get('tokens') or []
+    if not isinstance(tokens, list) or not tokens:
+        return jsonify({'ok': False, 'error': 'tokens[] required'}), 400
+    import io, zipfile
+    buf = io.BytesIO()
+    seen = {}
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for tok in tokens:
+            fpath = _decode_private_token(tok)
+            if not fpath or not os.path.isfile(fpath):
+                continue
+            arcname = os.path.basename(fpath)
+            n = seen.get(arcname, 0)
+            if n:
+                stem, ext = os.path.splitext(arcname)
+                arcname = f"{stem}_{n}{ext}"
+            seen[os.path.basename(fpath)] = n + 1
+            z.write(fpath, arcname=arcname)
+    buf.seek(0)
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = 'application/zip'
+    resp.headers['Content-Disposition'] = f'attachment; filename="private_{ts}.zip"'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
 @app.route('/chains')
 def chains_page():
     """Activity Chains — visibility pipeline #1 UI."""
@@ -2692,6 +2753,43 @@ def api_artifact_delete_bulk():
             os.remove(fpath)
             deleted += 1
     return jsonify({'success': True, 'deleted': deleted})
+
+
+@app.route('/api/artifacts/zip', methods=['POST'])
+def api_artifact_zip():
+    """Stream a zip of selected artifacts. Body: {files:[{project_id,name},...]}.
+    Skips anything that escapes ARTIFACTS_DIR (defense in depth)."""
+    data  = request.json or {}
+    files = data.get('files', [])
+    if not isinstance(files, list) or not files:
+        return jsonify({'success': False, 'error': 'files[] required'}), 400
+    import io, zipfile
+    base = os.path.realpath(ARTIFACTS_DIR)
+    buf  = io.BytesIO()
+    seen = {}
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+        for f in files:
+            pid  = f.get('project_id', '')
+            name = f.get('name', '')
+            if not pid or not name:
+                continue
+            fpath = os.path.realpath(os.path.join(ARTIFACTS_DIR, pid, name))
+            if not fpath.startswith(base + os.sep) or not os.path.isfile(fpath):
+                continue
+            arc = f"{pid}/{os.path.basename(name)}"
+            n = seen.get(arc, 0)
+            if n:
+                stem, ext = os.path.splitext(arc)
+                arc = f"{stem}_{n}{ext}"
+            seen[f"{pid}/{os.path.basename(name)}"] = n + 1
+            z.write(fpath, arcname=arc)
+    buf.seek(0)
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = 'application/zip'
+    resp.headers['Content-Disposition'] = f'attachment; filename="datahub_{ts}.zip"'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 @app.route('/api/artifacts/rename', methods=['POST'])
 def api_artifact_rename():
