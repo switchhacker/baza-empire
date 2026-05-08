@@ -11,6 +11,23 @@
    CSS. Every legacy template already includes these classes.
 #}
 {% set _act = nav_active|default('') %}
+<style>
+  /* Canonical dropdown behavior — collapses submenus until hover/tap. Lives
+     here so every page that includes _nav.html inherits the same UX without
+     having to copy these rules. Pages may still override locally. */
+  .nav-dropdown{position:relative;flex-shrink:0}
+  .nav-dropdown>.nav-link{display:flex;align-items:center;gap:4px}
+  .nav-dropdown>.nav-link::after{content:"\25be";font-size:9px;color:#555}
+  .nav-submenu{display:none;position:absolute;top:100%;left:0;background:#0d0d1e;border:1px solid #1a1a3a;border-radius:0 0 8px 8px;min-width:160px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.6);padding:4px 0}
+  .nav-dropdown:hover>.nav-submenu,.nav-dropdown.open>.nav-submenu{display:block}
+  .nav-submenu a{display:block;padding:10px 18px;font-size:12px;font-weight:600;color:#888;transition:all .15s;white-space:nowrap}
+  .nav-submenu a:hover{color:#e0e0e0;background:#1a1a2e}
+  .nav-submenu a.active{color:#e94560;font-weight:700}
+  @media (max-width:768px){
+    .nav-submenu{position:fixed;top:56px;left:0;right:0;min-width:0;max-height:70vh;overflow-y:auto;border-radius:0}
+    .nav-submenu a{padding:14px 18px;font-size:14px}
+  }
+</style>
 <nav class="nav">
   <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
   <div class="nav-dropdown">
@@ -58,6 +75,7 @@
   <a class="nav-link {% if _act == 'comms' %}active{% endif %}" href="/comms">Comms</a>
   <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">Fluid</a>
   <a class="nav-link {% if _act == 'vision' %}active{% endif %}" href="/vision" title="Vision catalogue">&#128274; Vision</a>
+  <a class="nav-link {% if _act == 'private' %}active{% endif %}" href="/datahub/private" title="Private gallery (Telegram-inbound media)">&#128274; Private</a>
   <a class="nav-link {% if _act == 'email' %}active{% endif %}" href="/email">Email</a>
   <a class="nav-link {% if _act == 'cloud' %}active{% endif %}" href="/cloud">Cloud</a>
   <a class="nav-link {% if _act == 'shell' %}active{% endif %}" href="/shell" style="color:#7c3aed;font-weight:700">&#128123; Phantom</a>
@@ -73,4 +91,27 @@ document.querySelectorAll("[data-fluid-link]").forEach(a => {
   const p = location.protocol === "https:" ? 8443 : 8889;
   a.href = `${location.protocol}//${location.hostname}:${p}/fluid`;
 });
+/* Tap-to-toggle for nav dropdowns on touch devices. Hover handles desktop. */
+(function(){
+  function init(){
+    document.querySelectorAll('.nav-dropdown > .nav-link').forEach(link => {
+      link.addEventListener('click', e => {
+        if (window.innerWidth <= 768) {
+          e.preventDefault();
+          const dd = link.parentElement;
+          document.querySelectorAll('.nav-dropdown.open').forEach(d => { if (d !== dd) d.classList.remove('open'); });
+          dd.classList.toggle('open');
+        }
+      });
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.nav-dropdown')) document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
+    });
+    document.querySelectorAll('.nav-submenu a').forEach(a =>
+      a.addEventListener('click', () => document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open')))
+    );
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
