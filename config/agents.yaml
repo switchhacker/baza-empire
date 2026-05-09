@@ -1152,7 +1152,7 @@ agents:
     telegram_token_env: TELEGRAM_SCOUT_REEVES
   simon_bately:
     company_title: VP of Corporate Affairs — All Home Building Co LLC
-    model: mistral-small:22b
+    model: gemma4:e4b
     name: Simon Bately
     role: VP Corporate Affairs — AHBCO business, management, treasury, agent ops
     scheduled_tasks:
