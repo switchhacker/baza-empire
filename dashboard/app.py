@@ -3249,7 +3249,6 @@ def api_infra_metrics():
             "local_dashboard": "http://localhost:8888",
             "lan_dashboard": f"http://{_run('hostname -I').split()[0] if _run('hostname -I') else 'localhost'}:8888",
         },
-        "nuc_mining": _svc("baza-nuc-mining"),
     })
 
 
@@ -4250,24 +4249,6 @@ def api_skills_catalog():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
-@app.route('/api/nerdminer/status')
-def api_nerdminer_status():
-    """Live status of both ESP32-S3 NerdMiner nodes (via serial + cached fallback)."""
-    env = os.environ.copy()
-    env['SKILL_ARGS'] = json.dumps({
-        'node': request.args.get('node', 'all'),
-        'timeout': int(request.args.get('timeout', 3)),
-    })
-    try:
-        proc = subprocess.run(
-            [sys.executable, os.path.join(FRAMEWORK_DIR, 'skills', 'shared', 'nerdminer_status.py')],
-            env=env, capture_output=True, text=True, timeout=20,
-        )
-        return jsonify(json.loads(proc.stdout or '{}'))
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-
 @app.route('/api/knowledge/search')
 def api_knowledge_search():
     """Unified FTS5 knowledge search across AHBCO data + agent memory."""
@@ -4653,30 +4634,12 @@ def api_syshealth():
     except Exception:
         pass
 
-    # Mining
-    mining_data = {}
-    try:
-        import urllib.request as _ur
-        with _ur.urlopen("http://localhost:4067/2/summary", timeout=3) as r:
-            xmr = json.loads(r.read())
-            hr = xmr.get("hashrate", {}).get("total", [0, 0, 0])
-            hr_val = hr[2] or hr[1] or hr[0]
-            if hr_val >= 1000:
-                mining_data["hashrate"] = f"{hr_val/1000:.2f} kH/s"
-            else:
-                mining_data["hashrate"] = f"{hr_val:.0f} H/s"
-            mining_data["pool"] = xmr.get("connection", {}).get("pool", "?")
-            mining_data["shares"] = xmr.get("results", {}).get("shares_good", 0)
-    except Exception:
-        mining_data = {"hashrate": "offline", "pool": "?", "shares": 0}
-
     return jsonify({
         "cpu_load": cpu_load,
         "memory": mem_out,
         "disk": disk_out,
         "nvidia": nv_data,
         "amd": amd_data,
-        "mining": mining_data,
         "timestamp": datetime.datetime.utcnow().isoformat()
     })
 

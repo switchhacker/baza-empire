@@ -72,7 +72,7 @@ PROJECTS = [
     {
         "id": "proj-baza-empire",
         "name": "Baza Empire",
-        "description": "AI agent network, mining infrastructure, automation stack",
+        "description": "AI agent network, automation stack, family cloud, edge IoT",
         "status": "active",
         "launch_date": "",
         "owner": "serge",
