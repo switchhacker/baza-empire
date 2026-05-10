@@ -31,11 +31,6 @@ AGENT_REGISTRY = {
 TOOL_ROUTES = {
     'claw_batto': [
         {
-            'keywords': ['mining status', 'mining', 'miner'],
-            'tool': 'mining-status',
-            'input_builder': lambda inst: {}
-        },
-        {
             'keywords': ['docker', 'containers', 'container'],
             'tool': 'docker-status',
             'input_builder': lambda inst: {}
@@ -80,11 +75,6 @@ TOOL_ROUTES = {
     ],
     'sam_axe': [
         {
-            'keywords': ['crypto', 'price', 'prices', 'xmr', 'rvn', 'bitcoin', 'coin'],
-            'tool': 'crypto-prices',
-            'input_builder': lambda inst: {'coins': ['monero', 'ravencoin', 'bitcoin']}
-        },
-        {
             'keywords': ['research', 'search', 'find', 'look up', 'market'],
             'tool': 'market-research',
             'input_builder': lambda inst: {'query': inst[:200]}
@@ -106,7 +96,7 @@ TOOL_ROUTES = {
 # ─── Input extraction helpers ─────────────────────────────────────────────────
 
 def _extract_service(inst: str) -> str:
-    known = ['baza-mining', 'baza-nuc-mining', 'baza-agent-simon-bately',
+    known = ['baza-agent-simon-bately',
              'baza-agent-claw-batto', 'baza-agent-phil-hass', 'baza-agent-sam-axe',
              'baza-tool-server', 'docker', 'redis', 'postgresql', 'nginx', 'mosquitto']
     for s in known:
@@ -323,31 +313,7 @@ class SimonCommander:
             try:
                 parsed = json.loads(report)
                 # Format known tool outputs nicely
-                if tool in ('mining-status', 'start-mining', 'stop-mining'):
-                    action = {'mining-status': '📊 Status', 'start-mining': '▶️ Started', 'stop-mining': '⏹ Stopped'}.get(tool, tool)
-                    parts = [f"{k}: <b>{v}</b>" for k, v in parsed.items()]
-                    report_text = action + "\n" + "\n".join(parts)
-                elif tool == 'mining-earnings':
-                    hr = parsed.get('hashrate_hs', 0)
-                    paid = parsed.get('paid_xmr', 0)
-                    pending = parsed.get('pending_xmr', 0)
-                    pending_usd = parsed.get('pending_usd', 0)
-                    xmr_price = parsed.get('xmr_price_usd', 0)
-                    report_text = (
-                        f"Hashrate: <b>{hr} H/s</b>\n"
-                        f"Paid: <b>{paid} XMR</b>\n"
-                        f"Pending: <b>{pending} XMR</b> (${pending_usd})\n"
-                        f"XMR Price: <b>${xmr_price:,}</b>"
-                    )
-                elif tool == 'crypto-prices':
-                    parts = []
-                    for coin, cdata in parsed.items():
-                        price = cdata.get('usd', 0)
-                        change = cdata.get('usd_24h_change', 0)
-                        arrow = '▲' if change >= 0 else '▼'
-                        parts.append(f"{coin.capitalize()}: <b>${price:,.2f}</b> {arrow}{abs(change):.1f}%")
-                    report_text = "\n".join(parts)
-                elif tool == 'disk-usage':
+                if tool == 'disk-usage':
                     report_text = f"<code>{parsed.get('output','')[:400]}</code>"
                 elif tool == 'docker-status':
                     count = parsed.get('count', 0)

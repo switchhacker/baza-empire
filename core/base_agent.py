@@ -168,7 +168,7 @@ class BaseAgent(ContextMixin):
             "MUST be saved as an artifact immediately. Do not just describe it in chat.\n"
             "Save with: ##SKILL:artifact_save{\"filename\":\"name.ext\",\"content\":\"...\",\"project_id\":\"proj-id\"}##\n"
             "Supported: any text-based format (.md .py .sh .js .ts .html .json .yaml .csv .sql .txt .log .svg .xml .toml .rst .rb .go .php .css and more)\n"
-            "Project IDs: proj-ahb123 (All Home Building Co), proj-baza-empire (mining/agents), shared (general)\n"
+            "Project IDs: proj-ahb123 (All Home Building Co), proj-baza-empire (agents/infra), shared (general)\n"
             "Examples:\n"
             "  ##SKILL:artifact_save{\"filename\":\"proposal.md\",\"content\":\"# Proposal\\n...\",\"project_id\":\"proj-ahb123\"}##\n"
             "  ##SKILL:artifact_save{\"filename\":\"config.json\",\"content\":\"{}\",\"project_id\":\"proj-baza-empire\"}##\n"
@@ -461,7 +461,7 @@ class BaseAgent(ContextMixin):
         # Infer project from keywords
         project_id = 'proj-ahb123'
         lower = raw_title.lower()
-        if any(k in lower for k in ['baza', 'mining', 'node', 'firmware', 'rig', 'agent']):
+        if any(k in lower for k in ['baza', 'node', 'firmware', 'edge', 'agent']):
             project_id = 'proj-baza-empire'
 
         task_id = self.tasks.add(
