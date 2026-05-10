@@ -121,7 +121,7 @@ def detect_project(content: str, default: str = "shared") -> str:
     low = content.lower()
     if any(k in low for k in ["ahb123", "home improvement", "ahbco", "all home building"]):
         return "proj-ahb123"
-    if any(k in low for k in ["baza empire", "mining", "xmrig", "node fleet", "agent framework"]):
+    if any(k in low for k in ["baza empire", "node fleet", "agent framework"]):
         return "proj-baza-empire"
     return default
 

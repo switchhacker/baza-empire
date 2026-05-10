@@ -53,17 +53,6 @@ def ollama_models() -> str:
     except Exception:
         return "unavailable"
 
-def xmrig_hashrate() -> str:
-    try:
-        req = urllib.request.Request("http://localhost:18080/2/summary",
-                                      headers={"Authorization": "Bearer bazarig2024"})
-        with urllib.request.urlopen(req, timeout=3) as r:
-            data = json.loads(r.read())
-            hr = data.get("hashrate", {}).get("total", [0])[0]
-            return f"{hr:.1f} H/s"
-    except Exception:
-        return "unavailable"
-
 def disk_usage() -> str:
     return run_cmd("df -h / | tail -1 | awk '{print $3\"/\"$2\" used (\"$5\")\"}'")
 
@@ -132,11 +121,6 @@ def build_report() -> str:
 ## GPU Status
 {gpu_status()}
 
-## Mining
-- XMRig (NUC): {check_service('baza-nuc-mining')}
-- XMRig hashrate: {xmrig_hashrate()}
-- baza-mining service: {check_service('baza-mining')}
-
 ## Services
 - Ollama: {check_port('localhost', 11434, 'ollama')} — Models: {ollama_models()}
 - Dashboard: {check_port('localhost', 8888, 'dashboard')}
@@ -159,7 +143,7 @@ def build_telegram_msg(report: str) -> str:
     # Extract key lines for a compact Telegram message
     lines = []
     for line in report.split("\n"):
-        if any(k in line for k in ["CPU Temp","Memory","Disk","XMRig","Ollama","Dashboard",
+        if any(k in line for k in ["CPU Temp","Memory","Disk","Ollama","Dashboard",
                                     "✅","❌","simon","claw","phil","sam","duke","rex","scout","nova"]):
             lines.append(line.strip())
     body = "\n".join(lines[:30])
