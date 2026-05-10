@@ -8,7 +8,7 @@ It wraps the SkillsEngine pattern so OpenClaw can invoke:
   - baza_scan, agent_pulse, code_scan, log_scan
   - knowledge_dump, publish_insight
   - stealth_deploy, stealth_skill, stealth_restart, stealth_install
-  - Any shared skill (weather, crypto, news, web_search, etc.)
+  - Any shared skill (weather, news, web_search, etc.)
 
 Usage from OpenClaw:
   /run baza_scan

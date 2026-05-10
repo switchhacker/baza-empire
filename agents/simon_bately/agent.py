@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 BRIEFING_KEYWORDS = [
     "brief", "briefing", "status", "update", "summary", "morning",
-    "crypto", "price", "bitcoin", "eth", "xmr", "rvn", "weather",
-    "mining", "earnings", "news", "everything", "reach"
+    "weather", "news", "everything", "reach"
 ]
 
 MAX_HISTORY = 10
@@ -39,16 +38,10 @@ class SimonBately(BaseAgent):
     def _fetch_live_data(self) -> str:
         sections = []
 
-        r = self.skills.run("crypto_prices", {"coins": ["bitcoin", "ethereum", "monero", "ravencoin", "litecoin"]})
-        sections.append(r["output"] if r.get("success") and r.get("output") else "CRYPTO PRICES: data unavailable")
-
         r = self.skills.run("weather", {"location": "Philadelphia, PA"})
         sections.append(r["output"] if r.get("success") and r.get("output") else "WEATHER: data unavailable")
 
-        r = self.skills.run("mining_earnings", {})
-        sections.append(r["output"] if r.get("success") and r.get("output") else "MINING EARNINGS: data unavailable")
-
-        r = self.skills.run("news", {"category": "crypto"})
+        r = self.skills.run("news", {"category": "business"})
         sections.append(r["output"] if r.get("success") and r.get("output") else "NEWS: data unavailable")
 
         return "\n\n".join(sections)

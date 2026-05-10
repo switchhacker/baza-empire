@@ -2,7 +2,7 @@
 """
 Simon Bately — Dynamic Team Commander Briefing
 Runs every 2 hours via cron. Pulls LIVE data on entire team state,
-project progress, blockers, mining, crypto, weather — and tells Serge
+project progress, blockers, weather — and tells Serge
 exactly where the empire stands and what Simon is commanding the team to do.
 """
 import os, sys, json, logging, sqlite3, subprocess, datetime, urllib.request
@@ -201,28 +201,10 @@ def get_artifacts_summary() -> str:
         lines.append(f"  - {proj}/{fname} ({size//1024} KB, {agent or 'unknown'}, {ts})")
     return "\n".join(lines)
 
-def get_mining_quick() -> str:
-    try:
-        req = urllib.request.Request("http://localhost:18080/2/summary",
-                                      headers={"Authorization": "Bearer bazarig2024"})
-        with urllib.request.urlopen(req, timeout=3) as r:
-            data = json.loads(r.read())
-            hr = data.get("hashrate",{}).get("total",[0])[0]
-            return f"MINING: XMRig {hr:.1f} H/s active"
-    except:
-        pass
-    # Check service
-    try:
-        r = subprocess.run(["systemctl","is-active","baza-mining"], capture_output=True, text=True, timeout=3)
-        status = r.stdout.strip()
-        return f"MINING: service {status}"
-    except:
-        return "MINING: status unavailable"
-
 # ── LLM briefing ─────────────────────────────────────────────────────────────
 
 def build_dynamic_briefing(live_data: str, team_status: str, tasks: str,
-                            activity: str, artifacts: str, mining: str) -> str:
+                            activity: str, artifacts: str) -> str:
     now = datetime.datetime.now().strftime("%A, %B %d %Y — %I:%M %p")
 
     system = f"""You are Simon Bately — Co-CEO and Team Commander of the Baza Empire and AHBCO LLC.
@@ -255,7 +237,7 @@ YOU MUST COVER:
 3. What Simon is dispatching RIGHT NOW — must be real DISPATCH lines
 4. Any blockers or issues — only if visible in the data
 5. Recent wins: only from ARTIFACTS_REAL_LAST_2H — say NONE if NONE
-6. Quick metrics: crypto, mining, weather (from live data)
+6. Quick metrics: weather (from live data)
 7. Your flag: one urgent action item for Serge
 
 TONE: Sharp, confident commander — but factual. You don't invent wins to
@@ -272,8 +254,6 @@ LIVE DATA:
 {activity}
 
 {artifacts}
-
-{mining}
 """
     prompt = f"Send Serge his 2-hour command briefing for {now}. Be sharp. Own the room."
 
@@ -380,34 +360,26 @@ def main():
     sections = {}
 
     # Skills data
-    r = skills.run("crypto_prices", {"coins":["bitcoin","ethereum","monero","ravencoin","litecoin"]})
-    sections["crypto"] = r.get("output","CRYPTO: unavailable") if r.get("success") else "CRYPTO: unavailable"
-
     r = skills.run("weather", {"location":"Philadelphia, PA"})
     sections["weather"] = r.get("output","WEATHER: unavailable") if r.get("success") else "WEATHER: unavailable"
 
-    r = skills.run("mining_earnings", {})
-    sections["mining_earnings"] = r.get("output","MINING EARNINGS: unavailable") if r.get("success") else "MINING EARNINGS: unavailable"
-
-    r = skills.run("news", {"category":"crypto"})
+    r = skills.run("news", {"category":"business"})
     sections["news"] = r.get("output","NEWS: unavailable") if r.get("success") else "NEWS: unavailable"
 
-    live_data = "\n\n".join([sections["crypto"], sections["weather"],
-                              sections["mining_earnings"], sections["news"]])
+    live_data = "\n\n".join([sections["weather"], sections["news"]])
 
     team_status  = get_team_status()
     tasks        = get_tasks_summary()
     activity     = get_recent_activity()
     artifacts    = get_artifacts_summary()
-    mining_quick = get_mining_quick()
 
     log.info("All data collected. Building briefing...")
-    briefing = build_dynamic_briefing(live_data, team_status, tasks, activity, artifacts, mining_quick)
+    briefing = build_dynamic_briefing(live_data, team_status, tasks, activity, artifacts)
     if looks_non_english(briefing):
         log.warning("Briefing drifted to non-English — retrying with explicit English-only instruction")
         # Retry once by prepending a hard language lock to the live_data block
         english_lock = "CRITICAL LANGUAGE INSTRUCTION — THIS OVERRIDES EVERYTHING: Respond in ENGLISH ONLY. Do not use Vietnamese, Chinese, Spanish, French, or any other language. English only.\n\n"
-        briefing = build_dynamic_briefing(english_lock + live_data, team_status, tasks, activity, artifacts, mining_quick)
+        briefing = build_dynamic_briefing(english_lock + live_data, team_status, tasks, activity, artifacts)
         if looks_non_english(briefing):
             log.warning("Still non-English after retry — falling back to raw data snapshot")
             briefing = (

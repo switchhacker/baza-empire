@@ -13,11 +13,6 @@ from core.memory import save_message, get_history
 
 logger = logging.getLogger(__name__)
 
-FINANCE_KEYWORDS = [
-    "earnings", "revenue", "income", "profit", "invoice", "tax", "payroll",
-    "financial", "summary", "balance", "brief", "status", "report"
-]
-
 MAX_HISTORY = 10
 
 
@@ -43,18 +38,6 @@ class PhilHass(BaseAgent):
     # in agents/phil_hass/persona/{IDENTITY,SOUL,MISSION,USER}.md and is loaded
     # by ContextMixin.get_system_prompt(). Edit those files to change Phil's
     # voice or knowledge.
-
-    def _is_finance_request(self, text: str) -> bool:
-        t = text.lower()
-        return any(kw in t for kw in FINANCE_KEYWORDS)
-
-    def _fetch_live_data(self) -> str:
-        sections = []
-
-        r = self.skills.run("crypto_prices", {"coins": ["monero", "ravencoin", "bitcoin"]})
-        sections.append(r["output"] if r.get("success") and r.get("output") else "CRYPTO PRICES: data unavailable")
-
-        return "\n\n".join(sections)
 
     # DocPrep intent detection lives in BaseAgent now — Phil inherits it.
 
@@ -84,40 +67,16 @@ class PhilHass(BaseAgent):
         messages = [{"role": h["role"], "content": h["content"]} for h in history]
         loop = asyncio.get_event_loop()
 
-        if self._is_finance_request(text):
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-            live_data = await loop.run_in_executor(None, self._fetch_live_data)
-
-            system = self.build_system_prompt()
-            augmented_system = (
-                system
-                + "\n\n== LIVE DATA (real values fetched right now — use these exactly) ==\n"
-                + live_data
-                + "\n== END LIVE DATA ==\n"
-            )
-            injected_note = (
-                "[Live data injected above. Use ONLY those exact values. Never guess.]\n\n"
-                "[FORMATTING: No markdown. No ### headers. No ALL CAPS. No ** bold. "
-                "Use emoji and ━━━ dividers. Plain text only.]"
-            )
-            augmented_messages = messages + [{
-                "role": "user",
-                "content": f"{text}\n\n{injected_note}"
-            }]
-            response = await loop.run_in_executor(
-                None, self.llm_chat, augmented_messages, augmented_system
-            )
-        else:
-            system = self.build_system_prompt()
-            fmt_note = (
-                "[FORMATTING: No markdown. No ### headers. No ALL CAPS. No ** bold. "
-                "Use emoji for structure, plain text, and ━━━ dividers. "
-                "Complete the full response — never cut off.]"
-            )
-            messages_with_user = messages + [{"role": "user", "content": f"{text}\n\n{fmt_note}"}]
-            response = await loop.run_in_executor(
-                None, self.llm_chat, messages_with_user, system
-            )
+        system = self.build_system_prompt()
+        fmt_note = (
+            "[FORMATTING: No markdown. No ### headers. No ALL CAPS. No ** bold. "
+            "Use emoji for structure, plain text, and ━━━ dividers. "
+            "Complete the full response — never cut off.]"
+        )
+        messages_with_user = messages + [{"role": "user", "content": f"{text}\n\n{fmt_note}"}]
+        response = await loop.run_in_executor(
+            None, self.llm_chat, messages_with_user, system
+        )
 
         if not response:
             response = "_(no response)_"

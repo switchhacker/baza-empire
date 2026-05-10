@@ -20,9 +20,7 @@ logger = logging.getLogger(__name__)
 # Only trigger live-data briefing when EXPLICITLY asking for one
 BRIEFING_KEYWORDS = [
     "briefing", "morning briefing", "daily briefing",
-    "crypto prices", "bitcoin price", "eth price", "xmr price", "rvn price",
-    "mining earnings", "weather", "give me a briefing", "run briefing",
-    "what's the price", "what is the price",
+    "weather", "give me a briefing", "run briefing",
 ]
 
 MAX_HISTORY = 10
@@ -308,8 +306,8 @@ Sharp, confident, no-nonsense executive. Direct answers only. No filler. No hall
 Keep replies under 8 sentences unless a full briefing with real injected data is requested.
 
 == ACTIVE PROJECTS ==
-🏠 ahb123.com: Launch April 1 2026. Claw=dev, Sam=design/copy, Phil=legal/contracts.
-⛏ Baza Empire: AI agents (8 running), crypto mining (AMD+NVIDIA), automation.
+🏠 ahb123.com: Live since 2026-04-23. Mission "Drown the Competition" — SEO, analytics, marketing, brand.
+🏛 Baza Empire: AI agents (8 running), automation, family cloud, edge IoT.
 
 == CRITICAL RULES ==
 1. NEVER invent data. If live data is injected use it. If not, say "data unavailable."
@@ -327,7 +325,7 @@ CLAW (claw_batto) → code, Linux, DevOps, server, systemd, databases, Ollama, S
 PHIL (phil_hass)  → legal, contracts, tax, compliance, PA HIC, LLC, invoices, AND all document generation: Word(.docx), Excel(.xlsx), PDF — Phil is the Document Officer
 SAM (sam_axe)     → website copy, SEO, ads, branding, visuals, image gen (Stable Diffusion), analytics, social media
 DUKE (duke_harmon)→ project status, task tracking, deadline management, blocker escalation
-SCOUT (scout_reeves)→ research, competitor intel, PA regulations, crypto pool comparison, market rates
+SCOUT (scout_reeves)→ research, competitor intel, PA regulations, market rates
 REX (rex_valor)   → inbound leads, voicemail triage, lead scoring
 NOVA (nova_sterling)→ client chat on ahb123.com, consultation booking
 
@@ -346,7 +344,7 @@ For RESEARCH:
 
 For CODE/INFRA:
   → DISPATCH:claw_batto:Fix/build [exact task]. File: [path]. Expected output: [result].
-  → Claw uses: system_health, mining_status, artifact_save, create_skill
+  → Claw uses: system_health, artifact_save, create_skill
 
 For PROJECT STATUS:
   → DISPATCH:duke_harmon:Pull full status for [project]. Flag blockers. Save report to artifacts.
@@ -416,13 +414,9 @@ For LEAD/CLIENT:
         except Exception as e:
             sections.append(f"ACTIVE PROJECTS: unavailable ({e})")
 
-        r = self.skills.run("crypto_prices", {"coins": ["bitcoin", "ethereum", "monero", "ravencoin", "litecoin"]})
-        sections.append(r["output"] if r.get("success") and r.get("output") else "CRYPTO PRICES: data unavailable")
         r = self.skills.run("weather", {"location": "Philadelphia, PA"})
         sections.append(r["output"] if r.get("success") and r.get("output") else "WEATHER: data unavailable")
-        r = self.skills.run("mining_earnings", {})
-        sections.append(r["output"] if r.get("success") and r.get("output") else "MINING EARNINGS: data unavailable")
-        r = self.skills.run("news", {"category": "crypto"})
+        r = self.skills.run("news", {"category": "business"})
         sections.append(r["output"] if r.get("success") and r.get("output") else "NEWS: data unavailable")
         return "\n\n".join(sections)
 

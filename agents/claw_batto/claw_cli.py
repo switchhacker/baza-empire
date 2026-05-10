@@ -47,7 +47,7 @@ Framework root: {FRAMEWORK_DIR}
 Server: baza (Ryzen 7 5700G, RTX 3070 CUDA + RX 6700 XT Vulkan, 64GB RAM, Ubuntu 24.04 LTS)
 Stack: Python, Bash, Flask, SQLite/PostgreSQL, Ollama (AMD:11434 / NV:11435), systemd, nginx
 Venv: {FRAMEWORK_DIR}/venv/bin/python — always use this, never system python
-Dashboard: http://localhost:8888 | XMRig API: http://localhost:4067/2/summary | SD WebUI: http://localhost:7860
+Dashboard: http://localhost:8888 | SD WebUI: http://localhost:7860
 
 YOUR JOB:
 - Pair-program with Serge at senior engineer level — no hand-holding, no dumbing down

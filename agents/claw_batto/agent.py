@@ -15,7 +15,7 @@ from core.memory import save_message, get_history
 logger = logging.getLogger(__name__)
 
 STATUS_KEYWORDS = [
-    "status", "health", "mining", "service", "docker", "disk", "ollama",
+    "status", "health", "service", "docker", "disk", "ollama",
     "running", "check", "monitor", "uptime", "brief", "everything"
 ]
 
@@ -37,9 +37,6 @@ class ClawBatto(BaseAgent):
 
     def _fetch_live_data(self) -> str:
         sections = []
-
-        r = self.skills.run("mining_status", {})
-        sections.append(r["output"] if r.get("success") and r.get("output") else "MINING STATUS: data unavailable")
 
         r = self.skills.run("system_health", {})
         sections.append(r["output"] if r.get("success") and r.get("output") else "SYSTEM HEALTH: data unavailable")
