@@ -81,7 +81,7 @@ async def claw_run_command(req: ToolRequest):
     ALLOWED = ["systemctl status", "df -h", "free -h", "uptime", "docker ps",
                "journalctl", "ls", "cat /var/log", "ping", "curl", "wget",
                "git status", "git log", "python3", "pip", "nvidia-smi",
-               "rocm-smi", "xmrig", "ps aux", "netstat", "ss -", "ip addr"]
+               "rocm-smi", "ps aux", "netstat", "ss -", "ip addr"]
 
     cmd = req.input.get("command", "")
     if not cmd:
@@ -129,7 +129,6 @@ async def claw_restart_service(req: ToolRequest):
         "baza-agent-simon-bately", "baza-agent-claw-batto",
         "baza-agent-phil-hass", "baza-agent-sam-axe",
         "baza-dashboard", "baza-tool-server",
-        "baza-mining", "baza-nuc-mining",
         "mosquitto", "postgresql", "redis", "nginx", "docker"
     ]
 
@@ -175,112 +174,6 @@ async def claw_disk_usage(req: ToolRequest):
         return {"output": result.stdout}
 
     return run_tool("claw/disk-usage", _run, req)
-
-
-@app.post("/tools/claw/mining-status")
-async def claw_mining_status(req: ToolRequest):
-    """Check status of all mining services."""
-    def _run(inp):
-        services = ["baza-mining", "baza-nuc-mining"]
-        statuses = {}
-        for svc in services:
-            r = subprocess.run(
-                f"systemctl is-active {svc}",
-                shell=True, capture_output=True, text=True
-            )
-            statuses[svc] = r.stdout.strip()
-        return statuses
-
-    return run_tool("claw/mining-status", _run, req)
-
-
-
-@app.post("/tools/claw/start-mining")
-async def claw_start_mining(req: ToolRequest):
-    """Start mining services on baza and NUC."""
-    def _run(inp):
-        services = inp.get("services", ["baza-mining", "baza-nuc-mining"])
-        results = {}
-        for svc in services:
-            r = subprocess.run(
-                f"sudo systemctl start {svc}",
-                shell=True, capture_output=True, text=True, timeout=15
-            )
-            # Check if it actually started
-            check = subprocess.run(
-                f"systemctl is-active {svc}",
-                shell=True, capture_output=True, text=True
-            )
-            results[svc] = check.stdout.strip()
-        return results
-
-    return run_tool("claw/start-mining", _run, req)
-
-
-@app.post("/tools/claw/stop-mining")
-async def claw_stop_mining(req: ToolRequest):
-    """Stop mining services on baza and NUC."""
-    def _run(inp):
-        services = inp.get("services", ["baza-mining", "baza-nuc-mining"])
-        results = {}
-        for svc in services:
-            r = subprocess.run(
-                f"sudo systemctl stop {svc}",
-                shell=True, capture_output=True, text=True, timeout=15
-            )
-            check = subprocess.run(
-                f"systemctl is-active {svc}",
-                shell=True, capture_output=True, text=True
-            )
-            results[svc] = check.stdout.strip()
-        return results
-
-    return run_tool("claw/stop-mining", _run, req)
-
-
-@app.post("/tools/sam/mining-earnings")
-async def sam_mining_earnings(req: ToolRequest):
-    """Fetch live mining earnings from supportxmr.com pool API."""
-    start = time.time()
-    wallet = req.input.get("wallet", os.environ.get("XMR_WALLET_ADDRESS", ""))
-    if not wallet:
-        return ToolResponse(success=False, output=None, tool="sam/mining-earnings",
-                            task_id=req.task_id, duration_ms=0,
-                            error="No wallet address. Set XMR_WALLET_ADDRESS in secrets.env")
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            stats_resp = await client.get(
-                f"https://supportxmr.com/api/miner/{wallet}/stats"
-            )
-            stats_resp.raise_for_status()
-            data = stats_resp.json()
-
-            price_resp = await client.get(
-                "https://api.coingecko.com/api/v3/simple/price",
-                params={"ids": "monero", "vs_currencies": "usd"}
-            )
-            xmr_price = price_resp.json().get("monero", {}).get("usd", 0)
-
-        paid = data.get("amtPaid", 0) / 1e12
-        pending = data.get("amtDue", 0) / 1e12
-        hashrate = data.get("hash", 0)
-
-        output = {
-            "hashrate_hs": hashrate,
-            "paid_xmr": round(paid, 6),
-            "pending_xmr": round(pending, 6),
-            "pending_usd": round(pending * xmr_price, 4),
-            "xmr_price_usd": xmr_price,
-        }
-        return ToolResponse(success=True, output=output, tool="sam/mining-earnings",
-                            task_id=req.task_id,
-                            duration_ms=int((time.time() - start) * 1000))
-    except Exception as e:
-        logger.error(f"[mining-earnings] {e}")
-        return ToolResponse(success=False, output=None, tool="sam/mining-earnings",
-                            task_id=req.task_id,
-                            duration_ms=int((time.time() - start) * 1000),
-                            error=str(e))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -434,30 +327,6 @@ async def sam_scrape_web(req: ToolRequest):
                             error=str(e))
 
 
-@app.post("/tools/sam/crypto-prices")
-async def sam_crypto_prices(req: ToolRequest):
-    """Fetch current prices for empire coins (XMR, RVN, BTC)."""
-    async def _run(inp):
-        coins = inp.get("coins", ["monero", "ravencoin", "bitcoin"])
-        ids = ",".join(coins)
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd&include_24hr_change=true"
-            )
-            resp.raise_for_status()
-            return resp.json()
-
-    start = time.time()
-    try:
-        output = await _run(req.input)
-        return ToolResponse(success=True, output=output, tool="sam/crypto-prices",
-                            task_id=req.task_id, duration_ms=int((time.time()-start)*1000))
-    except Exception as e:
-        return ToolResponse(success=False, output=None, tool="sam/crypto-prices",
-                            task_id=req.task_id, duration_ms=int((time.time()-start)*1000),
-                            error=str(e))
-
-
 @app.post("/tools/sam/market-research")
 async def sam_market_research(req: ToolRequest):
     """Search DuckDuckGo and return top results for a query."""
@@ -592,13 +461,13 @@ async def list_tools():
     return {
         "claw_batto": [
             "run-command", "service-status", "restart-service",
-            "docker-status", "disk-usage", "mining-status"
+            "docker-status", "disk-usage"
         ],
         "phil_hass": [
             "generate-invoice", "tax-summary", "contract-template"
         ],
         "sam_axe": [
-            "scrape-web", "crypto-prices", "market-research", "kpi-report"
+            "scrape-web", "market-research", "kpi-report"
         ],
         "simon_bately": [
             "send-report", "schedule-task"
@@ -617,7 +486,7 @@ async def list_tools():
             "quick-estimate", "material-calc", "rates", "permit-check"
         ],
         "utility": [
-            "weather", "crypto", "whois", "headers-check", "ssl-check"
+            "weather", "whois", "headers-check", "ssl-check"
         ]
     }
 
@@ -1078,22 +947,6 @@ async def utility_weather(location: str = "Bensalem,PA"):
         return {"location": location, "temp_f": c.get("temp_F"), "temp_c": c.get("temp_C"),
                 "feels_like_f": c.get("FeelsLikeF"), "humidity": c.get("humidity"),
                 "desc": c["weatherDesc"][0]["value"], "wind_mph": c.get("windspeedMiles")}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@app.get("/tools/utility/crypto")
-async def utility_crypto(coins: str = "monero,ravencoin,bitcoin,ethereum"):
-    """Crypto prices."""
-    import urllib.request, socket
-    _orig = socket.getaddrinfo
-    socket.getaddrinfo = lambda *a, **k: [r for r in _orig(*a, **k) if r[0] == socket.AF_INET6] or _orig(*a, **k)
-    coin_list = [c.strip() for c in coins.split(",")]
-    try:
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={','.join(coin_list)}&vs_currencies=usd&include_24hr_change=true"
-        req = urllib.request.Request(url, headers={"User-Agent": "BazaEmpire/1.0"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
     except Exception as e:
         return {"error": str(e)}
 
