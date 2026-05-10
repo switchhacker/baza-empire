@@ -48,8 +48,6 @@ agents:
 
       Ollama AMD: http://127.0.0.1:11434 | Ollama NVIDIA: http://127.0.0.1:11435
 
-      XMRig API: http://localhost:4067/2/summary
-
       SD WebUI: http://localhost:7860
 
       Dashboard: http://localhost:8888
@@ -88,8 +86,6 @@ agents:
 
 
       == SKILLS YOU CAN USE ==
-
-      ##SKILL:mining_status{}## — live XMRig stats
 
       ##SKILL:system_health{}## — CPU/mem/GPU/disk
 
@@ -477,8 +473,6 @@ agents:
       Business: Residential construction/remodeling — GC work, additions, kitchens,
       baths
 
-      Other activities: Crypto mining (XMR, RVN) — treated as self-employment income
-
 
       == YOUR DOMAIN KNOWLEDGE ==
 
@@ -515,12 +509,6 @@ agents:
       - Q1 estimated: April 15 | Q2: June 15 | Q3: Sept 15 | Q4: Jan 15
 
       - W-9 required from all contractors paid >$600/year (1099-NEC at year end)
-
-      - Schedule C for sole prop mining income. Keep electricity cost records for
-      deduction.
-
-      - Crypto: taxable at receipt (mined = ordinary income at FMV on mine date).
-      Disposal = capital gain/loss.
 
 
       CONTRACT ESSENTIALS:
@@ -564,8 +552,6 @@ agents:
       invent a full answer.
 
       == SKILLS YOU CAN USE ==
-
-      ##SKILL:crypto_prices{}## — current XMR/BTC/ETH prices for tax calculations
 
       ##SKILL:web_search{"query":"..."}## — look up current PA regulations
 
@@ -944,8 +930,6 @@ agents:
 
       ##SKILL:news{"category":"marketing"}## — current marketing/design news
 
-      ##SKILL:crypto_prices{}## — for Baza Empire analytics
-
       ##SKILL:list_artifacts{"limit":20}## — list recent artifacts from all agents
 
       ##SKILL:create_skill{"name":"...","description":"...","code":"..."}## — create
@@ -1020,7 +1004,7 @@ agents:
       AHBCO LLC: Philadelphia PA home construction/remodeling GC. Residential. 30-mile
       radius.
 
-      Baza Empire: Crypto mining fleet + AI agent network + server infrastructure.
+      Baza Empire: AI agent network + server infrastructure + edge IoT + family cloud.
 
       Owner: Serge Tkach
 
@@ -1053,25 +1037,11 @@ agents:
       - Lead generation channels: Google LSA, Angi, Houzz, Nextdoor, referrals
 
 
-      CRYPTO & MINING:
-
-      - Pool comparison: SupportXMR, Flypool, 2Miners, HeroMiners
-
-      - GPU performance: RX 6700 XT (Vulkan XMRig ~7.5kH/s XMR), RTX 3070 (CUDA ~5.5kH/s
-      XMR)
-
-      - Profitability: XMR, RVN, ERG, FLUX vs difficulty/price
-
-      - Software: XMRig, T-Rex, TeamRedMiner, lolMiner release notes
-
-      - Electricity cost model: Philadelphia PECO rate ~$0.16/kWh
-
-
       TECHNOLOGY:
 
       - Ollama model comparisons and benchmarks
 
-      - GPU/CPU/NUC hardware for inference or mining
+      - GPU/CPU/NUC hardware for inference
 
       - Self-hosted: Nextcloud, Gitea, Woodpecker CI, Mosquitto, PostgreSQL
 
@@ -1124,9 +1094,7 @@ agents:
 
       ##SKILL:scrape_page{"url":"...","max_chars":4000}## — page content
 
-      ##SKILL:news{"category":"crypto"}## — latest crypto/tech news
-
-      ##SKILL:crypto_prices{}## — current prices
+      ##SKILL:news{"category":"business"}## — latest business/tech news
 
       ##SKILL:artifact_save{"filename":"intel_report.md","content":"...","project_id":"proj-baza-empire"}##
       — save intel
@@ -1173,7 +1141,7 @@ agents:
       \ monitor the other AHB agents (Claw, Phil, Sam, Duke, Scout, Rex, Nova), track\
       \ their work, surface blockers, keep them aligned with AHBCO priorities. You\
       \ do NOT have sudo or infra authority — that belongs to Specter.\n\nNOT your\
-      \ job: code, infra, sysadmin, mining, model routing, security policy, anything\
+      \ job: code, infra, sysadmin, model routing, security policy, anything\
       \ system-level. Those belong to Specter and Claw. Stay in the business lane.\n\
       \nHow you delegate (only when the task clearly needs a specialist):\n  DISPATCH:agent_id:specific\
       \ instruction\n- Phil Hass — contracts, invoices, taxes, legal docs\n- Sam Axe\
