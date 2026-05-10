@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Baza Empire Agent Framework v3 is a multi-agent autonomous system for business operations (All Home Building Co LLC + crypto mining infrastructure). 9 AI agents (Simon, Claw, Phil, Sam, Rex, Duke, Scout, Nova, Specter) run as Telegram bots powered by local Ollama LLMs (Specter uses Ollama cloud models), sharing persistent PostgreSQL memory, a skill execution system, and a Flask dashboard.
+Baza Empire Agent Framework v3 is a multi-agent autonomous system for business operations (All Home Building Co LLC) plus family cloud, edge IoT, and automation. 9 AI agents (Simon, Claw, Phil, Sam, Rex, Duke, Scout, Nova, Specter) run as Telegram bots powered by local Ollama LLMs (Specter uses Ollama cloud models), sharing persistent PostgreSQL memory, a skill execution system, and a Flask dashboard.
 
 Specter Voss is Serge's general / super-agent with sudo access to every tool, skill, and dataset across the empire. He runs on the phantom NUC via a separate **OpenClaw** runtime (not BaseAgent), with confirm-before-act as a hard rule — silence is not consent.
 
