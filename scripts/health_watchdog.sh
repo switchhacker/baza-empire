@@ -27,7 +27,6 @@ CRITICAL_SERVICES=(
     baza-dashboard.service
     baza-tool-server.service
     baza-litellm.service
-    baza-nerdminer-monitor.service
     postgresql.service
 )
 
