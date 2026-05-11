@@ -93,7 +93,20 @@ class ContextMixin:
         self._identity = identity_get(self.agent_id)
 
     def context(self) -> str:
-        """Build full context string for this agent, including recent events."""
+        """Build full context string for this agent, including recent events.
+
+        Empire-state header is PREPENDED here so every agent — both BaseAgent
+        and legacy BazaAgent — sees current LIVE/KILLED/RECENT plus their own
+        identity, skills, and team-online roster on every LLM call. Cached
+        with the rest of the system_prompt at the caller level.
+        """
+        empire_header = ""
+        try:
+            from core import empire_state
+            empire_header = empire_state.build_header(self.agent_id)
+        except Exception:
+            pass
+
         ctx = build_agent_context(self.agent_id)
         # Append recent cross-agent events from the event bus
         try:
@@ -105,6 +118,8 @@ class ContextMixin:
                     ctx += f"- [{e.source}] {e.type}: {json.dumps(e.data)[:200]}\n"
         except Exception:
             pass
+        if empire_header:
+            ctx = empire_header + ("\n\n" + ctx if ctx else "")
         return ctx
 
     def get_system_prompt(self) -> str:
