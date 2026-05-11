@@ -427,6 +427,11 @@ def init_ahb_tables():
         "ALTER TABLE ahb_receipt_queue ADD COLUMN parent_image_path TEXT",
         "ALTER TABLE ahb_receipt_queue ADD COLUMN pair_id TEXT",
         "ALTER TABLE ahb_receipt_queue ADD COLUMN split_col INTEGER",
+        # Phase/task workflow upgrades: approx duration on tasks, dedup keys on events
+        "ALTER TABLE ahb_phase_tasks ADD COLUMN approx_minutes INTEGER DEFAULT 0",
+        "ALTER TABLE ahb_phase_tasks ADD COLUMN source_line_idx INTEGER",
+        "ALTER TABLE ahb_events ADD COLUMN phase_id TEXT DEFAULT ''",
+        "ALTER TABLE ahb_events ADD COLUMN task_id TEXT DEFAULT ''",
     ]
     for stmt in alter_stmts:
         try:
@@ -7843,7 +7848,7 @@ def api_ahb_phases_list():
 
 @app.route('/api/ahb/projects/<pid>/phases', methods=['POST'])
 def api_ahb_project_phases_create(pid):
-    """Add a phase to a project and sync to linked invoice line items."""
+    """Add a phase (planning-only — value is no longer pushed to the invoice)."""
     try:
         data = request.json or {}
         conn = _ahb_db()
@@ -7855,7 +7860,7 @@ def api_ahb_project_phases_create(pid):
              data.get('value', 0), data.get('start_date', ''), data.get('end_date', ''),
              data.get('status', 'pending')))
         conn.commit()
-        _rebuild_invoice_line_items(conn, pid)
+        _sync_phase_events(conn, pid, phid)
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'id': phid})
@@ -7887,7 +7892,7 @@ def api_ahb_phases_create():
 
 @app.route('/api/ahb/phases/<phid>', methods=['PUT'])
 def api_ahb_phases_update(phid):
-    """Update a phase and sync to linked invoice line items."""
+    """Update a phase (planning-only — re-syncs calendar events for the phase)."""
     try:
         data = request.json or {}
         conn = _ahb_db()
@@ -7898,10 +7903,9 @@ def api_ahb_phases_update(phid):
             vals.append(phid)
             conn.execute(f"UPDATE ahb_project_phases SET {', '.join(fields)} WHERE id = ?", vals)
             conn.commit()
-        # Get project_id to rebuild invoice
         phase = conn.execute("SELECT project_id FROM ahb_project_phases WHERE id = ?", (phid,)).fetchone()
         if phase and phase['project_id']:
-            _rebuild_invoice_line_items(conn, phase['project_id'])
+            _sync_phase_events(conn, phase['project_id'], phid)
             conn.commit()
         conn.close()
         return jsonify({'success': True})
@@ -7910,17 +7914,13 @@ def api_ahb_phases_update(phid):
 
 @app.route('/api/ahb/phases/<phid>', methods=['DELETE'])
 def api_ahb_phases_delete(phid):
-    """Delete a phase and rebuild the linked invoice line items."""
+    """Delete a phase, its tasks, and their calendar events."""
     try:
         conn = _ahb_db()
-        phase = conn.execute("SELECT project_id FROM ahb_project_phases WHERE id = ?", (phid,)).fetchone()
-        project_id = phase['project_id'] if phase else None
-        conn.execute("DELETE FROM ahb_project_phases WHERE id = ?", (phid,))
         conn.execute("DELETE FROM ahb_phase_tasks WHERE phase_id = ?", (phid,))
+        conn.execute("DELETE FROM ahb_events WHERE phase_id = ?", (phid,))
+        conn.execute("DELETE FROM ahb_project_phases WHERE id = ?", (phid,))
         conn.commit()
-        if project_id:
-            _rebuild_invoice_line_items(conn, project_id)
-            conn.commit()
         conn.close()
         return jsonify({'success': True})
     except Exception as e:
@@ -7939,24 +7939,131 @@ def api_ahb_phase_tasks_list(phid):
 
 @app.route('/api/ahb/phases/<phid>/tasks', methods=['POST'])
 def api_ahb_phase_tasks_create(phid):
-    """Add a task to a phase."""
+    """Add a task to a phase. Optional approx_minutes (time-to-complete) and
+    source_line_idx (when the task was pulled from an invoice line item)."""
     try:
         data = request.json or {}
         conn = _ahb_db()
         tid = uuid.uuid4().hex[:24]
-        # Get project_id from phase
         phase = conn.execute("SELECT project_id FROM ahb_project_phases WHERE id = ?", (phid,)).fetchone()
         project_id = phase['project_id'] if phase else ''
         conn.execute(
-            """INSERT INTO ahb_phase_tasks (id, phase_id, project_id, title, status, assigned_to, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO ahb_phase_tasks (id, phase_id, project_id, title, status, assigned_to, notes,
+                                            approx_minutes, source_line_idx)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (tid, phid, project_id, data.get('title', ''), data.get('status', 'pending'),
-             data.get('assigned_to', ''), data.get('notes', '')))
+             data.get('assigned_to', ''), data.get('notes', ''),
+             int(data.get('approx_minutes') or 0),
+             data.get('source_line_idx') if data.get('source_line_idx') is not None else None))
         conn.commit()
+        # Sync this task to the calendar (date defaults to phase start; details carry the link)
+        if project_id:
+            _sync_phase_events(conn, project_id, phid)
+            conn.commit()
         conn.close()
         return jsonify({'success': True, 'id': tid})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/phase-tasks/<tid>', methods=['PUT'])
+def api_ahb_phase_task_update(tid):
+    """Update a task — title, status, assigned_to, notes, approx_minutes."""
+    try:
+        data = request.json or {}
+        conn = _ahb_db()
+        fields, vals = [], []
+        for k in ['title', 'status', 'assigned_to', 'notes']:
+            if k in data:
+                fields.append(f"{k} = ?"); vals.append(data[k])
+        if 'approx_minutes' in data:
+            fields.append("approx_minutes = ?"); vals.append(int(data['approx_minutes'] or 0))
+        if not fields:
+            conn.close()
+            return jsonify({'success': True})
+        vals.append(tid)
+        conn.execute(f"UPDATE ahb_phase_tasks SET {', '.join(fields)} WHERE id = ?", vals)
+        conn.commit()
+        row = conn.execute("SELECT phase_id, project_id FROM ahb_phase_tasks WHERE id = ?", (tid,)).fetchone()
+        if row and row['project_id'] and row['phase_id']:
+            _sync_phase_events(conn, row['project_id'], row['phase_id'])
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/phase-tasks/<tid>', methods=['DELETE'])
+def api_ahb_phase_task_delete(tid):
+    try:
+        conn = _ahb_db()
+        row = conn.execute("SELECT phase_id, project_id FROM ahb_phase_tasks WHERE id = ?", (tid,)).fetchone()
+        conn.execute("DELETE FROM ahb_phase_tasks WHERE id = ?", (tid,))
+        # Remove any calendar event tied to this task
+        conn.execute("DELETE FROM ahb_events WHERE task_id = ?", (tid,))
+        conn.commit()
+        if row and row['project_id'] and row['phase_id']:
+            _sync_phase_events(conn, row['project_id'], row['phase_id'])
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _sync_phase_events(conn, project_id, phase_id):
+    """Idempotently rebuild the calendar events for one phase and its tasks.
+    Wipes any prior events keyed on this phase_id (whether they came from the
+    phase itself or its tasks) and inserts fresh ones, so editing a phase or
+    its task list never leaves orphan/duplicate calendar entries."""
+    project = conn.execute("SELECT title FROM ahb_projects WHERE id = ?", (project_id,)).fetchone()
+    if not project:
+        return
+    project_title = project['title'] or 'Project'
+    phase = conn.execute("SELECT * FROM ahb_project_phases WHERE id = ?", (phase_id,)).fetchone()
+    if not phase:
+        # Phase was deleted — clear its events and exit
+        conn.execute("DELETE FROM ahb_events WHERE phase_id = ?", (phase_id,))
+        return
+    phase = dict(phase)
+    phase_name = phase.get('name') or f"Phase {phase.get('phase_number','?')}"
+    # Clear prior events for this phase (covers phase markers and tasks)
+    conn.execute("DELETE FROM ahb_events WHERE phase_id = ?", (phase_id,))
+    # Phase start
+    if phase.get('start_date'):
+        eid = uuid.uuid4().hex[:24]
+        conn.execute(
+            """INSERT INTO ahb_events (id, title, details, date, category, all_day, project_id, phase_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (eid, f"{project_title} • {phase_name} — Start", f"Phase start: {phase_name}",
+             phase['start_date'], 'phase', 1, project_id, phase_id))
+    # Phase end
+    if phase.get('end_date'):
+        eid = uuid.uuid4().hex[:24]
+        conn.execute(
+            """INSERT INTO ahb_events (id, title, details, date, category, all_day, project_id, phase_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (eid, f"{project_title} • {phase_name} — End", f"Phase end: {phase_name}",
+             phase['end_date'], 'phase', 1, project_id, phase_id))
+    # Tasks — anchor each to the phase start_date (or end_date if no start)
+    anchor = phase.get('start_date') or phase.get('end_date') or ''
+    if anchor:
+        tasks = conn.execute(
+            "SELECT * FROM ahb_phase_tasks WHERE phase_id = ? ORDER BY created_at", (phase_id,)
+        ).fetchall()
+        for t in tasks:
+            t = dict(t)
+            eid = uuid.uuid4().hex[:24]
+            approx = int(t.get('approx_minutes') or 0)
+            details = f"Task in {phase_name} ({project_title})"
+            if approx:
+                details += f" · ~{approx} min"
+            conn.execute(
+                """INSERT INTO ahb_events (id, title, details, date, category, all_day, project_id, phase_id, task_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (eid, f"{project_title} • {phase_name}: {t.get('title','Task')}",
+                 details, anchor, 'phase_task', 1, project_id, phase_id, t['id']))
 
 
 # ── AHB123 — Tax Requirements ──────────────────────────────────────────────────

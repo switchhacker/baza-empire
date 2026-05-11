@@ -3125,16 +3125,85 @@
         <div id="project-client-status" style="font-size:10px;color:#555;margin-top:4px;height:14px"></div>
       </div>
       <div class="form-group">
-        <label>Scope</label>
-        <select id="project-scope" onchange="onScopeChange()">
-          <option value="kitchen">Kitchen</option>
-          <option value="bathroom">Bathroom</option>
-          <option value="addition">Addition</option>
-          <option value="basement">Basement</option>
-          <option value="deck">Deck</option>
-          <option value="full-reno">Full Renovation</option>
-          <option value="other">Other</option>
-        </select>
+        <label>Scope <span style="color:#444;font-weight:400;font-size:10px">(type to filter or pick from list)</span></label>
+        <input type="text" id="project-scope" list="project-scope-options" placeholder="Type or pick a scope..." autocomplete="off" oninput="onScopeChange()">
+        <datalist id="project-scope-options">
+          <option value="Addition"></option>
+          <option value="All New Electrical"></option>
+          <option value="All New Plumbing"></option>
+          <option value="Appliance Install"></option>
+          <option value="Attic Conversion"></option>
+          <option value="Basement"></option>
+          <option value="Bathroom"></option>
+          <option value="Brick Repointing"></option>
+          <option value="Broken Window Repair"></option>
+          <option value="Build a House"></option>
+          <option value="Cabinetry Install"></option>
+          <option value="Caulking / Sealing"></option>
+          <option value="Change a Lock"></option>
+          <option value="Chimney Repair"></option>
+          <option value="Concrete / Driveway"></option>
+          <option value="Countertop Install"></option>
+          <option value="Deck"></option>
+          <option value="Demolition"></option>
+          <option value="Door Replacement"></option>
+          <option value="Drywall Install"></option>
+          <option value="Drywall Repair"></option>
+          <option value="Ductwork"></option>
+          <option value="EV Charger Install"></option>
+          <option value="Electrical Repair"></option>
+          <option value="Exterior Painting"></option>
+          <option value="Fence Install"></option>
+          <option value="Fence Repair"></option>
+          <option value="Fixture Install"></option>
+          <option value="Flooring Install"></option>
+          <option value="Flooring Refinish"></option>
+          <option value="Full Renovation"></option>
+          <option value="Furniture Assembly"></option>
+          <option value="Garage Build"></option>
+          <option value="General"></option>
+          <option value="Gut Rehab"></option>
+          <option value="Gutter Repair"></option>
+          <option value="Gutter Replacement"></option>
+          <option value="HVAC Install"></option>
+          <option value="HVAC Repair"></option>
+          <option value="Hang a Painting"></option>
+          <option value="Insulation Install"></option>
+          <option value="Interior Painting"></option>
+          <option value="Junk Removal"></option>
+          <option value="Kitchen"></option>
+          <option value="Landscaping"></option>
+          <option value="Large Window Replacement"></option>
+          <option value="Lighting Install"></option>
+          <option value="Masonry Repair"></option>
+          <option value="Mini-Split Install"></option>
+          <option value="Mold Remediation"></option>
+          <option value="New Electrical Panel"></option>
+          <option value="Other"></option>
+          <option value="Picture / Shelf Hanging"></option>
+          <option value="Plumbing Repair"></option>
+          <option value="Porch / Patio"></option>
+          <option value="Pressure Washing"></option>
+          <option value="Punch List / Misc Repairs"></option>
+          <option value="Rekey Locks"></option>
+          <option value="Roof Repair"></option>
+          <option value="Roof Replacement"></option>
+          <option value="Security Camera Install"></option>
+          <option value="Sewer Line Repair"></option>
+          <option value="Siding Repair"></option>
+          <option value="Siding Replacement"></option>
+          <option value="Smart Lock Install"></option>
+          <option value="Staircase Repair"></option>
+          <option value="Storm Door Install"></option>
+          <option value="Stucco Repair"></option>
+          <option value="TV Mounting"></option>
+          <option value="Tile Install"></option>
+          <option value="Trim / Carpentry"></option>
+          <option value="Water Damage Repair"></option>
+          <option value="Water Heater Replacement"></option>
+          <option value="Waterproofing"></option>
+          <option value="Window Replacement"></option>
+        </datalist>
       </div>
     </div>
     <div class="form-group">
@@ -3146,10 +3215,6 @@
         <option value="In Progress">In Progress</option>
         <option value="Completed">Completed</option>
       </select>
-    </div>
-    <div class="form-group" id="project-scope-other-wrap" style="display:none">
-      <label>Describe Scope</label>
-      <input type="text" id="project-scope-other" placeholder="e.g. driveway repair, brick repointing, garage build...">
     </div>
     <div class="form-group">
       <label>Address</label>
@@ -3171,6 +3236,11 @@
       <label>Description</label>
       <textarea id="project-description" rows="3" placeholder="Project details..."></textarea>
     </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="project-notes" rows="2" placeholder="Internal notes, reminders, special conditions..."></textarea>
+    </div>
+
     <div class="form-row">
       <div class="form-group">
         <label>Budget Low</label>
@@ -3840,6 +3910,41 @@
         </div>
         <div id="pd-invoice-info" style="font-size:13px;color:#888"></div>
       </div>
+      <!-- Payments Received -->
+      <div class="panel" id="pd-payments-panel" style="border-color:#00d084">
+        <div class="panel-header">
+          <h3 style="color:#00d084">💵 Payments Received <span id="pd-payments-inv-num" style="color:#666;font-weight:400;font-size:10px"></span></h3>
+          <span id="pd-payments-totals" style="font-size:11px;color:#888"></span>
+        </div>
+        <div id="pd-payments-list" style="display:flex;flex-direction:column;gap:4px;font-size:12px;margin-bottom:10px"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+          <span style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.5px">Form</span>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Check" checked> Check</label>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Cash"> Cash</label>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Card"> Card</label>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Zelle"> Zelle</label>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Venmo"> Venmo</label>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Wire/ACH"> Wire/ACH</label>
+          <label class="pd-pay-method" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd"><input type="radio" name="pd-pay-method" value="Other"> Other</label>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          <button type="button" class="btn btn-sm btn-secondary" onclick="pdSetPaymentPreset('deposit')" title="50% deposit from linked invoice total">Deposit 50%</button>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="pdSetPaymentPreset('balance')" title="Remaining = invoice total − payments already received">Balance Remaining</button>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="pdSetPaymentPreset('manual')" title="Type any amount">Manual</button>
+        </div>
+        <div class="form-row" style="margin-bottom:6px">
+          <div class="form-group" style="margin:0"><label style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.5px">Amount</label><input type="number" id="pd-pay-amount" step="0.01" placeholder="0.00"></div>
+          <div class="form-group" style="margin:0"><label style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.5px">Date</label><input type="date" id="pd-pay-date"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.5px">Memo (optional)</label>
+          <input type="text" id="pd-pay-memo" placeholder="Check #, reference, note...">
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:6px">
+          <button type="button" class="btn btn-sm btn-primary" onclick="pdAddPayment()">+ Record Payment</button>
+        </div>
+        <div id="pd-payments-status" style="font-size:10px;color:#666;margin-top:6px;min-height:12px"></div>
+      </div>
       <!-- App Packages (DocPrep) -->
       <div class="panel">
         <div class="panel-header">
@@ -4300,8 +4405,107 @@ function onClientNameInput(){
 }
 
 function onScopeChange(){
-  const v=document.getElementById('project-scope').value;
-  document.getElementById('project-scope-other-wrap').style.display=(v==='other'?'block':'none');
+  /* Scope is now a free-text combobox backed by a <datalist>; no toggle needed. */
+}
+
+/* ===================== PROJECT DETAIL: PAYMENTS PANEL =====================
+   Lives inside projectDetailModal so each project has its own working
+   dashboard. Loaded by openProjectDetail → pdLoadPayments(pid). Context:
+   - invoice_id (linked invoice = destination for ahb_payments rows)
+   - total      (invoice total)
+   - paid       (sum of payments)
+   Submits via POST /api/ahb/payments. */
+let _pdPaymentsCtx = null;
+
+async function pdLoadPayments(projectId, invoice){
+  const listEl = document.getElementById('pd-payments-list');
+  const totalsEl = document.getElementById('pd-payments-totals');
+  const invNumEl = document.getElementById('pd-payments-inv-num');
+  const statusEl = document.getElementById('pd-payments-status');
+  listEl.innerHTML='<span style="color:#666">Loading...</span>';
+  totalsEl.textContent=''; invNumEl.textContent=''; statusEl.textContent='';
+  /* Reset entry fields on each load. */
+  document.querySelectorAll('input[name="pd-pay-method"]').forEach(r=>{r.checked=(r.value==='Check');});
+  document.getElementById('pd-pay-amount').value='';
+  document.getElementById('pd-pay-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('pd-pay-memo').value='';
+  _pdPaymentsCtx = null;
+  if(!invoice || !invoice.id){
+    listEl.innerHTML='<span style="color:#666">No linked invoice yet — generate one to start recording payments.</span>';
+    _pdPaymentsCtx = {projectId, invoice_id:null, total:0, paid:0};
+    return;
+  }
+  try{
+    const pr = await fetch('/api/ahb/payments?invoice_id='+encodeURIComponent(invoice.id));
+    const payments = pr.ok ? await pr.json() : [];
+    const total = Number(invoice.total||0);
+    const paid = payments.reduce((s,p)=>s+Number(p.amount||0),0);
+    _pdPaymentsCtx = {projectId, invoice_id:invoice.id, total, paid};
+    invNumEl.textContent = invoice.invoice_number ? '— '+invoice.invoice_number : '';
+    totalsEl.textContent = 'Total '+fmtCurrency(total)+' · Paid '+fmtCurrency(paid)+' · Remaining '+fmtCurrency(Math.max(0,total-paid));
+    pdRenderPaymentsList(payments);
+  }catch(e){
+    listEl.innerHTML='<span style="color:#ff6b6b">Failed to load payments: '+escHtml(e.message)+'</span>';
+  }
+}
+
+function pdRenderPaymentsList(payments){
+  const listEl = document.getElementById('pd-payments-list');
+  if(!payments || !payments.length){
+    listEl.innerHTML='<span style="color:#666">No payments recorded yet.</span>';
+    return;
+  }
+  listEl.innerHTML = payments.map(p=>`
+    <div style="display:flex;align-items:center;gap:8px;background:#0a0a16;border:1px solid #1a1a2e;border-radius:6px;padding:6px 9px">
+      <span style="font-weight:700;color:#00d084;min-width:90px">${fmtCurrency(p.amount||0)}</span>
+      <span style="color:#aaa;min-width:80px">${escHtml(p.payment_method||'')||'&mdash;'}</span>
+      <span style="color:#888;min-width:90px">${escHtml(p.payment_date||'')||'&mdash;'}</span>
+      <span style="color:#666;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.notes||'')}</span>
+    </div>
+  `).join('');
+}
+
+function pdSetPaymentPreset(kind){
+  const ctx = _pdPaymentsCtx;
+  const amtEl = document.getElementById('pd-pay-amount');
+  if(kind==='manual'){ amtEl.focus(); amtEl.select(); return; }
+  if(!ctx || !ctx.invoice_id){ showToast('No linked invoice — preset unavailable','error'); return; }
+  let v=0;
+  if(kind==='deposit') v = Math.round(Number(ctx.total||0) * 0.5 * 100) / 100;
+  else if(kind==='balance') v = Math.round(Math.max(0, Number(ctx.total||0) - Number(ctx.paid||0)) * 100) / 100;
+  amtEl.value = v.toFixed(2);
+}
+
+async function pdAddPayment(){
+  const ctx = _pdPaymentsCtx;
+  const statusEl = document.getElementById('pd-payments-status');
+  if(!ctx || !ctx.invoice_id){
+    statusEl.style.color='#ff6b6b';
+    statusEl.textContent='No linked invoice — cannot record a payment for this project yet.';
+    return;
+  }
+  const amount = parseFloat(document.getElementById('pd-pay-amount').value);
+  if(!amount || amount<=0){ statusEl.style.color='#ff6b6b'; statusEl.textContent='Enter a positive amount.'; return; }
+  const method = (document.querySelector('input[name="pd-pay-method"]:checked')||{}).value || 'Check';
+  const date = document.getElementById('pd-pay-date').value || new Date().toISOString().slice(0,10);
+  const memo = document.getElementById('pd-pay-memo').value.trim();
+  statusEl.style.color='#888'; statusEl.textContent='Saving...';
+  try{
+    const r = await fetch('/api/ahb/payments',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({invoice_id:ctx.invoice_id, amount, payment_method:method, payment_date:date, notes:memo})
+    });
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||'save failed');
+    document.getElementById('pd-pay-amount').value='';
+    document.getElementById('pd-pay-memo').value='';
+    statusEl.style.color='#00d084'; statusEl.textContent='Payment recorded.';
+    /* Refresh the panel against the same invoice — keep method+date for fast multi-entry. */
+    pdLoadPayments(ctx.projectId, {id:ctx.invoice_id, total:ctx.total, invoice_number:document.getElementById('pd-payments-inv-num').textContent.replace(/^—\s*/,'')});
+    showToast('Payment recorded');
+  }catch(e){
+    statusEl.style.color='#ff6b6b'; statusEl.textContent='Save failed: '+e.message;
+  }
 }
 
 /* ===================== PROJECTS ===================== */
@@ -4404,12 +4608,11 @@ async function openProjectModal(){
   document.getElementById('project-client').value='';
   document.getElementById('project-client-name').value='';
   document.getElementById('project-client-status').textContent='';
-  document.getElementById('project-scope').value='kitchen';
-  document.getElementById('project-scope-other').value='';
-  document.getElementById('project-scope-other-wrap').style.display='none';
+  document.getElementById('project-scope').value='';
   document.getElementById('project-modal-status').value='Planning';
   document.getElementById('project-address').value='';
   document.getElementById('project-description').value='';
+  document.getElementById('project-notes').value='';
   document.getElementById('project-budget-low').value='';
   document.getElementById('project-budget-high').value='';
   document.getElementById('project-start').value='';
@@ -4447,18 +4650,12 @@ async function editProject(id){
   const cmatch=allClients.find(c=>c.id===p.client_id);
   document.getElementById('project-client-name').value=cmatch?cmatch.name:(p.client_name||'');
   onClientNameInput();
-  const knownScopes=['kitchen','bathroom','addition','basement','deck','full-reno','other'];
-  if(p.scope && !knownScopes.includes(p.scope)){
-    document.getElementById('project-scope').value='other';
-    document.getElementById('project-scope-other').value=p.scope;
-  } else {
-    document.getElementById('project-scope').value=p.scope||'kitchen';
-    document.getElementById('project-scope-other').value='';
-  }
+  document.getElementById('project-scope').value=p.scope||'';
   onScopeChange();
   document.getElementById('project-modal-status').value=p.status||'Planning';
   document.getElementById('project-address').value=p.address||'';
   document.getElementById('project-description').value=p.description||'';
+  document.getElementById('project-notes').value=p.notes||'';
   document.getElementById('project-budget-low').value=p.budget_low||'';
   document.getElementById('project-budget-high').value=p.budget_high||'';
   document.getElementById('project-start').value=p.start_date||'';
@@ -4534,19 +4731,9 @@ function applyScrapedSuggestions(s){
     filled.push('client');
   }
   if(s.scope && !document.getElementById('edit-project-id').value){
-    const known=['kitchen','bathroom','addition','basement','deck','full-reno','other'];
-    if(known.includes(s.scope)){
-      document.getElementById('project-scope').value=s.scope;
-    } else {
-      document.getElementById('project-scope').value='other';
-      document.getElementById('project-scope-other').value=s.scope;
-    }
+    document.getElementById('project-scope').value=s.scope_other||s.scope;
     onScopeChange();
     filled.push('scope');
-  }
-  if(s.scope_other && document.getElementById('project-scope').value==='other'){
-    document.getElementById('project-scope-other').value=s.scope_other;
-    onScopeChange();
   }
   let html='<div style="font-weight:700;color:#00bcd4;margin-bottom:6px">&#10003; Extracted from docs</div>';
   if(filled.length){
@@ -4581,12 +4768,7 @@ async function saveProject(){
       return;
     }
   }
-  // Resolve scope
-  let scope=document.getElementById('project-scope').value;
-  if(scope==='other'){
-    const other=document.getElementById('project-scope-other').value.trim();
-    if(other) scope=other;
-  }
+  const scope=(document.getElementById('project-scope').value||'').trim();
   const data={
     title:document.getElementById('project-title').value.trim(),
     client_id:clientId,
@@ -4594,6 +4776,7 @@ async function saveProject(){
     scope:scope,
     address:document.getElementById('project-address').value.trim(),
     description:document.getElementById('project-description').value.trim(),
+    notes:document.getElementById('project-notes').value.trim(),
     budget_low:document.getElementById('project-budget-low').value||null,
     budget_high:document.getElementById('project-budget-high').value||null,
     start_date:document.getElementById('project-start').value||null,
@@ -9954,8 +10137,10 @@ async function openProjectDetail(pid){
     }else{
       invEl.innerHTML='<span style="color:#555">No invoice linked — <a href="#" onclick="invoiceFromProjectDetail();return false" style="color:#7c3aed">generate one</a></span>';
     }
-    // Phase manager
+    // Phase manager (planning workflow with tasks)
     renderPhaseManager(p.phases||[]);
+    // Payments — anchored to the linked invoice
+    pdLoadPayments(pid, inv||null);
     // Quotes
     pdLoadQuotes(pid);
     // Schedule
@@ -10047,48 +10232,266 @@ async function openProjectDetail(pid){
     document.getElementById('projectDetailModal').classList.add('open');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
+/* Phase Manager — workflow only (no pricing). A "phase" is a chunk of work;
+   each phase carries tasks. Tasks may be added free-form, or pulled from
+   invoice line items. Each task has an editable approx_minutes (time to
+   complete). Phase start/end dates and per-task entries automatically appear
+   on the Scheduled Calendar — the backend handles the sync. */
+const _pdPhaseTaskCache = {};   // phase_id → [task,...]
+const _pdPhaseEditing = new Set();
+
 function renderPhaseManager(phases){
   const el=document.getElementById('pd-phase-manager');
-  if(!phases.length){el.innerHTML='<div style="text-align:center;padding:20px;color:#444">No phases — click + Add Phase to start</div>';return;}
-  const totalVal=phases.reduce((s,ph)=>s+(ph.value||0),0);
-  el.innerHTML=`<div style="font-size:12px;color:#888;margin-bottom:10px">Total phase value: <span style="color:#00d084;font-weight:700">${fmtCurrency(totalVal)}</span> &middot; ${phases.length} phases</div>`+
-    phases.map(ph=>`<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:12px;margin-bottom:8px;border-left:3px solid ${ph.status==='Completed'?'#00d084':ph.status==='In Progress'?'#4da6ff':'#f59e0b'}">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <span style="color:#888;font-size:11px;margin-right:6px">#${ph.phase_number}</span>
-          <span style="color:#fff;font-weight:700">${escHtml(ph.name)}</span>
-          <span style="color:#00d084;margin-left:8px;font-weight:600">${ph.value?fmtCurrency(ph.value):''}</span>
-        </div>
-        <div style="display:flex;gap:4px;align-items:center">
-          <span class="badge badge-${(ph.status||'').toLowerCase().replace(' ','_')}" style="font-size:9px">${ph.status}</span>
-          <button class="btn-icon" onclick="deletePhase('${ph.id}')" title="Delete" style="font-size:10px">&#10005;</button>
-        </div>
+  if(!phases.length){
+    el.innerHTML='<div style="text-align:center;padding:20px;color:#444">No phases yet — click <b>+ Add Phase</b> to plan the workflow.</div>';
+    return;
+  }
+  const inputStyle='background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:5px 7px;color:#e0e0e0;font-size:12px';
+  el.innerHTML = phases.map(ph=>{
+    const statusColor = ph.status==='Completed' ? '#00d084' : ph.status==='In Progress' ? '#4da6ff' : '#f59e0b';
+    const editing = _pdPhaseEditing.has(ph.id);
+    const headerEditing = `
+      <div style="display:grid;grid-template-columns:60px 1fr 130px 130px 130px;gap:6px;align-items:center;flex:1">
+        <input type="number" id="ph-num-${ph.id}" value="${ph.phase_number||1}" min="1" style="${inputStyle}" title="Order">
+        <input type="text" id="ph-name-${ph.id}" value="${escHtml(ph.name||'')}" placeholder="Phase name (e.g. Demo, Rough-in, Finishes)" style="${inputStyle}">
+        <input type="date" id="ph-start-${ph.id}" value="${ph.start_date||''}" style="${inputStyle}" title="Start date">
+        <input type="date" id="ph-end-${ph.id}" value="${ph.end_date||''}" style="${inputStyle}" title="Complete date">
+        <select id="ph-status-${ph.id}" style="${inputStyle}">
+          ${['Planning','In Progress','Completed','Blocked'].map(s=>`<option value="${s}"${(ph.status||'Planning')===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>`;
+    const headerStatic = `
+      <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
+        <span style="color:#888;font-size:11px">#${ph.phase_number}</span>
+        <span style="color:#fff;font-weight:700;font-size:14px">${escHtml(ph.name||'(unnamed)')}</span>
+        <span class="badge badge-${(ph.status||'').toLowerCase().replace(' ','_')}" style="font-size:9px">${ph.status||'Planning'}</span>
+        <span style="font-size:11px;color:#666">${fmtDate(ph.start_date)||'—'} → ${fmtDate(ph.end_date)||'—'}</span>
+      </div>`;
+    const actions = editing
+      ? `<button class="btn btn-sm btn-primary" onclick="savePhase('${ph.id}')">Save</button>
+         <button class="btn btn-sm btn-secondary" onclick="cancelPhaseEdit('${ph.id}')">Cancel</button>`
+      : `<button class="btn btn-sm btn-secondary" onclick="startPhaseEdit('${ph.id}')" title="Edit">✎</button>
+         <button class="btn-icon del" onclick="deletePhase('${ph.id}')" title="Delete">&#10005;</button>`;
+    return `<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:12px;margin-bottom:10px;border-left:3px solid ${statusColor}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        ${editing ? headerEditing : headerStatic}
+        <div style="display:flex;gap:4px;align-items:center">${actions}</div>
       </div>
-      <div style="font-size:11px;color:#555;margin-top:4px">${fmtDate(ph.start_date)} — ${fmtDate(ph.end_date)}</div>
-    </div>`).join('');
+      <div style="margin-top:10px;border-top:1px solid #1a1a2e;padding-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Tasks</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm btn-secondary" onclick="pullTasksFromInvoice('${ph.id}')" title="Pull task list from the linked invoice's line items">⇲ Pull from Invoice</button>
+            <button class="btn btn-sm btn-primary" onclick="addPhaseTask('${ph.id}')">+ Add Task</button>
+          </div>
+        </div>
+        <div id="ph-tasks-${ph.id}" style="display:flex;flex-direction:column;gap:4px"><span style="color:#444;font-size:11px">Loading tasks...</span></div>
+      </div>
+    </div>`;
+  }).join('');
+  /* Lazy-load tasks for each phase. */
+  phases.forEach(ph=>loadPhaseTasks(ph.id));
 }
+
+function startPhaseEdit(phid){
+  _pdPhaseEditing.add(phid);
+  if(currentProjectDetail) renderPhaseManager(currentProjectDetail.phases||[]);
+}
+function cancelPhaseEdit(phid){
+  _pdPhaseEditing.delete(phid);
+  if(currentProjectDetail) renderPhaseManager(currentProjectDetail.phases||[]);
+}
+
+async function savePhase(phid){
+  const pid=document.getElementById('pd-id').value;
+  const payload = {
+    phase_number: parseInt(document.getElementById('ph-num-'+phid).value)||1,
+    name: document.getElementById('ph-name-'+phid).value.trim(),
+    start_date: document.getElementById('ph-start-'+phid).value,
+    end_date: document.getElementById('ph-end-'+phid).value,
+    status: document.getElementById('ph-status-'+phid).value
+  };
+  try{
+    const r = await fetch('/api/ahb/phases/'+phid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||'save failed');
+    _pdPhaseEditing.delete(phid);
+    showToast('Phase saved — calendar synced');
+    openProjectDetail(pid);
+  }catch(e){ showToast('Save failed: '+e.message,'error'); }
+}
+
 async function addPhaseToProject(){
   const pid=document.getElementById('pd-id').value;
-  const name=prompt('Phase name:');if(!name)return;
-  const value=parseFloat(prompt('Phase value ($):'))||0;
   const phases=currentProjectDetail?currentProjectDetail.phases||[]:[];
   try{
-    await fetch('/api/ahb/projects/'+pid+'/phases',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,value,phase_number:phases.length+1,status:'Planning'})});
-    showToast('Phase added — invoice updated');
+    const r = await fetch('/api/ahb/projects/'+pid+'/phases',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:'New Phase', phase_number:phases.length+1, status:'Planning', start_date:'', end_date:''})});
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||'create failed');
+    _pdPhaseEditing.add(d.id);   /* open it in edit mode straight away */
+    showToast('Phase added');
     openProjectDetail(pid);
-    loadInvoices();   // refresh InvoiceIT so the new line item shows up
-  }catch(e){showToast('Error','error');}
+  }catch(e){ showToast('Error: '+e.message,'error'); }
 }
+
 async function deletePhase(phid){
-  if(!confirm('Delete this phase?'))return;
+  if(!confirm('Delete this phase and all its tasks?'))return;
   const pid=document.getElementById('pd-id').value;
   try{
     await fetch('/api/ahb/phases/'+phid,{method:'DELETE'});
-    showToast('Phase deleted — invoice updated');
+    showToast('Phase deleted — calendar cleaned');
     openProjectDetail(pid);
-    loadInvoices();
-  }catch(e){showToast('Error','error');}
+  }catch(e){ showToast('Error','error'); }
+}
+
+/* ---------- Phase tasks ---------- */
+async function loadPhaseTasks(phid){
+  const wrap = document.getElementById('ph-tasks-'+phid);
+  if(!wrap) return;
+  try{
+    const r = await fetch('/api/ahb/phases/'+phid+'/tasks');
+    const tasks = r.ok ? await r.json() : [];
+    _pdPhaseTaskCache[phid] = tasks;
+    renderPhaseTasks(phid, tasks);
+  }catch(e){ wrap.innerHTML='<span style="color:#ff6b6b">Failed: '+escHtml(e.message)+'</span>'; }
+}
+
+function renderPhaseTasks(phid, tasks){
+  const wrap = document.getElementById('ph-tasks-'+phid);
+  if(!wrap) return;
+  if(!tasks.length){
+    wrap.innerHTML='<span style="color:#444;font-size:11px">No tasks yet. Add free-form or pull from invoice.</span>';
+    return;
+  }
+  const inp='background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:4px 6px;color:#e0e0e0;font-size:11px';
+  wrap.innerHTML = tasks.map(t=>`
+    <div style="display:grid;grid-template-columns:24px 1fr 110px 130px 50px;gap:6px;align-items:center;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:6px 8px">
+      <input type="checkbox" ${t.status==='completed'?'checked':''} onchange="togglePhaseTask('${t.id}', this.checked)" title="Mark complete">
+      <input type="text" id="task-title-${t.id}" value="${escHtml(t.title||'')}" placeholder="Task title" style="${inp}" onchange="savePhaseTask('${t.id}')">
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="task-min-${t.id}" value="${t.approx_minutes||0}" min="0" step="15" placeholder="0" style="${inp};width:60px" onchange="savePhaseTask('${t.id}')">
+        <span style="font-size:10px;color:#666">min</span>
+        <span style="font-size:10px;color:#888;font-weight:700">${_fmtApproxTime(t.approx_minutes)}</span>
+      </div>
+      <select id="task-status-${t.id}" style="${inp}" onchange="savePhaseTask('${t.id}')">
+        ${['pending','in_progress','blocked','completed'].map(s=>`<option value="${s}"${(t.status||'pending')===s?' selected':''}>${s.replace('_',' ')}</option>`).join('')}
+      </select>
+      <button class="btn-icon del" onclick="deletePhaseTask('${t.id}')" title="Delete task" style="font-size:10px">&#10005;</button>
+    </div>
+  `).join('');
+}
+
+function _fmtApproxTime(mins){
+  mins = parseInt(mins)||0;
+  if(!mins) return '';
+  if(mins<60) return mins+'m';
+  const h = Math.floor(mins/60), m = mins%60;
+  if(!m) return h+'h';
+  return h+'h '+m+'m';
+}
+
+async function addPhaseTask(phid){
+  try{
+    const r = await fetch('/api/ahb/phases/'+phid+'/tasks',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title:'New task', status:'pending', approx_minutes:0})});
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||'create failed');
+    loadPhaseTasks(phid);
+  }catch(e){ showToast('Error: '+e.message,'error'); }
+}
+
+async function savePhaseTask(tid){
+  const title = document.getElementById('task-title-'+tid).value.trim();
+  const mins = parseInt(document.getElementById('task-min-'+tid).value)||0;
+  const status = document.getElementById('task-status-'+tid).value;
+  try{
+    await fetch('/api/ahb/phase-tasks/'+tid,{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title, approx_minutes:mins, status})});
+  }catch(e){ showToast('Save failed','error'); }
+}
+
+async function togglePhaseTask(tid, done){
+  try{
+    await fetch('/api/ahb/phase-tasks/'+tid,{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status: done ? 'completed' : 'pending'})});
+  }catch(e){ showToast('Save failed','error'); }
+}
+
+async function deletePhaseTask(tid){
+  if(!confirm('Delete this task?')) return;
+  try{
+    await fetch('/api/ahb/phase-tasks/'+tid,{method:'DELETE'});
+    /* Find which phase it belonged to from cache and refresh just that phase. */
+    for(const phid in _pdPhaseTaskCache){
+      if(_pdPhaseTaskCache[phid].some(t=>t.id===tid)){ loadPhaseTasks(phid); break; }
+    }
+  }catch(e){ showToast('Delete failed','error'); }
+}
+
+/* Pull tasks from the linked invoice's line items. Shows a checkbox picker so
+   the user can choose which lines become tasks. Auto-deposit lines (the 50/50
+   payment schedule rows) are filtered out — they aren't work to schedule. */
+async function pullTasksFromInvoice(phid){
+  const invId = document.getElementById('pd-invoice-id').value;
+  if(!invId){ showToast('No linked invoice to pull from','error'); return; }
+  let lineItems = [];
+  try{
+    const r = await fetch('/api/ahb/invoices/'+invId+'/detail');
+    const inv = await r.json();
+    try{ lineItems = JSON.parse(inv.line_items||'[]'); }catch(e){ lineItems = []; }
+  }catch(e){ showToast('Failed to read invoice','error'); return; }
+  /* Drop the auto-injected deposit/balance rows. */
+  const isDeposit = (li)=>{
+    if(li._auto_deposit) return true;
+    const d=((li.description||'')+'').toLowerCase().trim();
+    return d.startsWith('50% deposit due') || d.startsWith('balance (50%) due') || d.startsWith('balance due upon');
+  };
+  const candidates = lineItems
+    .map((li,idx)=>({idx, desc:(li.description||'').trim()}))
+    .filter(x => x.desc && !isDeposit(lineItems[x.idx]));
+  if(!candidates.length){ showToast('Invoice has no work lines to pull','error'); return; }
+  /* Build a checkbox modal inline. */
+  openLinePicker(phid, candidates);
+}
+
+function openLinePicker(phid, candidates){
+  /* Lightweight ad-hoc picker overlay. */
+  let host = document.getElementById('line-picker-overlay');
+  if(host) host.remove();
+  host = document.createElement('div');
+  host.id='line-picker-overlay';
+  host.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
+  host.innerHTML = `
+    <div style="background:#0a0a18;border:1px solid #2a2a4a;border-radius:10px;padding:16px;max-width:680px;width:90%;max-height:80vh;display:flex;flex-direction:column">
+      <h3 style="margin:0 0 4px;color:#c4b5fd">Pull tasks from invoice line items</h3>
+      <div style="font-size:11px;color:#888;margin-bottom:10px">Pick the lines you want as tasks in this phase. Each becomes a task with the line description; you can edit time-to-complete after.</div>
+      <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px">
+        ${candidates.map(c=>`<label style="display:flex;align-items:flex-start;gap:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:7px 9px;color:#ddd;font-size:12px;cursor:pointer">
+          <input type="checkbox" class="lp-pick" data-idx="${c.idx}" data-desc="${escHtml(c.desc)}" checked style="margin-top:3px">
+          <span style="flex:1">${escHtml(c.desc)}</span>
+        </label>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">
+        <button class="btn btn-sm btn-secondary" id="lp-cancel">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="lp-add">Add as Tasks</button>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  host.querySelector('#lp-cancel').onclick = ()=>host.remove();
+  host.querySelector('#lp-add').onclick = async ()=>{
+    const picks = [...host.querySelectorAll('.lp-pick:checked')].map(cb=>({idx:parseInt(cb.dataset.idx), desc:cb.dataset.desc}));
+    host.remove();
+    if(!picks.length) return;
+    for(const p of picks){
+      try{
+        await fetch('/api/ahb/phases/'+phid+'/tasks',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({title:p.desc, status:'pending', approx_minutes:0, source_line_idx:p.idx})});
+      }catch(e){}
+    }
+    showToast(picks.length+' task'+(picks.length>1?'s':'')+' added — calendar synced');
+    loadPhaseTasks(phid);
+  };
 }
 async function setProjectStatus(status){
   const pid=document.getElementById('pd-id').value;
