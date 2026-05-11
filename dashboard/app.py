@@ -11083,6 +11083,15 @@ if CLOUD_ENABLED:
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_ma_proj ON ahb_media_attachments(project_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_ma_media ON ahb_media_attachments(media_filepath)")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_media_vision (
+            media_filepath TEXT PRIMARY KEY,
+            caption TEXT,
+            tags TEXT,
+            work_score INTEGER DEFAULT 0,
+            classified_at TEXT DEFAULT (datetime('now')),
+            model TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_amv_work ON ahb_media_vision(work_score)")
         conn.commit(); conn.close()
     _init_ahb_media_attachments()
 
@@ -11093,7 +11102,7 @@ if CLOUD_ENABLED:
         p1, p2 = math.radians(lat1), math.radians(lat2)
         dp = math.radians(lat2-lat1); dl = math.radians(lon2-lon1)
         a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
-        return 2 * R * math.asin(math.sqrt(min(1.0, math.sqrt(a))))
+        return 2 * R * math.asin(min(1.0, math.sqrt(a)))
 
     def _auto_classify_ahb_media(radius_m=200, before_days=14, after_days=42):
         """For each baza media w/ GPS, find nearest project within radius_m where
@@ -11128,23 +11137,21 @@ if CLOUD_ENABLED:
                     best = (p, d)
             if not best: continue
             p, dist = best
-            # Determine phase from date window
+            # Determine phase from date window. We DO NOT reject photos that are
+            # far outside the project window — at this address, they're still relevant
+            # property history (pre-purchase shots, post-completion follow-ups, etc.).
+            # The date_taken may also be a "Photos from YYYY" → Jan 1 fallback that
+            # doesn't reflect the actual moment, so being strict here drops too much.
             phase = 'during'
             try:
-                if m['date_taken']:
+                if m['date_taken'] and m['date_taken'] != '0000-00-00':
                     md = _dt.datetime.strptime(m['date_taken'][:10], '%Y-%m-%d').date()
                     sd = _dt.datetime.strptime(p['start_date'][:10],'%Y-%m-%d').date() if p['start_date'] else None
                     ed = _dt.datetime.strptime(p['end_date'][:10],'%Y-%m-%d').date() if p['end_date'] else None
-                    if sd and md < sd - _dt.timedelta(days=0):
-                        if md >= sd - _dt.timedelta(days=before_days):
-                            phase = 'before'
-                        else:
-                            continue  # too far before project window — skip
+                    if sd and md < sd:
+                        phase = 'before'
                     elif ed and md > ed:
-                        if md <= ed + _dt.timedelta(days=after_days):
-                            phase = 'after'
-                        else:
-                            continue  # too far after — skip
+                        phase = 'after'
                     else:
                         phase = 'during'
             except Exception:
@@ -11250,6 +11257,200 @@ if CLOUD_ENABLED:
         conn.execute("DELETE FROM ahb_media_attachments WHERE media_filepath=? AND project_id=?", (fp, pid))
         conn.commit(); conn.close()
         return jsonify({'success': True})
+
+    @app.route('/api/ahb123/media/library')
+    def api_ahb123_media_library():
+        """Browse the entire baza cloud filtered for work-likely media.
+        Excludes wedding folder, thumbnails, .private-inbound. Surfaces caption
+        when available. Paginated. Marks already-attached items so the UI can
+        show their project."""
+        page = max(1, int(request.args.get('page', 1)))
+        page_size = max(20, min(500, int(request.args.get('page_size', 200))))
+        offset = (page - 1) * page_size
+        year = request.args.get('year', '')
+        media_type = request.args.get('type', '')
+        has_gps = request.args.get('has_gps', '') == 'true'
+        attached_state = request.args.get('attached', '')  # 'yes' | 'no' | ''
+        search = (request.args.get('q', '') or '').strip()
+        work_only = request.args.get('work_only', '') == 'true'
+        min_score = int(request.args.get('min_work_score', 30))
+
+        where = [
+            "c.media_type IN ('photo','video')",
+            "c.source = 'cloud'",
+            # Hard excludes — never work-related
+            "c.filepath NOT LIKE 'cloud/%ZHAR-wedding-photos%'",
+            "c.filepath NOT LIKE 'cloud/.thumbnails/%'",
+            "c.filepath NOT LIKE 'cloud/%.private-inbound%'",
+            "c.filepath NOT LIKE 'cloud/Vault/%'",
+            "c.filepath NOT LIKE 'cloud/BootableImages/%'",
+        ]
+        params = []
+        if year: where.append("substr(c.date_taken,1,4)=?"); params.append(year)
+        if media_type: where.append("c.media_type=?"); params.append(media_type)
+        if has_gps: where.append("c.latitude IS NOT NULL")
+        if attached_state == 'yes': where.append("a.project_id IS NOT NULL")
+        elif attached_state == 'no': where.append("a.project_id IS NULL")
+        if search:
+            where.append("(c.filename LIKE ? OR v.caption LIKE ?)"); params.extend([f"%{search}%", f"%{search}%"])
+        if work_only:
+            where.append("v.work_score >= ?"); params.append(min_score)
+
+        where_sql = ' AND '.join(where)
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+
+        # Attach the captions DB so we can JOIN
+        cap_db = os.path.join(DASHBOARD_DIR, 'image_captions.db')
+        if os.path.isfile(cap_db):
+            try: conn.execute(f"ATTACH DATABASE ? AS cap", (cap_db,))
+            except Exception: pass
+
+        # Counts (also broken out by GPS-yes/no for the dashboard headline)
+        count_sql = (f"SELECT COUNT(*) FROM cloud_media_index c "
+                     f"LEFT JOIN ahb_media_attachments a ON a.media_filepath=c.filepath "
+                     f"LEFT JOIN ahb_media_vision v ON v.media_filepath=c.filepath "
+                     f"WHERE {where_sql}")
+        total = conn.execute(count_sql, params).fetchone()[0]
+
+        # Page query — include vision caption + work_score when available
+        rows_sql = (f"SELECT c.*, a.project_id, a.phase, a.distance_m, "
+                    f"a.source AS attach_source, p.title AS project_title, "
+                    f"v.caption, v.tags AS work_tags, v.work_score "
+                    f"FROM cloud_media_index c "
+                    f"LEFT JOIN ahb_media_attachments a ON a.media_filepath=c.filepath "
+                    f"LEFT JOIN ahb_projects p ON p.id=a.project_id "
+                    f"LEFT JOIN ahb_media_vision v ON v.media_filepath=c.filepath "
+                    f"WHERE {where_sql} "
+                    f"ORDER BY "
+                    f"  {'v.work_score DESC, ' if work_only else ''}"
+                    f"  c.date_taken DESC, c.time_taken DESC, c.filepath "
+                    f"LIMIT ? OFFSET ?")
+        rows = [dict(r) for r in conn.execute(rows_sql, params + [page_size, offset]).fetchall()]
+
+        # Stats card numbers
+        stats_sql = (
+            "SELECT "
+            "  (SELECT COUNT(*) FROM cloud_media_index c LEFT JOIN ahb_media_attachments a ON a.media_filepath=c.filepath "
+            "    WHERE c.media_type='photo' AND c.source='cloud' "
+            "    AND c.filepath NOT LIKE 'cloud/%ZHAR-wedding-photos%'"
+            "    AND c.filepath NOT LIKE 'cloud/.thumbnails/%'"
+            "    AND c.filepath NOT LIKE 'cloud/%.private-inbound%'"
+            "    AND c.filepath NOT LIKE 'cloud/Vault/%') AS photos,"
+            "  (SELECT COUNT(*) FROM cloud_media_index c "
+            "    WHERE c.media_type='video' AND c.source='cloud' "
+            "    AND c.filepath NOT LIKE 'cloud/%ZHAR-wedding-photos%'"
+            "    AND c.filepath NOT LIKE 'cloud/.thumbnails/%'"
+            "    AND c.filepath NOT LIKE 'cloud/%.private-inbound%'"
+            "    AND c.filepath NOT LIKE 'cloud/Vault/%') AS videos,"
+            "  (SELECT COUNT(*) FROM cloud_media_index c LEFT JOIN ahb_media_attachments a ON a.media_filepath=c.filepath "
+            "    WHERE c.media_type IN ('photo','video') AND c.source='cloud' AND a.project_id IS NOT NULL "
+            "    AND c.filepath NOT LIKE 'cloud/%ZHAR-wedding-photos%') AS attached,"
+            "  (SELECT COUNT(DISTINCT project_id) FROM ahb_media_attachments) AS projects_with_media"
+        )
+        stats = dict(conn.execute(stats_sql).fetchone())
+
+        # Projects list for attach picker
+        projects = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.title, p.address, p.start_date, p.end_date "
+            "FROM ahb_projects p ORDER BY COALESCE(p.start_date, p.created_at) DESC, p.title").fetchall()]
+        conn.close()
+        return jsonify({
+            'items': rows,
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'stats': stats,
+            'projects': projects
+        })
+
+    @app.route('/api/ahb123/media/bulk_attach', methods=['POST'])
+    def api_ahb123_media_bulk_attach():
+        """Attach multiple media files to a single project + phase."""
+        data = request.json or {}
+        fps = data.get('media_filepaths') or []
+        pid = data.get('project_id')
+        phase = data.get('phase', 'during')
+        if not fps or not pid:
+            return jsonify({'success': False, 'error': 'media_filepaths[] and project_id required'}), 400
+        if phase not in ('before', 'during', 'after'):
+            return jsonify({'success': False, 'error': 'phase must be before/during/after'}), 400
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        attached = 0
+        for fp in fps:
+            try:
+                conn.execute(
+                    "INSERT INTO ahb_media_attachments (media_filepath, project_id, phase, source) "
+                    "VALUES (?,?,?, 'manual') "
+                    "ON CONFLICT(media_filepath, project_id) DO UPDATE SET phase=excluded.phase, source='manual'",
+                    (fp, pid, phase))
+                attached += 1
+            except Exception:
+                pass
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'attached': attached})
+
+    # ── Vision classification (Qwen3-VL captioning + work-keyword tagging) ──
+    VISION_STATUS_FILE = '/tmp/baza_vision_status.json'
+    VISION_PID_FILE = '/tmp/baza_vision.pid'
+    VISION_SCRIPT = '/home/switchhacker/.gdrive-pull/caption_cloud_media.py'
+
+    def _vision_is_running():
+        try:
+            with open(VISION_PID_FILE) as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)   # signal 0 = check existence
+            return pid
+        except Exception:
+            return 0
+
+    @app.route('/api/ahb123/media/caption/start', methods=['POST'])
+    def api_ahb123_caption_start():
+        if _vision_is_running():
+            return jsonify({'success': False, 'error': 'already running'}), 409
+        if not os.path.isfile(VISION_SCRIPT):
+            return jsonify({'success': False, 'error': f'script not found: {VISION_SCRIPT}'}), 500
+        import subprocess
+        venv_py = '/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python'
+        try:
+            with open('/tmp/baza_vision.log', 'a') as logf:
+                subprocess.Popen([venv_py, VISION_SCRIPT],
+                                 stdout=logf, stderr=subprocess.STDOUT,
+                                 cwd='/home/switchhacker/baza-empire/agent-framework-v3',
+                                 close_fds=True, start_new_session=True)
+            return jsonify({'success': True, 'message': 'caption job started'})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/ahb123/media/caption/stop', methods=['POST'])
+    def api_ahb123_caption_stop():
+        pid = _vision_is_running()
+        if not pid:
+            return jsonify({'success': False, 'error': 'not running'}), 404
+        try:
+            os.kill(pid, 15)   # SIGTERM
+            return jsonify({'success': True, 'pid': pid})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route('/api/ahb123/media/caption/status')
+    def api_ahb123_caption_status():
+        running = _vision_is_running() > 0
+        status = {'running': running, 'done': 0, 'total_remaining': 0, 'errors': 0, 'last_file': '', 'started_at': 0}
+        try:
+            with open(VISION_STATUS_FILE) as f:
+                status.update(json.load(f))
+        except Exception:
+            pass
+        # Also add total work-classified count from DB
+        try:
+            conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+            status['total_classified'] = conn.execute("SELECT COUNT(*) FROM ahb_media_vision").fetchone()[0]
+            status['total_work']       = conn.execute("SELECT COUNT(*) FROM ahb_media_vision WHERE work_score >= 30").fetchone()[0]
+            conn.close()
+        except Exception:
+            pass
+        return jsonify(status)
 
     @app.route('/api/ahb123/media/map')
     def api_ahb123_media_map():

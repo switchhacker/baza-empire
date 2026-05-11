@@ -69,6 +69,25 @@
     .sp-note.dimmed{opacity:.35;filter:saturate(.55)}
     .sp-iconbtn{background:rgba(0,0,0,.12);color:#0d1a0d;border:none;border-radius:4px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
     .sp-iconbtn:hover{background:rgba(0,0,0,.25)}
+    /* Voice-input "star" button — large, lime-tinted, pulses while listening */
+    .sp-mic{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:54px;height:54px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#bef264 65%,#84cc16);color:#1a2e05;border:2px solid #84cc16;font-size:22px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(132,204,22,.45),0 2px 4px rgba(0,0,0,.25);transition:transform .15s,box-shadow .2s,background .2s;display:flex;align-items:center;justify-content:center;line-height:1;font-family:inherit}
+    .sp-mic:hover{transform:translateX(-50%) scale(1.08);box-shadow:0 10px 22px rgba(132,204,22,.65),0 3px 6px rgba(0,0,0,.3)}
+    .sp-mic.listening{background:radial-gradient(circle at 35% 30%,#fff,#fbbf24 60%,#dc2626);border-color:#dc2626;color:#fff;animation:spMicPulse 1.05s ease-in-out infinite}
+    .sp-mic.listening:hover{transform:translateX(-50%) scale(1.05)}
+    .sp-mic.unavailable{opacity:.4;cursor:not-allowed;filter:grayscale(.7)}
+    @keyframes spMicPulse{0%,100%{box-shadow:0 6px 16px rgba(220,38,38,.55),0 0 0 0 rgba(220,38,38,.55)}50%{box-shadow:0 8px 20px rgba(220,38,38,.7),0 0 0 14px rgba(220,38,38,0)}}
+    .sp-mic-hint{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:rgba(0,0,0,.45);pointer-events:none;white-space:nowrap}
+    .sp-note.focused .sp-actions{bottom:8px;right:10px;gap:8px}
+    .sp-note.focused .sp-iconbtn{padding:6px 10px;font-size:13px;background:rgba(0,0,0,.16)}
+    .sp-note.focused .sp-iconbtn:hover{background:rgba(0,0,0,.32)}
+    /* Share popover */
+    .sp-share{position:absolute;bottom:50px;right:10px;background:#0d0d1e;border:1px solid #2a2a4a;border-radius:10px;padding:6px;display:none;flex-direction:column;gap:2px;z-index:300;box-shadow:0 14px 32px rgba(0,0,0,.7);min-width:170px}
+    .sp-share.open{display:flex}
+    .sp-share button{background:transparent;border:none;color:#e0e0e0;text-align:left;padding:8px 10px;font-size:12px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;font-family:inherit;font-weight:600}
+    .sp-share button:hover{background:#1a1a3e;color:#fff}
+    .sp-share .sp-share-icon{font-size:15px;width:20px;text-align:center}
+    /* Speech interim chip — shows transient transcript while user is dictating */
+    .sp-interim{display:inline;color:rgba(0,0,0,.5);font-style:italic;background:rgba(255,255,255,.35);padding:1px 4px;border-radius:3px}
     .sp-savebadge{position:absolute;top:6px;right:8px;font-size:9px;color:rgba(0,0,0,.5);opacity:0;transition:opacity .3s;font-family:system-ui,sans-serif;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
     .sp-savebadge.show{opacity:1}
     .doc-action-btn{padding:7px 11px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;color:#ccc;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
@@ -2632,19 +2651,46 @@
       <div class="page-title">&#127909; Project Media Catalog</div>
       <div class="page-sub">Work photos &amp; videos from baza cloud — auto-classified by GPS &amp; date, organized by timeline, project &amp; phase</div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn-secondary" onclick="reclassifyMedia()" id="media-reclassify-btn">&#10227; Reclassify (GPS+date)</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-secondary" onclick="setMediaListMode('attached')" id="mode-btn-attached" style="font-weight:700;border-color:#00bcd4;color:#00bcd4">&#128279; Attached</button>
+      <button class="btn-secondary" onclick="setMediaListMode('library')" id="mode-btn-library">&#128193; Library</button>
+      <span style="display:inline-flex;align-items:center;gap:4px">
+        <select id="reclassify-radius" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;color:#aaa;font-size:12px">
+          <option value="100">100m</option>
+          <option value="200" selected>200m</option>
+          <option value="500">500m</option>
+          <option value="1000">1km</option>
+          <option value="3000">3km</option>
+        </select>
+        <button class="btn-secondary" onclick="reclassifyMedia()" id="media-reclassify-btn">&#10227; Reclassify by GPS</button>
+      </span>
+      <button class="btn-secondary" onclick="openVisionPanel()" id="media-vision-btn" title="Caption media with Qwen3-VL + auto-tag work-related">&#129302; Vision Classify</button>
       <button class="btn-primary" id="media-view-toggle" onclick="toggleMediaView()">&#128205; Map View</button>
     </div>
   </div>
 
   <!-- Stats row -->
   <div class="stats-row">
-    <div class="stat-card stat-total"><div class="stat-val" id="media-total">&mdash;</div><div class="stat-lbl">Work Media</div></div>
+    <div class="stat-card stat-total"><div class="stat-val" id="media-total">&mdash;</div><div class="stat-lbl" id="media-total-lbl">Work Media</div></div>
     <div class="stat-card stat-progress"><div class="stat-val" id="media-photos">&mdash;</div><div class="stat-lbl">Photos</div></div>
     <div class="stat-card stat-paid"><div class="stat-val" id="media-videos">&mdash;</div><div class="stat-lbl">Videos</div></div>
     <div class="stat-card stat-active"><div class="stat-val" id="media-projects">&mdash;</div><div class="stat-lbl">Projects</div></div>
     <div class="stat-card stat-pending"><div class="stat-val" id="media-phase-breakdown">&mdash;</div><div class="stat-lbl">Before / During / After</div></div>
+  </div>
+
+  <!-- Library-mode bulk attach bar (hidden until you select items) -->
+  <div id="media-bulk-bar" style="display:none;background:linear-gradient(135deg,#0a1a2a,#0d2240);border:1px solid #1a3a5a;border-radius:10px;padding:10px 14px;margin-bottom:12px;align-items:center;gap:12px">
+    <span id="media-bulk-count" style="font-size:13px;color:#fff;font-weight:700">0 selected</span>
+    <select id="media-bulk-project" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;color:#e0e0e0;font-size:12px;min-width:240px">
+      <option value="">Pick project…</option>
+    </select>
+    <select id="media-bulk-phase" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;color:#e0e0e0;font-size:12px">
+      <option value="before">Before</option>
+      <option value="during" selected>During</option>
+      <option value="after">After</option>
+    </select>
+    <button class="btn-primary" onclick="bulkAttachSelected()" style="padding:6px 12px;font-size:12px">Attach selected</button>
+    <button class="btn-secondary" onclick="clearMediaSelection()" style="padding:6px 12px;font-size:12px">Clear</button>
   </div>
 
   <!-- Filters -->
@@ -2666,12 +2712,64 @@
     <select class="filter-select" id="media-year-filter" onchange="loadMedia()">
       <option value="">All Years</option>
     </select>
+    <input class="search-box" id="media-search" placeholder="Search filename or caption…" oninput="if(window._mediaSearchT)clearTimeout(window._mediaSearchT);window._mediaSearchT=setTimeout(loadMedia,400)" style="display:none">
+    <label id="media-workonly-wrap" style="display:none;align-items:center;gap:6px;font-size:12px;color:#aaa">
+      <input type="checkbox" id="media-work-only" onchange="loadMedia()"> Work-classified only
+    </label>
   </div>
 
   <!-- Grid view (default) -->
   <div id="media-grid-view">
     <div id="media-timeline" style="margin-top:8px">
       <div style="text-align:center;padding:40px;color:#444;font-size:13px">Loading media...</div>
+    </div>
+    <!-- Library pagination -->
+    <div id="media-pager" style="display:none;text-align:center;padding:20px;margin-top:10px">
+      <button class="btn-secondary" id="media-page-prev" onclick="changeLibraryPage(-1)" style="padding:8px 14px">&larr; Prev</button>
+      <span id="media-page-label" style="margin:0 16px;font-size:13px;color:#aaa"></span>
+      <button class="btn-secondary" id="media-page-next" onclick="changeLibraryPage(1)" style="padding:8px 14px">Next &rarr;</button>
+    </div>
+  </div>
+
+  <!-- Vision Classify modal -->
+  <div id="visionModal" class="modal-bg" style="display:none">
+    <div class="modal" style="max-width:600px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div>
+          <div style="font-size:17px;font-weight:800;color:#fff">&#129302; Vision Classification</div>
+          <div style="font-size:11px;color:#666;margin-top:3px">Captions baza cloud photos with Gemma3:4b (local), tags work-related ones</div>
+        </div>
+        <button onclick="document.getElementById('visionModal').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div style="background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="color:#aaa;font-size:12px">Already classified</span>
+          <span style="color:#fff;font-weight:700;font-size:12px" id="vis-classified">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="color:#aaa;font-size:12px">Tagged as work</span>
+          <span style="color:#00d084;font-weight:700;font-size:12px" id="vis-work">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:#aaa;font-size:12px">Errors</span>
+          <span style="color:#f5a623;font-weight:700;font-size:12px" id="vis-errors">—</span>
+        </div>
+      </div>
+      <div id="vis-running-panel" style="display:none">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#aaa;margin-bottom:5px">
+          <span>Captioned this run</span>
+          <span><span id="vis-done">0</span> / <span id="vis-total">?</span></span>
+        </div>
+        <div style="background:#070712;border:1px solid #1a1a2e;border-radius:6px;height:14px;overflow:hidden;margin-bottom:10px">
+          <div id="vis-progress-bar" style="background:linear-gradient(90deg,#00bcd4,#00d084);height:100%;width:0%;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:#666" id="vis-last">Starting…</div>
+        <div style="font-size:10px;color:#444;margin-top:3px" id="vis-eta">elapsed: —</div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="btn-secondary" onclick="visionStop()" id="vis-stop-btn" style="display:none">Stop</button>
+        <button class="btn-primary" onclick="visionStart()" id="vis-start-btn">Start classification</button>
+      </div>
     </div>
   </div>
 
@@ -9277,7 +9375,12 @@ async function loadStickyPad(){
     });
     if(changed) _spSavePositions();
     if(allNotes.length){
-      if(!spFocusedId || !allNotes.find(n=>n.id===spFocusedId)){
+      // Honor a ?note=<id> deep link (shared-link landing) when present.
+      const params = new URLSearchParams(window.location.search);
+      const wanted = params.get('note');
+      if(wanted && allNotes.find(n=>n.id===wanted)){
+        spFocusedId = wanted;
+      } else if(!spFocusedId || !allNotes.find(n=>n.id===spFocusedId)){
         const sorted = [...allNotes].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||''));
         spFocusedId = sorted[0].id;
       }
@@ -9331,13 +9434,28 @@ function _spInnerHtml(n, isFocused){
     const swatches = [1,2,3,4,5].map(c =>
       `<span class="sp-swatch color-${c}${c===color?' active':''}" data-color="${c}" title="Color ${c}" onclick="event.stopPropagation();spSetColor('${n.id}',${c})"></span>`
     ).join('');
+    const micAvail = (typeof window!=='undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition));
+    const micCls = micAvail ? '' : ' unavailable';
+    const micTitle = micAvail ? 'Voice input — click to dictate' : 'Voice not supported in this browser';
     return `<div class="sp-swatches" title="Change sticky color">${swatches}</div>
       <span class="sp-savebadge" id="sp-saved-${n.id}">saved</span>
-      <div class="sp-summary" contenteditable="true" spellcheck="false" style="margin-top:18px">${escHtml(summary)}</div>
-      <div class="sp-content" contenteditable="true" data-placeholder="Write your thought…">${escHtml(content)}</div>
+      <div class="sp-summary" contenteditable="true" spellcheck="false" style="margin-top:18px;padding-right:28px">${escHtml(summary)}</div>
+      <div class="sp-content" contenteditable="true" data-placeholder="Write your thought… or hit the mic" style="padding-bottom:64px">${escHtml(content)}</div>
+      <div class="sp-mic-hint" id="sp-mic-hint-${n.id}">tap to dictate</div>
+      <button class="sp-mic${micCls}" id="sp-mic-${n.id}" title="${micTitle}" onclick="event.stopPropagation();spToggleMic('${n.id}')" aria-label="${micTitle}">🎙</button>
       <div class="sp-actions">
-        <button class="sp-iconbtn" onclick="event.stopPropagation();spDeleteNote('${n.id}')" title="Delete">🗑</button>
+        <button class="sp-iconbtn" onclick="event.stopPropagation();spOpenShare('${n.id}',this)" title="Share">↗</button>
         <button class="sp-iconbtn" onclick="event.stopPropagation();spShuffle()" title="Shuffle pile">🔀</button>
+        <button class="sp-iconbtn" onclick="event.stopPropagation();spDeleteNote('${n.id}')" title="Delete">🗑</button>
+      </div>
+      <div class="sp-share" id="sp-share-${n.id}" onclick="event.stopPropagation()">
+        <button onclick="spShareTelegram('${n.id}')"><span class="sp-share-icon">✈️</span> Telegram</button>
+        <button onclick="spShareEmail('${n.id}')"><span class="sp-share-icon">📧</span> Email</button>
+        <button onclick="spShareSms('${n.id}')"><span class="sp-share-icon">💬</span> SMS</button>
+        <button onclick="spShareWhatsApp('${n.id}')"><span class="sp-share-icon">🟢</span> WhatsApp</button>
+        <button onclick="spCopyLink('${n.id}')"><span class="sp-share-icon">🔗</span> Copy link</button>
+        <button onclick="spCopyText('${n.id}')"><span class="sp-share-icon">📋</span> Copy text</button>
+        <button onclick="spShareSystem('${n.id}')" id="sp-share-system-${n.id}"><span class="sp-share-icon">📤</span> System share…</button>
       </div>`;
   }
   const preview = content.slice(0,180) + (content.length>180?'…':'');
@@ -9388,6 +9506,8 @@ function _spReconfigureNote(el, n, isFocused){
 }
 function spFocus(id){
   if(spFocusedId === id) return;
+  // If voice input was running on the previous focus, hand it off cleanly.
+  if(_spMic && _spMic.listening) spStopMic();
   const prevId = spFocusedId;
   spFocusedId = id;
   const prevEl = prevId ? document.getElementById('sp-note-'+prevId) : null;
@@ -9402,6 +9522,306 @@ function spFocus(id){
   }
   if(prevEl) prevEl.style.zIndex = '';
 }
+
+/* ===================== STICKY PAD — VOICE INPUT ===================== */
+let _spMic = null;  // {recognition, noteId, listening, finalBuffer}
+
+function _spMicCtor(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR) return null;
+  const r = new SR();
+  r.continuous = true;
+  r.interimResults = true;
+  // Force en-US — navigator.language can come back as bare 'en' which some
+  // builds of Chrome reject silently (recognizer "listens" but never emits
+  // results). en-US is universally accepted by Chrome's STT service.
+  r.lang = 'en-US';
+  r.maxAlternatives = 1;
+  return r;
+}
+function _spMicErrorMessage(err){
+  switch(err){
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'Microphone access denied. Click the lock/🎙 icon in the address bar and allow Microphone for this site, then try again.';
+    case 'audio-capture':
+      return 'No microphone found. Plug one in (or unmute) and reload.';
+    case 'network':
+      return 'Speech recognition needs internet (Google\'s service). Check your connection.';
+    case 'no-speech':
+      return 'Didn\'t catch that — try again, closer to the mic.';
+    case 'language-not-supported':
+      return 'Browser refused the requested language. Reloading should fall back to English.';
+    case 'aborted':
+      return '';   // user cancelled — silent
+    default:
+      return 'Voice error: ' + err;
+  }
+}
+function spToggleMic(id){
+  if(_spMic && _spMic.listening){
+    // Stop. If user clicked the mic of a different note while one was active,
+    // treat that as "stop the old one".
+    const prevNoteId = _spMic.noteId;
+    spStopMic();
+    if(prevNoteId !== id){
+      setTimeout(()=>spStartMic(id), 120);
+    }
+    return;
+  }
+  spStartMic(id);
+}
+function _spSetHint(id, text){
+  const h = document.getElementById('sp-mic-hint-'+id);
+  if(h) h.textContent = text;
+}
+function spStartMic(id){
+  // 1) Secure-context gate. Chrome only exposes mic on https:// or localhost.
+  const isLocalHost = ['localhost','127.0.0.1','::1'].includes(location.hostname);
+  if(!window.isSecureContext && !isLocalHost){
+    showToast(
+      'Voice needs HTTPS or localhost. You\'re on http://'+location.hostname+
+      ' — open the dashboard on localhost or behind https to dictate.',
+      'error'
+    );
+    console.warn('[sticky] mic blocked: not a secure context. Host:', location.hostname);
+    return;
+  }
+
+  // 2) Browser support check.
+  const r = _spMicCtor();
+  if(!r){
+    showToast('Voice input not supported in this browser. Use Chrome, Edge, or another Chromium-based browser.','error');
+    return;
+  }
+
+  // 3) Target editable surface.
+  const ceTarget = document.querySelector(`#sp-note-${id} .sp-content`);
+  if(!ceTarget){ showToast('Open a note first','error'); return; }
+
+  // 4) Caret to end of the editable so transcripts land at the cursor.
+  ceTarget.focus();
+  let range = document.createRange(); range.selectNodeContents(ceTarget); range.collapse(false);
+  let sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+
+  // Live-target lookup: if the focused note's inner HTML gets swapped (e.g.
+  // by a focus change or re-render), `ceTarget` becomes detached. Resolve
+  // the current target on each event instead of relying on the captured ref.
+  function _ce(){
+    return document.querySelector(`#sp-note-${id} .sp-content`) || ceTarget;
+  }
+
+  // Track interim text in a styled span so the user sees dictation live.
+  let interimSpan = null;
+  function ensureInterim(){
+    const t = _ce();
+    if(!interimSpan || !t.contains(interimSpan)){
+      interimSpan = document.createElement('span');
+      interimSpan.className = 'sp-interim';
+      t.appendChild(interimSpan);
+    }
+  }
+  function clearInterim(){
+    if(interimSpan && interimSpan.parentNode) interimSpan.parentNode.removeChild(interimSpan);
+    interimSpan = null;
+  }
+
+  // Diagnostics — every event the recognizer fires. Open DevTools → Console
+  // and look for [sticky] lines if dictation isn't producing text.
+  let _audioStartedAt = 0, _speechStartedAt = 0, _firstResultAt = 0, _resultCount = 0;
+  r.onstart       = () => { console.log('[sticky] onstart for', id, 'lang=', r.lang); _spSetHint(id, 'connecting… speak now'); };
+  r.onaudiostart  = () => { _audioStartedAt = Date.now(); console.log('[sticky] onaudiostart'); _spSetHint(id, 'mic open — speak now'); };
+  r.onsoundstart  = () => { console.log('[sticky] onsoundstart (any sound detected)'); };
+  r.onspeechstart = () => { _speechStartedAt = Date.now(); console.log('[sticky] onspeechstart (speech detected)'); _spSetHint(id, 'hearing you…'); };
+  r.onspeechend   = () => { console.log('[sticky] onspeechend'); };
+  r.onsoundend    = () => { console.log('[sticky] onsoundend'); };
+  r.onaudioend    = () => { console.log('[sticky] onaudioend (mic released)'); };
+  r.onnomatch     = () => { console.log('[sticky] onnomatch (heard sound but no recognition)'); };
+
+  r.onresult = (ev) => {
+    if(!_firstResultAt){ _firstResultAt = Date.now(); console.log('[sticky] first result at +', _firstResultAt - _audioStartedAt, 'ms'); }
+    _resultCount++;
+    let interim = '', finalText = '';
+    for(let i = ev.resultIndex; i < ev.results.length; i++){
+      const tr = ev.results[i][0].transcript;
+      if(ev.results[i].isFinal) finalText += tr;
+      else interim += tr;
+    }
+    console.log('[sticky] onresult #', _resultCount, JSON.stringify({interim, finalText}));
+    const target = _ce();
+    if(finalText){
+      clearInterim();
+      const txt = finalText.trim();
+      if(txt){
+        const tail = target.innerText || '';
+        const sep = tail && !/[\s\n]$/.test(tail) ? ' ' : '';
+        target.appendChild(document.createTextNode(sep + txt));
+        try{
+          const r2 = document.createRange(); r2.selectNodeContents(target); r2.collapse(false);
+          const s2 = window.getSelection(); s2.removeAllRanges(); s2.addRange(r2);
+        }catch(e){}
+        target.dispatchEvent(new Event('input', {bubbles:true}));
+      }
+    }
+    if(interim){
+      ensureInterim();
+      if(interimSpan) interimSpan.textContent = ' ' + interim;
+    }
+  };
+  r.onerror = (ev) => {
+    const err = (ev && ev.error) || 'unknown';
+    console.warn('[sticky] onerror:', err, ev);
+    const terminal = ['not-allowed','service-not-allowed','audio-capture','network','language-not-supported'];
+    if(terminal.includes(err)){
+      const msg = _spMicErrorMessage(err);
+      if(msg) showToast(msg, 'error');
+      if(_spMic) _spMic.listening = false;
+      return;
+    }
+    if(err !== 'no-speech' && err !== 'aborted'){
+      const msg = _spMicErrorMessage(err);
+      if(msg) showToast(msg, 'error');
+    }
+  };
+  r.onend = () => {
+    console.log('[sticky] onend (resultCount=', _resultCount,
+                ', audio→firstResult=', _firstResultAt && (_firstResultAt - _audioStartedAt), 'ms)');
+    if(_spMic && _spMic.listening && _spMic.noteId === id){
+      try { r.start(); } catch(e){ console.warn('[sticky] restart failed:', e); spStopMic(); }
+    } else {
+      clearInterim();
+      const btn = document.getElementById('sp-mic-'+id);
+      if(btn){ btn.classList.remove('listening'); btn.textContent = '🎙'; btn.setAttribute('title', 'Voice input — click to dictate'); }
+      _spSetHint(id, 'tap to dictate');
+      _spMic = null;
+    }
+  };
+
+  _spMic = { recognition: r, noteId: id, listening: true };
+  try { r.start(); } catch(e){
+    showToast('Could not start mic: '+e.message, 'error');
+    console.warn('[sticky] r.start() threw:', e);
+    _spMic = null;
+    return;
+  }
+  const btn = document.getElementById('sp-mic-'+id);
+  if(btn){ btn.classList.add('listening'); btn.textContent = '⏹'; btn.setAttribute('title', 'Stop dictating'); }
+  _spSetHint(id, 'listening…');
+
+  // Safety net: if 6 seconds elapse with no audio-start event, something
+  // upstream is wrong (mic device in use elsewhere, Chrome STT service blocked).
+  setTimeout(() => {
+    if(_spMic && _spMic.recognition === r && _spMic.listening && !_audioStartedAt){
+      console.warn('[sticky] no onaudiostart after 6s — mic probably busy or STT service unreachable');
+      showToast('No audio detected after 6s. Is another app using the mic? Try closing it and tap the mic again.', 'error');
+    }
+  }, 6000);
+  setTimeout(() => {
+    if(_spMic && _spMic.recognition === r && _spMic.listening && _audioStartedAt && !_firstResultAt){
+      console.warn('[sticky] audio captured but no result after 8s — STT service may be unreachable');
+      showToast("Mic is on but Google's recognizer isn't responding. Check that your network can reach speech.googleapis.com.", 'error');
+    }
+  }, 14000);
+}
+function spStopMic(){
+  if(!_spMic) return;
+  const r = _spMic.recognition;
+  const id = _spMic.noteId;
+  _spMic.listening = false;
+  try { r.stop(); } catch(e){}
+  const btn = document.getElementById('sp-mic-'+id);
+  if(btn){ btn.classList.remove('listening'); btn.textContent = '🎙'; btn.setAttribute('title', 'Voice input — click to dictate'); }
+  const hint = document.getElementById('sp-mic-hint-'+id);
+  if(hint){ hint.textContent = 'tap to dictate'; }
+  // Strip any leftover interim span the recognizer may have left behind.
+  const ce = document.querySelector(`#sp-note-${id} .sp-content .sp-interim`);
+  if(ce && ce.parentNode) ce.parentNode.removeChild(ce);
+  _spMic = null;
+}
+
+/* ===================== STICKY PAD — SHARE ===================== */
+function _spShareText(n){
+  const title = (n.title || 'Sticky Note').trim();
+  const body  = (n.content || '').trim();
+  return body ? (title + '\n\n' + body) : title;
+}
+function _spShareLink(id){
+  // Deep link that lands on the Sticky Pad tab; the note becomes the focused
+  // one the next time the pad loads (focused defaults to most-recent edit).
+  const u = new URL(window.location.href);
+  u.searchParams.set('tab','noted');
+  u.searchParams.set('note', id);
+  u.hash = '';
+  return u.toString();
+}
+function spOpenShare(id, anchorBtn){
+  // Close any other open share popovers first.
+  document.querySelectorAll('.sp-share.open').forEach(p => p.classList.remove('open'));
+  const panel = document.getElementById('sp-share-'+id);
+  if(!panel) return;
+  panel.classList.add('open');
+  // Auto-hide the "System share…" entry if the Web Share API isn't available.
+  const sys = document.getElementById('sp-share-system-'+id);
+  if(sys) sys.style.display = (navigator.share ? '' : 'none');
+  // One-shot outside-click closes.
+  setTimeout(()=>{
+    const onDoc = (e) => {
+      if(!panel.contains(e.target) && e.target !== anchorBtn){
+        panel.classList.remove('open');
+        document.removeEventListener('click', onDoc);
+      }
+    };
+    document.addEventListener('click', onDoc);
+  }, 0);
+}
+function _spClosePopovers(){ document.querySelectorAll('.sp-share.open').forEach(p => p.classList.remove('open')); }
+function spShareTelegram(id){
+  const n = allNotes.find(x=>x.id===id); if(!n) return;
+  const url = _spShareLink(id);
+  const text = _spShareText(n);
+  const tg = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+  window.open(tg, '_blank', 'noopener,noreferrer');
+  _spClosePopovers();
+}
+function spShareEmail(id){
+  const n = allNotes.find(x=>x.id===id); if(!n) return;
+  const subject = 'Sticky note — ' + (n.title || 'Untitled');
+  const body    = (_spShareText(n)) + '\n\nLink: ' + _spShareLink(id);
+  window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  _spClosePopovers();
+}
+function spShareSms(id){
+  const n = allNotes.find(x=>x.id===id); if(!n) return;
+  const body = _spShareText(n) + '\n\n' + _spShareLink(id);
+  window.location.href = `sms:?&body=${encodeURIComponent(body)}`;
+  _spClosePopovers();
+}
+function spShareWhatsApp(id){
+  const n = allNotes.find(x=>x.id===id); if(!n) return;
+  const text = _spShareText(n) + '\n\n' + _spShareLink(id);
+  const wa = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(wa, '_blank', 'noopener,noreferrer');
+  _spClosePopovers();
+}
+async function spCopyLink(id){
+  try{ await navigator.clipboard.writeText(_spShareLink(id)); showToast('Link copied'); }
+  catch(e){ showToast('Copy failed: '+e.message,'error'); }
+  _spClosePopovers();
+}
+async function spCopyText(id){
+  const n = allNotes.find(x=>x.id===id); if(!n) return;
+  try{ await navigator.clipboard.writeText(_spShareText(n) + '\n\n' + _spShareLink(id)); showToast('Text copied'); }
+  catch(e){ showToast('Copy failed: '+e.message,'error'); }
+  _spClosePopovers();
+}
+async function spShareSystem(id){
+  const n = allNotes.find(x=>x.id===id); if(!n) return;
+  if(!navigator.share){ showToast('System share not supported here','error'); return; }
+  try{
+    await navigator.share({ title: n.title || 'Sticky note', text: _spShareText(n), url: _spShareLink(id) });
+  }catch(e){ if(e && e.name !== 'AbortError') showToast('Share failed: '+e.message,'error'); }
+  _spClosePopovers();
+}
 function spShuffle(){
   allNotes.forEach(n => { if(n.id !== spFocusedId) spPositions[n.id] = _spRandPos(); });
   _spSavePositions();
@@ -9414,7 +9834,7 @@ function spDragStart(e, id){
   if(id === spFocusedId) return;          // focused note doesn't drag (it's the showcase)
   // Don't start drag from interactive children (swatch, buttons).
   const t = e.target;
-  if(t.closest && (t.closest('.sp-iconbtn') || t.closest('.sp-swatch') || t.closest('.sp-actions'))) return;
+  if(t.closest && (t.closest('.sp-iconbtn') || t.closest('.sp-swatch') || t.closest('.sp-actions') || t.closest('.sp-mic') || t.closest('.sp-share'))) return;
   const isTouch = e.type === 'touchstart';
   const pt = isTouch ? e.touches[0] : e;
   const el = document.getElementById('sp-note-'+id);
@@ -12838,81 +13258,454 @@ async function removeIcloudAccount(id){
   }catch(e){ showToast('Error','error'); }
 }
 
-async function loadPhotos(){
-  loadIcloudStatus();
+/* ===================== MEDIA tab (work-related from baza cloud) ===================== */
+let mediaCache = null;
+let mediaMap = null;
+let mediaMapMarkers = [];
+let mediaViewMode = 'grid';   // 'grid' | 'map'
+let mediaListMode = 'attached';  // 'attached' | 'library'
+let mediaLibPage = 1;
+let mediaLibPageSize = 200;
+let mediaSelected = new Set();
+
+async function loadPhotos(){   // entry point kept under old name for tab router
+  return loadMedia();
+}
+
+function setMediaListMode(mode){
+  mediaListMode = mode;
+  mediaLibPage = 1;
+  mediaSelected.clear();
+  updateBulkBar();
+  // Highlight active mode button
+  const a = document.getElementById('mode-btn-attached'), l = document.getElementById('mode-btn-library');
+  a.style.borderColor = mode==='attached' ? '#00bcd4' : '';
+  a.style.color       = mode==='attached' ? '#00bcd4' : '';
+  l.style.borderColor = mode==='library'  ? '#00bcd4' : '';
+  l.style.color       = mode==='library'  ? '#00bcd4' : '';
+  // Search box, work-only filter, pager — only in library mode
+  document.getElementById('media-search').style.display = (mode==='library') ? '' : 'none';
+  document.getElementById('media-workonly-wrap').style.display = (mode==='library') ? 'inline-flex' : 'none';
+  document.getElementById('media-pager').style.display = (mode==='library') ? '' : 'none';
+  loadMedia();
+}
+
+async function loadMedia(){
+  if(mediaListMode === 'library') return loadMediaLibrary();
+  // ----- ATTACHED mode -----
+  const params = new URLSearchParams();
+  const proj = document.getElementById('media-project-filter')?.value;
+  const phase = document.getElementById('media-phase-filter')?.value;
+  const type = document.getElementById('media-type-filter')?.value;
+  const year = document.getElementById('media-year-filter')?.value;
+  if(proj) params.set('project_id', proj);
+  if(phase) params.set('phase', phase);
+  if(type) params.set('type', type);
+  if(year) params.set('year', year);
+  const url = '/api/ahb123/media' + (params.toString() ? '?'+params.toString() : '');
   try{
-    const r=await fetch('/api/ahb/photos');
-    allPhotos=await r.json();
-    document.getElementById('photo-total').textContent=allPhotos.length;
-    document.getElementById('photo-before').textContent=allPhotos.filter(p=>p.phase==='before').length;
-    document.getElementById('photo-during').textContent=allPhotos.filter(p=>p.phase==='during').length;
-    document.getElementById('photo-after').textContent=allPhotos.filter(p=>p.phase==='after').length;
-    document.getElementById('photo-projects').textContent=new Set(allPhotos.map(p=>p.project_name).filter(Boolean)).size;
-    // Populate filter dropdowns
-    const cats=[...new Set(allPhotos.map(p=>p.category).filter(Boolean))].sort();
-    const projs=[...new Set(allPhotos.map(p=>p.project_name).filter(Boolean))].sort();
-    const years=[...new Set(allPhotos.map(p=>(p.photo_date||'').slice(0,4)).filter(Boolean))].sort().reverse();
-    document.getElementById('photo-cat-filter').innerHTML='<option value="">All Categories</option>'+cats.map(c=>'<option>'+c+'</option>').join('');
-    document.getElementById('photo-project-filter').innerHTML='<option value="">All Projects</option>'+projs.map(p=>'<option>'+p+'</option>').join('');
-    document.getElementById('photo-year-filter').innerHTML='<option value="">All Years</option>'+years.map(y=>'<option>'+y+'</option>').join('');
-    filterPhotos();
+    const r = await fetch(url);
+    mediaCache = await r.json();
+    const s = mediaCache.stats || {};
+    document.getElementById('media-total').textContent = s.total || 0;
+    document.getElementById('media-total-lbl').textContent = 'Attached to Projects';
+    document.getElementById('media-photos').textContent = s.photos || 0;
+    document.getElementById('media-videos').textContent = s.videos || 0;
+    document.getElementById('media-projects').textContent = s.projects || 0;
+    document.getElementById('media-phase-breakdown').innerHTML =
+      '<span style="color:#888">'+(s.before||0)+'</span> / '+
+      '<span style="color:#f5a623">'+(s.during||0)+'</span> / '+
+      '<span style="color:#00d084">'+(s.after||0)+'</span>';
+    populateMediaProjectFilters(mediaCache.projects);
+    populateMediaYearFilter((mediaCache.items||[]).map(it=>(it.date_taken||'').slice(0,4)));
+    if(mediaViewMode === 'grid') renderMediaTimeline();
+    else renderMediaMap();
   }catch(e){
-    document.getElementById('photo-grid').innerHTML='<div style="text-align:center;padding:40px;color:#555;grid-column:1/-1">Could not load photos</div>';
+    document.getElementById('media-timeline').innerHTML='<div style="text-align:center;padding:40px;color:#555">Could not load media: '+e.message+'</div>';
   }
 }
 
-function filterPhotos(){
-  const q=(document.getElementById('photo-search').value||'').toLowerCase();
-  const phase=document.getElementById('photo-phase-filter').value;
-  const cat=document.getElementById('photo-cat-filter').value;
-  const proj=document.getElementById('photo-project-filter').value;
-  const year=document.getElementById('photo-year-filter').value;
-  filteredPhotos=allPhotos.filter(p=>{
-    if(phase && p.phase!==phase) return false;
-    if(cat && p.category!==cat) return false;
-    if(proj && p.project_name!==proj) return false;
-    if(year && !(p.photo_date||'').startsWith(year)) return false;
-    if(q){
-      const blob=((p.project_name||'')+' '+(p.client_name||'')+' '+(p.location||'')+' '+(p.notes||'')+' '+(p.category||'')).toLowerCase();
-      if(blob.indexOf(q)===-1) return false;
-    }
-    return true;
-  });
-  renderPhotos(filteredPhotos);
+async function loadMediaLibrary(){
+  const params = new URLSearchParams();
+  params.set('page', mediaLibPage);
+  params.set('page_size', mediaLibPageSize);
+  const type = document.getElementById('media-type-filter')?.value;
+  const year = document.getElementById('media-year-filter')?.value;
+  const search = document.getElementById('media-search')?.value;
+  const phase = document.getElementById('media-phase-filter')?.value;
+  const proj = document.getElementById('media-project-filter')?.value;
+  if(type) params.set('type', type);
+  if(year) params.set('year', year);
+  if(search) params.set('q', search);
+  if(phase) params.set('attached', 'yes');
+  if(proj){ /* phase 2: server-side filter by project */ }
+  if(document.getElementById('media-work-only')?.checked) params.set('work_only', 'true');
+  const url = '/api/ahb123/media/library?' + params.toString();
+  try{
+    const r = await fetch(url);
+    mediaCache = await r.json();
+    const s = mediaCache.stats || {};
+    document.getElementById('media-total').textContent = (mediaCache.total||0).toLocaleString();
+    document.getElementById('media-total-lbl').textContent = 'Filtered Library';
+    document.getElementById('media-photos').textContent = (s.photos||0).toLocaleString();
+    document.getElementById('media-videos').textContent = (s.videos||0).toLocaleString();
+    document.getElementById('media-projects').textContent = s.attached || 0;
+    document.getElementById('media-phase-breakdown').innerHTML = '<span style="font-size:12px;color:#666">items attached to a project</span>';
+    populateMediaProjectFilters(mediaCache.projects.map(p=>({...p, media_count: p.id})));  // show all in dropdown
+    // Bulk-attach dropdown
+    const bulkSel = document.getElementById('media-bulk-project');
+    bulkSel.innerHTML = '<option value="">Pick project…</option>' +
+      (mediaCache.projects||[]).map(p=>'<option value="'+escHtml(p.id)+'">'+escHtml(p.title||p.address||p.id)+'</option>').join('');
+    renderMediaLibrary();
+    renderMediaPager();
+  }catch(e){
+    document.getElementById('media-timeline').innerHTML='<div style="text-align:center;padding:40px;color:#555">Could not load library: '+e.message+'</div>';
+  }
 }
 
-function renderPhotos(list){
-  const sort=document.getElementById('photo-sort').value;
-  const sorted=[...list];
-  if(sort==='newest') sorted.sort((a,b)=>(b.photo_date||'').localeCompare(a.photo_date||'')||(b.photo_time||'').localeCompare(a.photo_time||''));
-  else if(sort==='oldest') sorted.sort((a,b)=>(a.photo_date||'').localeCompare(b.photo_date||''));
-  else if(sort==='project') sorted.sort((a,b)=>(a.project_name||'').localeCompare(b.project_name||''));
-  else if(sort==='location') sorted.sort((a,b)=>(a.location||'').localeCompare(b.location||''));
-  const grid=document.getElementById('photo-grid');
-  if(!sorted.length){
-    grid.innerHTML='<div style="text-align:center;padding:40px;color:#444;font-size:13px;grid-column:1/-1">No photos match these filters. Click <b>Bulk Upload</b> to add some.</div>';
+function populateMediaProjectFilters(projects){
+  const projSel = document.getElementById('media-project-filter');
+  if(!projSel) return;
+  if(projSel.options.length > 1) return;
+  if(!projects) return;
+  projSel.innerHTML = '<option value="">All Projects</option>' +
+    projects.map(p=>'<option value="'+escHtml(p.id)+'">'+escHtml((p.title||p.address||p.id).replace(/ – INV-\d+$/,''))+(p.media_count?' ('+p.media_count+')':'')+'</option>').join('');
+}
+function populateMediaYearFilter(years){
+  const sel = document.getElementById('media-year-filter');
+  if(!sel || sel.options.length > 1) return;
+  const u = [...new Set(years.filter(Boolean))].sort().reverse();
+  sel.innerHTML = '<option value="">All Years</option>' + u.map(y=>'<option>'+y+'</option>').join('');
+}
+
+function renderMediaLibrary(){
+  const items = mediaCache?.items || [];
+  const tl = document.getElementById('media-timeline');
+  if(!items.length){
+    tl.innerHTML='<div style="text-align:center;padding:40px;color:#444;font-size:13px">No media match these filters.</div>';
     return;
   }
-  const phaseColor={before:'#888',during:'#f5a623',after:'#00d084'};
-  grid.innerHTML=sorted.map(p=>{
-    const img='/api/ahb/photos/file/'+encodeURIComponent(p.filename);
-    const phaseTag=p.phase?'<span style="position:absolute;top:8px;left:8px;padding:3px 8px;border-radius:10px;background:'+(phaseColor[p.phase]||'#444')+';color:#000;font-size:10px;font-weight:800;text-transform:uppercase">'+p.phase+'</span>':'';
-    const gpsTag=(p.latitude&&p.longitude)?'<span style="position:absolute;top:8px;right:8px;padding:3px 6px;border-radius:8px;background:rgba(0,0,0,.7);color:#00bcd4;font-size:9px">&#127759; GPS</span>':'';
-    return '<div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden;cursor:pointer;transition:transform .15s,border-color .15s" onmouseover="this.style.borderColor=\'#1a3a5a\'" onmouseout="this.style.borderColor=\'#1a1a2e\'" onclick="openPhotoDetail('+p.id+')">'+
-      '<div style="position:relative;background:#070712;height:180px;overflow:hidden">'+
-        '<img src="'+img+'" style="width:100%;height:100%;object-fit:cover" loading="lazy">'+
-        phaseTag+gpsTag+
-      '</div>'+
-      '<div style="padding:10px 12px">'+
-        '<div style="font-size:12px;font-weight:700;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(p.project_name)||'<span style="color:#444">Untagged</span>')+'</div>'+
-        '<div style="font-size:10px;color:#666;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(escHtml(p.location)||'')+'</div>'+
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">'+
-          '<span style="font-size:10px;color:#444">'+(p.photo_date||'')+'</span>'+
-          (p.category?'<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:#0a1a2a;color:#00bcd4">'+escHtml(p.category)+'</span>':'')+
-        '</div>'+
-      '</div>'+
-    '</div>';
-  }).join('');
+  const phaseColor = {before:'#888', during:'#f5a623', after:'#00d084'};
+  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:8px">';
+  items.forEach(it=>{
+    const isVid = it.media_type === 'video';
+    const thumb = '/api/cloud/thumb/' + encodeURIComponent(it.filepath) + '?size=300';
+    const checked = mediaSelected.has(it.filepath) ? 'checked' : '';
+    const attached = !!it.project_id;
+    const phase = it.phase || '';
+    const proj = it.project_title ? escHtml(it.project_title.replace(/ – INV-\d+$/,'')) : '';
+    const phaseBadge = phase ? '<span style="position:absolute;top:5px;right:5px;padding:2px 7px;border-radius:9px;background:'+(phaseColor[phase]||'#444')+';color:#000;font-size:9px;font-weight:800">'+phase[0].toUpperCase()+'</span>' : '';
+    const ws = parseInt(it.work_score) || 0;
+    const workBadge = ws >= 30
+      ? '<span title="Work score: '+ws+'" style="position:absolute;top:5px;right:5px;padding:2px 6px;border-radius:8px;background:rgba(0,200,90,.85);color:#000;font-size:9px;font-weight:800">WORK '+ws+'</span>'
+      : (ws > 0
+          ? '<span title="Work score: '+ws+'" style="position:absolute;top:5px;right:5px;padding:2px 5px;border-radius:8px;background:rgba(245,166,35,.7);color:#000;font-size:9px;font-weight:700">'+ws+'</span>'
+          : '');
+    const captionLine = it.caption
+      ? '<div style="color:#aaa;font-size:10px;line-height:1.35;margin-top:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical" title="'+escHtml(it.caption)+'">'+escHtml(it.caption)+'</div>'
+      : '';
+    html += '<div class="media-lib-tile" data-fp="'+escHtml(it.filepath)+'" style="position:relative;background:#0a0a16;border:1px solid '+(attached?'#1a4a2e':(ws>=30?'#1a3a2e':'#1a1a2e'))+';border-radius:10px;overflow:hidden">'+
+              '<label style="position:absolute;top:5px;left:5px;z-index:2;cursor:pointer">'+
+                '<input type="checkbox" class="media-lib-cb" '+checked+' onchange="toggleMediaSelect(this)" style="width:18px;height:18px;cursor:pointer">'+
+              '</label>'+
+              workBadge+(phaseBadge && !workBadge ? phaseBadge : '')+
+              '<div style="position:relative;height:130px;background:#000;cursor:pointer" onclick="window.open(\'/api/cloud/media/serve/'+encodeURIComponent(it.filepath)+'\',\'_blank\')">'+
+                '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
+                (isVid?'<span style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.75);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700">VIDEO</span>':'')+
+                (it.latitude?'<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);color:#00bcd4;font-size:9px;padding:2px 5px;border-radius:4px">&#127759;</span>':'')+
+              '</div>'+
+              '<div style="padding:6px 8px;font-size:10px">'+
+                '<div style="color:#888">'+(it.date_taken||'')+'</div>'+
+                (attached
+                  ? '<div style="color:#00d084;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">&#10003; '+proj+'</div>'
+                  : '<div style="color:#444">unfiled</div>')+
+                captionLine+
+              '</div>'+
+            '</div>';
+  });
+  html += '</div>';
+  tl.innerHTML = html;
+}
+
+function renderMediaPager(){
+  const total = mediaCache?.total || 0;
+  const pages = Math.max(1, Math.ceil(total / mediaLibPageSize));
+  const cur = mediaCache?.page || 1;
+  document.getElementById('media-page-label').textContent =
+    'Page '+cur+' of '+pages+' · '+total.toLocaleString()+' items total';
+  document.getElementById('media-page-prev').disabled = (cur <= 1);
+  document.getElementById('media-page-next').disabled = (cur >= pages);
+}
+
+function changeLibraryPage(d){
+  mediaLibPage = Math.max(1, mediaLibPage + d);
+  loadMediaLibrary();
+  document.getElementById('media-timeline').scrollIntoView({behavior:'smooth'});
+}
+
+function toggleMediaSelect(cb){
+  const tile = cb.closest('.media-lib-tile');
+  const fp = tile.dataset.fp;
+  if(cb.checked) mediaSelected.add(fp);
+  else mediaSelected.delete(fp);
+  updateBulkBar();
+}
+
+function updateBulkBar(){
+  const n = mediaSelected.size;
+  const bar = document.getElementById('media-bulk-bar');
+  bar.style.display = (n > 0) ? 'flex' : 'none';
+  document.getElementById('media-bulk-count').textContent = n + ' selected';
+}
+
+function clearMediaSelection(){
+  mediaSelected.clear();
+  document.querySelectorAll('.media-lib-cb').forEach(cb=>cb.checked=false);
+  updateBulkBar();
+}
+
+async function bulkAttachSelected(){
+  const pid = document.getElementById('media-bulk-project').value;
+  const phase = document.getElementById('media-bulk-phase').value;
+  if(!pid){ showToast('Pick a project first','error'); return; }
+  if(!mediaSelected.size) return;
+  try{
+    const r = await fetch('/api/ahb123/media/bulk_attach',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({media_filepaths:[...mediaSelected], project_id:pid, phase:phase})
+    });
+    const j = await r.json();
+    if(j.success){
+      showToast('Attached '+j.attached+' items');
+      mediaSelected.clear();
+      updateBulkBar();
+      loadMedia();
+    } else { showToast(j.error||'Failed','error'); }
+  }catch(e){ showToast('Failed: '+e.message,'error'); }
+}
+
+function renderMediaTimeline(){
+  const items = mediaCache?.items || [];
+  const tl = document.getElementById('media-timeline');
+  if(!items.length){
+    tl.innerHTML='<div style="text-align:center;padding:40px;color:#444;font-size:13px">No work media match these filters. Try <b>Reclassify</b> to scan for GPS+date matches across all baza cloud media.</div>';
+    return;
+  }
+  // Group by year → month
+  const groups = {};
+  items.forEach(it=>{
+    const d = it.date_taken || '0000-00-00';
+    const y = d.slice(0,4), ym = d.slice(0,7);
+    groups[y] ??= {};
+    groups[y][ym] ??= [];
+    groups[y][ym].push(it);
+  });
+  const phaseColor = {before:'#888', during:'#f5a623', after:'#00d084'};
+  const phaseIcon = {before:'B', during:'D', after:'A'};
+  let html = '';
+  Object.keys(groups).sort().reverse().forEach(y=>{
+    const yearCount = Object.values(groups[y]).reduce((a,arr)=>a+arr.length,0);
+    html += '<div style="margin:18px 0 10px;display:flex;align-items:baseline;gap:12px">'+
+            '<h2 style="font-size:24px;font-weight:800;color:#fff;margin:0">'+y+'</h2>'+
+            '<span style="color:#444;font-size:12px">'+yearCount+' items</span></div>';
+    Object.keys(groups[y]).sort().reverse().forEach(ym=>{
+      const monthName = new Date(ym+'-01').toLocaleString('default',{month:'long'});
+      html += '<div style="margin-bottom:14px"><div style="font-size:13px;color:#aaa;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #1a1a2e">'+monthName+' · '+groups[y][ym].length+' items</div>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">';
+      groups[y][ym].forEach(it=>{
+        const isVid = it.media_type === 'video';
+        const thumb = '/api/cloud/thumb/' + encodeURIComponent(it.filepath) + '?size=320';
+        const serve = '/api/cloud/media/serve/' + encodeURIComponent(it.filepath);
+        const phase = it.phase || 'during';
+        const proj = it.project_title ? escHtml(it.project_title.replace(/ – INV-\d+$/,'')) : '';
+        html += '<div class="media-thumb" data-fp="'+escHtml(it.filepath)+'" data-pid="'+escHtml(it.project_id||'')+'" data-phase="'+phase+'" style="position:relative;background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;cursor:pointer">'+
+                '<div style="position:relative;height:140px;background:#000;overflow:hidden">'+
+                  '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
+                  '<span style="position:absolute;top:5px;left:5px;padding:2px 7px;border-radius:9px;background:'+(phaseColor[phase]||'#444')+';color:#000;font-size:9px;font-weight:800">'+phaseIcon[phase]+'</span>'+
+                  (isVid?'<span style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.75);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700">VIDEO</span>':'')+
+                  (it.distance_m!=null?'<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);color:#00bcd4;font-size:9px;padding:2px 5px;border-radius:4px">~'+Math.round(it.distance_m)+'m</span>':'')+
+                '</div>'+
+                '<div style="padding:7px 9px">'+
+                  '<div style="font-size:11px;color:#ccc;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+proj+'">'+(proj||'<span style="color:#444">No project</span>')+'</div>'+
+                  '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:3px">'+
+                    '<span style="font-size:9px;color:#555">'+(it.date_taken||'')+'</span>'+
+                    '<select onclick="event.stopPropagation()" onchange="changeMediaPhase(this)" style="background:#070712;border:1px solid #1a1a2e;border-radius:4px;color:#aaa;font-size:9px;padding:1px 3px">'+
+                      ['before','during','after'].map(x=>'<option value="'+x+'"'+(phase===x?' selected':'')+'>'+x[0].toUpperCase()+x.slice(1)+'</option>').join('')+
+                    '</select>'+
+                  '</div>'+
+                '</div>'+
+              '</div>';
+      });
+      html += '</div></div>';
+      // Bind click on tile to open in new tab (after building)
+    });
+  });
+  tl.innerHTML = html;
+  // Attach handlers
+  tl.querySelectorAll('.media-thumb').forEach(el=>{
+    el.addEventListener('click', ()=> window.open('/api/cloud/media/serve/'+encodeURIComponent(el.dataset.fp),'_blank'));
+  });
+}
+
+async function changeMediaPhase(sel){
+  const tile = sel.closest('.media-thumb');
+  const fp = tile.dataset.fp, pid = tile.dataset.pid;
+  if(!pid){ showToast('No project attached','error'); return; }
+  const phase = sel.value;
+  try{
+    const r = await fetch('/api/ahb123/media/attach', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({media_filepath:fp, project_id:pid, phase:phase})
+    });
+    const j = await r.json();
+    if(j.success){
+      showToast('Phase → '+phase);
+      tile.dataset.phase = phase;
+      const dot = tile.querySelector('span[style*="border-radius:9px"]');
+      const colors = {before:'#888', during:'#f5a623', after:'#00d084'};
+      if(dot){ dot.style.background = colors[phase]||'#444'; dot.textContent = phase[0].toUpperCase(); }
+    } else { showToast(j.error||'Failed','error'); }
+  }catch(e){ showToast('Failed: '+e.message,'error'); }
+}
+
+async function reclassifyMedia(){
+  const btn = document.getElementById('media-reclassify-btn');
+  const radius = parseInt(document.getElementById('reclassify-radius').value, 10) || 200;
+  btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Classifying…';
+  try{
+    const r = await fetch('/api/ahb123/media/classify', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({radius_m: radius, before_days:14, after_days:42})
+    });
+    const j = await r.json();
+    showToast('Classified @'+radius+'m: '+j.attached+' new attachments across '+j.projects+' projects ('+j.media_scanned+' media scanned)');
+    await loadMedia();
+  }catch(e){ showToast('Failed: '+e.message,'error'); }
+  finally{ btn.disabled = false; btn.innerHTML = orig; }
+}
+
+function toggleMediaView(){
+  mediaViewMode = (mediaViewMode === 'grid') ? 'map' : 'grid';
+  const btn = document.getElementById('media-view-toggle');
+  document.getElementById('media-grid-view').style.display = (mediaViewMode==='grid') ? '' : 'none';
+  document.getElementById('media-map-view').style.display  = (mediaViewMode==='map')  ? '' : 'none';
+  btn.innerHTML = (mediaViewMode==='grid') ? '&#128205; Map View' : '&#128196; Grid View';
+  if(mediaViewMode === 'map') renderMediaMap();
+}
+
+async function renderMediaMap(){
+  // Fetch fresh pins
+  let pins = [];
+  try{
+    const r = await fetch('/api/ahb123/media/map');
+    const j = await r.json();
+    pins = j.pins || [];
+  }catch(e){ console.error(e); return; }
+  // Init Leaflet map
+  if(!mediaMap){
+    mediaMap = L.map('media-map', {zoomControl:true}).setView([40.0, -75.16], 9);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(mediaMap);
+  }
+  // Clear old markers
+  mediaMapMarkers.forEach(m=>mediaMap.removeLayer(m));
+  mediaMapMarkers = [];
+  if(!pins.length) return;
+  pins.forEach(p=>{
+    if(!p.latitude||!p.longitude) return;
+    const fillColor = p.media_count>0 ? '#00d084' : '#666';
+    const marker = L.circleMarker([p.latitude, p.longitude], {
+      radius: 6 + Math.min(14, Math.log2((p.media_count||0)+1)*3),
+      fillColor, color:'#fff', weight:2, fillOpacity:0.85
+    }).addTo(mediaMap);
+    const title = (p.title||'').replace(/ – INV-\d+$/,'');
+    const popup = '<div style="font-family:system-ui;min-width:200px">'+
+                  '<div style="font-weight:800;font-size:13px;margin-bottom:4px">'+(title||'(no title)')+'</div>'+
+                  '<div style="font-size:11px;color:#555">'+(p.address||'')+'</div>'+
+                  '<div style="font-size:11px;color:#777;margin-top:6px">'+
+                    (p.start_date||'?')+' → '+(p.end_date||'?')+' · '+(p.status||'')+
+                  '</div>'+
+                  '<div style="font-size:12px;font-weight:700;color:#00d084;margin-top:8px">'+
+                    (p.media_count||0)+' media item'+(p.media_count===1?'':'s')+'</div>'+
+                  (p.media_count>0?'<button onclick="filterMediaToProject(\''+p.id+'\')" style="margin-top:8px;padding:6px 12px;background:#00bcd4;color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:700">View media</button>':'')+
+                  '</div>';
+    marker.bindPopup(popup);
+    mediaMapMarkers.push(marker);
+  });
+  // Fit map to pins with media
+  const withMedia = pins.filter(p=>p.media_count>0 && p.latitude && p.longitude);
+  if(withMedia.length){
+    const bounds = L.latLngBounds(withMedia.map(p=>[p.latitude,p.longitude]));
+    mediaMap.fitBounds(bounds, {padding:[40,40], maxZoom:14});
+  }
+}
+
+/* ===== Vision Classify modal ===== */
+let visionPollTimer = null;
+function openVisionPanel(){
+  document.getElementById('visionModal').style.display = 'flex';
+  visionPoll();
+  if(!visionPollTimer) visionPollTimer = setInterval(visionPoll, 3000);
+}
+async function visionPoll(){
+  if(document.getElementById('visionModal').style.display === 'none'){
+    clearInterval(visionPollTimer); visionPollTimer = null; return;
+  }
+  try{
+    const r = await fetch('/api/ahb123/media/caption/status');
+    const j = await r.json();
+    document.getElementById('vis-classified').textContent = (j.total_classified||0).toLocaleString();
+    document.getElementById('vis-work').textContent       = (j.total_work||0).toLocaleString();
+    document.getElementById('vis-errors').textContent     = j.errors || 0;
+    document.getElementById('vis-running-panel').style.display = j.running ? '' : 'none';
+    document.getElementById('vis-start-btn').style.display = j.running ? 'none' : '';
+    document.getElementById('vis-stop-btn').style.display  = j.running ? '' : 'none';
+    if(j.running){
+      const pending = j.initial_pending || 0;
+      const done = j.done || 0;
+      const pct = pending ? Math.min(100, (done/pending)*100) : 0;
+      document.getElementById('vis-done').textContent = done;
+      document.getElementById('vis-total').textContent = pending.toLocaleString();
+      document.getElementById('vis-progress-bar').style.width = pct + '%';
+      document.getElementById('vis-last').textContent = j.last_caption ? ('Last: ' + j.last_caption) : '';
+      if(j.started_at){
+        const elapsed = (Date.now()/1000 - j.started_at);
+        const rate = done && elapsed ? done/elapsed : 0;
+        const remaining = rate ? Math.ceil((pending - done)/rate/60) : 0;
+        document.getElementById('vis-eta').textContent =
+          'elapsed: '+Math.floor(elapsed/60)+'m '+Math.floor(elapsed%60)+'s · '+
+          (rate?rate.toFixed(2)+' img/s · ~'+remaining+'m remaining':'rate calculating…');
+      }
+    }
+  }catch(e){ console.error(e); }
+}
+async function visionStart(){
+  try{
+    const r = await fetch('/api/ahb123/media/caption/start', {method:'POST'});
+    const j = await r.json();
+    if(j.success){ showToast('Classification started'); visionPoll(); }
+    else { showToast('Failed: '+(j.error||'unknown'),'error'); }
+  }catch(e){ showToast('Failed: '+e.message,'error'); }
+}
+async function visionStop(){
+  if(!confirm('Stop the classification job? Progress so far is kept.')) return;
+  try{
+    const r = await fetch('/api/ahb123/media/caption/stop', {method:'POST'});
+    const j = await r.json();
+    if(j.success){ showToast('Stopping…'); }
+    else { showToast('Failed: '+(j.error||'unknown'),'error'); }
+  }catch(e){ showToast('Failed: '+e.message,'error'); }
+}
+
+function filterMediaToProject(pid){
+  document.getElementById('media-project-filter').value = pid;
+  mediaViewMode = 'grid';
+  document.getElementById('media-grid-view').style.display='';
+  document.getElementById('media-map-view').style.display='none';
+  document.getElementById('media-view-toggle').innerHTML = '&#128205; Map View';
+  loadMedia();
 }
 
 function openPhotoDetail(id){
