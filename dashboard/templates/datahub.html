@@ -443,6 +443,80 @@
   </div>
 </div>
 
+<!-- Live Feed Item Modal -->
+<div class="modal-overlay" id="feedItemModal" onclick="if(event.target===this)closeFeedItem()">
+  <div class="modal" style="max-width:760px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <div class="modal-title" id="fiTitle" style="flex:1;margin:0"></div>
+      <button class="btn btn-secondary btn-sm" onclick="closeFeedItem()">Close</button>
+    </div>
+    <div class="modal-sub" id="fiSub"></div>
+    <div class="modal-body">
+      <div id="fiBody" style="background:#070712;border:1px solid #1a1a2e;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;color:#ccc;white-space:pre-wrap;max-height:48vh;overflow-y:auto;line-height:1.5"></div>
+      <div id="fiVerified" style="margin-top:10px"></div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" id="fiOpenFile" style="display:none" onclick="fiOpenFileNow()">📄 Open File</button>
+      <button class="btn btn-secondary btn-sm" id="fiOpenAgent" onclick="fiOpenAgentNow()">👤 Agent Dossier</button>
+      <button class="btn btn-secondary btn-sm" onclick="fiCopyText()">📋 Copy</button>
+      <button class="btn btn-ghost btn-sm" onclick="fiPromptDispatch()">↗ Re-dispatch</button>
+      <button class="btn btn-primary btn-sm" onclick="fiPromptTask()">＋ Create Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- Specter Insight Modal (with PCA) -->
+<div class="modal-overlay" id="insightModal" onclick="if(event.target===this)closeInsight()">
+  <div class="modal" style="max-width:820px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#e94560);font-size:14px;font-weight:800">S</span>
+      <div class="modal-title" id="insTitle" style="flex:1;margin:0;color:#c4b5fd"></div>
+      <button class="btn btn-secondary btn-sm" onclick="closeInsight()">Close</button>
+    </div>
+    <div class="modal-sub" id="insSub"></div>
+    <div class="modal-body">
+      <div id="insBody" style="background:#070712;border:1px solid #2a1f4a;border-radius:8px;padding:14px;font-size:13px;color:#ddd;white-space:pre-wrap;max-height:38vh;overflow-y:auto;line-height:1.55"></div>
+
+      <!-- PCA panel -->
+      <div style="margin-top:18px;background:#0a0818;border:1px solid #2a1f4a;border-radius:8px;padding:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:10px;font-weight:800;color:#c4b5fd;text-transform:uppercase;letter-spacing:2px">Provide a Course of Action (PCA)</span>
+          <span style="font-size:9px;color:#555;margin-left:auto">stored to empire_knowledge · routes to Specter</span>
+        </div>
+        <textarea id="pcaText" rows="4" placeholder="What should Specter do about this? Be specific. e.g. 'Run a deep-dive audit on X by Friday and publish findings as a report.'" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#e0e0e0;font-size:13px;font-family:inherit;outline:none;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:10px;color:#666;display:flex;align-items:center;gap:6px">
+            <select id="pcaAssign" style="background:#070712;border:1px solid #2a2a4a;border-radius:5px;padding:5px 8px;color:#ccc;font-size:11px">
+              <option value="specter_voss">→ Specter</option>
+              <option value="simon_bately">→ Simon</option>
+              <option value="claw_batto">→ Claw</option>
+              <option value="phil_hass">→ Phil</option>
+              <option value="sam_axe">→ Sam</option>
+              <option value="duke_harmon">→ Duke</option>
+              <option value="scout_reeves">→ Scout</option>
+              <option value="nova_sterling">→ Nova</option>
+              <option value="rex_valor">→ Rex</option>
+            </select>
+            assigned to
+          </label>
+          <label style="font-size:10px;color:#666;display:flex;align-items:center;gap:6px;margin-left:auto">
+            <input type="checkbox" id="pcaDispatch" checked> Notify agent via Telegram
+          </label>
+          <label style="font-size:10px;color:#666;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="pcaCreateTask"> Also create a task
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="insCopyText()">📋 Copy</button>
+      <button class="btn btn-secondary btn-sm" onclick="insArchive()">🗄 Archive</button>
+      <button class="btn btn-ghost btn-sm" onclick="insPin()">📌 Pin to EMPIRE_STATE</button>
+      <button class="btn btn-primary btn-sm" onclick="savePCA()">✓ Save PCA</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -590,21 +664,82 @@ async function loadFiles(){
   }catch(e){console.error(e)}
 }
 
+let FEED_ITEMS=[]; // global so the modal can look up by index
 async function loadFeed(){
   try{
     const r=await fetch('/api/datahub/feed?limit=20');
     const feed=await r.json();
+    FEED_ITEMS=feed;
     const el=document.getElementById('feedItems');
     if(!feed.length){el.innerHTML='<div style="color:#333;font-size:12px;padding:10px">No recent activity</div>';return}
-    el.innerHTML=feed.slice(0,15).map(f=>{
+    el.innerHTML=feed.slice(0,15).map((f,i)=>{
       const isArt=f.type==='artifact',agent=AGENTS[f.agent_id]||f.agent_id||'',color=AGENT_COLORS[f.agent_id]||'#555';
       const badge=isArt?'<span class="feed-badge art">FILE</span>':(f.success?'<span class="feed-badge ok">OK</span>':'<span class="feed-badge err">ERR</span>');
       const desc=isArt?(f.name||''):(f.description||f.task_type||'');
       const time=f.timestamp||f.modified||'';
-      const click=isArt?`openFile('${f.project_id||''}','${f.name||''}')`:'';
-      return `<div class="feed-card" ${click?`onclick="${click}"`:''}><div class="feed-agent" style="color:${color}">${agent} ${badge}</div><div class="feed-desc">${escHtml(desc)}</div><div class="feed-time">${time}</div></div>`;
+      return `<div class="feed-card" onclick="openFeedItem(${i})"><div class="feed-agent" style="color:${color}">${agent} ${badge}</div><div class="feed-desc">${escHtml(desc)}</div><div class="feed-time">${time}</div></div>`;
     }).join('');
   }catch(e){console.error(e)}
+}
+
+// ── Feed Item Modal ─────────────────────────────────────────────────────────
+let CURRENT_FEED_ITEM=null;
+function openFeedItem(idx){
+  const f=FEED_ITEMS[idx]; if(!f) return;
+  CURRENT_FEED_ITEM=f;
+  const agent=AGENTS[f.agent_id]||f.agent_id||'unknown';
+  const isArt=f.type==='artifact';
+  document.getElementById('fiTitle').textContent=isArt?(f.name||'Artifact'):(f.task_type||'Journal Entry');
+  document.getElementById('fiSub').textContent=`${agent} · ${f.timestamp||f.modified||''}${isArt?(' · '+(f.project_id||'')):''}`;
+  const body=isArt?
+    `[File] ${f.name||''}\nProject: ${f.project_id||'?'}\nSize: ${f.size||0} bytes\nModified: ${f.modified||''}\n\nClick "Open File" to preview the contents.`
+    :
+    (f.result||f.description||'(no content recorded)');
+  document.getElementById('fiBody').textContent=body;
+  // Verified badge
+  const vEl=document.getElementById('fiVerified');
+  if(!isArt && f.verified===false){
+    vEl.innerHTML='<div style="background:#1a0606;border:1px solid #5a1a1a;color:#ff8888;padding:8px 12px;border-radius:6px;font-size:11px"><b>⚠ UNVERIFIED CLAIM</b> — this completion was flagged by claim_verifier (no matching artifact saved within 2h of this entry).</div>';
+  } else { vEl.innerHTML=''; }
+  // Show/hide open-file button
+  document.getElementById('fiOpenFile').style.display=isArt?'inline-block':'none';
+  document.getElementById('feedItemModal').classList.add('open');
+}
+function closeFeedItem(){document.getElementById('feedItemModal').classList.remove('open');CURRENT_FEED_ITEM=null;}
+function fiOpenFileNow(){
+  const f=CURRENT_FEED_ITEM; if(!f) return;
+  closeFeedItem();
+  openFile(f.project_id||'', f.name||'');
+}
+function fiOpenAgentNow(){
+  const f=CURRENT_FEED_ITEM; if(!f||!f.agent_id) return;
+  window.location='/agent/'+f.agent_id;
+}
+function fiCopyText(){
+  const f=CURRENT_FEED_ITEM; if(!f) return;
+  navigator.clipboard.writeText(f.result||f.description||f.name||'');
+  toast('Copied to clipboard','ok');
+}
+function fiPromptDispatch(){
+  const f=CURRENT_FEED_ITEM; if(!f) return;
+  const txt=prompt(`Re-dispatch to ${AGENTS[f.agent_id]||f.agent_id}:`, '');
+  if(!txt) return;
+  fetch('/api/datahub/feed-item/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:f.agent_id,instruction:txt,context_journal_id:f.id||null})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok) toast('Dispatched to '+(AGENTS[f.agent_id]||f.agent_id),'ok');
+      else toast('Dispatch failed: '+(d.error||'?'),'err');
+    }).catch(e=>toast('Dispatch error: '+e.message,'err'));
+}
+function fiPromptTask(){
+  const f=CURRENT_FEED_ITEM; if(!f) return;
+  const title=prompt('Task title:', (f.description||f.name||'').slice(0,80));
+  if(!title) return;
+  const notes=(f.result||f.description||'').slice(0,500);
+  fetch('/api/datahub/feed-item/dispatch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:f.agent_id,instruction:title,as_task:true,notes:notes})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok) toast('Task created','ok');
+      else toast('Task create failed: '+(d.error||'?'),'err');
+    }).catch(e=>toast('Task error: '+e.message,'err'));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1435,13 +1570,14 @@ async function loadSpecter(){
       insEl.innerHTML='<div style="color:#444;font-size:12px;padding:8px">Specter is online but has no published insights yet. He auto-publishes via the publish_insight skill into empire_knowledge.</div>';
       return;
     }
-    insEl.innerHTML=d.insights.map(i=>{
+    SPECTER_INSIGHTS=d.insights;
+    insEl.innerHTML=d.insights.map((i,idx)=>{
       const dt=i.updated_at?new Date(i.updated_at).toLocaleString():'';
-      const catColor={research:'#7c3aed',report:'#4da6ff',insight:'#f0c040',alert:'#ff5555',scout:'#00d084'};
+      const catColor={research:'#7c3aed',report:'#4da6ff',insight:'#f0c040',alert:'#ff5555',scout:'#00d084',pca:'#00d084'};
       const cc=catColor[i.category]||'#888';
       const safeTitle=(i.title||'').replace(/[<>]/g,'');
       const safePreview=(i.preview||'').replace(/[<>]/g,'');
-      return `<div style="flex:0 0 280px;background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:12px;cursor:pointer" title="${safePreview}">
+      return `<div onclick="openInsight(${idx})" style="flex:0 0 280px;background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:12px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='#7c3aed'" onmouseout="this.style.borderColor='#1a1a2e'">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
           <span style="display:inline-block;padding:2px 8px;border-radius:8px;background:${cc}22;color:${cc};font-size:9px;font-weight:800;text-transform:uppercase">${i.category}</span>
           <span style="font-size:9px;color:#444;margin-left:auto">${dt}</span>
@@ -1456,6 +1592,77 @@ async function loadSpecter(){
   }catch(e){
     console.error('loadSpecter',e);
   }
+}
+
+// ── Specter Insight Modal (with PCA) ───────────────────────────────────────
+let SPECTER_INSIGHTS=[];
+let CURRENT_INSIGHT=null;
+async function openInsight(idx){
+  const i=SPECTER_INSIGHTS[idx]; if(!i) return;
+  CURRENT_INSIGHT=i;
+  document.getElementById('insTitle').textContent=i.title||'Specter Insight';
+  const dt=i.updated_at?new Date(i.updated_at).toLocaleString():'';
+  document.getElementById('insSub').textContent=`${(i.category||'').toUpperCase()} · ${dt} · ${(i.size||0)} chars · key=${i.key||''}`;
+  // Fetch full value (preview is truncated to 280)
+  document.getElementById('insBody').textContent='Loading...';
+  document.getElementById('insightModal').classList.add('open');
+  try{
+    const r=await fetch('/api/datahub/specter/insight?key='+encodeURIComponent(i.key||''));
+    const d=await r.json();
+    document.getElementById('insBody').textContent=d.value||i.preview||'(empty)';
+  }catch(e){
+    document.getElementById('insBody').textContent=i.preview||'(failed to load full value)';
+  }
+  document.getElementById('pcaText').value='';
+  document.getElementById('pcaAssign').value='specter_voss';
+  document.getElementById('pcaDispatch').checked=true;
+  document.getElementById('pcaCreateTask').checked=false;
+}
+function closeInsight(){document.getElementById('insightModal').classList.remove('open');CURRENT_INSIGHT=null;}
+function insCopyText(){
+  const i=CURRENT_INSIGHT; if(!i) return;
+  navigator.clipboard.writeText(document.getElementById('insBody').textContent||i.preview||'');
+  toast('Copied','ok');
+}
+function insArchive(){
+  const i=CURRENT_INSIGHT; if(!i) return;
+  if(!confirm('Archive this insight? (removes from active list, kept in DB)')) return;
+  fetch('/api/datahub/specter/insight/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:i.key})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ toast('Archived','ok'); closeInsight(); loadSpecter(); }
+      else toast('Archive failed: '+(d.error||'?'),'err');
+    });
+}
+function insPin(){
+  const i=CURRENT_INSIGHT; if(!i) return;
+  const slug=prompt('Pin as TOPIC slug in EMPIRE_STATE.md (lowercase, no spaces):',(i.title||'').toLowerCase().replace(/[^a-z0-9_]+/g,'-').slice(0,30));
+  if(!slug) return;
+  fetch('/api/datahub/specter/insight/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:i.key,slug:slug})})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok) toast('Pinned to EMPIRE_STATE.md','ok');
+      else toast('Pin failed: '+(d.error||'?'),'err');
+    });
+}
+function savePCA(){
+  const i=CURRENT_INSIGHT; if(!i) return;
+  const text=document.getElementById('pcaText').value.trim();
+  if(!text){ toast('PCA text required','err'); return; }
+  const payload={
+    insight_key:i.key,
+    insight_title:i.title,
+    action_text:text,
+    assigned_to:document.getElementById('pcaAssign').value,
+    notify_telegram:document.getElementById('pcaDispatch').checked,
+    create_task:document.getElementById('pcaCreateTask').checked,
+  };
+  fetch('/api/datahub/pca',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){
+        toast(`PCA saved · ${d.notified?'agent notified':''}${d.task_id?(' · task '+d.task_id):''}`,'ok');
+        closeInsight();
+        loadSpecter();
+      } else toast('PCA save failed: '+(d.error||'?'),'err');
+    }).catch(e=>toast('PCA error: '+e.message,'err'));
 }
 
 // Init

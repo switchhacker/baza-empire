@@ -1530,8 +1530,12 @@ function renderMemDays(area){
 async function memDeleteItem(el){
   const path=el.dataset.path;
   if(!path)return;
-  if(!confirm('Permanently delete this item from the cloud? This removes the file from disk.'))return;
-  el.classList.add('removing');
+  // Fire-and-forget: tile vanishes immediately, request goes in background
+  if(window._memLbItems){
+    const idx=parseInt(el.dataset.lbIdx);
+    if(!isNaN(idx)&&window._memLbItems[idx])window._memLbItems[idx]._deleted=true;
+  }
+  el.remove();
   try{
     const r=await fetch('/api/cloud/media/delete',{
       method:'POST',
@@ -1539,21 +1543,8 @@ async function memDeleteItem(el){
       body:JSON.stringify({path:path})
     });
     const j=await r.json();
-    if(j.success){
-      el.remove();
-      // Drop from the lightbox items array so indexing stays sane
-      if(window._memLbItems){
-        const idx=parseInt(el.dataset.lbIdx);
-        if(!isNaN(idx)&&window._memLbItems[idx])window._memLbItems[idx]._deleted=true;
-      }
-    }else{
-      el.classList.remove('removing');
-      alert('Delete failed: '+(j.error||'unknown error'));
-    }
-  }catch(e){
-    el.classList.remove('removing');
-    alert('Delete failed: '+e.message);
-  }
+    if(!j.success){ console.error('Delete failed:', j.error); }
+  }catch(e){ console.error('Delete failed:', e.message); }
 }
 
 function memDrill(level,y,m){

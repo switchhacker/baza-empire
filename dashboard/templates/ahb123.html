@@ -2716,6 +2716,11 @@
     <label id="media-workonly-wrap" style="display:none;align-items:center;gap:6px;font-size:12px;color:#aaa">
       <input type="checkbox" id="media-work-only" onchange="loadMedia()"> Work-classified only
     </label>
+    <select id="media-people-filter" onchange="loadMedia()" style="display:none;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;color:#aaa;font-size:12px">
+      <option value="">People: any</option>
+      <option value="yes">Contains people 👥</option>
+      <option value="no">No people</option>
+    </select>
   </div>
 
   <!-- Grid view (default) -->
@@ -13286,6 +13291,7 @@ function setMediaListMode(mode){
   // Search box, work-only filter, pager — only in library mode
   document.getElementById('media-search').style.display = (mode==='library') ? '' : 'none';
   document.getElementById('media-workonly-wrap').style.display = (mode==='library') ? 'inline-flex' : 'none';
+  document.getElementById('media-people-filter').style.display = (mode==='library') ? '' : 'none';
   document.getElementById('media-pager').style.display = (mode==='library') ? '' : 'none';
   loadMedia();
 }
@@ -13340,6 +13346,8 @@ async function loadMediaLibrary(){
   if(phase) params.set('attached', 'yes');
   if(proj){ /* phase 2: server-side filter by project */ }
   if(document.getElementById('media-work-only')?.checked) params.set('work_only', 'true');
+  const peopleVal = document.getElementById('media-people-filter')?.value;
+  if(peopleVal) params.set('people', peopleVal);
   const url = '/api/ahb123/media/library?' + params.toString();
   try{
     const r = await fetch(url);
@@ -13396,19 +13404,24 @@ function renderMediaLibrary(){
     const proj = it.project_title ? escHtml(it.project_title.replace(/ – INV-\d+$/,'')) : '';
     const phaseBadge = phase ? '<span style="position:absolute;top:5px;right:5px;padding:2px 7px;border-radius:9px;background:'+(phaseColor[phase]||'#444')+';color:#000;font-size:9px;font-weight:800">'+phase[0].toUpperCase()+'</span>' : '';
     const ws = parseInt(it.work_score) || 0;
+    const hp = it.has_people === 1 || it.has_people === true;
     const workBadge = ws >= 30
       ? '<span title="Work score: '+ws+'" style="position:absolute;top:5px;right:5px;padding:2px 6px;border-radius:8px;background:rgba(0,200,90,.85);color:#000;font-size:9px;font-weight:800">WORK '+ws+'</span>'
       : (ws > 0
           ? '<span title="Work score: '+ws+'" style="position:absolute;top:5px;right:5px;padding:2px 5px;border-radius:8px;background:rgba(245,166,35,.7);color:#000;font-size:9px;font-weight:700">'+ws+'</span>'
           : '');
+    const peopleBadge = hp
+      ? '<span title="Contains people" style="position:absolute;top:30px;right:5px;padding:2px 5px;border-radius:8px;background:rgba(0,0,0,.75);color:#fff;font-size:11px">👥</span>'
+      : '';
+    const deleteBtn = '<button title="Permanently delete this file" onclick="event.stopPropagation();deleteLibraryItem(this)" style="position:absolute;bottom:5px;right:5px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:none;cursor:pointer;font-size:12px;line-height:22px;padding:0;opacity:0;transition:opacity .15s,background .15s">🗑</button>';
     const captionLine = it.caption
       ? '<div style="color:#aaa;font-size:10px;line-height:1.35;margin-top:3px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical" title="'+escHtml(it.caption)+'">'+escHtml(it.caption)+'</div>'
       : '';
-    html += '<div class="media-lib-tile" data-fp="'+escHtml(it.filepath)+'" style="position:relative;background:#0a0a16;border:1px solid '+(attached?'#1a4a2e':(ws>=30?'#1a3a2e':'#1a1a2e'))+';border-radius:10px;overflow:hidden">'+
+    html += '<div class="media-lib-tile" data-fp="'+escHtml(it.filepath)+'" onmouseover="this.querySelector(\'button[title^=Permanently]\').style.opacity=1" onmouseout="this.querySelector(\'button[title^=Permanently]\').style.opacity=0" style="position:relative;background:#0a0a16;border:1px solid '+(attached?'#1a4a2e':(ws>=30?'#1a3a2e':'#1a1a2e'))+';border-radius:10px;overflow:hidden">'+
               '<label style="position:absolute;top:5px;left:5px;z-index:2;cursor:pointer">'+
                 '<input type="checkbox" class="media-lib-cb" '+checked+' onchange="toggleMediaSelect(this)" style="width:18px;height:18px;cursor:pointer">'+
               '</label>'+
-              workBadge+(phaseBadge && !workBadge ? phaseBadge : '')+
+              workBadge+peopleBadge+(phaseBadge && !workBadge ? phaseBadge : '')+deleteBtn+
               '<div style="position:relative;height:130px;background:#000;cursor:pointer" onclick="window.open(\'/api/cloud/media/serve/'+encodeURIComponent(it.filepath)+'\',\'_blank\')">'+
                 '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
                 (isVid?'<span style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.75);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700">VIDEO</span>':'')+
@@ -13462,6 +13475,28 @@ function clearMediaSelection(){
   mediaSelected.clear();
   document.querySelectorAll('.media-lib-cb').forEach(cb=>cb.checked=false);
   updateBulkBar();
+}
+
+async function deleteLibraryItem(btn){
+  const tile = btn.closest('.media-lib-tile');
+  const fp = tile.dataset.fp;
+  if(!fp) return;
+  // Fire-and-forget: remove tile immediately, send delete in background
+  tile.remove();
+  mediaSelected.delete(fp);
+  updateBulkBar();
+  try{
+    const r = await fetch('/api/cloud/media/delete', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path: fp})
+    });
+    const j = await r.json();
+    if(!j.success){
+      showToast('Delete failed: '+(j.error||'unknown'),'error');
+    }
+  }catch(e){
+    showToast('Delete failed: '+e.message,'error');
+  }
 }
 
 async function bulkAttachSelected(){
@@ -13668,15 +13703,26 @@ async function visionPoll(){
       const pct = pending ? Math.min(100, (done/pending)*100) : 0;
       document.getElementById('vis-done').textContent = done;
       document.getElementById('vis-total').textContent = pending.toLocaleString();
-      document.getElementById('vis-progress-bar').style.width = pct + '%';
-      document.getElementById('vis-last').textContent = j.last_caption ? ('Last: ' + j.last_caption) : '';
+      const bar = document.getElementById('vis-progress-bar');
+      bar.style.width = pct + '%';
+      if(j.cooling){
+        bar.style.background = 'linear-gradient(90deg,#4da6ff,#7c5cff)';
+        const remainingCool = Math.max(0, (j.cooldown_until||0) - Date.now()/1000);
+        document.getElementById('vis-last').innerHTML =
+          '<span style="color:#4da6ff;font-weight:700">❄ Cooling — '+
+          Math.floor(remainingCool/60)+'m '+Math.floor(remainingCool%60)+'s left</span>';
+      } else {
+        bar.style.background = 'linear-gradient(90deg,#00bcd4,#00d084)';
+        document.getElementById('vis-last').textContent = j.last_caption ? ('Last: ' + j.last_caption) : '';
+      }
       if(j.started_at){
         const elapsed = (Date.now()/1000 - j.started_at);
         const rate = done && elapsed ? done/elapsed : 0;
         const remaining = rate ? Math.ceil((pending - done)/rate/60) : 0;
         document.getElementById('vis-eta').textContent =
           'elapsed: '+Math.floor(elapsed/60)+'m '+Math.floor(elapsed%60)+'s · '+
-          (rate?rate.toFixed(2)+' img/s · ~'+remaining+'m remaining':'rate calculating…');
+          (rate?rate.toFixed(2)+' img/s · ~'+remaining+'m remaining (incl. cooldowns)':'rate calculating…')+
+          ' · cycle: 15m work / 10m cool';
       }
     }
   }catch(e){ console.error(e); }

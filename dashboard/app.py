@@ -2571,6 +2571,313 @@ def api_datahub_specter():
     return jsonify(out)
 
 
+# ── Specter insight detail + actions (click-through from Data Hub) ────────────
+
+_AGENT_TOKEN_ENV = {
+    'simon_bately': 'TELEGRAM_SIMON_BATELY',
+    'claw_batto': 'TELEGRAM_CLAW_BATTO',
+    'phil_hass': 'TELEGRAM_PHIL_HASS',
+    'sam_axe': 'TELEGRAM_SAM_AXE',
+    'rex_valor': 'TELEGRAM_REX_VALOR',
+    'duke_harmon': 'TELEGRAM_DUKE_HARMON',
+    'nova_sterling': 'TELEGRAM_NOVA_STERLING',
+    'scout_reeves': 'TELEGRAM_SCOUT_REEVES',
+    'specter_voss': 'TELEGRAM_SPECTER_VOSS',
+}
+
+
+def _agent_telegram_token(agent_id: str) -> str:
+    env_name = _AGENT_TOKEN_ENV.get(agent_id, '')
+    if not env_name:
+        return ''
+    token = os.environ.get(env_name, '')
+    if token:
+        return token
+    secrets_path = os.path.join(os.path.dirname(DASHBOARD_DIR), 'configs', 'secrets.env')
+    if os.path.exists(secrets_path):
+        with open(secrets_path) as sf:
+            for line in sf:
+                line = line.strip()
+                if line.startswith(env_name + '='):
+                    return line.split('=', 1)[1].strip().strip('"').strip("'")
+    return ''
+
+
+def _agent_last_chat_id(agent_id: str):
+    """Look up the most-recent chat_id the agent has talked to (private DM)."""
+    try:
+        from core.context_db import get_pool
+        pool = get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT chat_id FROM messages WHERE agent_id=%s "
+            "ORDER BY chat_id DESC LIMIT 1", (agent_id,))
+        row = cur.fetchone()
+        cur.close()
+        pool.putconn(conn)
+        if row:
+            return row[0]
+    except Exception:
+        pass
+    return None
+
+
+def _notify_agent(agent_id: str, message: str) -> tuple[bool, str]:
+    """Best-effort Telegram notify. Returns (ok, detail)."""
+    token = _agent_telegram_token(agent_id)
+    if not token:
+        return False, f"no Telegram token for {agent_id}"
+    chat_id = _agent_last_chat_id(agent_id)
+    if not chat_id:
+        return False, f"no recent chat_id for {agent_id} — DM them first"
+    try:
+        import requests as _req
+        resp = _req.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": message[:3900]},
+            timeout=10,
+        )
+        if resp.ok and resp.json().get("ok"):
+            return True, "sent"
+        return False, f"telegram returned {resp.status_code}: {resp.text[:200]}"
+    except Exception as e:
+        return False, f"telegram error: {e}"
+
+
+@app.route('/api/datahub/specter/insight')
+def api_datahub_specter_insight():
+    """Full value for one Specter insight, looked up by exact key."""
+    key = request.args.get('key', '').strip()
+    if not key:
+        return jsonify({"error": "key required"}), 400
+    try:
+        from core.context_db import get_pool
+        pool = get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT key, value, category, updated_at, updated_by "
+            "FROM empire_knowledge WHERE key = %s LIMIT 1",
+            (key,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        pool.putconn(conn)
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({
+            "key": row[0],
+            "value": row[1] or "",
+            "category": row[2],
+            "updated_at": row[3].isoformat() if row[3] else None,
+            "updated_by": row[4],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/datahub/specter/insight/archive', methods=['POST'])
+def api_datahub_specter_insight_archive():
+    """Soft-archive: rename the key with prefix `archived_` so it drops out of
+    the active Specter insight feed but stays in empire_knowledge for history."""
+    data = request.json or {}
+    key = (data.get("key") or "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "key required"}), 400
+    if key.startswith("archived_"):
+        return jsonify({"ok": False, "error": "already archived"}), 400
+    new_key = "archived_" + key
+    try:
+        from core.context_db import get_pool
+        pool = get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE empire_knowledge SET key = %s, updated_at = NOW(), "
+            "updated_by = 'datahub_ui' WHERE key = %s",
+            (new_key, key),
+        )
+        conn.commit()
+        cur.close()
+        pool.putconn(conn)
+        return jsonify({"ok": True, "new_key": new_key})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/api/datahub/specter/insight/pin', methods=['POST'])
+def api_datahub_specter_insight_pin():
+    """Append the insight as a ## TOPIC: <slug> block to EMPIRE_STATE.md so it
+    becomes part of every agent's awareness via the self_orient skill."""
+    data = request.json or {}
+    key = (data.get("key") or "").strip()
+    slug = (data.get("slug") or "").strip().lower()
+    if not key or not slug:
+        return jsonify({"ok": False, "error": "key and slug required"}), 400
+    # Read full insight value
+    try:
+        from core.context_db import get_pool
+        pool = get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM empire_knowledge WHERE key = %s LIMIT 1", (key,))
+        row = cur.fetchone()
+        cur.close()
+        pool.putconn(conn)
+        if not row:
+            return jsonify({"ok": False, "error": "insight not found"}), 404
+        value = (row[0] or "")[:1200]  # cap to keep EMPIRE_STATE.md tight
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    state_file = os.path.join(os.path.dirname(DASHBOARD_DIR), "EMPIRE_STATE.md")
+    try:
+        existing = open(state_file).read() if os.path.exists(state_file) else ""
+        # Drop any prior TOPIC: <slug> block (idempotent re-pin)
+        import re as _re
+        existing = _re.sub(
+            rf"^##\s+TOPIC:\s*{_re.escape(slug)}\s*$.*?(?=^##\s+|\Z)",
+            "", existing, flags=_re.MULTILINE | _re.DOTALL | _re.IGNORECASE,
+        )
+        new_block = f"\n## TOPIC: {slug}\n{value}\n"
+        with open(state_file, "w") as f:
+            f.write(existing.rstrip() + "\n" + new_block + "\n")
+        return jsonify({"ok": True, "slug": slug})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/api/datahub/pca', methods=['POST'])
+def api_datahub_pca():
+    """Save a 'Provide a Course of Action' tied to an insight, optionally
+    notify the assigned agent on Telegram and create a task."""
+    data = request.json or {}
+    insight_key = (data.get("insight_key") or "").strip()
+    insight_title = (data.get("insight_title") or "").strip()
+    action_text = (data.get("action_text") or "").strip()
+    assigned = (data.get("assigned_to") or "specter_voss").strip()
+    notify = bool(data.get("notify_telegram"))
+    create_task = bool(data.get("create_task"))
+    if not action_text:
+        return jsonify({"ok": False, "error": "action_text required"}), 400
+
+    pca_key = f"pca_{int(datetime.datetime.now().timestamp())}_{(insight_key or 'adhoc')[:60]}"
+    body = (
+        f"Insight: {insight_title or insight_key or '(adhoc)'}\n"
+        f"Assigned: {assigned}\n"
+        f"From: Serge (Data Hub)\n"
+        f"Created: {datetime.datetime.now().isoformat(timespec='seconds')}\n\n"
+        f"COURSE OF ACTION:\n{action_text}\n"
+    )
+
+    # Store in empire_knowledge (category='pca')
+    try:
+        from core.context_db import get_pool
+        pool = get_pool()
+        conn = pool.getconn()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO empire_knowledge (key, value, category, updated_by) "
+            "VALUES (%s, %s, 'pca', 'serge') "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "
+            "updated_at = NOW(), updated_by = EXCLUDED.updated_by",
+            (pca_key, body),
+        )
+        conn.commit()
+        cur.close()
+        pool.putconn(conn)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"db: {e}"}), 500
+
+    result = {"ok": True, "key": pca_key, "notified": False, "task_id": None}
+
+    # Optional: notify the agent via Telegram
+    if notify:
+        ok, detail = _notify_agent(
+            assigned,
+            f"🎯 PCA from Serge — re: {insight_title or insight_key}\n\n{action_text}\n\n"
+            f"(stored as {pca_key})",
+        )
+        result["notified"] = ok
+        result["notify_detail"] = detail
+
+    # Optional: create a task in baza_projects.db
+    if create_task:
+        try:
+            import sqlite3, uuid as _uuid
+            db_path = os.path.join(DASHBOARD_DIR, "baza_projects.db")
+            sconn = sqlite3.connect(db_path)
+            scur = sconn.cursor()
+            task_id = _uuid.uuid4().hex[:8]
+            scur.execute(
+                "INSERT INTO tasks (id, title, status, priority, assigned_to, "
+                "notes, is_subtask, project_id, created_at, updated_at) "
+                "VALUES (?, ?, 'pending', 'high', ?, ?, 0, ?, "
+                "datetime('now'), datetime('now'))",
+                (task_id, (action_text[:80] or "PCA from Serge"), assigned,
+                 body, "proj-baza-empire"),
+            )
+            sconn.commit()
+            sconn.close()
+            result["task_id"] = task_id
+        except Exception as e:
+            result["task_error"] = str(e)
+
+    # Journal it
+    try:
+        from core.context_db import journal_log
+        journal_log(
+            agent_id=assigned, task_type="pca_received",
+            task_description=f"Course of action from Serge: {(action_text[:120])}",
+            result=body, success=True,
+            input_data={"insight_key": insight_key, "pca_key": pca_key},
+            requested_by="serge",
+        )
+    except Exception:
+        pass
+
+    return jsonify(result)
+
+
+@app.route('/api/datahub/feed-item/dispatch', methods=['POST'])
+def api_datahub_feed_item_dispatch():
+    """From a clicked Live Feed item: re-dispatch to the agent (Telegram DM)
+    or create a follow-up task. instruction body is free-form."""
+    data = request.json or {}
+    agent_id = (data.get("agent_id") or "").strip()
+    instruction = (data.get("instruction") or "").strip()
+    as_task = bool(data.get("as_task"))
+    notes = (data.get("notes") or "")[:1000]
+    if not agent_id or not instruction:
+        return jsonify({"ok": False, "error": "agent_id and instruction required"}), 400
+
+    if as_task:
+        try:
+            import sqlite3, uuid as _uuid
+            db_path = os.path.join(DASHBOARD_DIR, "baza_projects.db")
+            sconn = sqlite3.connect(db_path)
+            scur = sconn.cursor()
+            task_id = _uuid.uuid4().hex[:8]
+            scur.execute(
+                "INSERT INTO tasks (id, title, status, priority, assigned_to, "
+                "notes, is_subtask, project_id, created_at, updated_at) "
+                "VALUES (?, ?, 'pending', 'medium', ?, ?, 0, ?, "
+                "datetime('now'), datetime('now'))",
+                (task_id, instruction[:80], agent_id, notes, "proj-baza-empire"),
+            )
+            sconn.commit()
+            sconn.close()
+            return jsonify({"ok": True, "task_id": task_id})
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"task create failed: {e}"}), 500
+
+    ok, detail = _notify_agent(
+        agent_id, f"↗ Re-dispatch from Serge (Data Hub feed)\n\n{instruction}",
+    )
+    return jsonify({"ok": ok, "detail": detail})
+
+
 @app.route('/api/datahub/feed')
 def api_datahub_feed():
     """Live feed of recent agent activity from task_journal + recent artifacts."""
@@ -2595,7 +2902,8 @@ def api_datahub_feed():
         from core.context_db import get_conn, release_conn
         conn = get_conn()
         cur = conn.cursor()
-        q = "SELECT agent_id, task_type, task_description, result, success, created_at FROM task_journal"
+        q = ("SELECT id, agent_id, task_type, task_description, result, success, "
+             "created_at, COALESCE(verified, TRUE) FROM task_journal")
         params = []
         if agent_id:
             q += " WHERE agent_id = %s"
@@ -2604,14 +2912,19 @@ def api_datahub_feed():
         params.append(limit)
         cur.execute(q, params)
         for row in cur.fetchall():
+            # row[4] is result — show more in the modal but keep feed-card list lean
+            full_result = row[4] or ''
             feed.append({
                 'type': 'journal',
-                'agent_id': row[0],
-                'task_type': row[1],
-                'description': row[2][:200] if row[2] else '',
-                'result': row[3][:200] if row[3] else '',
-                'success': row[4],
-                'timestamp': row[5].isoformat() if row[5] else '',
+                'id': row[0],
+                'agent_id': row[1],
+                'task_type': row[2],
+                'description': row[3][:200] if row[3] else '',
+                'result': full_result[:4000],   # modal-friendly cap
+                'result_short': full_result[:200],
+                'success': row[5],
+                'timestamp': row[6].isoformat() if row[6] else '',
+                'verified': bool(row[7]),
             })
         cur.close()
         release_conn(conn)
@@ -11088,10 +11401,18 @@ if CLOUD_ENABLED:
             caption TEXT,
             tags TEXT,
             work_score INTEGER DEFAULT 0,
+            has_people INTEGER DEFAULT 0,
             classified_at TEXT DEFAULT (datetime('now')),
             model TEXT
         )""")
+        # Add has_people column if upgrading from old schema
+        try:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(ahb_media_vision)").fetchall()]
+            if 'has_people' not in cols:
+                conn.execute("ALTER TABLE ahb_media_vision ADD COLUMN has_people INTEGER DEFAULT 0")
+        except Exception: pass
         conn.execute("CREATE INDEX IF NOT EXISTS idx_amv_work ON ahb_media_vision(work_score)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_amv_people ON ahb_media_vision(has_people)")
         conn.commit(); conn.close()
     _init_ahb_media_attachments()
 
@@ -11274,6 +11595,7 @@ if CLOUD_ENABLED:
         search = (request.args.get('q', '') or '').strip()
         work_only = request.args.get('work_only', '') == 'true'
         min_score = int(request.args.get('min_work_score', 30))
+        people_filter = request.args.get('people', '')  # '' | 'yes' | 'no'
 
         where = [
             "c.media_type IN ('photo','video')",
@@ -11295,6 +11617,10 @@ if CLOUD_ENABLED:
             where.append("(c.filename LIKE ? OR v.caption LIKE ?)"); params.extend([f"%{search}%", f"%{search}%"])
         if work_only:
             where.append("v.work_score >= ?"); params.append(min_score)
+        if people_filter == 'yes':
+            where.append("v.has_people = 1")
+        elif people_filter == 'no':
+            where.append("(v.has_people = 0 OR v.has_people IS NULL)")
 
         where_sql = ' AND '.join(where)
         conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
@@ -11316,7 +11642,7 @@ if CLOUD_ENABLED:
         # Page query — include vision caption + work_score when available
         rows_sql = (f"SELECT c.*, a.project_id, a.phase, a.distance_m, "
                     f"a.source AS attach_source, p.title AS project_title, "
-                    f"v.caption, v.tags AS work_tags, v.work_score "
+                    f"v.caption, v.tags AS work_tags, v.work_score, v.has_people "
                     f"FROM cloud_media_index c "
                     f"LEFT JOIN ahb_media_attachments a ON a.media_filepath=c.filepath "
                     f"LEFT JOIN ahb_projects p ON p.id=a.project_id "
@@ -11508,10 +11834,12 @@ if CLOUD_ENABLED:
                 return jsonify({'success': False, 'error': 'not a file/symlink'}), 400
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)}), 500
-        # Drop the index row
+        # Drop the index row + any ahb_media_vision / ahb_media_attachments orphans
         try:
             conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
             conn.execute("DELETE FROM cloud_media_index WHERE filepath=?", (path,))
+            conn.execute("DELETE FROM ahb_media_vision WHERE media_filepath=?", (path,))
+            conn.execute("DELETE FROM ahb_media_attachments WHERE media_filepath=?", (path,))
             conn.commit(); conn.close()
         except Exception:
             pass
