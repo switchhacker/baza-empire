@@ -55,8 +55,26 @@ def add_no_cache(response):
 # ── AHB123 Business Hub — Schema Init ─────────────────────────────────────────
 
 def init_ahb_tables():
-    """Create AHB123 tables in baza_projects.db if they don't exist."""
-    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    """Create AHB123 tables in baza_projects.db if they don't exist.
+    Wrapped in try/except — when another process holds a write lock at boot
+    (e.g. a long-running dedup/backfill script) the tables already exist on
+    every deployed instance, so deferring is safe."""
+    try:
+        _init_ahb_tables_inner()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] init_ahb_tables deferred — DB busy: {e}", flush=True)
+
+def _init_ahb_tables_inner():
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+    conn.execute("PRAGMA busy_timeout = 8000")
+    # WAL is a persistent journal mode; setting it once on the DB file lets
+    # readers run concurrently with a writer (eliminates most "database is
+    # locked" races in the autosave + detail-modal save flows). Idempotent.
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+    except Exception:
+        pass
     c = conn.cursor()
     c.executescript("""
         CREATE TABLE IF NOT EXISTS ahb_clients (
@@ -1643,45 +1661,44 @@ def api_empire_pulse():
                 buckets = by_agent_files_daily.setdefault(ag, [0] * days)
                 buckets[day_idx] += 1
 
+    # Completion-verb dictionary — widened so we catch fabrications phrased
+    # as "submitted", "deployed", "ready", "live", etc. in addition to the
+    # original six. Each pattern is anchored with '%' wildcards on both sides.
+    COMPLETION_VERBS = [
+        "complete", "done", "delivered", "shipped", "finalized", "finished",
+        "submitted", "deployed", "implemented", "produced", "drafted",
+        "wrapped up", "terminated", " live", "live.", "live,", " ready",
+        "ready.", "ready,",
+    ]
+    verb_clause = " OR ".join(["lower(result) LIKE %s"] * len(COMPLETION_VERBS))
+    verb_params = [f"%{v}%" for v in COMPLETION_VERBS]
+
     # Talked-about-completion counts from task_journal + daily buckets
     by_agent_talked: dict[str, int] = {}
     by_agent_talked_daily: dict[str, list[int]] = {}
+    by_agent_fabricated: dict[str, int] = {}  # verified=FALSE rows
     try:
         from core.context_db import get_conn, release_conn
         conn = get_conn()
         cur = conn.cursor()
         cur.execute(
-            "SELECT agent_id, count(*) FROM task_journal "
-            "WHERE created_at > now() - interval %s "
-            "AND (lower(result) LIKE %s OR lower(result) LIKE %s "
-            "    OR lower(result) LIKE %s OR lower(result) LIKE %s "
-            "    OR lower(result) LIKE %s OR lower(result) LIKE %s) "
-            "GROUP BY agent_id",
-            (
-                f"{hours} hours",
-                "%complete%", "%done%", "%delivered%",
-                "%shipped%", "%finalized%", "%finished%",
-            ),
+            f"SELECT agent_id, count(*) FROM task_journal "
+            f"WHERE created_at > now() - interval %s AND ({verb_clause}) "
+            f"GROUP BY agent_id",
+            [f"{hours} hours"] + verb_params,
         )
         for ag, n in cur.fetchall():
             if ag:
                 by_agent_talked[ag] = n
         # Per-day daily counts for sparklines (one query, group by day index)
         cur.execute(
-            "SELECT agent_id, "
-            "       FLOOR(EXTRACT(EPOCH FROM (now() - created_at)) / 86400)::int AS d, "
-            "       count(*) "
-            "FROM task_journal "
-            "WHERE created_at > now() - interval %s "
-            "AND (lower(result) LIKE %s OR lower(result) LIKE %s "
-            "    OR lower(result) LIKE %s OR lower(result) LIKE %s "
-            "    OR lower(result) LIKE %s OR lower(result) LIKE %s) "
-            "GROUP BY agent_id, d",
-            (
-                f"{hours} hours",
-                "%complete%", "%done%", "%delivered%",
-                "%shipped%", "%finalized%", "%finished%",
-            ),
+            f"SELECT agent_id, "
+            f"       FLOOR(EXTRACT(EPOCH FROM (now() - created_at)) / 86400)::int AS d, "
+            f"       count(*) "
+            f"FROM task_journal "
+            f"WHERE created_at > now() - interval %s AND ({verb_clause}) "
+            f"GROUP BY agent_id, d",
+            [f"{hours} hours"] + verb_params,
         )
         for ag, d, n in cur.fetchall():
             if not ag:
@@ -1690,6 +1707,22 @@ def api_empire_pulse():
             d = int(d)
             if 0 <= d < days:
                 buckets[d] += n
+        # Fabrication counts — completion-claim rows that claim_verifier
+        # already marked verified=FALSE in journal_log(). Safe if column
+        # doesn't exist yet (treat as 0).
+        try:
+            cur.execute(
+                f"SELECT agent_id, count(*) FROM task_journal "
+                f"WHERE created_at > now() - interval %s AND verified = FALSE "
+                f"AND ({verb_clause}) "
+                f"GROUP BY agent_id",
+                [f"{hours} hours"] + verb_params,
+            )
+            for ag, n in cur.fetchall():
+                if ag:
+                    by_agent_fabricated[ag] = n
+        except Exception:
+            conn.rollback()
         cur.close()
         release_conn(conn)
     except Exception as e:
@@ -1724,10 +1757,12 @@ def api_empire_pulse():
         drift_score = round(
             100 * (0.60 * (1 - ratio) + 0.30 * volatility + 0.10 * volume_factor), 1
         )
+        fabricated = by_agent_fabricated.get(ag, 0)
         rows.append({
             "agent_id": ag,
             "talked_about_completing": talked,
             "shipped": shipped,
+            "fabricated": fabricated,
             "ratio": round(ratio, 2),
             "drift_score": drift_score,
             # Health: green if shipped >= talked, yellow if shipped > 0 but < talked,
@@ -1751,6 +1786,7 @@ def api_empire_pulse():
             "shipping": sum(1 for r in rows if r["health"] == "green"),
             "drifting": sum(1 for r in rows if r["health"] == "yellow"),
             "all_talk": sum(1 for r in rows if r["health"] == "red"),
+            "fabrications": sum(r["fabricated"] for r in rows),
         },
     })
 
@@ -4780,9 +4816,18 @@ def api_taskrunner_logs():
 # ── Routes — AHB123 Business Hub ──────────────────────────────────────────────
 
 def _ahb_db():
-    """Get SQLite connection to baza_projects.db with row factory."""
-    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    """SQLite connection to baza_projects.db with row factory and a lock-tolerant
+    `busy_timeout` so concurrent writers wait instead of failing instantly with
+    "database is locked." 30s tolerates an external batch importer holding the
+    write lock for tens of seconds at a time (e.g. the Takeout dedup commits
+    every ~24s). WAL is enabled once at startup so readers don't block writers."""
+    conn = sqlite3.connect(
+        os.path.join(DASHBOARD_DIR, 'baza_projects.db'),
+        timeout=30.0,
+    )
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
@@ -11018,6 +11063,212 @@ if CLOUD_ENABLED:
         added = _scan_media_dirs()
         return jsonify({'success': True, 'added': added})
 
+    # ── AHB123 Media Catalog ────────────────────────────────────────────────
+    # Bridges baza cloud media (cloud_media_index) → AHB projects via
+    # GPS-proximity + date-window auto-classification. Persists in
+    # ahb_media_attachments so manual phase overrides survive reclassification.
+
+    def _init_ahb_media_attachments():
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_media_attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_filepath TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            phase TEXT DEFAULT 'during',
+            distance_m REAL,
+            source TEXT DEFAULT 'manual',
+            notes TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(media_filepath, project_id)
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_ma_proj ON ahb_media_attachments(project_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_ma_media ON ahb_media_attachments(media_filepath)")
+        conn.commit(); conn.close()
+    _init_ahb_media_attachments()
+
+    def _haversine_m(lat1, lon1, lat2, lon2):
+        """Distance in meters between two lat/long points."""
+        import math
+        R = 6371000.0
+        p1, p2 = math.radians(lat1), math.radians(lat2)
+        dp = math.radians(lat2-lat1); dl = math.radians(lon2-lon1)
+        a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+        return 2 * R * math.asin(math.sqrt(min(1.0, math.sqrt(a))))
+
+    def _auto_classify_ahb_media(radius_m=200, before_days=14, after_days=42):
+        """For each baza media w/ GPS, find nearest project within radius_m where
+        date_taken falls in (start-before_days .. end+after_days). Insert into
+        ahb_media_attachments with source='auto'. Skips rows that already have a
+        manual attachment (UNIQUE(media_filepath, project_id) keeps it idempotent)."""
+        import datetime as _dt
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        projects = conn.execute(
+            "SELECT id, latitude, longitude, start_date, end_date FROM ahb_projects "
+            "WHERE latitude IS NOT NULL AND longitude IS NOT NULL").fetchall()
+        if not projects:
+            conn.close()
+            return {'attached': 0, 'projects': 0, 'media_scanned': 0}
+        # Bbox prefilter — ~200m ≈ 0.0018° lat. Don't bother with full Earth haversine
+        # for media that are clearly nowhere near any project.
+        deg = radius_m / 111000.0  # rough — fine for ≤1km
+        media = conn.execute(
+            "SELECT filepath, latitude, longitude, date_taken, media_type FROM cloud_media_index "
+            "WHERE latitude IS NOT NULL AND longitude IS NOT NULL "
+            "AND media_type IN ('photo','video')").fetchall()
+        attached = 0
+        for m in media:
+            best = None
+            for p in projects:
+                if abs(m['latitude']-p['latitude']) > deg*2 or abs(m['longitude']-p['longitude']) > deg*2:
+                    continue
+                d = _haversine_m(m['latitude'], m['longitude'], p['latitude'], p['longitude'])
+                if d > radius_m: continue
+                if best is None or d < best[1]:
+                    best = (p, d)
+            if not best: continue
+            p, dist = best
+            # Determine phase from date window
+            phase = 'during'
+            try:
+                if m['date_taken']:
+                    md = _dt.datetime.strptime(m['date_taken'][:10], '%Y-%m-%d').date()
+                    sd = _dt.datetime.strptime(p['start_date'][:10],'%Y-%m-%d').date() if p['start_date'] else None
+                    ed = _dt.datetime.strptime(p['end_date'][:10],'%Y-%m-%d').date() if p['end_date'] else None
+                    if sd and md < sd - _dt.timedelta(days=0):
+                        if md >= sd - _dt.timedelta(days=before_days):
+                            phase = 'before'
+                        else:
+                            continue  # too far before project window — skip
+                    elif ed and md > ed:
+                        if md <= ed + _dt.timedelta(days=after_days):
+                            phase = 'after'
+                        else:
+                            continue  # too far after — skip
+                    else:
+                        phase = 'during'
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO ahb_media_attachments "
+                    "(media_filepath, project_id, phase, distance_m, source) "
+                    "VALUES (?,?,?,?, 'auto')",
+                    (m['filepath'], p['id'], phase, round(dist, 1)))
+                if conn.total_changes > 0: attached += 1
+            except Exception:
+                pass
+        conn.commit(); conn.close()
+        return {'attached': attached, 'projects': len(projects), 'media_scanned': len(media)}
+
+    @app.route('/api/ahb123/media')
+    def api_ahb123_media():
+        """List work-related media (those attached to projects). Supports filters:
+        project_id, phase, type, year, no_project (orphan candidates w/ GPS but unmatched)."""
+        project_id = request.args.get('project_id', '')
+        phase = request.args.get('phase', '')
+        media_type = request.args.get('type', '')
+        year = request.args.get('year', '')
+        only_orphans = request.args.get('orphans', '') == 'true'
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        if only_orphans:
+            # Media w/ GPS but no project attachment yet
+            sql = ("SELECT c.* FROM cloud_media_index c "
+                   "LEFT JOIN ahb_media_attachments a ON a.media_filepath=c.filepath "
+                   "WHERE c.latitude IS NOT NULL AND a.media_filepath IS NULL "
+                   "AND c.media_type IN ('photo','video')")
+            params = []
+        else:
+            sql = ("SELECT c.*, a.project_id, a.phase, a.distance_m, a.source AS attach_source, "
+                   "p.title AS project_title, p.address AS project_address, "
+                   "p.latitude AS project_lat, p.longitude AS project_lon "
+                   "FROM ahb_media_attachments a "
+                   "JOIN cloud_media_index c ON c.filepath = a.media_filepath "
+                   "LEFT JOIN ahb_projects p ON p.id = a.project_id "
+                   "WHERE 1=1")
+            params = []
+            if project_id: sql += " AND a.project_id=?"; params.append(project_id)
+            if phase: sql += " AND a.phase=?"; params.append(phase)
+        if media_type: sql += " AND c.media_type=?"; params.append(media_type)
+        if year: sql += " AND substr(c.date_taken,1,4)=?"; params.append(year)
+        sql += " ORDER BY c.date_taken DESC, c.time_taken DESC LIMIT 5000"
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        # Stats
+        stats = {
+            'total': conn.execute("SELECT COUNT(DISTINCT media_filepath) FROM ahb_media_attachments").fetchone()[0],
+            'photos': conn.execute("SELECT COUNT(DISTINCT a.media_filepath) FROM ahb_media_attachments a JOIN cloud_media_index c ON c.filepath=a.media_filepath WHERE c.media_type='photo'").fetchone()[0],
+            'videos': conn.execute("SELECT COUNT(DISTINCT a.media_filepath) FROM ahb_media_attachments a JOIN cloud_media_index c ON c.filepath=a.media_filepath WHERE c.media_type='video'").fetchone()[0],
+            'projects': conn.execute("SELECT COUNT(DISTINCT project_id) FROM ahb_media_attachments").fetchone()[0],
+            'before': conn.execute("SELECT COUNT(*) FROM ahb_media_attachments WHERE phase='before'").fetchone()[0],
+            'during': conn.execute("SELECT COUNT(*) FROM ahb_media_attachments WHERE phase='during'").fetchone()[0],
+            'after':  conn.execute("SELECT COUNT(*) FROM ahb_media_attachments WHERE phase='after'").fetchone()[0],
+        }
+        # Projects list for filter dropdown
+        projects = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.title, p.address, p.latitude, p.longitude, "
+            "COUNT(a.id) AS media_count FROM ahb_projects p "
+            "LEFT JOIN ahb_media_attachments a ON a.project_id=p.id "
+            "GROUP BY p.id ORDER BY p.start_date DESC NULLS LAST, p.title").fetchall()]
+        conn.close()
+        return jsonify({'items': rows, 'stats': stats, 'projects': projects})
+
+    @app.route('/api/ahb123/media/classify', methods=['POST'])
+    def api_ahb123_media_classify():
+        data = request.json or {}
+        result = _auto_classify_ahb_media(
+            radius_m=int(data.get('radius_m', 200)),
+            before_days=int(data.get('before_days', 14)),
+            after_days=int(data.get('after_days', 42)))
+        return jsonify({'success': True, **result})
+
+    @app.route('/api/ahb123/media/attach', methods=['POST'])
+    def api_ahb123_media_attach():
+        data = request.json or {}
+        fp = data.get('media_filepath'); pid = data.get('project_id')
+        phase = data.get('phase', 'during')
+        if not fp or not pid:
+            return jsonify({'success': False, 'error': 'media_filepath and project_id required'}), 400
+        if phase not in ('before', 'during', 'after'):
+            return jsonify({'success': False, 'error': 'phase must be before/during/after'}), 400
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute(
+            "INSERT INTO ahb_media_attachments (media_filepath, project_id, phase, source) "
+            "VALUES (?,?,?, 'manual') "
+            "ON CONFLICT(media_filepath, project_id) DO UPDATE SET phase=excluded.phase, source='manual'",
+            (fp, pid, phase))
+        conn.commit(); conn.close()
+        return jsonify({'success': True})
+
+    @app.route('/api/ahb123/media/detach', methods=['POST'])
+    def api_ahb123_media_detach():
+        data = request.json or {}
+        fp = data.get('media_filepath'); pid = data.get('project_id')
+        if not fp or not pid:
+            return jsonify({'success': False, 'error': 'media_filepath and project_id required'}), 400
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.execute("DELETE FROM ahb_media_attachments WHERE media_filepath=? AND project_id=?", (fp, pid))
+        conn.commit(); conn.close()
+        return jsonify({'success': True})
+
+    @app.route('/api/ahb123/media/map')
+    def api_ahb123_media_map():
+        """Pin data for the live map: every project w/ GPS plus its attached-media count and a cover thumbnail."""
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT p.id, p.title, p.address, p.latitude, p.longitude, p.start_date, p.end_date, p.status, "
+            "COUNT(a.id) AS media_count, "
+            "(SELECT a2.media_filepath FROM ahb_media_attachments a2 "
+            "  WHERE a2.project_id=p.id ORDER BY a2.id LIMIT 1) AS cover_path "
+            "FROM ahb_projects p "
+            "LEFT JOIN ahb_media_attachments a ON a.project_id=p.id "
+            "WHERE p.latitude IS NOT NULL AND p.longitude IS NOT NULL "
+            "GROUP BY p.id "
+            "ORDER BY media_count DESC").fetchall()
+        conn.close()
+        return jsonify({'pins': [dict(r) for r in rows]})
+
     @app.route('/api/cloud/media/delete', methods=['POST'])
     def api_cloud_media_delete():
         """Erase a media item: symlink (if any), its target file (if any),
@@ -11543,26 +11794,37 @@ def api_review_photo(fname):
 # ── EstimatOR Super Tool: 3-method estimation ───────────────────────────────
 
 def _ensure_estimator_settings():
-    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
-    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_estimator_settings (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        crew_day_rate REAL DEFAULT 800,
-        lead_day_rate REAL DEFAULT 1200,
-        helper_day_rate REAL DEFAULT 450,
-        sub_day_rate REAL DEFAULT 1500,
-        materials_pct REAL DEFAULT 0.40,
-        overhead_pct REAL DEFAULT 0.15,
-        profit_pct REAL DEFAULT 0.18,
-        admin_fee_pct REAL DEFAULT 0.05,
-        permit_fee_default REAL DEFAULT 350,
-        contingency_pct REAL DEFAULT 0.10,
-        last_low_high_factor_low REAL DEFAULT 0.75,
-        last_low_high_factor_high REAL DEFAULT 1.30,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )""")
-    conn.execute("INSERT OR IGNORE INTO ahb_estimator_settings (id) VALUES (1)")
-    conn.commit()
-    conn.close()
+    """Idempotent init: create the settings table and seed row 1 if missing.
+
+    Wrapped in try/except so the dashboard can still start when another
+    process holds a write lock on `baza_projects.db` (e.g. a long-running
+    backfill/dedup script). The seed row is already present on every
+    deployed instance — losing this one-time init at boot has no functional
+    impact; the routes that read it default to sensible values on miss."""
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+        conn.execute("PRAGMA busy_timeout = 8000")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_estimator_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            crew_day_rate REAL DEFAULT 800,
+            lead_day_rate REAL DEFAULT 1200,
+            helper_day_rate REAL DEFAULT 450,
+            sub_day_rate REAL DEFAULT 1500,
+            materials_pct REAL DEFAULT 0.40,
+            overhead_pct REAL DEFAULT 0.15,
+            profit_pct REAL DEFAULT 0.18,
+            admin_fee_pct REAL DEFAULT 0.05,
+            permit_fee_default REAL DEFAULT 350,
+            contingency_pct REAL DEFAULT 0.10,
+            last_low_high_factor_low REAL DEFAULT 0.75,
+            last_low_high_factor_high REAL DEFAULT 1.30,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("INSERT OR IGNORE INTO ahb_estimator_settings (id) VALUES (1)")
+        conn.commit()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_estimator_settings deferred — DB busy: {e}", flush=True)
 _ensure_estimator_settings()
 
 
@@ -11902,7 +12164,9 @@ def api_ahb_photos_serve(fname):
 # ── Phil's Document Library + DocPrep / Application Packages ────────────────
 
 def _ensure_docprep_tables():
-    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+   try:
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+    conn.execute("PRAGMA busy_timeout = 8000")
     conn.execute("""CREATE TABLE IF NOT EXISTS ahb_documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         file_path TEXT NOT NULL UNIQUE,
@@ -11978,6 +12242,8 @@ def _ensure_docprep_tables():
             pass
     conn.commit()
     conn.close()
+   except sqlite3.OperationalError as e:
+    print(f"[startup] _ensure_docprep_tables deferred — DB busy: {e}", flush=True)
 _ensure_docprep_tables()
 
 
@@ -12851,55 +13117,63 @@ def api_doc_ask(did):
 # ── Uncle Sam: Business Profile + PA LLC Tax Requirements ──────────────────
 
 def _ensure_business_profile_table():
-    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
-    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_business_profile (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        legal_name TEXT, dba TEXT, ein TEXT, ssn_last4 TEXT,
-        structure_type TEXT DEFAULT 'single_member_llc',
-        state_of_formation TEXT DEFAULT 'PA',
-        formation_date TEXT, registered_agent TEXT,
-        business_address TEXT, business_phone TEXT, business_email TEXT,
-        fiscal_year_end TEXT DEFAULT '12-31',
-        accounting_method TEXT DEFAULT 'cash',
-        naics_code TEXT, hic_number TEXT, hic_expires TEXT,
-        pa_tax_id TEXT, philly_tax_account TEXT,
-        has_employees INTEGER DEFAULT 0,
-        collects_sales_tax INTEGER DEFAULT 0,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )""")
-    # Add household tax inputs (for tax estimate). Idempotent ALTER for existing DBs.
-    for col, ddl in (
-        ('filing_status', "ALTER TABLE ahb_business_profile ADD COLUMN filing_status TEXT DEFAULT 'single'"),
-        ('dependents',    "ALTER TABLE ahb_business_profile ADD COLUMN dependents INTEGER DEFAULT 0"),
-    ):
-        try: conn.execute(ddl)
-        except sqlite3.OperationalError: pass  # column already exists
-    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_tax_filings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        requirement_id TEXT NOT NULL,
-        period TEXT,
-        filed_date TEXT NOT NULL,
-        amount_paid REAL,
-        confirmation_number TEXT,
-        notes TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )""")
-    # Per-year personal "other income" entries used by the Uncle Sam tax estimate
-    # (W-2 wages from a day job, 1099 contract, dividends, interest, rental, etc.)
-    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_other_income (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        year TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        source TEXT,
-        amount REAL NOT NULL DEFAULT 0,
-        notes TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )""")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_other_income_year ON ahb_other_income(year)")
-    # Seed empty row
-    conn.execute("INSERT OR IGNORE INTO ahb_business_profile (id, legal_name) VALUES (1, 'All Home Building Co LLC')")
-    conn.commit()
-    conn.close()
+    """Idempotent init for business profile + tax tables. Wrapped in try/except
+    so a busy DB (e.g. long-running backfill holding a write lock) doesn't
+    crash the dashboard at boot — the tables already exist on every deployed
+    instance and the seed row is already there."""
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+        conn.execute("PRAGMA busy_timeout = 8000")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_business_profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            legal_name TEXT, dba TEXT, ein TEXT, ssn_last4 TEXT,
+            structure_type TEXT DEFAULT 'single_member_llc',
+            state_of_formation TEXT DEFAULT 'PA',
+            formation_date TEXT, registered_agent TEXT,
+            business_address TEXT, business_phone TEXT, business_email TEXT,
+            fiscal_year_end TEXT DEFAULT '12-31',
+            accounting_method TEXT DEFAULT 'cash',
+            naics_code TEXT, hic_number TEXT, hic_expires TEXT,
+            pa_tax_id TEXT, philly_tax_account TEXT,
+            has_employees INTEGER DEFAULT 0,
+            collects_sales_tax INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        # Add household tax inputs (for tax estimate). Idempotent ALTER for existing DBs.
+        for col, ddl in (
+            ('filing_status', "ALTER TABLE ahb_business_profile ADD COLUMN filing_status TEXT DEFAULT 'single'"),
+            ('dependents',    "ALTER TABLE ahb_business_profile ADD COLUMN dependents INTEGER DEFAULT 0"),
+        ):
+            try: conn.execute(ddl)
+            except sqlite3.OperationalError: pass  # column already exists
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_tax_filings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            requirement_id TEXT NOT NULL,
+            period TEXT,
+            filed_date TEXT NOT NULL,
+            amount_paid REAL,
+            confirmation_number TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        # Per-year personal "other income" entries used by the Uncle Sam tax estimate
+        # (W-2 wages from a day job, 1099 contract, dividends, interest, rental, etc.)
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_other_income (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            source TEXT,
+            amount REAL NOT NULL DEFAULT 0,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ahb_other_income_year ON ahb_other_income(year)")
+        # Seed empty row
+        conn.execute("INSERT OR IGNORE INTO ahb_business_profile (id, legal_name) VALUES (1, 'All Home Building Co LLC')")
+        conn.commit()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_business_profile_table deferred — DB busy: {e}", flush=True)
 _ensure_business_profile_table()
 
 

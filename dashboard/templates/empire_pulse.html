@@ -104,6 +104,7 @@ async function load(){
     <div class="stat green"><div class="stat-val">${t.shipping||0}</div><div class="stat-lbl">Shipping</div></div>
     <div class="stat yellow"><div class="stat-val">${t.drifting||0}</div><div class="stat-lbl">Drifting</div></div>
     <div class="stat red"><div class="stat-val">${t.all_talk||0}</div><div class="stat-lbl">All-Talk</div></div>
+    <div class="stat red"><div class="stat-val">${t.fabrications||0}</div><div class="stat-lbl">Fabrications</div></div>
     <div class="stat"><div class="stat-val">${t.agents||0}</div><div class="stat-lbl">Agents Tracked</div></div>
   `;
   const grid = document.getElementById('grid');
@@ -134,6 +135,7 @@ async function load(){
       <div class="nums">
         <span>claimed completions<b>${a.talked_about_completing}</b></span>
         <span>artifacts shipped<b>${a.shipped}</b></span>
+        ${(a.fabricated||0) > 0 ? `<span style="color:#ff5555">fabrications<b style="color:#ff5555">${a.fabricated}</b></span>` : ''}
       </div>
       <div style="margin-top:10px">${sparkline}</div>
       <div class="verdict">${verdict}</div>

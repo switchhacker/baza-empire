@@ -677,7 +677,7 @@
   <div class="sub-tab" data-tab="noted" onclick="switchTab('noted')"><span class="sub-tab-icon">📌</span> Sticky Pad</div>
   <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
   <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
-  <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">📸</span> Photos</div>
+  <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">🎥</span> Media</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
 </div>
 <!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
@@ -2625,114 +2625,62 @@
 </div>
 
 <!-- ===================== REVIEWS TAB ===================== -->
-<!-- ============================ PHOTOS ============================ -->
+<!-- ============================ MEDIA (was Photos) ============================ -->
 <div class="tab-pane" id="tab-photos">
   <div class="page-header">
     <div>
-      <div class="page-title">Project Photos</div>
-      <div class="page-sub">Before, during &amp; after photos of every job — organized by date, location, phase</div>
+      <div class="page-title">&#127909; Project Media Catalog</div>
+      <div class="page-sub">Work photos &amp; videos from baza cloud — auto-classified by GPS &amp; date, organized by timeline, project &amp; phase</div>
     </div>
     <div style="display:flex;gap:8px">
-      <button class="btn-primary" onclick="document.getElementById('photo-bulk-input').click()">&#11014; Bulk Upload</button>
-      <button class="btn-secondary" onclick="openPhotoMetaModal()">&#9881; Set Metadata</button>
+      <button class="btn-secondary" onclick="reclassifyMedia()" id="media-reclassify-btn">&#10227; Reclassify (GPS+date)</button>
+      <button class="btn-primary" id="media-view-toggle" onclick="toggleMediaView()">&#128205; Map View</button>
     </div>
-  </div>
-
-  <input type="file" id="photo-bulk-input" accept="image/*" multiple style="display:none" onchange="handleBulkPhotoUpload(this)">
-
-  <!-- iCloud Migration Card -->
-  <div style="background:linear-gradient(135deg,#0a0a16,#0d0d1e);border:1px solid #1a3a5a;border-radius:14px;padding:18px;margin-bottom:20px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,#4da6ff,#0066cc);display:flex;align-items:center;justify-content:center;font-size:22px">&#9729;</div>
-        <div>
-          <div style="font-size:15px;font-weight:800;color:#fff">iCloud → Baza Migration</div>
-          <div style="font-size:11px;color:#666" id="icloud-status-line">Loading...</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-secondary" onclick="runGeocodeProjects()" id="geocode-btn">&#127759; Geocode Projects</button>
-        <button class="btn-secondary" onclick="openIcloudAddModal()">+ Add iCloud Account</button>
-        <button class="btn-primary" onclick="runIcloudSync()" id="icloud-sync-btn">&#10227; Sync Now</button>
-      </div>
-    </div>
-    <div id="geocode-status-line" style="font-size:11px;color:#555;margin-bottom:10px"></div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
-      <div style="background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:10px"><div style="font-size:18px;font-weight:800;color:#4da6ff" id="ic-accounts">—</div><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px">Accounts</div></div>
-      <div style="background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:10px"><div style="font-size:18px;font-weight:800;color:#fff" id="ic-synced">—</div><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px">Total Synced</div></div>
-      <div style="background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:10px"><div style="font-size:18px;font-weight:800;color:#f5a623" id="ic-jobsite">—</div><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px">Jobsite Photos</div></div>
-      <div style="background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:10px"><div style="font-size:18px;font-weight:800;color:#00d084" id="ic-personal">—</div><div style="font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1px">Personal Media</div></div>
-    </div>
-    <div id="icloud-accounts-list" style="display:flex;flex-direction:column;gap:6px"></div>
   </div>
 
   <!-- Stats row -->
   <div class="stats-row">
-    <div class="stat-card stat-total"><div class="stat-val" id="photo-total">&mdash;</div><div class="stat-lbl">Total Photos</div></div>
-    <div class="stat-card stat-pending"><div class="stat-val" id="photo-before">&mdash;</div><div class="stat-lbl">Before</div></div>
-    <div class="stat-card stat-progress"><div class="stat-val" id="photo-during">&mdash;</div><div class="stat-lbl">During</div></div>
-    <div class="stat-card stat-paid"><div class="stat-val" id="photo-after">&mdash;</div><div class="stat-lbl">After</div></div>
-    <div class="stat-card stat-active"><div class="stat-val" id="photo-projects">&mdash;</div><div class="stat-lbl">Projects</div></div>
+    <div class="stat-card stat-total"><div class="stat-val" id="media-total">&mdash;</div><div class="stat-lbl">Work Media</div></div>
+    <div class="stat-card stat-progress"><div class="stat-val" id="media-photos">&mdash;</div><div class="stat-lbl">Photos</div></div>
+    <div class="stat-card stat-paid"><div class="stat-val" id="media-videos">&mdash;</div><div class="stat-lbl">Videos</div></div>
+    <div class="stat-card stat-active"><div class="stat-val" id="media-projects">&mdash;</div><div class="stat-lbl">Projects</div></div>
+    <div class="stat-card stat-pending"><div class="stat-val" id="media-phase-breakdown">&mdash;</div><div class="stat-lbl">Before / During / After</div></div>
   </div>
 
   <!-- Filters -->
   <div class="filter-bar">
-    <input class="search-box" type="text" id="photo-search" placeholder="Search project, location, notes..." oninput="filterPhotos()">
-    <select class="filter-select" id="photo-phase-filter" onchange="filterPhotos()">
+    <select class="filter-select" id="media-project-filter" onchange="loadMedia()">
+      <option value="">All Projects</option>
+    </select>
+    <select class="filter-select" id="media-phase-filter" onchange="loadMedia()">
       <option value="">All Phases</option>
       <option value="before">Before</option>
       <option value="during">During</option>
       <option value="after">After</option>
     </select>
-    <select class="filter-select" id="photo-cat-filter" onchange="filterPhotos()">
-      <option value="">All Categories</option>
+    <select class="filter-select" id="media-type-filter" onchange="loadMedia()">
+      <option value="">All Types</option>
+      <option value="photo">Photos</option>
+      <option value="video">Videos</option>
     </select>
-    <select class="filter-select" id="photo-project-filter" onchange="filterPhotos()">
-      <option value="">All Projects</option>
-    </select>
-    <select class="filter-select" id="photo-year-filter" onchange="filterPhotos()">
+    <select class="filter-select" id="media-year-filter" onchange="loadMedia()">
       <option value="">All Years</option>
     </select>
-    <select class="filter-select" id="photo-sort" onchange="renderPhotos(filteredPhotos)">
-      <option value="newest">Newest First</option>
-      <option value="oldest">Oldest First</option>
-      <option value="project">By Project</option>
-      <option value="location">By Location</option>
-    </select>
   </div>
 
-  <!-- Pre-upload metadata modal preset (inline panel) -->
-  <div id="photo-meta-panel" style="display:none;background:#0a0a16;border:1px solid #1a3a5a;border-radius:12px;padding:16px;margin-bottom:16px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:700;color:#00bcd4;text-transform:uppercase;letter-spacing:1px">Default Metadata for Next Upload</div>
-      <button onclick="document.getElementById('photo-meta-panel').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:18px">&times;</button>
+  <!-- Grid view (default) -->
+  <div id="media-grid-view">
+    <div id="media-timeline" style="margin-top:8px">
+      <div style="text-align:center;padding:40px;color:#444;font-size:13px">Loading media...</div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-      <input id="meta-project" placeholder="Project name" style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px;color:#e0e0e0;font-size:13px">
-      <input id="meta-client" placeholder="Client name" style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px;color:#e0e0e0;font-size:13px">
-      <input id="meta-location" placeholder="Location / Address" style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px;color:#e0e0e0;font-size:13px">
-      <select id="meta-phase" style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px;color:#e0e0e0;font-size:13px">
-        <option value="">Phase...</option>
-        <option value="before">Before</option>
-        <option value="during">During</option>
-        <option value="after">After</option>
-      </select>
-      <select id="meta-category" style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px;color:#e0e0e0;font-size:13px">
-        <option value="">Category...</option>
-        <option>Kitchen</option><option>Bathroom</option><option>Basement</option>
-        <option>Roofing</option><option>Flooring</option><option>Painting</option>
-        <option>Deck</option><option>Plumbing</option><option>Electrical</option>
-        <option>Exterior</option><option>Demo</option><option>Framing</option>
-        <option>Other</option>
-      </select>
-      <input id="meta-notes" placeholder="Notes" style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px;color:#e0e0e0;font-size:13px">
-    </div>
-    <div style="font-size:11px;color:#555;margin-top:10px">These values apply to all files uploaded next. Date/time/GPS are auto-extracted from photo EXIF when available.</div>
   </div>
 
-  <!-- Photo grid -->
-  <div id="photo-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px">
-    <div style="text-align:center;padding:40px;color:#444;font-size:13px;grid-column:1/-1">Loading photos...</div>
+  <!-- Map view -->
+  <div id="media-map-view" style="display:none;margin-top:8px">
+    <div style="background:#0a0a16;border:1px solid #1a3a5a;border-radius:12px;padding:6px">
+      <div id="media-map" style="height:600px;border-radius:10px;overflow:hidden"></div>
+    </div>
+    <div id="media-map-project-detail" style="margin-top:14px;display:none"></div>
   </div>
 </div>
 
@@ -3394,10 +3342,11 @@
     <input type="hidden" id="edit-invoice-id">
     <div class="form-row">
       <div class="form-group">
-        <label>Client</label>
-        <select id="invoice-client">
-          <option value="">Select client...</option>
-        </select>
+        <label>Client <span style="font-size:10px;font-weight:400;color:#555">— type to search; new names auto-create a client</span></label>
+        <input type="text" id="invoice-client-name" list="invoice-client-list" placeholder="Start typing a client name..." oninput="onInvoiceClientInput()" autocomplete="off">
+        <datalist id="invoice-client-list"></datalist>
+        <input type="hidden" id="invoice-client">
+        <div id="invoice-client-status" style="font-size:10px;margin-top:3px;min-height:14px"></div>
       </div>
       <div class="form-group">
         <label>Project</label>
@@ -4292,8 +4241,12 @@ function _renderLeafNav(groupId, activeLeaf){
   }).join('');
 }
 function switchTab(tabName){
-  // Group click: redirect to its first child (or last-selected child if remembered)
-  if(TAB_GROUPS[tabName]){
+  // If a tab-pane exists for this name, treat it as a leaf — even if a
+  // same-named group key also exists (e.g. the Projects super-tab and the
+  // Active Projects leaf both go by 'projects'). This prevents the otherwise
+  // infinite recursion when group_id == first_child_id.
+  const isLeaf = !!document.getElementById('tab-' + tabName);
+  if(TAB_GROUPS[tabName] && !isLeaf){
     const remembered = sessionStorage.getItem('ahbLeaf:'+tabName);
     const target = (remembered && TAB_GROUPS[tabName].children.includes(remembered)) ? remembered : TAB_GROUPS[tabName].children[0];
     return switchTab(target);
@@ -4530,13 +4483,16 @@ async function deleteClient(id){
 }
 
 function populateClientDropdowns(){
-  // Invoice modal still uses a select
-  const sel=document.getElementById('invoice-client');
-  if(sel){
-    const val=sel.value;
-    sel.innerHTML='<option value="">Select client...</option>';
-    allClients.forEach(c=>sel.add(new Option(c.name,c.id)));
-    sel.value=val;
+  // Invoice modal now uses a datalist combobox (type-to-search + auto-create)
+  const idl=document.getElementById('invoice-client-list');
+  if(idl){
+    idl.innerHTML='';
+    allClients.forEach(c=>{
+      const opt=document.createElement('option');
+      opt.value=c.name;
+      opt.dataset.id=c.id;
+      idl.appendChild(opt);
+    });
   }
   // Project modal uses a datalist combobox (type-to-search + add new)
   const dl=document.getElementById('project-client-list');
@@ -4570,6 +4526,23 @@ function onClientNameInput(){
     hidden.value='';
     status.style.color='#f5a623';
     status.innerHTML='&#43; New client — will be created on save';
+  }
+}
+
+function onInvoiceClientInput(){
+  const name = (document.getElementById('invoice-client-name').value || '').trim();
+  const status = document.getElementById('invoice-client-status');
+  const hidden = document.getElementById('invoice-client');
+  if(!name){ hidden.value=''; status.textContent=''; return; }
+  const match = allClients.find(c => (c.name||'').toLowerCase() === name.toLowerCase());
+  if(match){
+    hidden.value = match.id;
+    status.style.color = '#00d084';
+    status.innerHTML = '&#10003; Existing client';
+  } else {
+    hidden.value = '';   // signal "new" — saveInvoice will create on submit
+    status.style.color = '#f5a623';
+    status.innerHTML = '&#43; New client — will be created on save';
   }
 }
 
@@ -5184,6 +5157,8 @@ async function openInvoiceModal(){
   document.getElementById('edit-invoice-id').value='';
   document.getElementById('invoice-modal-title').textContent='New Invoice';
   document.getElementById('invoice-client').value='';
+  document.getElementById('invoice-client-name').value='';
+  document.getElementById('invoice-client-status').textContent='';
   document.getElementById('invoice-project').value='';
   document.getElementById('invoice-status').value='draft';
   document.getElementById('invoice-due').value='';
@@ -5205,6 +5180,13 @@ async function editInvoice(id){
   document.getElementById('edit-invoice-id').value=id;
   document.getElementById('invoice-modal-title').textContent='Edit Invoice #'+(inv.invoice_number||id);
   document.getElementById('invoice-client').value=inv.client_id||'';
+  // Populate the visible name input from the matching client; fall back to
+  // the invoice's stored client_name when the client_id is stale/missing.
+  const cli = inv.client_id ? allClients.find(c=>String(c.id)===String(inv.client_id)) : null;
+  const displayName = (cli && cli.name) || inv.client_name || '';
+  document.getElementById('invoice-client-name').value = displayName;
+  // Recompute the existing/new status indicator for what's now in the field.
+  onInvoiceClientInput();
   document.getElementById('invoice-project').value=inv.project_id||'';
   document.getElementById('invoice-status').value=inv.status||'draft';
   document.getElementById('invoice-due').value=inv.due_date||'';
@@ -5455,8 +5437,40 @@ async function saveInvoice(){
   if(invoiceOverrides.subtotal!=null) subtotal=invoiceOverrides.subtotal;
   if(invoiceOverrides.total!=null)    total=invoiceOverrides.total;
   else                                 total=subtotal+tax;
+  // Resolve the client: if the user typed a name that doesn't match an
+  // existing client, create one on the fly so the new entry lands in the
+  // Clients list too. (Existing names are linked via id; empty name = unlinked.)
+  let clientId = document.getElementById('invoice-client').value || '';
+  const typedName = (document.getElementById('invoice-client-name').value || '').trim();
+  if(!clientId && typedName){
+    try{
+      const r = await fetch('/api/ahb/clients', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name: typedName, status:'lead', source:'invoice'})
+      });
+      const d = await r.json();
+      if(d && d.id){
+        clientId = d.id;
+        // Mirror into local cache so subsequent edits see the new client
+        // without a full reload.
+        allClients.push({id:d.id, name:typedName, status:'lead'});
+        populateClientDropdowns();
+        document.getElementById('invoice-client').value = clientId;
+        const st = document.getElementById('invoice-client-status');
+        if(st){ st.style.color='#00d084'; st.innerHTML='&#10003; Client created'; }
+      } else {
+        throw new Error((d && d.error) || 'client create failed');
+      }
+    }catch(e){
+      showToast('Could not create client: '+e.message, 'error');
+      return;
+    }
+  }
+
   const data={
-    client_id:document.getElementById('invoice-client').value||null,
+    client_id: clientId || null,
+    client_name: typedName || null,
     project_id:document.getElementById('invoice-project').value||null,
     status:document.getElementById('invoice-status').value,
     due_date:document.getElementById('invoice-due').value||null,
@@ -5474,6 +5488,8 @@ async function saveInvoice(){
     closeModal('invoiceModal');
     showToast(id?'Invoice updated':'Invoice created');
     loadInvoices();
+    // Refresh clients so the new client is visible in the Clients tab too.
+    if(typeof loadClients === 'function') loadClients();
   }catch(e){
     showToast('Error: '+e.message,'error');
   }
