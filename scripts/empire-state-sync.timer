@@ -1,0 +1,10 @@
+[Unit]
+Description=Baza Empire — nightly EMPIRE_STATE.md RECENT sync
+
+[Timer]
+OnCalendar=*-*-* 00:05:00
+Persistent=true
+Unit=empire-state-sync.service
+
+[Install]
+WantedBy=timers.target

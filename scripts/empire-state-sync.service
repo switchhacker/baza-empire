@@ -1,0 +1,11 @@
+[Unit]
+Description=Baza Empire — EMPIRE_STATE.md RECENT auto-sync
+After=network.target
+
+[Service]
+Type=oneshot
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+ExecStart=/usr/bin/env bash /home/switchhacker/baza-empire/agent-framework-v3/scripts/empire_state_recent_sync.sh
+StandardOutput=journal
+StandardError=journal
