@@ -47,14 +47,25 @@
     .sp-note .sp-actions{position:absolute;bottom:6px;right:8px;display:flex;gap:6px;opacity:0;transition:opacity .2s}
     .sp-note:hover .sp-actions,.sp-note.focused .sp-actions{opacity:1}
     .sp-note:hover{transform:scale(1.18) rotate(0deg) !important;z-index:50;box-shadow:0 20px 44px rgba(0,0,0,.7),0 5px 12px rgba(0,0,0,.5)}
+    .sp-note.dragging{transition:none !important;cursor:grabbing !important;z-index:200;box-shadow:0 26px 50px rgba(0,0,0,.85),0 8px 18px rgba(0,0,0,.65)}
+    .sp-note.dragging:hover{transform:scale(1.06) rotate(0deg) !important}
+    .sp-swatches{position:absolute;top:8px;left:10px;display:flex;gap:4px;align-items:center}
+    .sp-swatch{width:16px;height:16px;border-radius:50%;border:1px solid rgba(0,0,0,.35);cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s,outline .15s}
+    .sp-swatch:hover{transform:scale(1.25)}
+    .sp-swatch.active{outline:2px solid rgba(0,0,0,.55);outline-offset:1px;transform:scale(1.15)}
+    .sp-swatch.color-1{background:linear-gradient(135deg,#d9f99d,#bef264)}
+    .sp-swatch.color-2{background:linear-gradient(135deg,#fde68a,#facc15)}        /* canary */
+    .sp-swatch.color-3{background:linear-gradient(135deg,#fbcfe8,#f472b6)}        /* pink */
+    .sp-swatch.color-4{background:linear-gradient(135deg,#bae6fd,#38bdf8)}        /* sky */
+    .sp-swatch.color-5{background:linear-gradient(135deg,#ddd6fe,#a78bfa)}        /* lavender */
     .sp-note.focused{width:420px;min-height:420px;font-size:16px;z-index:100;box-shadow:0 24px 50px rgba(0,0,0,.75),0 6px 14px rgba(0,0,0,.55),0 0 0 1px rgba(190,242,100,.15)}
     .sp-note.focused .sp-content{max-height:320px;font-size:14px}
     .sp-note.focused:hover{transform:translateX(-50%) scale(1.02) !important}
-    .sp-note.color-1{background:linear-gradient(135deg,#d9f99d,#bef264)}
-    .sp-note.color-2{background:linear-gradient(135deg,#bef264,#a3e635)}
-    .sp-note.color-3{background:linear-gradient(135deg,#ecfccb,#d9f99d)}
-    .sp-note.color-4{background:linear-gradient(135deg,#a3e635,#84cc16)}
-    .sp-note.color-5{background:linear-gradient(135deg,#d9f99d,#a3e635)}
+    .sp-note.color-1{background:linear-gradient(135deg,#d9f99d,#bef264)} /* lime */
+    .sp-note.color-2{background:linear-gradient(135deg,#fde68a,#facc15)} /* canary */
+    .sp-note.color-3{background:linear-gradient(135deg,#fbcfe8,#f472b6)} /* pink */
+    .sp-note.color-4{background:linear-gradient(135deg,#bae6fd,#38bdf8)} /* sky */
+    .sp-note.color-5{background:linear-gradient(135deg,#ddd6fe,#a78bfa)} /* lavender */
     .sp-note.dimmed{opacity:.35;filter:saturate(.55)}
     .sp-iconbtn{background:rgba(0,0,0,.12);color:#0d1a0d;border:none;border-radius:4px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
     .sp-iconbtn:hover{background:rgba(0,0,0,.25)}
@@ -1044,6 +1055,29 @@
       <tbody id="receipts-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
     </table>
   </div>
+
+  <!-- Last-N receipts inline editor -->
+  <div class="panel" data-no-autosave style="margin-top:24px;border-color:#10b981">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+      <div>
+        <h3 style="color:#a7f3d0;margin:0">📋 Quick Edit Last Receipts</h3>
+        <div style="font-size:11px;color:#666;margin-top:2px">Edit any field inline — changes save as you stop typing</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:11px;color:#888">Show last</span>
+        <input type="number" id="rqe-count" value="25" min="1" max="500" style="width:70px;padding:6px 8px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px;color:#a7f3d0;font-weight:700">
+        <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(10)">10</button>
+        <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(25)">25</button>
+        <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(50)">50</button>
+        <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(100)">100</button>
+        <button class="btn btn-sm btn-primary" onclick="rqeLoad()">Load</button>
+      </div>
+    </div>
+    <div id="rqe-rows-host" style="overflow-x:auto">
+      <div style="text-align:center;padding:30px;color:#444;font-size:12px">Click <strong>Load</strong> to pull the most recent receipts.</div>
+    </div>
+  </div>
+
   <div class="panel" style="margin-top:24px">
     <h3>Quick Add Receipt</h3>
     <div class="form-row">
@@ -5904,6 +5938,101 @@ async function openInvoiceFromProject(){
 
 /* ===================== RECEIPTS ===================== */
 let receiptViewMode='kanban';
+
+/* ----- Quick Edit: last N receipts inline editor ----- */
+const RQE_CATEGORIES = ['Materials','Tools','Fuel','Food','Office supplies','Clothes','Other'];
+const RQE_PAYMENTS   = ['', 'Cash','Credit','Debit','Check','ACH','Other'];
+const _rqeSaveTimers = {};
+
+function rqeSetCount(n){
+  const el = document.getElementById('rqe-count');
+  if(el){ el.value = n; rqeLoad(); }
+}
+async function rqeLoad(){
+  const host = document.getElementById('rqe-rows-host');
+  if(!host) return;
+  const nRaw = parseInt(document.getElementById('rqe-count').value, 10);
+  const n = Math.max(1, Math.min(500, isNaN(nRaw) ? 25 : nRaw));
+  host.innerHTML = '<div style="text-align:center;padding:24px;color:#666">Loading…</div>';
+  try{
+    const res = await fetch('/api/ahb/receipts');
+    let rows = await res.json();
+    rows.sort((a,b)=>(b.receipt_date||b.created_at||'').localeCompare(a.receipt_date||a.created_at||''));
+    rows = rows.slice(0, n);
+    if(!rows.length){
+      host.innerHTML = '<div style="text-align:center;padding:24px;color:#666">No receipts yet.</div>';
+      return;
+    }
+    host.innerHTML = `
+      <div style="display:grid;grid-template-columns:1.6fr 110px 100px 1fr 110px 1.4fr 32px;gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e">
+        <div>Vendor / Store</div><div>Date</div><div>Amount</div><div>Category</div><div>Payment</div><div>Notes</div><div></div>
+      </div>
+      <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+        ${rows.map(r=>_rqeRowHtml(r)).join('')}
+      </div>`;
+  }catch(e){
+    host.innerHTML = '<div style="color:#ff5555;padding:18px">Error: '+escHtml(e.message)+'</div>';
+  }
+}
+function _rqeRowHtml(r){
+  const vendor = r.vendor || r.store_name || '';
+  const date   = (r.receipt_date || '').slice(0,10);
+  const amt    = (r.total != null && r.total !== '') ? r.total : (r.amount != null ? r.amount : '');
+  const cat    = r.category || '';
+  const pay    = r.payment_method || '';
+  const notes  = r.description || '';
+  const inputBase = "background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:6px 8px;color:#e0e0e0;font-size:12px;width:100%";
+  const catOptions = RQE_CATEGORIES.map(c=>`<option value="${escHtml(c)}"${c===cat?' selected':''}>${escHtml(c)}</option>`).join('');
+  const payOptions = RQE_PAYMENTS.map(p=>`<option value="${escHtml(p)}"${p===pay?' selected':''}>${p?escHtml(p):'—'}</option>`).join('');
+  return `<div class="rqe-row" data-id="${r.id}" style="display:grid;grid-template-columns:1.6fr 110px 100px 1fr 110px 1.4fr 32px;gap:6px;align-items:center;padding:4px 4px;border-bottom:1px solid #0e0e1e;position:relative">
+    <input style="${inputBase}" data-f="vendor"  value="${escHtml(vendor)}" oninput="rqeQueueSave('${r.id}')">
+    <input style="${inputBase}" data-f="receipt_date"   type="date" value="${escHtml(date)}" oninput="rqeQueueSave('${r.id}')">
+    <input style="${inputBase}" data-f="total"   type="number" step="0.01" value="${escHtml(amt)}" oninput="rqeQueueSave('${r.id}')">
+    <select style="${inputBase}" data-f="category" onchange="rqeQueueSave('${r.id}')">${catOptions}</select>
+    <select style="${inputBase}" data-f="payment_method" onchange="rqeQueueSave('${r.id}')">${payOptions}</select>
+    <input style="${inputBase}" data-f="description" value="${escHtml(notes)}" oninput="rqeQueueSave('${r.id}')" placeholder="Notes / line items">
+    <button class="btn-icon del" title="Delete receipt" onclick="rqeDelete('${r.id}')">✕</button>
+    <span class="rqe-saved" id="rqe-saved-${r.id}" style="position:absolute;right:46px;top:8px;font-size:9px;color:#10b981;opacity:0;transition:opacity .3s;font-weight:700;letter-spacing:.5px;text-transform:uppercase">saved</span>
+  </div>`;
+}
+function rqeQueueSave(id){
+  clearTimeout(_rqeSaveTimers[id]);
+  _rqeSaveTimers[id] = setTimeout(()=>rqeSave(id), 600);
+}
+async function rqeSave(id){
+  const row = document.querySelector(`.rqe-row[data-id="${id}"]`);
+  if(!row) return;
+  const payload = {};
+  row.querySelectorAll('[data-f]').forEach(el=>{
+    const k = el.dataset.f;
+    let v = el.value;
+    if(k === 'total'){
+      const num = parseFloat(v);
+      v = isNaN(num) ? 0 : num;
+      // Mirror to amount too so kanban/table totals stay consistent.
+      payload.amount = v;
+    }
+    payload[k] = v;
+  });
+  try{
+    const r = await fetch('/api/ahb/receipts/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const d = await r.json();
+    if(!d || !d.success) throw new Error((d && d.error) || 'save failed');
+    const badge = document.getElementById('rqe-saved-'+id);
+    if(badge){ badge.style.opacity = '1'; setTimeout(()=>badge.style.opacity='0', 1100); }
+  }catch(e){ showToast('Save failed: '+e.message,'error'); }
+}
+async function rqeDelete(id){
+  if(!confirm('Delete this receipt? This removes the row from QuickRF.')) return;
+  try{
+    await fetch('/api/ahb/receipts/'+id, {method:'DELETE'});
+    const row = document.querySelector(`.rqe-row[data-id="${id}"]`);
+    if(row) row.remove();
+    showToast('Deleted');
+  }catch(e){ showToast('Delete failed: '+e.message,'error'); }
+}
+/* ------------------------------------------------------ */
+
 async function loadReceipts(){
   try{
     const res=await fetch('/api/ahb/receipts');
@@ -9064,17 +9193,36 @@ async function deleteEvent(id){
 
 /* ===================== STICKY PAD (was NoteD) ===================== */
 let spFocusedId = null;        // currently focused note id
-let spPositions = {};          // id → {x%, y%, rot°, color 1..5}
+let spPositions = {};          // id → {x%, y%, rot°}
 let spSearch = '';
 let spSaveTimers = {};
+const SP_POS_STORAGE_KEY = 'ahbStickyPositions:v1';
 
+// The focused note centers at ~ x:32-68%, y:0-45%. New scatter positions
+// avoid that footprint so unfocused notes are never hidden behind the focus.
+function _spInFocusZone(x, y){
+  return (x > 28 && x < 72 && y < 46);
+}
 function _spRandPos(){
-  return {
-    x: 6 + Math.random()*78,    // 6–84%
-    y: 14 + Math.random()*68,   // 14–82%
-    rot: -14 + Math.random()*28,
-    color: 1 + Math.floor(Math.random()*5)
-  };
+  for(let tries = 0; tries < 30; tries++){
+    const x = 4 + Math.random()*82;    // 4–86%
+    const y = 8 + Math.random()*78;    // 8–86%
+    if(_spInFocusZone(x, y)) continue;
+    return { x, y, rot: -14 + Math.random()*28 };
+  }
+  // Fallback (very unlikely): place along the far edges.
+  const x = Math.random() < 0.5 ? (3 + Math.random()*22) : (75 + Math.random()*20);
+  const y = 12 + Math.random()*76;
+  return { x, y, rot: -14 + Math.random()*28 };
+}
+function _spLoadPositions(){
+  try{
+    const raw = localStorage.getItem(SP_POS_STORAGE_KEY);
+    if(raw){ spPositions = JSON.parse(raw) || {}; }
+  }catch(e){ spPositions = {}; }
+}
+function _spSavePositions(){
+  try{ localStorage.setItem(SP_POS_STORAGE_KEY, JSON.stringify(spPositions)); }catch(e){}
 }
 function _spSummary(n){
   if(n.title && n.title.trim() && n.title.trim() !== 'New note') return n.title.trim().slice(0,60);
@@ -9093,9 +9241,25 @@ function _spVisibleNotes(){
 }
 async function loadStickyPad(){
   try{
+    _spLoadPositions();
     const res = await fetch('/api/ahb/notes');
     allNotes = await res.json();
-    allNotes.forEach(n => { if(!spPositions[n.id]) spPositions[n.id] = _spRandPos(); });
+    let changed = false;
+    allNotes.forEach(n => {
+      if(!spPositions[n.id]){
+        spPositions[n.id] = _spRandPos();
+        changed = true;
+      } else {
+        // Migration: drop any cached x,y that sits in the new focus zone so
+        // old positions don't hide behind the focused note. Re-roll once.
+        const p = spPositions[n.id];
+        if(_spInFocusZone(p.x, p.y)){
+          spPositions[n.id] = _spRandPos();
+          changed = true;
+        }
+      }
+    });
+    if(changed) _spSavePositions();
     if(allNotes.length){
       if(!spFocusedId || !allNotes.find(n=>n.id===spFocusedId)){
         const sorted = [...allNotes].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||''));
@@ -9138,37 +9302,185 @@ function spRender(){
     }
   }
 }
-function _spRenderNote(n, isFocused){
-  const pos = spPositions[n.id] || (spPositions[n.id] = _spRandPos());
+function _spColor(n){
+  let c = parseInt(n.color, 10);
+  if(isNaN(c) || c < 1 || c > 5) c = 1;
+  return c;
+}
+function _spInnerHtml(n, isFocused){
+  const color = _spColor(n);
   const summary = _spSummary(n);
   const content = n.content || '';
   if(isFocused){
-    return `<div id="sp-note-${n.id}" class="sp-note focused color-${pos.color}" style="left:50%;top:5%;transform:translateX(-50%) rotate(0deg)" data-id="${n.id}">
+    const swatches = [1,2,3,4,5].map(c =>
+      `<span class="sp-swatch color-${c}${c===color?' active':''}" data-color="${c}" title="Color ${c}" onclick="event.stopPropagation();spSetColor('${n.id}',${c})"></span>`
+    ).join('');
+    return `<div class="sp-swatches" title="Change sticky color">${swatches}</div>
       <span class="sp-savebadge" id="sp-saved-${n.id}">saved</span>
-      <div class="sp-summary" contenteditable="true" spellcheck="false">${escHtml(summary)}</div>
+      <div class="sp-summary" contenteditable="true" spellcheck="false" style="margin-top:18px">${escHtml(summary)}</div>
       <div class="sp-content" contenteditable="true" data-placeholder="Write your thought…">${escHtml(content)}</div>
       <div class="sp-actions">
         <button class="sp-iconbtn" onclick="event.stopPropagation();spDeleteNote('${n.id}')" title="Delete">🗑</button>
         <button class="sp-iconbtn" onclick="event.stopPropagation();spShuffle()" title="Shuffle pile">🔀</button>
-      </div>
-    </div>`;
+      </div>`;
   }
   const preview = content.slice(0,180) + (content.length>180?'…':'');
-  return `<div id="sp-note-${n.id}" class="sp-note color-${pos.color}" style="left:${pos.x}%;top:${pos.y}%;transform:rotate(${pos.rot}deg)" data-id="${n.id}" onclick="spFocus('${n.id}')">
-    <div class="sp-summary">${escHtml(summary)}</div>
-    <div class="sp-content">${escHtml(preview)}</div>
-  </div>`;
+  return `<div class="sp-summary">${escHtml(summary)}</div>
+    <div class="sp-content">${escHtml(preview)}</div>`;
+}
+function _spRenderNote(n, isFocused){
+  const pos = spPositions[n.id] || (spPositions[n.id] = _spRandPos());
+  const color = _spColor(n);
+  const style = isFocused
+    ? 'left:50%;top:5%;transform:translateX(-50%) rotate(0deg)'
+    : `left:${pos.x}%;top:${pos.y}%;transform:rotate(${pos.rot}deg)`;
+  const handlers = isFocused
+    ? ''
+    : ` onmousedown="spDragStart(event,'${n.id}')" ontouchstart="spDragStart(event,'${n.id}')"`;
+  return `<div id="sp-note-${n.id}" class="sp-note${isFocused?' focused':''} color-${color}" style="${style}" data-id="${n.id}"${handlers}>${_spInnerHtml(n, isFocused)}</div>`;
+}
+function _spApplyFocusStyle(el, n, isFocused){
+  const pos = spPositions[n.id] || (spPositions[n.id] = _spRandPos());
+  if(isFocused){
+    el.style.left = '50%';
+    el.style.top  = '5%';
+    el.style.transform = 'translateX(-50%) rotate(0deg)';
+  } else {
+    el.style.left = pos.x + '%';
+    el.style.top  = pos.y + '%';
+    el.style.transform = 'rotate(' + pos.rot + 'deg)';
+  }
+}
+function _spReconfigureNote(el, n, isFocused){
+  // Toggle class + replace inner content + reapply position style so the
+  // browser sees a property change on the SAME element → CSS transition fires.
+  el.classList.toggle('focused', !!isFocused);
+  el.innerHTML = _spInnerHtml(n, isFocused);
+  _spApplyFocusStyle(el, n, isFocused);
+  if(isFocused){
+    el.removeAttribute('onmousedown');
+    el.removeAttribute('ontouchstart');
+    // Wire autosave on the contenteditable summary + content.
+    const sum = el.querySelector('.sp-summary');
+    const ce  = el.querySelector('.sp-content');
+    if(sum) sum.addEventListener('input', ()=>spDebouncedSave(n.id));
+    if(ce)  ce.addEventListener('input',  ()=>spDebouncedSave(n.id));
+  } else {
+    el.setAttribute('onmousedown', `spDragStart(event,'${n.id}')`);
+    el.setAttribute('ontouchstart', `spDragStart(event,'${n.id}')`);
+  }
 }
 function spFocus(id){
   if(spFocusedId === id) return;
+  const prevId = spFocusedId;
   spFocusedId = id;
-  // re-scatter the now-unfocused notes so the pile shifts when a new note is picked
-  allNotes.forEach(n => { if(n.id !== id) spPositions[n.id] = _spRandPos(); });
-  spRender();
+  const prevEl = prevId ? document.getElementById('sp-note-'+prevId) : null;
+  const newEl  = document.getElementById('sp-note-'+id);
+  const prevNote = prevId ? allNotes.find(n=>n.id===prevId) : null;
+  const newNote  = allNotes.find(n=>n.id===id);
+  if(prevEl && prevNote) _spReconfigureNote(prevEl, prevNote, false);
+  if(newEl && newNote){
+    _spReconfigureNote(newEl, newNote, true);
+    // Promote z-index immediately so the focused note slides over the others as it moves.
+    newEl.style.zIndex = 100;
+  }
+  if(prevEl) prevEl.style.zIndex = '';
 }
 function spShuffle(){
   allNotes.forEach(n => { if(n.id !== spFocusedId) spPositions[n.id] = _spRandPos(); });
+  _spSavePositions();
   spRender();
+}
+
+/* ----- Drag & drop within the canvas ----- */
+let _spDragState = null;
+function spDragStart(e, id){
+  if(id === spFocusedId) return;          // focused note doesn't drag (it's the showcase)
+  // Don't start drag from interactive children (swatch, buttons).
+  const t = e.target;
+  if(t.closest && (t.closest('.sp-iconbtn') || t.closest('.sp-swatch') || t.closest('.sp-actions'))) return;
+  const isTouch = e.type === 'touchstart';
+  const pt = isTouch ? e.touches[0] : e;
+  const el = document.getElementById('sp-note-'+id);
+  const canvas = document.getElementById('sp-canvas');
+  if(!el || !canvas) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  _spDragState = {
+    id, el, canvasRect,
+    startX: pt.clientX, startY: pt.clientY,
+    moved: false,
+    isTouch,
+    startPos: Object.assign({}, spPositions[id] || _spRandPos())
+  };
+  // Prevent text-selection while dragging.
+  e.preventDefault();
+  document.addEventListener('mousemove', spDragMove);
+  document.addEventListener('mouseup',   spDragEnd);
+  document.addEventListener('touchmove', spDragMove, {passive:false});
+  document.addEventListener('touchend',  spDragEnd);
+}
+function spDragMove(e){
+  if(!_spDragState) return;
+  const isTouch = e.type === 'touchmove';
+  const pt = isTouch ? e.touches[0] : e;
+  const dx = pt.clientX - _spDragState.startX;
+  const dy = pt.clientY - _spDragState.startY;
+  if(!_spDragState.moved && (Math.abs(dx) + Math.abs(dy) > 5)){
+    _spDragState.moved = true;
+    _spDragState.el.classList.add('dragging');
+  }
+  if(!_spDragState.moved) return;
+  if(isTouch) e.preventDefault();
+  const cr = _spDragState.canvasRect;
+  // Convert pixel delta into % of canvas so positions remain responsive.
+  const xPct = _spDragState.startPos.x + (dx / cr.width) * 100;
+  const yPct = _spDragState.startPos.y + (dy / cr.height) * 100;
+  // Soft clamp inside canvas bounds (leave room for the card).
+  const clamped = {
+    x: Math.max(0, Math.min(94, xPct)),
+    y: Math.max(0, Math.min(92, yPct)),
+    rot: _spDragState.startPos.rot
+  };
+  _spDragState.el.style.left = clamped.x + '%';
+  _spDragState.el.style.top  = clamped.y + '%';
+  _spDragState.el.style.transform = 'rotate(' + clamped.rot + 'deg)';
+  _spDragState.lastPos = clamped;
+}
+function spDragEnd(e){
+  if(!_spDragState) return;
+  document.removeEventListener('mousemove', spDragMove);
+  document.removeEventListener('mouseup',   spDragEnd);
+  document.removeEventListener('touchmove', spDragMove);
+  document.removeEventListener('touchend',  spDragEnd);
+  const state = _spDragState;
+  _spDragState = null;
+  state.el.classList.remove('dragging');
+  if(state.moved && state.lastPos){
+    // Persist the new position.
+    spPositions[state.id] = state.lastPos;
+    _spSavePositions();
+  } else {
+    // No drag → treat as click → focus the note.
+    spFocus(state.id);
+  }
+}
+
+async function spSetColor(id, color){
+  const n = allNotes.find(x=>x.id===id);
+  if(!n) return;
+  n.color = color;
+  // Live-update the DOM class so the swatch reflects instantly without a full re-render flicker.
+  const el = document.getElementById('sp-note-'+id);
+  if(el){
+    el.classList.remove('color-1','color-2','color-3','color-4','color-5');
+    el.classList.add('color-'+color);
+    el.querySelectorAll('.sp-swatch').forEach(sw => sw.classList.toggle('active', String(sw.dataset.color) === String(color)));
+  }
+  try{
+    await fetch('/api/ahb/notes/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({color})});
+    const badge = document.getElementById('sp-saved-'+id);
+    if(badge){ badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'), 1100); }
+  }catch(e){ showToast('Color save failed: '+e.message,'error'); }
 }
 function spFilter(){
   const el = document.getElementById('sp-search');
@@ -9220,6 +9532,7 @@ async function spDeleteNote(id){
     await fetch('/api/ahb/notes/'+id,{method:'DELETE'});
     allNotes = allNotes.filter(n=>n.id!==id);
     delete spPositions[id];
+    _spSavePositions();
     if(spFocusedId === id){
       spFocusedId = allNotes.length ? allNotes[0].id : null;
     }

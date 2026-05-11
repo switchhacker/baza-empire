@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Baza Empire — Private</title>
+  <title>Baza Empire — Vault</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
@@ -95,11 +95,11 @@
     <!-- Lock screen (shown when not unlocked) -->
     <div id="lockScreen" class="lock-screen" style="display:none">
       <div class="lock-card">
-        <div class="lock-icon">🔒</div>
-        <div class="lock-title">Private</div>
+        <div class="lock-icon">🔐</div>
+        <div class="lock-title">Vault</div>
         <div class="lock-desc" id="lockDesc">
-          All Telegram-inbound photos and attachments live here. Hidden from the
-          rest of the Data Hub. Enter your passphrase to view.
+          Your personal safe. Holds Telegram-inbound media plus any file you've
+          locked from the Data Hub. Enter your passphrase to view.
         </div>
         <form id="unlockForm" autocomplete="off">
           <input id="passInput" class="pass-input" type="password" placeholder="Passphrase" autofocus>
@@ -116,7 +116,7 @@
     <!-- Gallery (shown when unlocked) -->
     <div id="gallery" style="display:none">
       <div class="page-header">
-        <div class="page-title">🔓 Private</div>
+        <div class="page-title">🔐 Vault</div>
         <div class="page-sub">
           Telegram-inbound media for every agent. These files are excluded from
           Data Hub search, the image index, and the public serve endpoint —

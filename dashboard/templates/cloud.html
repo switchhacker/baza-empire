@@ -263,6 +263,10 @@
     .mem-thumb .fav-dot{position:absolute;top:4px;right:4px;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.8);display:none}
     .mem-thumb.is-fav .fav-dot{display:block}
     .mem-thumb .vid-badge{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700}
+    .mem-thumb .trash-btn{position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;border:none;cursor:pointer;font-size:13px;line-height:24px;text-align:center;padding:0;opacity:0;transition:opacity .15s,background .15s;z-index:2}
+    .mem-thumb:hover .trash-btn{opacity:1}
+    .mem-thumb .trash-btn:hover{background:#c0392b}
+    .mem-thumb.removing{opacity:.3;pointer-events:none;transition:opacity .25s}
 
     /* ── LIGHTBOX ── */
     .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:500;display:none;flex-direction:column;align-items:center;justify-content:center}
@@ -1498,8 +1502,9 @@ function renderMemDays(area){
       var thumb='/api/cloud/thumb/'+encodeURIComponent(it.path)+'?size='+Math.min(sz*2,400);
       var isVid=it.type==='video';
       var globalIdx=startIdx+idx;
-      html+='<div class="mem-thumb'+(it.favorite?' is-fav':'')+'" data-lb-idx="'+globalIdx+'">';
+      html+='<div class="mem-thumb'+(it.favorite?' is-fav':'')+'" data-lb-idx="'+globalIdx+'" data-path="'+escapeHtml(it.path)+'">';
       html+='<img src="'+thumb+'" loading="lazy" alt="'+escapeHtml(it.name)+'">';
+      html+='<button class="trash-btn" title="Delete this item" aria-label="Delete">&#128465;</button>';
       html+='<span class="fav-dot">&#9829;</span>';
       if(isVid)html+='<span class="vid-badge">VIDEO</span>';
       html+='</div>';
@@ -1510,10 +1515,45 @@ function renderMemDays(area){
   area.innerHTML=html;
   // Attach click handlers via delegation
   area.querySelectorAll('.mem-thumb[data-lb-idx]').forEach(function(el){
-    el.addEventListener('click',function(){
+    el.addEventListener('click',function(ev){
+      // Trash button click — stop propagation and call delete
+      if(ev.target.closest('.trash-btn')){
+        ev.stopPropagation();
+        memDeleteItem(el);
+        return;
+      }
       openLightbox(window._memLbItems, parseInt(el.dataset.lbIdx));
     });
   });
+}
+
+async function memDeleteItem(el){
+  const path=el.dataset.path;
+  if(!path)return;
+  if(!confirm('Permanently delete this item from the cloud? This removes the file from disk.'))return;
+  el.classList.add('removing');
+  try{
+    const r=await fetch('/api/cloud/media/delete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({path:path})
+    });
+    const j=await r.json();
+    if(j.success){
+      el.remove();
+      // Drop from the lightbox items array so indexing stays sane
+      if(window._memLbItems){
+        const idx=parseInt(el.dataset.lbIdx);
+        if(!isNaN(idx)&&window._memLbItems[idx])window._memLbItems[idx]._deleted=true;
+      }
+    }else{
+      el.classList.remove('removing');
+      alert('Delete failed: '+(j.error||'unknown error'));
+    }
+  }catch(e){
+    el.classList.remove('removing');
+    alert('Delete failed: '+e.message);
+  }
 }
 
 function memDrill(level,y,m){

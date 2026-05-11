@@ -1389,6 +1389,22 @@ async function deleteFile(proj,name){
   try{await fetch('/api/artifacts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:proj,name})});toast('Deleted','ok');loadFiles()}catch(e){toast('Delete failed','err')}
 }
 
+async function dhToggleLock(proj,name,btn){
+  // Optimistic visual flip — fades the card while the move happens.
+  const card = btn && btn.closest('.file-card');
+  if(card) card.style.opacity = '.5';
+  try{
+    const r = await fetch('/api/datahub/lock-toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:proj,name})});
+    const d = await r.json();
+    if(!d || !d.ok){ throw new Error((d && d.error) || 'lock-toggle failed'); }
+    toast(d.locked ? '\u{1F510} Sent to Vault' : '\u{1F513} Released from Vault', 'ok');
+    loadFiles();
+  }catch(e){
+    if(card) card.style.opacity = '';
+    toast('Lock failed: '+e.message, 'err');
+  }
+}
+
 function toast(msg,type){
   const t=document.getElementById('toast');t.textContent=msg;t.className='toast '+type;t.style.display='block';
   setTimeout(()=>t.style.display='none',3000);

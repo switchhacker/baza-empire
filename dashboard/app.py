@@ -380,6 +380,7 @@ def init_ahb_tables():
     conn.commit()
     # Add new columns to existing tables (idempotent)
     alter_stmts = [
+        "ALTER TABLE ahb_notes ADD COLUMN color INTEGER DEFAULT 1",
         "ALTER TABLE ahb_projects ADD COLUMN acquisition_type TEXT",
         "ALTER TABLE ahb_projects ADD COLUMN value REAL",
         "ALTER TABLE ahb_clients ADD COLUMN company TEXT",
@@ -809,7 +810,11 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
                     break
             agent = agent_id or meta.get('agent_id', '') or dir_hint or _infer_agent_from_filename(fname, known_agents) or "simon_bately"
 
-            stat = os.stat(fpath)
+            try:
+                stat = os.stat(fpath)
+            except OSError:
+                # Broken symlink or file vanished between walk and stat — skip.
+                continue
             ext  = os.path.splitext(fname)[1].lower()
             files.append({
                 "name":       sub_path,
@@ -7687,15 +7692,20 @@ def api_ahb_notes_create():
         data = request.json or {}
         conn = _ahb_db()
         nid = str(uuid.uuid4())
+        try:
+            color = int(data.get('color', 1) or 1)
+        except (TypeError, ValueError):
+            color = 1
+        color = max(1, min(5, color))
         conn.execute(
-            """INSERT INTO ahb_notes (id, title, content, is_list, is_task, tags, pinned, project_id, due_date, checklist_items, author_employee_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO ahb_notes (id, title, content, is_list, is_task, tags, pinned, project_id, due_date, checklist_items, author_employee_id, color)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (nid, data.get('title',''), data.get('content',''),
              1 if data.get('is_list') else 0, 1 if data.get('is_task') else 0,
              data.get('tags',''), 1 if data.get('pinned') else 0,
              data.get('project_id',''), data.get('due_date',''),
              json.dumps(data.get('checklist_items',[])) if isinstance(data.get('checklist_items'), list) else data.get('checklist_items','[]'),
-             data.get('author_employee_id','')))
+             data.get('author_employee_id',''), color))
         conn.commit(); conn.close()
         return jsonify({'success': True, 'id': nid})
     except Exception as e:
@@ -7711,6 +7721,12 @@ def api_ahb_notes_update(nid):
             if k in data: fields.append(f"{k} = ?"); vals.append(data[k])
         for k in ['is_list','is_task','pinned']:
             if k in data: fields.append(f"{k} = ?"); vals.append(1 if data[k] else 0)
+        if 'color' in data:
+            try:
+                c = int(data['color'] or 1)
+            except (TypeError, ValueError):
+                c = 1
+            fields.append("color = ?"); vals.append(max(1, min(5, c)))
         if 'checklist_items' in data:
             fields.append("checklist_items = ?")
             vals.append(json.dumps(data['checklist_items']) if isinstance(data['checklist_items'], list) else data['checklist_items'])
@@ -11001,6 +11017,53 @@ if CLOUD_ENABLED:
     def api_cloud_media_reindex():
         added = _scan_media_dirs()
         return jsonify({'success': True, 'added': added})
+
+    @app.route('/api/cloud/media/delete', methods=['POST'])
+    def api_cloud_media_delete():
+        """Erase a media item: symlink (if any), its target file (if any),
+        and the cloud_media_index row. Returns what was removed."""
+        data = request.json or {}
+        path = data.get('path', '')
+        if not path:
+            return jsonify({'success': False, 'error': 'no path'}), 400
+        full, _ = _resolve_media_path(path)
+        if not full:
+            return jsonify({'success': False, 'error': 'not found'}), 404
+        removed = []
+        try:
+            target = None
+            if os.path.islink(full):
+                # Resolve symlink target before unlinking
+                try:
+                    target = os.path.realpath(full)
+                except Exception:
+                    target = None
+                os.unlink(full)
+                removed.append(full)
+                # Delete the underlying file too if it lives under cloud or Imports
+                if target and os.path.isfile(target):
+                    safe_roots = ('/mnt/empirepool/cloud/', '/mnt/empirepool/media/')
+                    if target.startswith(safe_roots):
+                        try:
+                            os.remove(target)
+                            removed.append(target)
+                        except Exception:
+                            pass
+            elif os.path.isfile(full):
+                os.remove(full)
+                removed.append(full)
+            else:
+                return jsonify({'success': False, 'error': 'not a file/symlink'}), 400
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+        # Drop the index row
+        try:
+            conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+            conn.execute("DELETE FROM cloud_media_index WHERE filepath=?", (path,))
+            conn.commit(); conn.close()
+        except Exception:
+            pass
+        return jsonify({'success': True, 'removed': removed})
 
     @app.route('/api/cloud/documents')
     def api_cloud_documents():
