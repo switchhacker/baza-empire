@@ -771,18 +771,18 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
 
     files = []
     for root, dirs, fnames in os.walk(base_dir):
-        # Skip hidden dirs (incl. .private-inbound) and meta files
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        # Skip hidden dirs (incl. .private-inbound) and meta files, EXCEPT the
+        # Vault directory itself — we surface those in Data Hub now, tagged
+        # with `private=true` so the UI can render a Vault badge + lock state.
+        dirs[:] = [d for d in dirs if (not d.startswith('.')) or d == PRIVATE_INBOUND_DIRNAME]
         for fname in sorted(fnames):
             # Skip sidecar meta files
             if fname.endswith('.meta'):
                 continue
             fpath = os.path.join(root, fname)
-            # Per-file privacy gate — catches stray private-marked files in
-            # public dirs (e.g. legacy Sam inbound photos still under
-            # proj-ahb123 until the backfill moves them).
-            if _is_private_path(fpath):
-                continue
+            # Compute privacy flag (don't skip — we now show private files
+            # alongside public ones with a visible lock indicator).
+            file_private = _is_private_path(fpath)
             rel   = os.path.relpath(fpath, base_dir)
             # Determine project_id from relative path structure: {project}/{file}
             parts = rel.split(os.sep)
@@ -824,6 +824,7 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
                 "ext":        ext,
                 "file_type":  _ext_to_type(ext),
                 "subcategory": _classify_subcategory(fname, rel, ext, agent),
+                "private":    file_private,
             })
     return files
 
@@ -1365,6 +1366,94 @@ def api_private_unlock():
 def api_private_lock():
     session.pop('private_unlocked', None)
     return jsonify({'ok': True})
+
+
+@app.route('/api/datahub/lock-toggle', methods=['POST'])
+def api_datahub_lock_toggle():
+    """Flip a Data Hub file in or out of the Vault.
+
+    Body: { project_id: <string>, name: <relative path within project> }
+    Action is inferred from current state:
+      - public file → move to .private-inbound/<agent_id>/ (locks)
+      - private file → move to _unlocked/<agent_id>/ (unlocks)
+    Sidecar .meta moves with the file and is updated to reflect the new state."""
+    payload = request.get_json(silent=True) or {}
+    project_id = (payload.get('project_id') or '').strip()
+    rel        = (payload.get('name') or '').strip()
+    if not rel:
+        return jsonify({'ok': False, 'error': 'name required'}), 400
+
+    if project_id and project_id != 'shared':
+        cur = os.path.join(ARTIFACTS_DIR, project_id, rel)
+    else:
+        cur = os.path.join(ARTIFACTS_DIR, rel)
+    cur = os.path.realpath(cur)
+    art_root = os.path.realpath(ARTIFACTS_DIR)
+    # Path containment guard — no traversal out of artifacts/.
+    if not (cur == art_root or cur.startswith(art_root + os.sep)) or not os.path.isfile(cur):
+        return jsonify({'ok': False, 'error': 'not found'}), 404
+
+    locking = not _is_private_path(cur)
+    meta = _read_artifact_meta(cur)
+    agent_id = (meta.get('agent_id') or
+                _infer_agent_from_filename(os.path.basename(cur), []) or
+                'shared').strip() or 'shared'
+
+    if locking:
+        dest_root = os.path.join(ARTIFACTS_DIR, PRIVATE_INBOUND_DIRNAME, agent_id)
+    else:
+        dest_root = os.path.join(ARTIFACTS_DIR, '_unlocked', agent_id)
+    try:
+        os.makedirs(dest_root, exist_ok=True)
+    except OSError as e:
+        return jsonify({'ok': False, 'error': f'mkdir failed: {e}'}), 500
+
+    base = os.path.basename(cur)
+    dest = os.path.join(dest_root, base)
+    # Resolve filename collisions in destination.
+    n = 1
+    while os.path.exists(dest):
+        stem, ext = os.path.splitext(base)
+        dest = os.path.join(dest_root, f"{stem}_{n}{ext}")
+        n += 1
+
+    try:
+        os.rename(cur, dest)
+    except OSError as e:
+        return jsonify({'ok': False, 'error': f'move failed: {e}'}), 500
+    # Move sidecar too if present.
+    src_meta = cur + '.meta'
+    dst_meta = dest + '.meta'
+    if os.path.isfile(src_meta):
+        try:
+            os.rename(src_meta, dst_meta)
+        except OSError:
+            pass
+
+    # Update meta to reflect new state — write JSON; preserve origin so a
+    # subsequent unlock can hint at where the file came from.
+    new_meta = _read_artifact_meta(dest)
+    if locking:
+        new_meta['private'] = True
+        new_meta['privacy'] = 'private'
+        if project_id and 'origin_project' not in new_meta:
+            new_meta['origin_project'] = project_id
+        new_meta.setdefault('agent_id', agent_id)
+    else:
+        new_meta['private'] = False
+        new_meta['privacy'] = 'public'
+    try:
+        with open(dst_meta, 'w', encoding='utf-8') as fh:
+            json.dump(new_meta, fh, indent=2, default=str)
+    except OSError:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'locked': locking,
+        'new_project': PRIVATE_INBOUND_DIRNAME if locking else '_unlocked',
+        'new_name': os.path.relpath(dest, ARTIFACTS_DIR).replace(os.sep, '/')
+    })
 
 
 @app.route('/api/datahub/private/list')
@@ -5593,6 +5682,80 @@ def api_ahb_invoices_list():
         return jsonify({'error': str(e)}), 500
 
 
+def _ensure_invoice_project(conn, data: dict) -> str:
+    """Every invoice must belong to a project. Returns a project_id, creating
+    one from the invoice's own metadata if none is supplied or matchable.
+
+    Match precedence: explicit project_id → (client_id + project_address)
+    → (client_name + project_address) → (client_name) → new project.
+    """
+    pid = (data.get('project_id') or '').strip()
+    if pid:
+        # Verify it actually exists; if not, fall through to creation.
+        row = conn.execute("SELECT id FROM ahb_projects WHERE id = ?", (pid,)).fetchone()
+        if row:
+            return pid
+
+    client_id   = (data.get('client_id') or '').strip()
+    client_name = (data.get('client_name') or '').strip()
+    addr        = (data.get('project_address') or data.get('client_address') or '').strip()
+    proj_name   = (data.get('project_name') or '').strip()
+
+    # Try matchers in order
+    row = None
+    if client_id and addr:
+        row = conn.execute(
+            "SELECT id FROM ahb_projects WHERE client_id = ? AND LOWER(TRIM(address)) = LOWER(TRIM(?)) LIMIT 1",
+            (client_id, addr)
+        ).fetchone()
+    if not row and client_name and addr:
+        row = conn.execute(
+            "SELECT id FROM ahb_projects WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(address)) = LOWER(TRIM(?)) LIMIT 1",
+            (client_name, addr)
+        ).fetchone()
+    if not row and proj_name:
+        row = conn.execute(
+            "SELECT id FROM ahb_projects WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) LIMIT 1",
+            (proj_name,)
+        ).fetchone()
+    if not row and client_name and not addr:
+        # Last resort: the only project for that client
+        rows = conn.execute(
+            "SELECT id FROM ahb_projects WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?))",
+            (client_name,)
+        ).fetchall()
+        if len(rows) == 1:
+            row = rows[0]
+    if row:
+        return row['id']
+
+    # Create a new project so the invoice has a home
+    new_pid = uuid.uuid4().hex[:24]
+    title_bits = []
+    if proj_name: title_bits.append(proj_name)
+    elif client_name: title_bits.append(client_name)
+    if addr: title_bits.append(addr)
+    if not title_bits:
+        title_bits.append('Auto-created from invoice')
+    title = ' — '.join(title_bits)[:120]
+    try:
+        value = float(data.get('total') or data.get('subtotal') or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    conn.execute(
+        """INSERT INTO ahb_projects (id, client_id, title, address, scope, description,
+           status, start_date, notes, value, client_name, client_email, contact_info,
+           location, commission_pct, commission_value)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (new_pid, client_id or None, title, addr, '', 'Auto-created to house an invoice.',
+         'invoiced', datetime.datetime.now().date().isoformat(),
+         'Auto-created from invoice.', value, client_name,
+         data.get('client_email', ''), data.get('client_phone', ''),
+         addr, 0.0, 0.0)
+    )
+    return new_pid
+
+
 @app.route('/api/ahb/invoices', methods=['POST'])
 def api_ahb_invoices_create():
     try:
@@ -5614,6 +5777,8 @@ def api_ahb_invoices_create():
             data['total'] = sub + float(data.get('tax') or 0)
 
         conn = _ahb_db()
+        # Every invoice must belong to a project — find or auto-create one.
+        data['project_id'] = _ensure_invoice_project(conn, data)
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
                subtotal, tax, total, status, due_date, paid_date, notes,
@@ -5674,14 +5839,60 @@ def api_ahb_invoices_update(iid):
                 vals.append(v)
         if not fields:
             return jsonify({'success': False, 'error': 'No fields to update'}), 400
+        conn = _ahb_db()
+        # If project_id is being cleared (or empty), auto-create/find one so
+        # the invoice still has a project home after the update.
+        if 'project_id' in data and not (data.get('project_id') or '').strip():
+            # Merge stored row defaults with incoming data so the helper has
+            # enough context to find or create a sensible project.
+            row = conn.execute(
+                "SELECT client_id, client_name, project_address, client_address, "
+                "client_email, client_phone, subtotal, total FROM ahb_invoices WHERE id = ?",
+                (iid,)
+            ).fetchone()
+            ctx = dict(data)
+            if row:
+                for k in ('client_id','client_name','project_address','client_address',
+                         'client_email','client_phone','subtotal','total'):
+                    ctx.setdefault(k, row[k])
+            pid = _ensure_invoice_project(conn, ctx)
+            # Replace the empty project_id placeholder in vals
+            for i, f in enumerate(fields):
+                if f == 'project_id = ?':
+                    vals[i] = pid
+                    break
         fields.append("updated_at = ?")
         vals.append(datetime.datetime.now().isoformat())
         vals.append(iid)
-        conn = _ahb_db()
         conn.execute(f"UPDATE ahb_invoices SET {', '.join(fields)} WHERE id = ?", vals)
         conn.commit()
         conn.close()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/invoices/backfill-projects', methods=['POST'])
+def api_ahb_invoices_backfill_projects():
+    """Find every invoice with an empty/missing project_id and either link it
+    to an existing matching project or auto-create one. Idempotent."""
+    try:
+        conn = _ahb_db()
+        rows = conn.execute(
+            "SELECT id, client_id, client_name, project_address, client_address, "
+            "client_email, client_phone, subtotal, total "
+            "FROM ahb_invoices "
+            "WHERE project_id IS NULL OR TRIM(project_id) = '' "
+            "   OR project_id NOT IN (SELECT id FROM ahb_projects)"
+        ).fetchall()
+        fixed = 0
+        for r in rows:
+            ctx = {k: r[k] for k in r.keys()}
+            pid = _ensure_invoice_project(conn, ctx)
+            conn.execute("UPDATE ahb_invoices SET project_id = ? WHERE id = ?", (pid, r['id']))
+            fixed += 1
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'fixed': fixed})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -7520,6 +7731,39 @@ def api_ahb_notes_delete(nid):
         conn.execute("DELETE FROM ahb_notes WHERE id = ?", (nid,))
         conn.commit(); conn.close()
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _summarize_text(text: str, max_len: int = 60) -> str:
+    """Cheap, deterministic summary — first sentence, or first chunk of words.
+    No LLM dependency on the hot path; safe for autosave."""
+    t = (text or '').strip()
+    if not t:
+        return 'Untitled'
+    import re as _re
+    first = _re.split(r'[.!?\n]+', t, maxsplit=1)[0].strip()
+    if not first:
+        first = t
+    if len(first) <= max_len:
+        return first
+    # Cut on word boundary
+    cut = first[:max_len].rsplit(' ', 1)[0]
+    return (cut or first[:max_len]).rstrip(' ,;:') + '…'
+
+
+@app.route('/api/ahb/notes/<nid>/summarize', methods=['POST'])
+def api_ahb_notes_summarize(nid):
+    try:
+        conn = _ahb_db()
+        row = conn.execute("SELECT content FROM ahb_notes WHERE id = ?", (nid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'not found'}), 404
+        summary = _summarize_text(row['content'])
+        conn.execute("UPDATE ahb_notes SET title = ?, updated_at = datetime('now') WHERE id = ?", (summary, nid))
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'summary': summary})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

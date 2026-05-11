@@ -30,6 +30,36 @@
     .sub-tab:hover{color:#ccc;background:#1a1a2e}
     .sub-tab.active{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border-color:transparent}
     .sub-tab-icon{font-size:14px;line-height:1;filter:saturate(1.2)}
+    .leaf-nav{display:flex;gap:6px;flex-wrap:wrap;padding:6px 18px 10px;border-bottom:1px solid #1a1a2e;background:#0a0a18}
+    .leaf-tab{padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;color:#666;cursor:pointer;border:1px solid #1a1a2e;background:transparent;display:inline-flex;align-items:center;gap:5px;transition:all .15s}
+    .leaf-tab:hover{color:#ccc;background:#11112a;border-color:#2a2a4a}
+    .leaf-tab.active{background:#1a1a3e;color:#fff;border-color:#7c3aed}
+    .leaf-tab-icon{font-size:12px;line-height:1}
+
+    /* ===================== STICKY PAD ===================== */
+    .sp-canvas{position:relative;width:100%;min-height:calc(100vh - 220px);background:radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0a0a18 70%);border:1px solid #1a1a2e;border-radius:14px;overflow:hidden;perspective:1400px}
+    .sp-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#555;text-align:center}
+    .sp-note{position:absolute;width:230px;min-height:220px;padding:22px 16px 16px;border-radius:4px;background:linear-gradient(135deg,#d9f99d,#bef264);color:#1a1a1a;font-family:'Caveat','Comic Sans MS',cursive,sans-serif;font-size:14px;line-height:1.45;box-shadow:0 10px 26px rgba(0,0,0,.55),0 3px 8px rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.45);cursor:pointer;transition:transform .45s cubic-bezier(.34,1.56,.64,1),box-shadow .25s,width .35s,height .35s,min-height .35s,top .45s,left .45s;will-change:transform,top,left;user-select:none}
+    .sp-note::before{content:'';position:absolute;top:-7px;left:50%;transform:translateX(-50%) rotate(-2deg);width:62px;height:14px;background:linear-gradient(180deg,rgba(231,76,60,.7),rgba(192,57,43,.45));border-radius:2px;box-shadow:0 2px 4px rgba(0,0,0,.3)}
+    .sp-note .sp-summary{font-weight:700;font-size:15px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,0,0,.15);min-height:22px;color:#0d1a0d;outline:none}
+    .sp-note .sp-content{font-size:13px;color:#1a261a;max-height:140px;overflow:hidden;line-height:1.5;outline:none;white-space:pre-wrap;word-break:break-word}
+    .sp-note .sp-content:empty::before{content:attr(data-placeholder);color:rgba(0,0,0,.35);font-style:italic}
+    .sp-note .sp-actions{position:absolute;bottom:6px;right:8px;display:flex;gap:6px;opacity:0;transition:opacity .2s}
+    .sp-note:hover .sp-actions,.sp-note.focused .sp-actions{opacity:1}
+    .sp-note:hover{transform:scale(1.18) rotate(0deg) !important;z-index:50;box-shadow:0 20px 44px rgba(0,0,0,.7),0 5px 12px rgba(0,0,0,.5)}
+    .sp-note.focused{width:420px;min-height:420px;font-size:16px;z-index:100;box-shadow:0 24px 50px rgba(0,0,0,.75),0 6px 14px rgba(0,0,0,.55),0 0 0 1px rgba(190,242,100,.15)}
+    .sp-note.focused .sp-content{max-height:320px;font-size:14px}
+    .sp-note.focused:hover{transform:translateX(-50%) scale(1.02) !important}
+    .sp-note.color-1{background:linear-gradient(135deg,#d9f99d,#bef264)}
+    .sp-note.color-2{background:linear-gradient(135deg,#bef264,#a3e635)}
+    .sp-note.color-3{background:linear-gradient(135deg,#ecfccb,#d9f99d)}
+    .sp-note.color-4{background:linear-gradient(135deg,#a3e635,#84cc16)}
+    .sp-note.color-5{background:linear-gradient(135deg,#d9f99d,#a3e635)}
+    .sp-note.dimmed{opacity:.35;filter:saturate(.55)}
+    .sp-iconbtn{background:rgba(0,0,0,.12);color:#0d1a0d;border:none;border-radius:4px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+    .sp-iconbtn:hover{background:rgba(0,0,0,.25)}
+    .sp-savebadge{position:absolute;top:6px;right:8px;font-size:9px;color:rgba(0,0,0,.5);opacity:0;transition:opacity .3s;font-family:system-ui,sans-serif;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+    .sp-savebadge.show{opacity:1}
     .doc-action-btn{padding:7px 11px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;color:#ccc;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px}
     .doc-action-btn:hover{background:#2a2a4a;border-color:#7c3aed;color:#fff}
     .doc-action-btn:active{transform:scale(.97)}
@@ -625,29 +655,22 @@
 {% set nav_active = 'ahb123' %}
 {% include "_nav.html" %}
 
-<!-- Sub Navigation Tabs -->
+<!-- Sub Navigation Tabs (super-tabs) -->
 <div class="sub-nav">
   <div class="sub-tab active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="sub-tab-icon">📊</span> Dashboard</div>
   <div class="sub-tab" data-tab="clients" onclick="switchTab('clients')"><span class="sub-tab-icon">👥</span> Clients</div>
   <div class="sub-tab" data-tab="projects" onclick="switchTab('projects')"><span class="sub-tab-icon">🏗️</span> Projects</div>
-  <div class="sub-tab" data-tab="architect" onclick="switchTab('architect')"><span class="sub-tab-icon">📐</span> ArchiteCT</div>
-  <div class="sub-tab" data-tab="invoices" onclick="switchTab('invoices')"><span class="sub-tab-icon">💰</span> InvoiceIT</div>
-  <div class="sub-tab" data-tab="docprep" onclick="switchTab('docprep')"><span class="sub-tab-icon">📂</span> DocPrep</div>
-  <div class="sub-tab" data-tab="changeorders" onclick="switchTab('changeorders')"><span class="sub-tab-icon">🔄</span> Change Orders</div>
-  <div class="sub-tab" data-tab="billing" onclick="switchTab('billing')"><span class="sub-tab-icon">📑</span> Billing</div>
-  <div class="sub-tab" data-tab="receipts" onclick="switchTab('receipts')"><span class="sub-tab-icon">🧾</span> QuickRF</div>
-  <div class="sub-tab" data-tab="payroll" onclick="switchTab('payroll')"><span class="sub-tab-icon">💵</span> Payrolling</div>
-  <div class="sub-tab" data-tab="taxdocs" onclick="switchTab('taxdocs')"><span class="sub-tab-icon">🦅</span> Uncle Sam</div>
-  <div class="sub-tab" data-tab="ipay" onclick="switchTab('ipay')"><span class="sub-tab-icon">💳</span> Debt</div>
-  <div class="sub-tab" data-tab="employees" onclick="switchTab('employees')"><span class="sub-tab-icon">👷</span> Employees</div>
-  <div class="sub-tab" data-tab="estimator" onclick="switchTab('estimator')"><span class="sub-tab-icon">🧮</span> EstimatOR</div>
+  <div class="sub-tab" data-tab="heavyeq" onclick="switchTab('heavyeq')"><span class="sub-tab-icon">🚜</span> Heavy Equipment</div>
+  <div class="sub-tab" data-tab="treasury" onclick="switchTab('treasury')"><span class="sub-tab-icon">🏦</span> Treasury</div>
   <div class="sub-tab" data-tab="schedule" onclick="switchTab('schedule')"><span class="sub-tab-icon">📅</span> Calendar</div>
-  <div class="sub-tab" data-tab="noted" onclick="switchTab('noted')"><span class="sub-tab-icon">📝</span> NoteD</div>
+  <div class="sub-tab" data-tab="noted" onclick="switchTab('noted')"><span class="sub-tab-icon">📌</span> Sticky Pad</div>
   <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
   <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
   <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">📸</span> Photos</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
 </div>
+<!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
+<div class="leaf-nav" id="leaf-nav" style="display:none"></div>
 
 <div class="container">
 
@@ -1062,50 +1085,90 @@
   </div>
 </div>
 
-<!-- ===================== TAB: PAYROLL ===================== -->
+<!-- ===================== TAB: PAYROLL (incl. Team Roster) ===================== -->
 <div class="tab-pane" id="tab-payroll">
   <div class="page-header">
     <div>
-      <div class="page-title">Payrolling</div>
-      <div class="page-sub">Track labor hours, rates, and payments</div>
+      <div class="page-title">💵 Payroll</div>
+      <div class="page-sub">Team roster, labor hours, rates &amp; payments — one view</div>
     </div>
-    <button class="btn btn-primary" onclick="openPayrollModal()">+ Add Entry</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" onclick="openEmployeeModal()">+ Employee</button>
+      <button class="btn btn-primary" onclick="openPayrollModal()">+ Payroll Entry</button>
+    </div>
   </div>
-  <div class="stats-row" id="payroll-stats">
-    <div class="stat-card stat-total"><div class="stat-val" id="prs-hours">&mdash;</div><div class="stat-lbl">Total Hours</div></div>
-    <div class="stat-card stat-progress"><div class="stat-val" id="prs-cost">$0</div><div class="stat-lbl">Total Cost</div></div>
-    <div class="stat-card stat-pending"><div class="stat-val" id="prs-pending">&mdash;</div><div class="stat-lbl">Pending</div></div>
-    <div class="stat-card stat-done"><div class="stat-val" id="prs-paid">&mdash;</div><div class="stat-lbl">Paid</div></div>
+
+  <!-- Team Roster section -->
+  <div class="panel" style="padding:14px;margin-bottom:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <h3 style="font-size:14px;color:#ddd;margin:0">👷 Team Roster</h3>
+        <div style="font-size:11px;color:#666;margin-top:2px">All workers, contractors &amp; staff</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;font-size:11px;color:#888">
+        <span><strong id="es-total" style="color:#7c3aed">&mdash;</strong> total</span>
+        <span><strong id="es-active" style="color:#00d084">&mdash;</strong> active</span>
+        <span><strong id="es-inactive" style="color:#666">&mdash;</strong> inactive</span>
+      </div>
+    </div>
+    <div class="toolbar" style="margin-bottom:10px">
+      <input class="search-box" type="text" id="emp-search" placeholder="Search employees..." oninput="filterEmployees()">
+      <select class="filter-select" id="emp-active-filter" onchange="filterEmployees()">
+        <option value="">All</option>
+        <option value="1">Active</option>
+        <option value="0">Inactive</option>
+      </select>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Position</th><th>Rate</th><th>Pay Type</th><th>Phone</th><th>Email</th><th>Status</th><th style="width:100px">Actions</th></tr></thead>
+      <tbody id="emp-tbody"><tr><td colspan="8" style="text-align:center;padding:30px;color:#333">Loading...</td></tr></tbody>
+    </table>
   </div>
-  <div class="toolbar">
-    <input class="search-box" type="text" id="payroll-search" placeholder="Search workers..." oninput="filterPayroll()">
-    <select class="filter-select" id="payroll-status-filter" onchange="filterPayroll()">
-      <option value="">All Statuses</option>
-      <option value="pending">Pending</option>
-      <option value="paid">Paid</option>
-    </select>
-    <select class="filter-select" id="payroll-year-filter" onchange="filterPayroll()">
-      <option value="" selected>All Time</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
-    </select>
+
+  <!-- Payroll Entries section -->
+  <div class="panel" style="padding:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <h3 style="font-size:14px;color:#ddd;margin:0">📋 Payroll Entries</h3>
+        <div style="font-size:11px;color:#666;margin-top:2px">Logged labor with rates &amp; status</div>
+      </div>
+    </div>
+    <div class="stats-row" id="payroll-stats" style="margin-bottom:10px">
+      <div class="stat-card stat-total"><div class="stat-val" id="prs-hours">&mdash;</div><div class="stat-lbl">Total Hours</div></div>
+      <div class="stat-card stat-progress"><div class="stat-val" id="prs-cost">$0</div><div class="stat-lbl">Total Cost</div></div>
+      <div class="stat-card stat-pending"><div class="stat-val" id="prs-pending">&mdash;</div><div class="stat-lbl">Pending</div></div>
+      <div class="stat-card stat-done"><div class="stat-val" id="prs-paid">&mdash;</div><div class="stat-lbl">Paid</div></div>
+    </div>
+    <div class="toolbar" style="margin-bottom:10px">
+      <input class="search-box" type="text" id="payroll-search" placeholder="Search workers..." oninput="filterPayroll()">
+      <select class="filter-select" id="payroll-status-filter" onchange="filterPayroll()">
+        <option value="">All Statuses</option>
+        <option value="pending">Pending</option>
+        <option value="paid">Paid</option>
+      </select>
+      <select class="filter-select" id="payroll-year-filter" onchange="filterPayroll()">
+        <option value="" selected>All Time</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
+      </select>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Worker</th>
+          <th>Role</th>
+          <th>Hours</th>
+          <th>Rate</th>
+          <th>Total</th>
+          <th>Period</th>
+          <th>Project</th>
+          <th>Status</th>
+          <th style="width:100px">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="payroll-tbody">
+        <tr><td colspan="9" style="text-align:center;padding:30px;color:#333">Loading payroll...</td></tr>
+      </tbody>
+    </table>
   </div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Worker</th>
-        <th>Role</th>
-        <th>Hours</th>
-        <th>Rate</th>
-        <th>Total</th>
-        <th>Period</th>
-        <th>Project</th>
-        <th>Status</th>
-        <th style="width:100px">Actions</th>
-      </tr>
-    </thead>
-    <tbody id="payroll-tbody">
-      <tr><td colspan="9" style="text-align:center;padding:40px;color:#333">Loading payroll...</td></tr>
-    </tbody>
-  </table>
 </div>
 
 <!-- ===================== TAB: ESTIMATOR ===================== -->
@@ -2062,32 +2125,7 @@
 </div>
 
 <!-- ===================== TAB: EMPLOYEES ===================== -->
-<div class="tab-pane" id="tab-employees">
-  <div class="page-header">
-    <div>
-      <div class="page-title">Employees</div>
-      <div class="page-sub">Team roster and rate management</div>
-    </div>
-    <button class="btn btn-primary" onclick="openEmployeeModal()">+ Add Employee</button>
-  </div>
-  <div class="stats-row" id="emp-stats">
-    <div class="stat-card stat-total"><div class="stat-val" id="es-total">&mdash;</div><div class="stat-lbl">Total</div></div>
-    <div class="stat-card stat-done"><div class="stat-val" id="es-active">&mdash;</div><div class="stat-lbl">Active</div></div>
-    <div class="stat-card stat-blocked"><div class="stat-val" id="es-inactive">&mdash;</div><div class="stat-lbl">Inactive</div></div>
-  </div>
-  <div class="toolbar">
-    <input class="search-box" type="text" id="emp-search" placeholder="Search employees..." oninput="filterEmployees()">
-    <select class="filter-select" id="emp-active-filter" onchange="filterEmployees()">
-      <option value="">All</option>
-      <option value="1">Active</option>
-      <option value="0">Inactive</option>
-    </select>
-  </div>
-  <table class="data-table">
-    <thead><tr><th>Name</th><th>Position</th><th>Rate</th><th>Pay Type</th><th>Phone</th><th>Email</th><th>Status</th><th style="width:100px">Actions</th></tr></thead>
-    <tbody id="emp-tbody"><tr><td colspan="8" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
-  </table>
-</div>
+<!-- Employees tab merged into Payroll — see #tab-payroll -->
 
 <!-- ===================== TAB: DEBT (was IPAY) ===================== -->
 <div class="tab-pane" id="tab-ipay">
@@ -2190,24 +2228,19 @@
 
 <!-- ===================== TAB: NOTED (Notes) ===================== -->
 <div class="tab-pane" id="tab-noted">
-  <div class="page-header">
+  <div class="page-header" style="margin-bottom:12px">
     <div>
-      <div class="page-title">NoteD</div>
-      <div class="page-sub">Notes, tasks, and checklists</div>
+      <div class="page-title">📌 Sticky Pad</div>
+      <div class="page-sub">Scatter your thoughts — click any note to focus, hover to peek, edits autosave</div>
     </div>
-    <button class="btn btn-primary" onclick="openNoteModal()">+ Add Note</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="sp-search" class="search-box" placeholder="🔍 Find by content..." style="width:240px" oninput="spFilter()">
+      <button class="btn btn-secondary" id="sp-summarize-btn" onclick="spSummarizeFocused()" style="display:none">✨ Re-summarize</button>
+      <button class="btn btn-primary" onclick="spNewNote()">+ New Note</button>
+    </div>
   </div>
-  <div class="toolbar">
-    <input class="search-box" type="text" id="note-search" placeholder="Search notes..." oninput="filterNotes()">
-    <select class="filter-select" id="note-type-filter" onchange="filterNotes()">
-      <option value="">All</option>
-      <option value="task">Tasks</option>
-      <option value="list">Lists</option>
-      <option value="note">Notes</option>
-    </select>
-  </div>
-  <div id="notes-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">
-    <div style="text-align:center;padding:40px;color:#333;grid-column:1/-1">Loading...</div>
+  <div class="sp-canvas" id="sp-canvas">
+    <div class="sp-empty"><div style="font-size:64px">📌</div><div style="font-size:13px;margin-top:8px">Loading sticky pad...</div></div>
   </div>
 </div>
 
@@ -4189,13 +4222,64 @@ function updateClock(){
 setInterval(updateClock,1000); updateClock();
 
 /* ===================== TAB SWITCHING ===================== */
+// Super-tab groups → ordered list of leaf tab ids
+const TAB_GROUPS = {
+  projects: {label:'Projects', icon:'🏗️', children:['projects','invoices','changeorders']},
+  heavyeq:  {label:'Heavy Equipment', icon:'🚜', children:['estimator','architect','docprep']},
+  treasury: {label:'Treasury', icon:'🏦', children:['billing','receipts','payroll','taxdocs','ipay']}
+};
+// Per-leaf labels + icons for the contextual sub-row
+const LEAF_META = {
+  projects:    {label:'Active Projects', icon:'🏗️'},
+  invoices:    {label:'InvoiceIT',       icon:'💰'},
+  changeorders:{label:'Change Orders',   icon:'🔄'},
+  estimator:   {label:'EstimatOR',       icon:'🧮'},
+  architect:   {label:'ArchiteCT',       icon:'📐'},
+  docprep:     {label:'DocPrep',         icon:'📂'},
+  billing:     {label:'Billing',         icon:'📑'},
+  receipts:    {label:'QuickRF',         icon:'🧾'},
+  payroll:     {label:'Payroll',         icon:'💵'},
+  taxdocs:     {label:'Uncle Sam',       icon:'🦅'},
+  ipay:        {label:'Debt',            icon:'💳'}
+};
+function _parentGroupOf(leaf){
+  for(const g in TAB_GROUPS){ if(TAB_GROUPS[g].children.includes(leaf)) return g; }
+  return null;
+}
+function _renderLeafNav(groupId, activeLeaf){
+  const bar=document.getElementById('leaf-nav');
+  if(!bar) return;
+  const g=TAB_GROUPS[groupId];
+  if(!g){ bar.style.display='none'; bar.innerHTML=''; return; }
+  bar.style.display='flex';
+  bar.innerHTML = g.children.map(c=>{
+    const m=LEAF_META[c]||{label:c,icon:''};
+    return `<div class="leaf-tab${c===activeLeaf?' active':''}" data-tab="${c}" onclick="switchTab('${c}')"><span class="leaf-tab-icon">${m.icon}</span> ${m.label}</div>`;
+  }).join('');
+}
 function switchTab(tabName){
+  // Group click: redirect to its first child (or last-selected child if remembered)
+  if(TAB_GROUPS[tabName]){
+    const remembered = sessionStorage.getItem('ahbLeaf:'+tabName);
+    const target = (remembered && TAB_GROUPS[tabName].children.includes(remembered)) ? remembered : TAB_GROUPS[tabName].children[0];
+    return switchTab(target);
+  }
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.sub-tab').forEach(t=>t.classList.remove('active'));
   const pane = document.getElementById('tab-'+tabName);
   if(pane) pane.classList.add('active');
-  const tab = document.querySelector(`.sub-tab[data-tab="${tabName}"]`);
-  if(tab) tab.classList.add('active');
+  // Highlight the matching super-tab — direct match for leaves, parent group for nested
+  const parent = _parentGroupOf(tabName);
+  const superKey = parent || tabName;
+  const superEl = document.querySelector(`.sub-nav .sub-tab[data-tab="${superKey}"]`);
+  if(superEl) superEl.classList.add('active');
+  // Render the contextual leaf nav (or hide it for leaf super-tabs)
+  if(parent){
+    _renderLeafNav(parent, tabName);
+    sessionStorage.setItem('ahbLeaf:'+parent, tabName);
+  } else {
+    _renderLeafNav(null);
+  }
   history.replaceState(null,null,'?tab='+tabName);
   const loaders = {
     dashboard: loadDashboard,
@@ -4203,12 +4287,11 @@ function switchTab(tabName){
     projects: loadProjects,
     invoices: loadInvoices,
     receipts: loadReceipts,
-    payroll: loadPayroll,
+    payroll: function(){ loadPayroll(); loadEmployees(); },
     estimator: loadEstimatorSettings,
-    employees: loadEmployees,
     ipay: loadDebts,
     schedule: loadEvents,
-    noted: loadNotes,
+    noted: loadStickyPad,
     taxdocs: loadUncleSam,
     changeorders: loadChangeOrders,
     billing: loadBilling,
@@ -8979,48 +9062,188 @@ async function deleteEvent(id){
   try{await fetch('/api/ahb/events/'+id,{method:'DELETE'});showToast('Deleted');loadEvents();}catch(e){showToast('Error','error');}
 }
 
-/* ===================== NOTES (NoteD) ===================== */
-async function loadNotes(){
-  try{
-    const res=await fetch('/api/ahb/notes');
-    allNotes=await res.json();
-    renderNotes(allNotes);
-  }catch(e){document.getElementById('notes-grid').innerHTML='<div style="color:#ff5555;grid-column:1/-1;text-align:center;padding:40px">Error: '+e.message+'</div>';}
+/* ===================== STICKY PAD (was NoteD) ===================== */
+let spFocusedId = null;        // currently focused note id
+let spPositions = {};          // id → {x%, y%, rot°, color 1..5}
+let spSearch = '';
+let spSaveTimers = {};
+
+function _spRandPos(){
+  return {
+    x: 6 + Math.random()*78,    // 6–84%
+    y: 14 + Math.random()*68,   // 14–82%
+    rot: -14 + Math.random()*28,
+    color: 1 + Math.floor(Math.random()*5)
+  };
 }
-function renderNotes(list){
-  const grid=document.getElementById('notes-grid');
-  if(!list.length){grid.innerHTML='<div style="grid-column:1/-1"><div class="empty-state"><div class="empty-icon">&#128221;</div><h3>No notes</h3></div></div>';return;}
-  grid.innerHTML=list.map(n=>{
-    let items=[];try{items=JSON.parse(n.checklist_items||'[]');}catch(e){}
-    const typeLabel=n.is_task?'Task':n.is_list?'List':'Note';
-    const typeBadge=n.is_task?'badge-pending':n.is_list?'badge-sent':'badge-draft';
-    return `<div class="panel" style="position:relative;${n.pinned?'border-color:#f59e0b':''}">
-      ${n.pinned?'<div style="position:absolute;top:8px;right:10px;color:#f59e0b;font-size:14px">&#128204;</div>':''}
-      <h3 style="font-size:14px;color:#ddd;margin-bottom:6px">${escHtml(n.title)}</h3>
-      <span class="badge ${typeBadge}" style="margin-bottom:8px">${typeLabel}</span>
-      ${n.tags?'<div style="font-size:10px;color:#555;margin-bottom:6px">'+escHtml(n.tags)+'</div>':''}
-      ${n.due_date?'<div style="font-size:11px;color:#f59e0b;margin-bottom:6px">Due: '+fmtDate(n.due_date)+'</div>':''}
-      <div style="font-size:12px;color:#888;margin-bottom:8px;max-height:80px;overflow:hidden">${escHtml(n.content)||''}</div>
-      ${items.length?'<div style="font-size:12px;color:#666">'+items.map(i=>'<div style="margin:2px 0">'+(i.checked?'&#9745;':'&#9744;')+' '+escHtml(i.text)+'</div>').join('')+'</div>':''}
-      <div class="row-actions" style="margin-top:8px">
-        <button class="btn-icon" onclick="editNote('${n.id}')" title="Edit">&#9998;</button>
-        <button class="btn-icon" onclick="togglePin('${n.id}',${!n.pinned})" title="Pin">${n.pinned?'&#128204;':'&#128392;'}</button>
-        <button class="btn-icon del" onclick="deleteNote('${n.id}')" title="Delete">&#10005;</button>
+function _spSummary(n){
+  if(n.title && n.title.trim() && n.title.trim() !== 'New note') return n.title.trim().slice(0,60);
+  const c = (n.content||'').trim();
+  if(!c) return '(empty)';
+  const sent = c.split(/[.!?\n]/)[0].trim();
+  return (sent || c).slice(0,60);
+}
+function _spVisibleNotes(){
+  if(!spSearch) return allNotes;
+  const q = spSearch.toLowerCase();
+  return allNotes.filter(n =>
+    (n.title||'').toLowerCase().includes(q) ||
+    (n.content||'').toLowerCase().includes(q) ||
+    (n.tags||'').toLowerCase().includes(q));
+}
+async function loadStickyPad(){
+  try{
+    const res = await fetch('/api/ahb/notes');
+    allNotes = await res.json();
+    allNotes.forEach(n => { if(!spPositions[n.id]) spPositions[n.id] = _spRandPos(); });
+    if(allNotes.length){
+      if(!spFocusedId || !allNotes.find(n=>n.id===spFocusedId)){
+        const sorted = [...allNotes].sort((a,b)=>(b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||''));
+        spFocusedId = sorted[0].id;
+      }
+    } else {
+      spFocusedId = null;
+    }
+    spRender();
+  }catch(e){
+    const c = document.getElementById('sp-canvas');
+    if(c) c.innerHTML = '<div class="sp-empty" style="color:#ff5555">Error loading notes: '+escHtml(e.message)+'</div>';
+  }
+}
+// Legacy alias so anything that still calls loadNotes works.
+function loadNotes(){ return loadStickyPad(); }
+
+function spRender(){
+  const canvas = document.getElementById('sp-canvas');
+  if(!canvas) return;
+  const visible = _spVisibleNotes();
+  const btn = document.getElementById('sp-summarize-btn');
+  if(!visible.length){
+    canvas.innerHTML = '<div class="sp-empty"><div style="font-size:64px;margin-bottom:14px">📌</div><h3 style="margin:0;color:#888;font-weight:700">'+ (spSearch?'No matches':'Pad is empty') +'</h3><div style="margin-top:6px;font-size:13px">'+ (spSearch?'Clear the search to see all notes.':'Click <strong>+ New Note</strong> to scatter your first thought.') +'</div></div>';
+    if(btn) btn.style.display='none';
+    return;
+  }
+  const focused = visible.find(n=>n.id===spFocusedId);
+  if(btn) btn.style.display = focused ? '' : 'none';
+  const others = visible.filter(n=>n.id!==spFocusedId);
+  const html = others.map(n=>_spRenderNote(n,false)).join('') + (focused ? _spRenderNote(focused,true) : '');
+  canvas.innerHTML = html;
+  if(focused){
+    const el = document.getElementById('sp-note-'+focused.id);
+    if(el){
+      const sum = el.querySelector('.sp-summary');
+      const ce  = el.querySelector('.sp-content');
+      if(sum) sum.addEventListener('input', ()=>spDebouncedSave(focused.id));
+      if(ce)  ce.addEventListener('input',  ()=>spDebouncedSave(focused.id));
+    }
+  }
+}
+function _spRenderNote(n, isFocused){
+  const pos = spPositions[n.id] || (spPositions[n.id] = _spRandPos());
+  const summary = _spSummary(n);
+  const content = n.content || '';
+  if(isFocused){
+    return `<div id="sp-note-${n.id}" class="sp-note focused color-${pos.color}" style="left:50%;top:5%;transform:translateX(-50%) rotate(0deg)" data-id="${n.id}">
+      <span class="sp-savebadge" id="sp-saved-${n.id}">saved</span>
+      <div class="sp-summary" contenteditable="true" spellcheck="false">${escHtml(summary)}</div>
+      <div class="sp-content" contenteditable="true" data-placeholder="Write your thought…">${escHtml(content)}</div>
+      <div class="sp-actions">
+        <button class="sp-iconbtn" onclick="event.stopPropagation();spDeleteNote('${n.id}')" title="Delete">🗑</button>
+        <button class="sp-iconbtn" onclick="event.stopPropagation();spShuffle()" title="Shuffle pile">🔀</button>
       </div>
     </div>`;
-  }).join('');
+  }
+  const preview = content.slice(0,180) + (content.length>180?'…':'');
+  return `<div id="sp-note-${n.id}" class="sp-note color-${pos.color}" style="left:${pos.x}%;top:${pos.y}%;transform:rotate(${pos.rot}deg)" data-id="${n.id}" onclick="spFocus('${n.id}')">
+    <div class="sp-summary">${escHtml(summary)}</div>
+    <div class="sp-content">${escHtml(preview)}</div>
+  </div>`;
 }
-function filterNotes(){
-  const q=document.getElementById('note-search').value.toLowerCase();
-  const t=document.getElementById('note-type-filter').value;
-  renderNotes(allNotes.filter(n=>{
-    if(q&&!n.title.toLowerCase().includes(q)&&!(n.content||'').toLowerCase().includes(q)) return false;
-    if(t==='task'&&!n.is_task) return false;
-    if(t==='list'&&!n.is_list) return false;
-    if(t==='note'&&(n.is_task||n.is_list)) return false;
-    return true;
-  }));
+function spFocus(id){
+  if(spFocusedId === id) return;
+  spFocusedId = id;
+  // re-scatter the now-unfocused notes so the pile shifts when a new note is picked
+  allNotes.forEach(n => { if(n.id !== id) spPositions[n.id] = _spRandPos(); });
+  spRender();
 }
+function spShuffle(){
+  allNotes.forEach(n => { if(n.id !== spFocusedId) spPositions[n.id] = _spRandPos(); });
+  spRender();
+}
+function spFilter(){
+  const el = document.getElementById('sp-search');
+  spSearch = (el && el.value || '').trim();
+  spRender();
+}
+async function spNewNote(){
+  try{
+    const r = await fetch('/api/ahb/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:'New note', content:''})});
+    const d = await r.json();
+    if(d && d.id){
+      spFocusedId = d.id;
+      spPositions[d.id] = _spRandPos();
+      await loadStickyPad();
+      setTimeout(()=>{
+        const el = document.getElementById('sp-note-'+d.id);
+        if(!el) return;
+        const c = el.querySelector('.sp-content');
+        if(c){ c.focus(); /* place caret at end */
+          const range = document.createRange(); range.selectNodeContents(c); range.collapse(false);
+          const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        }
+      }, 140);
+    }
+  }catch(e){ showToast('Error: '+e.message,'error'); }
+}
+function spDebouncedSave(id){
+  clearTimeout(spSaveTimers[id]);
+  spSaveTimers[id] = setTimeout(()=>spSaveNote(id), 600);
+}
+async function spSaveNote(id){
+  const el = document.getElementById('sp-note-'+id);
+  if(!el) return;
+  const sum = el.querySelector('.sp-summary');
+  const ce  = el.querySelector('.sp-content');
+  const summary = (sum ? sum.innerText : '').trim() || 'Untitled';
+  const content = ce ? ce.innerText : '';
+  try{
+    await fetch('/api/ahb/notes/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:summary, content})});
+    const n = allNotes.find(x=>x.id===id);
+    if(n){ n.title = summary; n.content = content; n.updated_at = new Date().toISOString(); }
+    const badge = document.getElementById('sp-saved-'+id);
+    if(badge){ badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'), 1200); }
+  }catch(e){}
+}
+async function spDeleteNote(id){
+  if(!confirm('Tear off this sticky note?')) return;
+  try{
+    await fetch('/api/ahb/notes/'+id,{method:'DELETE'});
+    allNotes = allNotes.filter(n=>n.id!==id);
+    delete spPositions[id];
+    if(spFocusedId === id){
+      spFocusedId = allNotes.length ? allNotes[0].id : null;
+    }
+    spRender();
+  }catch(e){ showToast('Error: '+e.message,'error'); }
+}
+async function spSummarizeFocused(){
+  if(!spFocusedId) return;
+  // Save any in-flight edits first
+  await spSaveNote(spFocusedId);
+  try{
+    const r = await fetch('/api/ahb/notes/'+spFocusedId+'/summarize',{method:'POST'});
+    const d = await r.json();
+    if(d && d.summary){
+      const n = allNotes.find(x=>x.id===spFocusedId);
+      if(n) n.title = d.summary;
+      spRender();
+      showToast('Re-summarized');
+    }
+  }catch(e){ showToast('Error: '+e.message,'error'); }
+}
+/* Legacy back-compat shims — anything that still references these silently no-ops */
+function renderNotes(){ spRender(); }
+function filterNotes(){ spFilter(); }
 function toggleNoteChecklist(){
   const type=document.getElementById('note-type').value;
   document.getElementById('note-checklist-group').style.display=(type==='list')?'block':'none';
@@ -11402,7 +11625,8 @@ function openNewCallLog() {
 (function init(){
   const params=new URLSearchParams(window.location.search);
   let tab=params.get('tab')||'{{ active_tab|default("dashboard") }}';
-  if(tab==='files') tab='docprep';   // Files merged into DocPrep
+  if(tab==='files') tab='docprep';     // Files merged into DocPrep
+  if(tab==='employees') tab='payroll'; // Employees merged into Payroll
   switchTab(tab);
   // Load voice list on page load (async, non-blocking)
   loadVoiceList();
