@@ -7968,26 +7968,45 @@ def api_ahb_phase_tasks_create(phid):
 
 @app.route('/api/ahb/phase-tasks/<tid>', methods=['PUT'])
 def api_ahb_phase_task_update(tid):
-    """Update a task — title, status, assigned_to, notes, approx_minutes."""
+    """Update a task — title, status, assigned_to, notes, approx_minutes, or
+    phase_id (move to a different phase). When phase_id changes, project_id is
+    coerced to match the new phase and calendar events are re-synced for BOTH
+    the old and new phase so nothing is left orphaned."""
     try:
         data = request.json or {}
         conn = _ahb_db()
+        prev = conn.execute("SELECT phase_id, project_id FROM ahb_phase_tasks WHERE id = ?", (tid,)).fetchone()
+        old_phase_id = prev['phase_id'] if prev else None
+        old_project_id = prev['project_id'] if prev else None
+
         fields, vals = [], []
-        for k in ['title', 'status', 'assigned_to', 'notes']:
+        for k in ['title', 'status', 'assigned_to', 'notes', 'phase_id']:
             if k in data:
                 fields.append(f"{k} = ?"); vals.append(data[k])
         if 'approx_minutes' in data:
             fields.append("approx_minutes = ?"); vals.append(int(data['approx_minutes'] or 0))
+        # Moving to another phase — make sure project_id follows the new phase.
+        new_phase_id = data.get('phase_id')
+        if new_phase_id and new_phase_id != old_phase_id:
+            r = conn.execute("SELECT project_id FROM ahb_project_phases WHERE id = ?", (new_phase_id,)).fetchone()
+            if r:
+                fields.append("project_id = ?"); vals.append(r['project_id'])
         if not fields:
             conn.close()
             return jsonify({'success': True})
         vals.append(tid)
         conn.execute(f"UPDATE ahb_phase_tasks SET {', '.join(fields)} WHERE id = ?", vals)
         conn.commit()
-        row = conn.execute("SELECT phase_id, project_id FROM ahb_phase_tasks WHERE id = ?", (tid,)).fetchone()
-        if row and row['project_id'] and row['phase_id']:
-            _sync_phase_events(conn, row['project_id'], row['phase_id'])
-            conn.commit()
+
+        # Re-sync events for whichever phase(s) were touched.
+        cur = conn.execute("SELECT phase_id, project_id FROM ahb_phase_tasks WHERE id = ?", (tid,)).fetchone()
+        cur_phase_id = cur['phase_id'] if cur else None
+        cur_project_id = cur['project_id'] if cur else None
+        if old_phase_id and old_phase_id != cur_phase_id and old_project_id:
+            _sync_phase_events(conn, old_project_id, old_phase_id)
+        if cur_phase_id and cur_project_id:
+            _sync_phase_events(conn, cur_project_id, cur_phase_id)
+        conn.commit()
         conn.close()
         return jsonify({'success': True})
     except Exception as e:

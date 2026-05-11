@@ -210,11 +210,57 @@
     .kanban-card-amount{font-size:13px;font-weight:700;color:#00d084;margin-top:4px}
 
     /* Calendar brightness overhaul */
-    #cal-grid>.cal-cell{border:1px solid rgba(255,255,255,0.25);min-height:140px}
-    #cal-grid>.cal-hdr{min-height:auto}
+    /* New Calendar tab */
+    .cal-layout{display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:start}
+    @media (max-width:980px){ .cal-layout{grid-template-columns:1fr} .cal-sidebar{position:static !important} }
+    .cal-sidebar{background:#070712;border:1px solid #1a1a2e;border-radius:12px;padding:14px;position:sticky;top:14px}
+    .cal-toolbar{display:flex;align-items:center;justify-content:space-between;background:#070712;border:1px solid #1a1a2e;border-radius:12px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+    .cal-view-pill{display:flex;gap:0;background:#0a0a16;border:1px solid #1a1a2e;border-radius:8px;padding:2px}
+    .cal-view-btn{background:transparent;border:none;padding:6px 14px;color:#888;cursor:pointer;font-size:12px;font-weight:600;border-radius:6px;transition:all .12s}
+    .cal-view-btn:hover{color:#ddd}
+    .cal-view-btn.active{background:#7c3aed;color:#fff}
+    .cal-month-grid{background:#070712;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden}
+    .cal-month-hdr{display:grid;grid-template-columns:repeat(7,1fr);background:#0a0a18;border-bottom:1px solid #1a1a2e}
+    .cal-month-hdr>div{padding:10px;text-align:center;font-size:11px;font-weight:800;letter-spacing:1px}
+    .cal-month-body{display:grid;grid-template-columns:repeat(7,1fr);background:#1a1a2e;gap:1px}
+    .cal-day{background:#070712;padding:6px;min-height:120px;cursor:pointer;position:relative;transition:background .12s;display:flex;flex-direction:column;gap:3px}
+    .cal-day:hover{background:#0a0a18}
+    .cal-day.today{background:#0d0d24;box-shadow:inset 0 0 0 2px #7c3aed}
+    .cal-day.today:hover{background:#0e0e2c}
+    .cal-day.muted{background:#0a0a16;color:#333;cursor:default}
+    .cal-day.muted:hover{background:#0a0a16}
+    .cal-day-num{font-size:12px;font-weight:600;color:#aaa;display:flex;justify-content:space-between;align-items:center}
+    .cal-day.today .cal-day-num{color:#fff;font-weight:800}
+    .cal-day-badge-today{font-size:8px;background:#7c3aed;color:#fff;padding:1px 5px;border-radius:3px;font-weight:700}
+    .cal-chip{font-size:11px;padding:3px 7px;border-radius:4px;color:#fff;font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cal-chip:hover{filter:brightness(1.15)}
+    .cal-week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+    .cal-week-col{background:#070712;border:1px solid #1a1a2e;border-radius:10px;padding:10px;min-height:380px;cursor:pointer;display:flex;flex-direction:column;gap:4px}
+    .cal-week-col.today{background:#0d0d24;border-color:#7c3aed}
+    .cal-day-timeline{background:#070712;border:1px solid #1a1a2e;border-radius:12px;padding:14px}
+    .cal-timeline-grid{display:grid;grid-template-columns:60px 1fr;gap:0}
+    .cal-timeline-grid>.cal-hour{font-size:10px;color:#555;padding:6px 8px;border-top:1px solid #1a1a2e;text-align:right}
+    .cal-timeline-grid>.cal-slot{border-top:1px solid #1a1a2e;padding:4px;min-height:46px;display:flex;flex-direction:column;gap:3px}
+    .cal-mini{font-size:11px}
+    .cal-mini-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    .cal-mini-nav{background:none;border:none;color:#888;cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
+    .cal-mini-nav:hover{background:#0a0a18;color:#fff}
+    .cal-mini-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:9px;color:#666;text-align:center;margin-bottom:2px}
+    .cal-mini-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+    .cal-mini-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;border-radius:4px;color:#aaa;position:relative}
+    .cal-mini-day:hover{background:#1a1a2e;color:#fff}
+    .cal-mini-day.muted{color:#333;cursor:default}
+    .cal-mini-day.muted:hover{background:transparent}
+    .cal-mini-day.today{background:#7c3aed;color:#fff;font-weight:700}
+    .cal-mini-day.selected:not(.today){background:#1a1a2e;color:#fff}
+    .cal-mini-day .cal-mini-dot{position:absolute;bottom:1px;width:3px;height:3px;border-radius:50%;background:#00d084}
+    .cal-cat-row{display:flex;align-items:center;gap:6px;font-size:11px;color:#ccc;cursor:pointer;padding:3px 6px;border-radius:5px;user-select:none}
+    .cal-cat-row:hover{background:#0a0a18}
+    .cal-cat-row.off{opacity:.4}
+    .cal-cat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .cal-up-card{cursor:pointer;padding:6px 8px;background:#0a0a18;border:1px solid #1a1a2e;border-left-width:3px;border-radius:6px;transition:background .12s}
+    .cal-up-card:hover{background:#1a1a2e}
     #cal-week-view>div>div{border:1px solid rgba(255,255,255,0.2)}
-    #cal-grid>.cal-cell *{font-weight:600}
-    #cal-grid .kanban-card-title{font-size:11px;font-weight:700;color:#fff}
 
     .view-toggle{display:flex;gap:4px;margin-left:auto}
     .view-toggle button{background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:5px 10px;color:#666;cursor:pointer;font-size:12px}
@@ -595,7 +641,7 @@
   <div class="sub-tab" data-tab="ipay" onclick="switchTab('ipay')"><span class="sub-tab-icon">💳</span> Debt</div>
   <div class="sub-tab" data-tab="employees" onclick="switchTab('employees')"><span class="sub-tab-icon">👷</span> Employees</div>
   <div class="sub-tab" data-tab="estimator" onclick="switchTab('estimator')"><span class="sub-tab-icon">🧮</span> EstimatOR</div>
-  <div class="sub-tab" data-tab="schedule" onclick="switchTab('schedule')"><span class="sub-tab-icon">📅</span> Schedule</div>
+  <div class="sub-tab" data-tab="schedule" onclick="switchTab('schedule')"><span class="sub-tab-icon">📅</span> Calendar</div>
   <div class="sub-tab" data-tab="noted" onclick="switchTab('noted')"><span class="sub-tab-icon">📝</span> NoteD</div>
   <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
   <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
@@ -2077,63 +2123,68 @@
 
 <!-- ===================== TAB: SCHEDULE (Events) ===================== -->
 <div class="tab-pane" id="tab-schedule">
-  <div class="page-header">
+  <div class="page-header" style="margin-bottom:14px">
     <div>
-      <div class="page-title">Schedule</div>
-      <div class="page-sub">Calendar events and scheduling</div>
+      <div class="page-title">📅 Calendar</div>
+      <div class="page-sub">Every project, phase, and task scheduled in one timeline</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-primary" onclick="openEventModal()">+ Add Event</button>
-      <div class="view-toggle">
-        <button class="active" id="cal-view-month" onclick="setCalView('month')">Month</button>
-        <button id="cal-view-week" onclick="setCalView('week')">Week</button>
-        <button id="cal-view-list" onclick="setCalView('list')">List</button>
+      <button class="btn btn-primary" onclick="openEventModal()">+ New Event</button>
+    </div>
+  </div>
+
+  <div class="cal-layout">
+    <!-- Sidebar -->
+    <aside class="cal-sidebar">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+        <button class="btn btn-sm btn-secondary" onclick="calToday()" style="flex:1">Today</button>
+        <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;text-align:right;line-height:1.3">
+          <div><span id="cal-side-today-count" style="color:#00d084;font-weight:800;font-size:13px">0</span> today</div>
+          <div><span id="cal-side-upcoming-count" style="color:#4da6ff;font-weight:800;font-size:13px">0</span> upcoming</div>
+        </div>
       </div>
-    </div>
-  </div>
-  <div class="stats-row" id="sched-stats">
-    <div class="stat-card stat-total"><div class="stat-val" id="ss-total">&mdash;</div><div class="stat-lbl">Total Events</div></div>
-    <div class="stat-card stat-progress"><div class="stat-val" id="ss-upcoming">&mdash;</div><div class="stat-lbl">Upcoming</div></div>
-    <div class="stat-card stat-done"><div class="stat-val" id="ss-today">&mdash;</div><div class="stat-lbl">Today</div></div>
-  </div>
-  <!-- Calendar Navigation -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-sm btn-secondary" onclick="calNav(-1)">&larr;</button>
-      <h3 id="cal-month-label" style="font-size:18px;font-weight:700;color:#fff;min-width:200px;text-align:center"></h3>
-      <button class="btn btn-sm btn-secondary" onclick="calNav(1)">&rarr;</button>
-      <button class="btn btn-sm btn-secondary" onclick="calToday()" style="margin-left:8px">Today</button>
-    </div>
-    <div style="display:flex;gap:8px">
-      <input class="search-box" type="text" id="event-search" placeholder="Search events..." oninput="filterEvents()" style="width:180px">
-      <select class="filter-select" id="event-cat-filter" onchange="renderCalendar()"><option value="">All Categories</option></select>
-      <select class="filter-select" id="event-year-filter" onchange="filterEvents()" style="display:none"><option value="">All Time</option></select>
-      <input type="date" class="search-box" id="event-date-filter" style="width:140px;display:none" onchange="filterEvents()">
-    </div>
-  </div>
-  <!-- Month Calendar Grid -->
-  <div id="cal-month-view">
-    <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#1a1a2e;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden;min-height:500px">
-      <!-- Day labels row (always present, JS appends day cells after these) -->
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#e94560;border-bottom:2px solid #e94560">SUN</div>
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#00d084;border-bottom:2px solid #00d084">MON</div>
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#00d084;border-bottom:2px solid #00d084">TUE</div>
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#00d084;border-bottom:2px solid #00d084">WED</div>
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#00d084;border-bottom:2px solid #00d084">THU</div>
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#00d084;border-bottom:2px solid #00d084">FRI</div>
-      <div class="cal-hdr" style="background:#0a0a18;padding:14px;text-align:center;font-size:14px;font-weight:800;color:#e94560;border-bottom:2px solid #e94560">SAT</div>
-    </div>
-  </div>
-  <!-- Week View -->
-  <div id="cal-week-view" style="display:none">
-    <div id="cal-week-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-height:400px"></div>
-  </div>
-  <!-- List View (table) -->
-  <div id="cal-list-view" style="display:none">
-    <table class="data-table">
-      <thead><tr><th>Title</th><th>Date</th><th>Time</th><th>Category</th><th>All Day</th><th>Details</th><th style="width:100px">Actions</th></tr></thead>
-      <tbody id="event-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
-    </table>
+
+      <div id="cal-mini" class="cal-mini"></div>
+
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #1a1a2e">
+        <input type="text" id="cal-search" placeholder="🔍 Search events..." class="search-box" style="width:100%;font-size:11px" oninput="renderCalendar()">
+      </div>
+
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #1a1a2e">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px">Categories</span>
+          <button onclick="calResetCats()" style="background:none;border:none;color:#666;font-size:9px;cursor:pointer;text-decoration:underline">all</button>
+        </div>
+        <div id="cal-cat-filters" style="display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #1a1a2e">
+        <div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Upcoming</div>
+        <div id="cal-upcoming-list" style="display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto"></div>
+      </div>
+    </aside>
+
+    <!-- Main calendar -->
+    <section class="cal-main">
+      <div class="cal-toolbar">
+        <div style="display:flex;gap:4px;align-items:center">
+          <button class="btn btn-sm btn-secondary" onclick="calNav(-1)" title="Previous (←)" style="padding:6px 12px;font-size:16px;line-height:1">‹</button>
+          <h3 id="cal-month-label" style="font-size:18px;font-weight:700;color:#fff;margin:0 12px;min-width:220px;text-align:center"></h3>
+          <button class="btn btn-sm btn-secondary" onclick="calNav(1)" title="Next (→)" style="padding:6px 12px;font-size:16px;line-height:1">›</button>
+        </div>
+        <div class="cal-view-pill">
+          <button id="cal-view-day" class="cal-view-btn" onclick="setCalView('day')">Day</button>
+          <button id="cal-view-week" class="cal-view-btn" onclick="setCalView('week')">Week</button>
+          <button id="cal-view-month" class="cal-view-btn active" onclick="setCalView('month')">Month</button>
+          <button id="cal-view-agenda" class="cal-view-btn" onclick="setCalView('agenda')">Agenda</button>
+        </div>
+      </div>
+
+      <div id="cal-month-view"></div>
+      <div id="cal-week-view" style="display:none"></div>
+      <div id="cal-day-view" style="display:none"></div>
+      <div id="cal-agenda-view" style="display:none"></div>
+    </section>
   </div>
 </div>
 
@@ -3109,7 +3160,7 @@
 <!-- Project Modal -->
 <div class="modal-bg" id="projectModal">
   <div class="modal">
-    <h2 id="project-modal-title">Add Project</h2>
+    <h2 id="project-modal-title">Add Project <span id="project-modal-autosave" style="font-size:10px;color:#666;margin-left:8px;font-weight:400;opacity:0;transition:opacity .2s"></span></h2>
     <div class="modal-sub">Create a new project for a client</div>
     <input type="hidden" id="edit-project-id">
     <div class="form-group">
@@ -3222,7 +3273,7 @@
     </div>
 
     <!-- Document attach + scrape -->
-    <div class="form-group">
+    <div class="form-group" data-no-autosave>
       <label>Attach Documents <span style="color:#444;font-weight:400;font-size:10px">(PDF, Word, text — auto-extracts client, address, scope, budget)</span></label>
       <div id="project-doc-drop" style="border:2px dashed #1a3a5a;border-radius:10px;padding:18px;text-align:center;cursor:pointer;background:#070712;transition:border-color .15s" onclick="document.getElementById('project-doc-input').click()" ondragover="event.preventDefault();this.style.borderColor='#00bcd4'" ondragleave="this.style.borderColor='#1a3a5a'" ondrop="projectDocsDrop(event)">
         <div style="font-size:24px;margin-bottom:4px">&#128196;</div>
@@ -3681,8 +3732,9 @@
     <!-- Header -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;gap:10px">
       <div>
-        <h2 id="pd-title" style="margin-bottom:4px;color:#fff"></h2>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <h2 id="pd-title" style="margin-bottom:4px;color:#fff;display:inline"></h2>
+        <span id="pd-autosave" style="font-size:10px;color:#666;margin-left:8px;font-weight:400;opacity:0;transition:opacity .2s"></span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
           <span id="pd-status" class="badge"></span>
           <span id="pd-value" style="font-size:16px;font-weight:800;color:#00d084"></span>
           <span id="pd-address" style="font-size:12px;color:#888"></span>
@@ -3703,16 +3755,16 @@
     <input type="hidden" id="pd-id">
     <input type="hidden" id="pd-invoice-id">
     <div style="flex:1;overflow-y:auto">
-      <!-- Phase Manager -->
-      <div class="panel" style="border-color:#7c3aed">
+      <!-- Phase Manager (each phase row owns its own autosave) -->
+      <div class="panel" style="border-color:#7c3aed" data-no-autosave>
         <div class="panel-header">
           <h3 style="color:#c4b5fd">Phase Manager</h3>
           <button class="btn btn-sm btn-primary" onclick="addPhaseToProject()">+ Add Phase</button>
         </div>
         <div id="pd-phase-manager"></div>
       </div>
-      <!-- Quotes / Estimator -->
-      <div class="panel" style="border-color:#00d084">
+      <!-- Quotes / Estimator (has its own save flow) -->
+      <div class="panel" style="border-color:#00d084" data-no-autosave>
         <div class="panel-header">
           <h3 style="color:#00d084">💰 Quotes &amp; Estimator</h3>
           <div style="display:flex;gap:6px">
@@ -3910,8 +3962,8 @@
         </div>
         <div id="pd-invoice-info" style="font-size:13px;color:#888"></div>
       </div>
-      <!-- Payments Received -->
-      <div class="panel" id="pd-payments-panel" style="border-color:#00d084">
+      <!-- Payments Received (add-record form; explicit submit) -->
+      <div class="panel" id="pd-payments-panel" style="border-color:#00d084" data-no-autosave>
         <div class="panel-header">
           <h3 style="color:#00d084">💵 Payments Received <span id="pd-payments-inv-num" style="color:#666;font-weight:400;font-size:10px"></span></h3>
           <span id="pd-payments-totals" style="font-size:11px;color:#888"></span>
@@ -3953,8 +4005,8 @@
         </div>
         <div id="pd-packages" style="font-size:12px"></div>
       </div>
-      <!-- Scheduling -->
-      <div class="panel" style="border-color:#4da6ff">
+      <!-- Scheduling (add-event form; explicit submit) -->
+      <div class="panel" style="border-color:#4da6ff" data-no-autosave>
         <div class="panel-header">
           <h3 style="color:#4da6ff">Schedule</h3>
           <button class="btn btn-sm btn-primary" onclick="pdAddScheduleEvent()">+ Add Event</button>
@@ -4408,6 +4460,94 @@ function onScopeChange(){
   /* Scope is now a free-text combobox backed by a <datalist>; no toggle needed. */
 }
 
+/* ===================== AUTOSAVE =====================
+   Generic debounced autosave for "I'm editing an existing record" modals.
+   Attach to a scope element + a quiet save function — every input/textarea/
+   select change inside the scope fires the save 600 ms after the user stops
+   typing. Use `data-no-autosave` on a subtree to opt out (e.g. add-record
+   forms inside an edit modal). A small inline indicator shows save state. */
+function _autosaveIndicate(id, state){
+  let el = document.getElementById(id);
+  if(!el) return;
+  if(state==='saving'){ el.textContent='• saving…'; el.style.color='#888'; el.style.opacity='1'; }
+  else if(state==='saved'){ el.textContent='✓ saved'; el.style.color='#00d084'; el.style.opacity='1'; clearTimeout(el._fadeT); el._fadeT=setTimeout(()=>{el.style.opacity='0';},1400); }
+  else if(state==='error'){ el.textContent='✗ save failed'; el.style.color='#ff6b6b'; el.style.opacity='1'; }
+  else { el.style.opacity='0'; }
+}
+function attachAutosave(scope, saveFn, opts){
+  if(typeof scope === 'string') scope = document.getElementById(scope);
+  if(!scope) return;
+  opts = opts || {};
+  const debounceMs = opts.debounceMs || 600;
+  const indicator = opts.indicator || null;
+  /* Detach any prior listener so re-renders don't stack handlers. */
+  if(scope._autosaveHandler){
+    scope.removeEventListener('input', scope._autosaveHandler);
+    scope.removeEventListener('change', scope._autosaveHandler);
+  }
+  let t = null;
+  const handler = (e)=>{
+    const tg = e.target;
+    if(!tg || !['INPUT','TEXTAREA','SELECT'].includes(tg.tagName)) return;
+    if(tg.type==='button' || tg.type==='submit' || tg.type==='file') return;
+    if(tg.closest('[data-no-autosave]')) return;
+    if(tg.dataset && tg.dataset.noAutosave!==undefined) return;
+    if(indicator) _autosaveIndicate(indicator, 'saving');
+    clearTimeout(t);
+    t = setTimeout(async ()=>{
+      try{ await saveFn(); if(indicator) _autosaveIndicate(indicator,'saved'); }
+      catch(err){ if(indicator) _autosaveIndicate(indicator,'error'); }
+    }, debounceMs);
+  };
+  scope._autosaveHandler = handler;
+  scope.addEventListener('input', handler);
+  scope.addEventListener('change', handler);
+}
+
+/* Quiet PUT for the project edit modal — no toast, no modal close, no list
+   reload. Used by autosave only; the "Save Project" button keeps its full
+   behaviour (toast + close) for explicit saves and creates. */
+async function _saveProjectQuiet(){
+  const id = document.getElementById('edit-project-id').value;
+  if(!id) return;   /* Autosave only applies to existing records. */
+  const scope=(document.getElementById('project-scope').value||'').trim();
+  const data={
+    title: document.getElementById('project-title').value.trim(),
+    client_id: document.getElementById('project-client').value || null,
+    client_name: document.getElementById('project-client-name').value.trim() || null,
+    scope: scope,
+    address: document.getElementById('project-address').value.trim(),
+    description: document.getElementById('project-description').value.trim(),
+    notes: document.getElementById('project-notes').value.trim(),
+    budget_low: document.getElementById('project-budget-low').value || null,
+    budget_high: document.getElementById('project-budget-high').value || null,
+    start_date: document.getElementById('project-start').value || null,
+    end_date: document.getElementById('project-end').value || null,
+    status: document.getElementById('project-modal-status').value
+  };
+  const res = await fetch('/api/ahb/projects/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  if(!res.ok) throw new Error(await res.text());
+}
+
+/* Quiet PUT for project detail modal's inline-edit panel (#pd-details). */
+async function _saveProjectDetailsQuiet(){
+  const pid = document.getElementById('pd-id').value;
+  if(!pid) return;
+  const get = (id)=> (document.getElementById(id)||{}).value;
+  const res = await fetch('/api/ahb/projects/'+pid, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+    description: get('pd-desc')||'',
+    scope:       get('pd-scope')||'',
+    notes:       get('pd-notes')||'',
+    acquisition_type: get('pd-acquisition')||'',
+    start_date:  get('pd-start')||'',
+    end_date:    get('pd-end')||'',
+    commission_pct: parseFloat(get('pd-commission-pct'))||0,
+    commission_value: parseFloat(get('pd-commission-val'))||0,
+    commission_beneficiary: get('pd-commission-beneficiary')||''
+  })});
+  if(!res.ok) throw new Error(await res.text());
+}
+
 /* ===================== PROJECT DETAIL: PAYMENTS PANEL =====================
    Lives inside projectDetailModal so each project has its own working
    dashboard. Loaded by openProjectDetail → pdLoadPayments(pid). Context:
@@ -4622,6 +4762,7 @@ async function openProjectModal(){
   projectStagedDocs=[];
   projectScrapedSuggestions=null;
   projectScrapeStagingId=null;
+  _autosaveIndicate('project-modal-autosave', 'hidden');
   document.getElementById('projectModal').classList.add('open');
   // Auto-load clients if list is empty (e.g. user landed on Projects tab first)
   if(!allClients.length){
@@ -4664,6 +4805,8 @@ async function editProject(id){
   document.getElementById('project-scrape-result').style.display='none';
   projectStagedDocs=[];
   document.getElementById('projectModal').classList.add('open');
+  /* Autosave: any change inside the project modal silently PUTs the project. */
+  attachAutosave('projectModal', _saveProjectQuiet, {indicator:'project-modal-autosave'});
 }
 
 function projectDocsDrop(e){
@@ -8789,53 +8932,18 @@ async function deleteDebt(id){
   try{await fetch('/api/ahb/debts/'+id,{method:'DELETE'});showToast('Deleted');loadDebts();}catch(e){showToast('Error','error');}
 }
 
-/* ===================== EVENTS (Schedule) ===================== */
+/* ===================== EVENTS (Calendar) ===================== */
 async function loadEvents(){
   try{
     const res=await fetch('/api/ahb/events');
     allEvents=await res.json();
-    const today=new Date().toISOString().slice(0,10);
-    document.getElementById('ss-total').textContent=allEvents.length;
-    document.getElementById('ss-today').textContent=allEvents.filter(e=>e.date===today).length;
-    document.getElementById('ss-upcoming').textContent=allEvents.filter(e=>e.date>=today).length;
-    // Populate category filter
-    const cats=[...new Set(allEvents.map(e=>e.category).filter(Boolean))];
-    const sel=document.getElementById('event-cat-filter');
-    const cur=sel.value;sel.innerHTML='<option value="">All Categories</option>';
-    cats.forEach(c=>sel.add(new Option(c,c)));sel.value=cur;
     renderCalendar();
-  }catch(e){document.getElementById('event-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;color:#ff5555">Error: '+e.message+'</td></tr>';}
+  }catch(e){ showToast('Error loading events: '+e.message,'error'); }
 }
-function renderEvents(list){
-  const tb=document.getElementById('event-tbody');
-  if(!list.length){tb.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">&#128197;</div><h3>No events</h3></div></td></tr>';return;}
-  tb.innerHTML=list.map(e=>`<tr>
-    <td style="font-weight:600;color:#ddd">${escHtml(e.title)}</td>
-    <td style="font-size:12px;color:#888">${fmtDate(e.date)}</td>
-    <td style="font-size:12px;color:#888">${e.time||'&mdash;'}</td>
-    <td>${e.category?'<span class="badge badge-estimate">'+escHtml(e.category)+'</span>':'&mdash;'}</td>
-    <td>${e.all_day?'<span class="badge badge-active">Yes</span>':'No'}</td>
-    <td style="font-size:12px;color:#666;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(e.details)||'&mdash;'}</td>
-    <td><div class="row-actions">
-      <button class="btn-icon" onclick="editEvent('${e.id}')" title="Edit">&#9998;</button>
-      <button class="btn-icon del" onclick="deleteEvent('${e.id}')" title="Delete">&#10005;</button>
-    </div></td>
-  </tr>`).join('');
-}
-function filterEvents(){
-  const q=document.getElementById('event-search').value.toLowerCase();
-  if(q){
-    // Text search: switch to list view and filter
-    const filtered=allEvents.filter(e=>{
-      if(!e.title.toLowerCase().includes(q)&&!(e.details||'').toLowerCase().includes(q)) return false;
-      return true;
-    });
-    setCalView('list');
-    renderEvents(filtered);
-  }else{
-    renderCalendar();
-  }
-}
+/* Kept for backward compat — anything that still calls filterEvents() just
+   funnels into the unified render path. The legacy renderEvents() (table view)
+   was retired with the redesign. */
+function filterEvents(){ renderCalendar(); }
 function openEventModal(){
   document.getElementById('edit-event-id').value='';
   document.getElementById('event-modal-title').textContent='Add Event';
@@ -9831,88 +9939,323 @@ async function deleteTax(id){
   try{await fetch('/api/ahb/tax/'+id,{method:'DELETE'});showToast('Deleted');loadTax();}catch(e){showToast('Error','error');}
 }
 
-/* ===================== CALENDAR ===================== */
+/* ===================== CALENDAR (modern workflow rebuild) =====================
+   - 4 views: Day (hourly timeline) / Week / Month / Agenda
+   - Sidebar: mini-calendar, search, category filter pills, upcoming list
+   - Auto-categorizes project/phase/task events from the calendar sync hook
+   - Keyboard nav (← / → arrows, T = today) when the tab is active
+*/
 let calViewMode='month', calDate=new Date();
-const catColors={'Meeting':'#7c3aed','Inspection':'#e94560','Deadline':'#ff5555','Appointment':'#4da6ff','Project':'#00d084','Personal':'#f59e0b'};
+
+/* Category color/label registry. Categories produced by the phase-sync hook
+   (`phase`, `phase_task`) and the user-facing common ones get curated colors;
+   anything else falls back to the "Other" grey. Lower-cased keys. */
+const calCatColors = {
+  'project':     {bg:'#7c3aed', label:'Project'},
+  'phase':       {bg:'#a78bfa', label:'Phase'},
+  'phase_task':  {bg:'#06b6d4', label:'Phase Task'},
+  'work':        {bg:'#10b981', label:'Work Day'},
+  'meeting':     {bg:'#3b82f6', label:'Meeting'},
+  'inspection':  {bg:'#ec4899', label:'Inspection'},
+  'delivery':    {bg:'#f59e0b', label:'Delivery'},
+  'permit':      {bg:'#fb923c', label:'Permit'},
+  'deadline':    {bg:'#ef4444', label:'Deadline'},
+  'personal':    {bg:'#eab308', label:'Personal'},
+  'appointment': {bg:'#22d3ee', label:'Appointment'},
+  'reminder':    {bg:'#94a3b8', label:'Reminder'},
+  'business':    {bg:'#0ea5e9', label:'Business'},
+  'general':     {bg:'#64748b', label:'General'},
+  'task':        {bg:'#14b8a6', label:'Task'},
+  '':            {bg:'#6b7280', label:'Other'}
+};
+function _calCat(e){ return ((e.category||'')+'').toLowerCase().trim(); }
+function _calCfg(e){ return calCatColors[_calCat(e)] || calCatColors['']; }
+
+/* Filter state — a set of categories the user has TURNED OFF.
+   Empty set = everything visible. Easier than tracking "on" because new
+   categories should be visible by default. */
+let _calCatOff = new Set();
+function calToggleCat(cat){
+  if(_calCatOff.has(cat)) _calCatOff.delete(cat); else _calCatOff.add(cat);
+  renderCalendar();
+}
+function calResetCats(){ _calCatOff.clear(); renderCalendar(); }
+
 function setCalView(mode){
   calViewMode=mode;
-  ['month','week','list'].forEach(v=>{
-    document.getElementById('cal-view-'+v).classList.toggle('active',v===mode);
-    document.getElementById('cal-'+v+'-view').style.display=v===mode?'':'none';
+  ['day','week','month','agenda'].forEach(v=>{
+    const btn=document.getElementById('cal-view-'+v); if(btn) btn.classList.toggle('active',v===mode);
+    const view=document.getElementById('cal-'+v+'-view'); if(view) view.style.display=v===mode?'':'none';
   });
   renderCalendar();
 }
 function calNav(dir){
   if(calViewMode==='month') calDate.setMonth(calDate.getMonth()+dir);
-  else calDate.setDate(calDate.getDate()+dir*7);
+  else if(calViewMode==='week') calDate.setDate(calDate.getDate()+dir*7);
+  else if(calViewMode==='day') calDate.setDate(calDate.getDate()+dir);
+  else /* agenda */ calDate.setMonth(calDate.getMonth()+dir);
   renderCalendar();
 }
-function calToday(){calDate=new Date();renderCalendar();}
+function calToday(){ calDate=new Date(); renderCalendar(); }
+function calJumpTo(ds){
+  const [y,m,d]=ds.split('-').map(Number);
+  calDate=new Date(y, m-1, d);
+  renderCalendar();
+}
+
+function _calFilteredEvents(){
+  const q = ((document.getElementById('cal-search')||{}).value||'').toLowerCase().trim();
+  return allEvents.filter(e=>{
+    if(_calCatOff.has(_calCat(e))) return false;
+    if(q){
+      const blob = ((e.title||'')+' '+(e.details||'')+' '+(e.category||'')).toLowerCase();
+      if(!blob.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
 function renderCalendar(){
-  const catFilter=document.getElementById('event-cat-filter').value;
-  const filtered=catFilter?allEvents.filter(e=>e.category===catFilter):allEvents;
-  const label=document.getElementById('cal-month-label');
-  if(calViewMode==='month') renderMonthView(filtered,label);
-  else if(calViewMode==='week') renderWeekView(filtered,label);
-  else{label.textContent='All Events';renderEvents(filtered);}
+  const events = _calFilteredEvents();
+  if(calViewMode==='month')      renderMonthView(events);
+  else if(calViewMode==='week')  renderWeekView(events);
+  else if(calViewMode==='day')   renderDayView(events);
+  else                            renderAgendaView(events);
+  renderMiniCal();
+  renderCatFilters();
+  renderUpcoming();
+  renderSidebarCounts();
 }
-function renderMonthView(events,label){
-  const year=calDate.getFullYear(),month=calDate.getMonth();
-  label.textContent=calDate.toLocaleDateString('en-US',{month:'long',year:'numeric'});
-  const firstDay=new Date(year,month,1).getDay();
-  const daysInMonth=new Date(year,month+1,0).getDate();
-  const today=new Date().toISOString().slice(0,10);
-  const grid=document.getElementById('cal-grid');
-  // Remove old day cells but keep the 7 header divs (.cal-hdr)
-  const hdrs=grid.querySelectorAll('.cal-hdr');
-  grid.querySelectorAll(':scope > div:not(.cal-hdr)').forEach(el=>el.remove());
-  let html='';
-  // Empty cells before first day
-  for(let i=0;i<firstDay;i++) html+=`<div class="cal-cell" style="background:#09091a;padding:10px;min-height:140px"></div>`;
-  for(let d=1;d<=daysInMonth;d++){
-    const dateStr=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dayEvents=events.filter(e=>e.date===dateStr);
-    const isToday=dateStr===today;
-    html+=`<div class="cal-cell" style="background:${isToday?'#111128':'#09091a'};padding:10px;min-height:140px;cursor:pointer;${isToday?'border:2px solid #a78bfa;':''}position:relative" onclick="calDayClick('${dateStr}')">
-      <div style="font-size:14px;font-weight:800;color:${isToday?'#e94560':'#fff'};margin-bottom:6px">${d}</div>
-      ${dayEvents.slice(0,4).map(e=>{
-        const c=catColors[e.category]||'#888';
-        return `<div style="font-size:11px;padding:3px 6px;margin:2px 0;border-radius:4px;background:${c}88;color:#fff;border-left:3px solid ${c};overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;font-weight:700" onclick="event.stopPropagation();editEvent('${e.id}')" title="${escHtml(e.title)}">${e.time?e.time.slice(0,5)+' ':''}${escHtml(e.title)}</div>`;
-      }).join('')}
-      ${dayEvents.length>4?`<div style="font-size:10px;color:#888;text-align:center;margin-top:2px">+${dayEvents.length-4} more</div>`:''}
+
+/* ---------- Event chip ---------- */
+function _calChip(e, mode){
+  const cfg=_calCfg(e);
+  const time = e.time ? e.time.slice(0,5) : '';
+  const safe = escHtml(e.title||'(untitled)');
+  if(mode==='wide'){
+    return `<div onclick="editEvent('${e.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 10px;background:#0a0a18;border-left:3px solid ${cfg.bg};border-radius:6px;transition:background .12s" onmouseover="this.style.background='#11112a'" onmouseout="this.style.background='#0a0a18'">
+      <span style="font-size:11px;color:${cfg.bg};font-weight:800;min-width:62px">${time||(e.all_day?'All day':'—')}</span>
+      <span style="flex:1;font-size:12px;color:#ddd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600">${safe}</span>
+      <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:${cfg.bg}33;color:${cfg.bg};text-transform:uppercase;font-weight:700;letter-spacing:.5px;white-space:nowrap">${escHtml(cfg.label)}</span>
     </div>`;
   }
-  // Fill remaining cells
-  const totalCells=firstDay+daysInMonth;
-  const remaining=totalCells%7===0?0:7-totalCells%7;
-  for(let i=0;i<remaining;i++) html+=`<div class="cal-cell" style="background:#09091a;padding:10px;min-height:140px"></div>`;
-  grid.insertAdjacentHTML('beforeend',html);
+  /* compact (default): one-line tinted chip */
+  return `<div class="cal-chip" style="background:${cfg.bg}cc;border-left:3px solid ${cfg.bg}" onclick="event.stopPropagation();editEvent('${e.id}')" title="${safe}">${time?time+' ':''}${safe}</div>`;
 }
-function renderWeekView(events,label){
-  const start=new Date(calDate);start.setDate(start.getDate()-start.getDay());
-  const end=new Date(start);end.setDate(end.getDate()+6);
-  label.textContent=start.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' - '+end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const grid=document.getElementById('cal-week-grid');
-  const today=new Date().toISOString().slice(0,10);
-  let html='';
+
+/* ---------- Month ---------- */
+function renderMonthView(events){
+  const y=calDate.getFullYear(), m=calDate.getMonth();
+  document.getElementById('cal-month-label').textContent=calDate.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const firstDow = new Date(y,m,1).getDay();
+  const days = new Date(y,m+1,0).getDate();
+  const today = new Date().toISOString().slice(0,10);
+  const prevMonthDays = new Date(y,m,0).getDate();
+  let body='';
+  /* Leading days (previous month) */
+  for(let i=firstDow-1; i>=0; i--){
+    body += `<div class="cal-day muted"><div class="cal-day-num"><span>${prevMonthDays-i}</span></div></div>`;
+  }
+  for(let d=1; d<=days; d++){
+    const ds = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dayEvents = events.filter(e=>e.date===ds).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    const todayCls = ds===today ? ' today' : '';
+    body += `<div class="cal-day${todayCls}" onclick="calDayClick('${ds}')">
+      <div class="cal-day-num"><span>${d}</span>${ds===today?'<span class="cal-day-badge-today">TODAY</span>':''}</div>
+      ${dayEvents.slice(0,4).map(e=>_calChip(e,'compact')).join('')}
+      ${dayEvents.length>4?`<div style="font-size:10px;color:#666;margin-top:auto;font-weight:600">+${dayEvents.length-4} more</div>`:''}
+    </div>`;
+  }
+  /* Trailing days (next month) so the grid always rounds to 7 */
+  const total = firstDow + days;
+  const trail = total%7===0 ? 0 : 7 - total%7;
+  for(let i=1; i<=trail; i++){
+    body += `<div class="cal-day muted"><div class="cal-day-num"><span>${i}</span></div></div>`;
+  }
+  const dowHdr = ['SUN','MON','TUE','WED','THU','FRI','SAT'].map((d,i)=>`<div style="color:${i===0||i===6?'#e94560':'#888'}">${d}</div>`).join('');
+  document.getElementById('cal-month-view').innerHTML = `<div class="cal-month-grid"><div class="cal-month-hdr">${dowHdr}</div><div class="cal-month-body">${body}</div></div>`;
+}
+
+/* ---------- Week ---------- */
+function renderWeekView(events){
+  const start = new Date(calDate); start.setDate(start.getDate()-start.getDay());
+  const end = new Date(start); end.setDate(end.getDate()+6);
+  document.getElementById('cal-month-label').textContent =
+    start.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' – ' +
+    end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const today = new Date().toISOString().slice(0,10);
+  let cols='';
   for(let i=0;i<7;i++){
-    const day=new Date(start);day.setDate(day.getDate()+i);
-    const dateStr=day.toISOString().slice(0,10);
-    const dayEvents=events.filter(e=>e.date===dateStr);
-    const isToday=dateStr===today;
-    html+=`<div style="background:${isToday?'#111128':'#0e0e1e'};border:1px solid ${isToday?'#7c3aed':'#1a1a2e'};border-radius:10px;padding:12px;min-height:300px;cursor:pointer" onclick="calDayClick('${dateStr}')">
-      <div style="font-size:11px;font-weight:700;color:${isToday?'#e94560':'#fff'};text-transform:uppercase;margin-bottom:8px">${day.toLocaleDateString('en-US',{weekday:'short',day:'numeric'})}</div>
-      ${dayEvents.map(e=>{
-        const c=catColors[e.category]||'#555';
-        return `<div style="font-size:11px;padding:6px 8px;margin:4px 0;border-radius:6px;background:${c}44;border-left:3px solid ${c};cursor:pointer" onclick="event.stopPropagation();editEvent('${e.id}')">
-          <div style="color:#ddd;font-weight:600">${escHtml(e.title)}</div>
-          <div style="color:#666;font-size:10px;margin-top:2px">${e.time||'All day'}${e.category?' &middot; '+e.category:''}</div>
-        </div>`;
-      }).join('')||'<div style="text-align:center;padding:20px;color:#222;font-size:11px">No events</div>'}
+    const day = new Date(start); day.setDate(day.getDate()+i);
+    const ds = day.toISOString().slice(0,10);
+    const dayEvents = events.filter(e=>e.date===ds).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+    const cls = ds===today ? ' today' : '';
+    cols += `<div class="cal-week-col${cls}" onclick="calDayClick('${ds}')">
+      <div style="font-size:10px;font-weight:700;color:${ds===today?'#7c3aed':'#666'};text-transform:uppercase;letter-spacing:1px">${day.toLocaleDateString('en-US',{weekday:'short'})}</div>
+      <div style="font-size:22px;font-weight:800;color:${ds===today?'#fff':'#aaa'};margin-bottom:6px">${day.getDate()}</div>
+      ${dayEvents.length ? dayEvents.map(e=>_calChip(e,'compact')).join('') : '<div style="color:#333;font-size:11px;text-align:center;padding:24px 0">No events</div>'}
     </div>`;
   }
-  grid.innerHTML=html;
+  document.getElementById('cal-week-view').innerHTML = `<div class="cal-week-grid">${cols}</div>`;
 }
+
+/* ---------- Day (hourly timeline) ---------- */
+function renderDayView(events){
+  const ds = calDate.toISOString().slice(0,10);
+  document.getElementById('cal-month-label').textContent = calDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const day = events.filter(e=>e.date===ds).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const allDay = day.filter(e=>e.all_day || !e.time);
+  const timed = day.filter(e=>!e.all_day && e.time);
+  let timeline='';
+  for(let h=7; h<=20; h++){
+    const slot = timed.filter(e=>parseInt((e.time||'00').slice(0,2),10)===h);
+    const hr12 = h>12 ? h-12 : (h===0?12:h);
+    const ampm = h>=12 ? 'pm' : 'am';
+    timeline += `<div class="cal-hour">${hr12}${ampm}</div><div class="cal-slot">${slot.map(e=>_calChip(e,'compact')).join('')}</div>`;
+  }
+  const allDayBlock = allDay.length
+    ? allDay.map(e=>_calChip(e,'wide')).join('')
+    : '<span style="color:#444;font-size:11px">— none —</span>';
+  document.getElementById('cal-day-view').innerHTML = `<div class="cal-day-timeline">
+    <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px">All-day</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">${allDayBlock}</div>
+    <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px">Hourly</div>
+    <div class="cal-timeline-grid">${timeline}</div>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end">
+      <button class="btn btn-sm btn-primary" onclick="calDayClick('${ds}')">+ Add event on this day</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- Agenda (chronological grouped) ---------- */
+function renderAgendaView(events){
+  document.getElementById('cal-month-label').textContent = calDate.toLocaleDateString('en-US',{month:'long',year:'numeric'}) + ' & beyond';
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = events.filter(e=>e.date>=today).sort((a,b)=>{
+    if(a.date !== b.date) return a.date.localeCompare(b.date);
+    return (a.time||'').localeCompare(b.time||'');
+  });
+  const el = document.getElementById('cal-agenda-view');
+  if(!upcoming.length){
+    el.innerHTML = '<div style="background:#070712;border:1px solid #1a1a2e;border-radius:12px;padding:32px;text-align:center;color:#444">Nothing upcoming. <a href="#" onclick="openEventModal();return false" style="color:#7c3aed">Add an event</a> or create a project phase.</div>';
+    return;
+  }
+  const groups = {};
+  upcoming.forEach(e=>{ (groups[e.date]=groups[e.date]||[]).push(e); });
+  el.innerHTML = Object.entries(groups).map(([date, evs])=>{
+    const d = new Date(date+'T12:00:00');
+    const isToday = date===today;
+    const isTomorrow = date === new Date(Date.now()+86400000).toISOString().slice(0,10);
+    const dayLabel = isToday ? 'TODAY' : isTomorrow ? 'TOMORROW' : d.toLocaleDateString('en-US',{weekday:'long'}).toUpperCase();
+    return `<div style="background:#070712;border:1px solid #1a1a2e;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1a1a2e">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font-size:11px;font-weight:800;color:${isToday?'#00d084':isTomorrow?'#4da6ff':'#888'};letter-spacing:1px">${dayLabel}</span>
+          <span style="font-size:13px;color:#ddd;font-weight:600">${d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span>
+        </div>
+        <span style="font-size:11px;color:#666">${evs.length} event${evs.length>1?'s':''}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">${evs.map(e=>_calChip(e,'wide')).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- Sidebar pieces ---------- */
+function renderMiniCal(){
+  const el = document.getElementById('cal-mini'); if(!el) return;
+  const y = calDate.getFullYear(), m = calDate.getMonth();
+  const firstDow = new Date(y,m,1).getDay();
+  const days = new Date(y,m+1,0).getDate();
+  const prevDays = new Date(y,m,0).getDate();
+  const today = new Date().toISOString().slice(0,10);
+  const selected = calDate.toISOString().slice(0,10);
+  const eventDates = new Set(allEvents.map(e=>e.date));
+  let cells='';
+  for(let i=firstDow-1;i>=0;i--){
+    cells += `<div class="cal-mini-day muted">${prevDays-i}</div>`;
+  }
+  for(let d=1;d<=days;d++){
+    const ds = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    let cls='cal-mini-day';
+    if(ds===today) cls += ' today';
+    else if(ds===selected) cls += ' selected';
+    const dot = eventDates.has(ds) ? '<span class="cal-mini-dot"></span>' : '';
+    cells += `<div class="${cls}" onclick="calJumpTo('${ds}')">${d}${dot}</div>`;
+  }
+  const total = firstDow+days; const trail = total%7===0 ? 0 : 7-total%7;
+  for(let i=1;i<=trail;i++) cells += `<div class="cal-mini-day muted">${i}</div>`;
+  el.innerHTML = `
+    <div class="cal-mini-hdr">
+      <button class="cal-mini-nav" onclick="calNav(-1)">‹</button>
+      <span style="font-size:11px;font-weight:700;color:#ddd">${calDate.toLocaleDateString('en-US',{month:'short',year:'numeric'})}</span>
+      <button class="cal-mini-nav" onclick="calNav(1)">›</button>
+    </div>
+    <div class="cal-mini-dow"><div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div></div>
+    <div class="cal-mini-days">${cells}</div>`;
+}
+
+function renderCatFilters(){
+  const el = document.getElementById('cal-cat-filters'); if(!el) return;
+  /* Build the list from what's actually in the data — guarantees we cover
+     custom categories the user typed in. Sort alphabetically by label. */
+  const cats = [...new Set(allEvents.map(_calCat))];
+  cats.sort((a,b)=>{
+    const la=(calCatColors[a]||calCatColors['']).label;
+    const lb=(calCatColors[b]||calCatColors['']).label;
+    return la.localeCompare(lb);
+  });
+  if(!cats.length){ el.innerHTML='<span style="color:#444;font-size:11px">No events yet</span>'; return; }
+  el.innerHTML = cats.map(c=>{
+    const cfg = calCatColors[c] || calCatColors[''];
+    const off = _calCatOff.has(c);
+    const count = allEvents.filter(e=>_calCat(e)===c).length;
+    return `<div class="cal-cat-row${off?' off':''}" onclick="calToggleCat('${c}')">
+      <span class="cal-cat-dot" style="background:${cfg.bg}"></span>
+      <span style="flex:1">${escHtml(cfg.label)}</span>
+      <span style="color:#555;font-size:10px">${count}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderUpcoming(){
+  const el = document.getElementById('cal-upcoming-list'); if(!el) return;
+  const today = new Date().toISOString().slice(0,10);
+  const upcoming = _calFilteredEvents()
+    .filter(e=>e.date>=today)
+    .sort((a,b)=>{
+      if(a.date !== b.date) return a.date.localeCompare(b.date);
+      return (a.time||'').localeCompare(b.time||'');
+    })
+    .slice(0,12);
+  if(!upcoming.length){ el.innerHTML='<span style="color:#444;font-size:11px">Nothing upcoming</span>'; return; }
+  el.innerHTML = upcoming.map(e=>{
+    const cfg = _calCfg(e);
+    const isToday = e.date===today;
+    return `<div class="cal-up-card" style="border-left-color:${cfg.bg}" onclick="editEvent('${e.id}')">
+      <div style="font-size:11px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(e.title||'(untitled)')}</div>
+      <div style="font-size:10px;color:${isToday?'#00d084':'#888'};margin-top:2px">${isToday?'TODAY':fmtDate(e.date)}${e.time?' · '+e.time.slice(0,5):''}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSidebarCounts(){
+  const today = new Date().toISOString().slice(0,10);
+  const tc = document.getElementById('cal-side-today-count');
+  const uc = document.getElementById('cal-side-upcoming-count');
+  if(tc) tc.textContent = allEvents.filter(e=>e.date===today).length;
+  if(uc) uc.textContent = allEvents.filter(e=>e.date>=today).length;
+}
+
+/* ---------- Keyboard nav ---------- */
+document.addEventListener('keydown', (e)=>{
+  if(document.querySelector('.modal-bg.open')) return;
+  const tab=document.querySelector('.tab-pane.active');
+  if(!tab || tab.id!=='tab-schedule') return;
+  if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if(e.key==='ArrowLeft'){ calNav(-1); e.preventDefault(); }
+  else if(e.key==='ArrowRight'){ calNav(1); e.preventDefault(); }
+  else if(e.key==='t' || e.key==='T'){ calToday(); e.preventDefault(); }
+});
 let calDayActiveDate='';
 function calDayClick(dateStr){
   calDayActiveDate=dateStr;
@@ -9934,7 +10277,7 @@ function renderDayPopupEvents(dateStr){
     el.innerHTML='<div style="text-align:center;padding:32px;color:#555;font-size:14px">No events scheduled for this day</div>';
   }else{
     el.innerHTML=dayEvents.map(e=>{
-      const c=catColors[e.category]||'#888';
+      const cfg=_calCfg(e); const c=cfg.bg;
       return `<div style="display:flex;align-items:flex-start;gap:12px;padding:14px;margin:8px 0;background:#0e0e1e;border-radius:10px;border-left:4px solid ${c};transition:background .2s" onmouseenter="this.style.background='#151530'" onmouseleave="this.style.background='#0e0e1e'">
         <div style="min-width:50px;text-align:center;padding-top:2px">
           <div style="font-size:13px;font-weight:700;color:${c}">${e.time?e.time.slice(0,5):'ALL'}</div>
@@ -9942,7 +10285,7 @@ function renderDayPopupEvents(dateStr){
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px">${escHtml(e.title)}</div>
-          ${e.category?'<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:'+c+'33;color:'+c+';font-weight:600;text-transform:uppercase">'+escHtml(e.category)+'</span>':''}
+          <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${c}33;color:${c};font-weight:700;text-transform:uppercase;letter-spacing:.5px">${escHtml(cfg.label)}</span>
           ${e.details?'<div style="font-size:12px;color:#999;margin-top:8px;line-height:1.5">'+escHtml(e.details).substring(0,200)+'</div>':''}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
@@ -10223,8 +10566,10 @@ async function openProjectDetail(pid){
         <div class="form-group" style="margin:0"><label>Start Date</label><input type="date" id="pd-start" value="${p.start_date||''}"></div>
         <div class="form-group" style="margin:0"><label>End Date</label><input type="date" id="pd-end" value="${p.end_date||''}"></div>
       </div>
-      <button class="btn btn-sm btn-primary" style="margin-top:8px" onclick="saveProjectDetails()">Save Details</button>
+      <div style="margin-top:6px;font-size:10px;color:#555;font-style:italic">All fields autosave as you type.</div>
     `;
+    /* Autosave: any change inside pd-details silently PUTs the project. */
+    attachAutosave('pd-details', _saveProjectDetailsQuiet, {indicator:'pd-autosave'});
     // Auto-calc commission if not yet set but project has value
     if(p.value && !p.commission_value){pdCalcCommission();}
     // Populate beneficiary suggestions from clients + employees
@@ -10232,13 +10577,10 @@ async function openProjectDetail(pid){
     document.getElementById('projectDetailModal').classList.add('open');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
-/* Phase Manager — workflow only (no pricing). A "phase" is a chunk of work;
-   each phase carries tasks. Tasks may be added free-form, or pulled from
-   invoice line items. Each task has an editable approx_minutes (time to
-   complete). Phase start/end dates and per-task entries automatically appear
-   on the Scheduled Calendar — the backend handles the sync. */
+/* Phase Manager — workflow only (no pricing). Every field is always live: the
+   row inputs autosave when the user stops typing. No edit/save/cancel toggle.
+   Tasks below each phase also autosave (text inputs are debounced). */
 const _pdPhaseTaskCache = {};   // phase_id → [task,...]
-const _pdPhaseEditing = new Set();
 
 function renderPhaseManager(phases){
   const el=document.getElementById('pd-phase-manager');
@@ -10249,35 +10591,23 @@ function renderPhaseManager(phases){
   const inputStyle='background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:5px 7px;color:#e0e0e0;font-size:12px';
   el.innerHTML = phases.map(ph=>{
     const statusColor = ph.status==='Completed' ? '#00d084' : ph.status==='In Progress' ? '#4da6ff' : '#f59e0b';
-    const editing = _pdPhaseEditing.has(ph.id);
-    const headerEditing = `
-      <div style="display:grid;grid-template-columns:60px 1fr 130px 130px 130px;gap:6px;align-items:center;flex:1">
-        <input type="number" id="ph-num-${ph.id}" value="${ph.phase_number||1}" min="1" style="${inputStyle}" title="Order">
-        <input type="text" id="ph-name-${ph.id}" value="${escHtml(ph.name||'')}" placeholder="Phase name (e.g. Demo, Rough-in, Finishes)" style="${inputStyle}">
-        <input type="date" id="ph-start-${ph.id}" value="${ph.start_date||''}" style="${inputStyle}" title="Start date">
-        <input type="date" id="ph-end-${ph.id}" value="${ph.end_date||''}" style="${inputStyle}" title="Complete date">
-        <select id="ph-status-${ph.id}" style="${inputStyle}">
-          ${['Planning','In Progress','Completed','Blocked'].map(s=>`<option value="${s}"${(ph.status||'Planning')===s?' selected':''}>${s}</option>`).join('')}
-        </select>
-      </div>`;
-    const headerStatic = `
-      <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
-        <span style="color:#888;font-size:11px">#${ph.phase_number}</span>
-        <span style="color:#fff;font-weight:700;font-size:14px">${escHtml(ph.name||'(unnamed)')}</span>
-        <span class="badge badge-${(ph.status||'').toLowerCase().replace(' ','_')}" style="font-size:9px">${ph.status||'Planning'}</span>
-        <span style="font-size:11px;color:#666">${fmtDate(ph.start_date)||'—'} → ${fmtDate(ph.end_date)||'—'}</span>
-      </div>`;
-    const actions = editing
-      ? `<button class="btn btn-sm btn-primary" onclick="savePhase('${ph.id}')">Save</button>
-         <button class="btn btn-sm btn-secondary" onclick="cancelPhaseEdit('${ph.id}')">Cancel</button>`
-      : `<button class="btn btn-sm btn-secondary" onclick="startPhaseEdit('${ph.id}')" title="Edit">✎</button>
-         <button class="btn-icon del" onclick="deletePhase('${ph.id}')" title="Delete">&#10005;</button>`;
-    return `<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:12px;margin-bottom:10px;border-left:3px solid ${statusColor}">
+    return `<div id="phase-row-${ph.id}" style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:12px;margin-bottom:10px;border-left:3px solid ${statusColor}">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-        ${editing ? headerEditing : headerStatic}
-        <div style="display:flex;gap:4px;align-items:center">${actions}</div>
+        <div style="display:grid;grid-template-columns:60px 1fr 130px 130px 130px;gap:6px;align-items:center;flex:1">
+          <input type="number" id="ph-num-${ph.id}" value="${ph.phase_number||1}" min="1" style="${inputStyle}" title="Order">
+          <input type="text" id="ph-name-${ph.id}" value="${escHtml(ph.name||'')}" placeholder="Phase name (e.g. Demo, Rough-in, Finishes)" style="${inputStyle}">
+          <input type="date" id="ph-start-${ph.id}" value="${ph.start_date||''}" style="${inputStyle}" title="Start date">
+          <input type="date" id="ph-end-${ph.id}" value="${ph.end_date||''}" style="${inputStyle}" title="Complete date">
+          <select id="ph-status-${ph.id}" style="${inputStyle}">
+            ${['Planning','In Progress','Completed','Blocked'].map(s=>`<option value="${s}"${(ph.status||'Planning')===s?' selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span id="ph-save-${ph.id}" style="font-size:10px;color:#666;opacity:0;transition:opacity .2s"></span>
+          <button class="btn-icon del" onclick="deletePhase('${ph.id}')" title="Delete phase">&#10005;</button>
+        </div>
       </div>
-      <div style="margin-top:10px;border-top:1px solid #1a1a2e;padding-top:8px">
+      <div style="margin-top:10px;border-top:1px solid #1a1a2e;padding-top:8px" data-no-autosave>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <span style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Tasks</span>
           <div style="display:flex;gap:4px">
@@ -10289,36 +10619,28 @@ function renderPhaseManager(phases){
       </div>
     </div>`;
   }).join('');
-  /* Lazy-load tasks for each phase. */
-  phases.forEach(ph=>loadPhaseTasks(ph.id));
+  /* Wire autosave + lazy-load tasks for each phase. */
+  phases.forEach(ph=>{
+    attachAutosave('phase-row-'+ph.id, ()=>_savePhaseQuiet(ph.id), {indicator:'ph-save-'+ph.id});
+    loadPhaseTasks(ph.id);
+  });
 }
 
-function startPhaseEdit(phid){
-  _pdPhaseEditing.add(phid);
-  if(currentProjectDetail) renderPhaseManager(currentProjectDetail.phases||[]);
-}
-function cancelPhaseEdit(phid){
-  _pdPhaseEditing.delete(phid);
-  if(currentProjectDetail) renderPhaseManager(currentProjectDetail.phases||[]);
-}
-
-async function savePhase(phid){
-  const pid=document.getElementById('pd-id').value;
+async function _savePhaseQuiet(phid){
+  const get = id => (document.getElementById(id)||{}).value;
   const payload = {
-    phase_number: parseInt(document.getElementById('ph-num-'+phid).value)||1,
-    name: document.getElementById('ph-name-'+phid).value.trim(),
-    start_date: document.getElementById('ph-start-'+phid).value,
-    end_date: document.getElementById('ph-end-'+phid).value,
-    status: document.getElementById('ph-status-'+phid).value
+    phase_number: parseInt(get('ph-num-'+phid))||1,
+    name: (get('ph-name-'+phid)||'').trim(),
+    start_date: get('ph-start-'+phid)||'',
+    end_date: get('ph-end-'+phid)||'',
+    status: get('ph-status-'+phid)||'Planning'
   };
-  try{
-    const r = await fetch('/api/ahb/phases/'+phid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const d = await r.json();
-    if(!d.success) throw new Error(d.error||'save failed');
-    _pdPhaseEditing.delete(phid);
-    showToast('Phase saved — calendar synced');
-    openProjectDetail(pid);
-  }catch(e){ showToast('Save failed: '+e.message,'error'); }
+  const r = await fetch('/api/ahb/phases/'+phid, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  if(!r.ok) throw new Error('save failed');
+  /* Recolor the row's left-border to match the new status without a full refresh. */
+  const color = payload.status==='Completed' ? '#00d084' : payload.status==='In Progress' ? '#4da6ff' : payload.status==='Blocked' ? '#ff6b6b' : '#f59e0b';
+  const row = document.getElementById('phase-row-'+phid);
+  if(row) row.style.borderLeftColor = color;
 }
 
 async function addPhaseToProject(){
@@ -10329,8 +10651,8 @@ async function addPhaseToProject(){
       body:JSON.stringify({name:'New Phase', phase_number:phases.length+1, status:'Planning', start_date:'', end_date:''})});
     const d = await r.json();
     if(!d.success) throw new Error(d.error||'create failed');
-    _pdPhaseEditing.add(d.id);   /* open it in edit mode straight away */
     showToast('Phase added');
+    /* Re-render the detail modal; the new row is immediately editable and autosaves. */
     openProjectDetail(pid);
   }catch(e){ showToast('Error: '+e.message,'error'); }
 }
@@ -10365,14 +10687,19 @@ function renderPhaseTasks(phid, tasks){
     return;
   }
   const inp='background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:4px 6px;color:#e0e0e0;font-size:11px';
+  /* Build the "move to phase" options from the cached project phase list. */
+  const allPhases = (currentProjectDetail && currentProjectDetail.phases) || [];
   wrap.innerHTML = tasks.map(t=>`
-    <div style="display:grid;grid-template-columns:24px 1fr 110px 130px 50px;gap:6px;align-items:center;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:6px 8px">
+    <div style="display:grid;grid-template-columns:24px 1fr 130px 110px 120px 50px;gap:6px;align-items:center;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:6px 8px">
       <input type="checkbox" ${t.status==='completed'?'checked':''} onchange="togglePhaseTask('${t.id}', this.checked)" title="Mark complete">
-      <input type="text" id="task-title-${t.id}" value="${escHtml(t.title||'')}" placeholder="Task title" style="${inp}" onchange="savePhaseTask('${t.id}')">
+      <input type="text" id="task-title-${t.id}" value="${escHtml(t.title||'')}" placeholder="Task title" style="${inp}" oninput="savePhaseTaskDebounced('${t.id}')">
+      <select id="task-phase-${t.id}" style="${inp}" title="Move task to a different phase" onchange="movePhaseTask('${t.id}', this.value)">
+        ${allPhases.map(p=>`<option value="${p.id}"${p.id===phid?' selected':''}>#${p.phase_number} ${escHtml(p.name||'(unnamed)')}</option>`).join('')}
+      </select>
       <div style="display:flex;align-items:center;gap:4px">
-        <input type="number" id="task-min-${t.id}" value="${t.approx_minutes||0}" min="0" step="15" placeholder="0" style="${inp};width:60px" onchange="savePhaseTask('${t.id}')">
-        <span style="font-size:10px;color:#666">min</span>
-        <span style="font-size:10px;color:#888;font-weight:700">${_fmtApproxTime(t.approx_minutes)}</span>
+        <input type="number" id="task-hrs-${t.id}" value="${(((t.approx_minutes||0)/60)||0).toString()}" min="0" step="0.25" placeholder="0" style="${inp};width:60px" oninput="savePhaseTaskDebounced('${t.id}')">
+        <span style="font-size:10px;color:#666">hr</span>
+        <span style="font-size:10px;color:#888;font-weight:700" id="task-fmt-${t.id}">${_fmtApproxTime(t.approx_minutes)}</span>
       </div>
       <select id="task-status-${t.id}" style="${inp}" onchange="savePhaseTask('${t.id}')">
         ${['pending','in_progress','blocked','completed'].map(s=>`<option value="${s}"${(t.status||'pending')===s?' selected':''}>${s.replace('_',' ')}</option>`).join('')}
@@ -10380,6 +10707,35 @@ function renderPhaseTasks(phid, tasks){
       <button class="btn-icon del" onclick="deletePhaseTask('${t.id}')" title="Delete task" style="font-size:10px">&#10005;</button>
     </div>
   `).join('');
+}
+
+async function movePhaseTask(tid, newPhaseId){
+  if(!newPhaseId) return;
+  const pid = document.getElementById('pd-id').value;
+  try{
+    const r = await fetch('/api/ahb/phase-tasks/'+tid, {method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({phase_id:newPhaseId})});
+    const d = await r.json();
+    if(!d.success) throw new Error(d.error||'move failed');
+    showToast('Task moved — calendar resynced');
+    /* Full refresh so both source + destination phase rows show their new task lists. */
+    openProjectDetail(pid);
+  }catch(e){ showToast('Move failed: '+e.message, 'error'); }
+}
+
+/* Debounced wrapper so text/number inputs save when the user stops typing. */
+const _taskSaveTimers = {};
+function savePhaseTaskDebounced(tid){
+  clearTimeout(_taskSaveTimers[tid]);
+  _taskSaveTimers[tid] = setTimeout(()=>{
+    const hEl = document.getElementById('task-hrs-'+tid);
+    const fmtEl = document.getElementById('task-fmt-'+tid);
+    if(hEl && fmtEl){
+      const mins = Math.max(0, Math.round((parseFloat(hEl.value)||0) * 60));
+      fmtEl.textContent = _fmtApproxTime(mins);
+    }
+    savePhaseTask(tid);
+  }, 500);
 }
 
 function _fmtApproxTime(mins){
@@ -10403,7 +10759,10 @@ async function addPhaseTask(phid){
 
 async function savePhaseTask(tid){
   const title = document.getElementById('task-title-'+tid).value.trim();
-  const mins = parseInt(document.getElementById('task-min-'+tid).value)||0;
+  /* UI is in hours (decimal allowed, e.g. 1.5). Storage stays integer minutes
+     for precision and so existing rows + the calendar sync logic don't care. */
+  const hrs = parseFloat(document.getElementById('task-hrs-'+tid).value)||0;
+  const mins = Math.max(0, Math.round(hrs * 60));
   const status = document.getElementById('task-status-'+tid).value;
   try{
     await fetch('/api/ahb/phase-tasks/'+tid,{method:'PUT',headers:{'Content-Type':'application/json'},
