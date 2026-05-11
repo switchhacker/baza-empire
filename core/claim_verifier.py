@@ -101,9 +101,16 @@ def verify_text(
         "artifact_count": int,
       }
     """
+    # When called from a per-agent context (e.g. journal_log), restrict the
+    # backing artifact pool to artifacts produced by THAT agent. Otherwise an
+    # agent who never ships could free-ride on a coworker's file landing in
+    # the same window and pass verification.
     if artifact_names is None:
         artifact_names = recent_artifact_names(hours=hours, agent=agent)
     artifact_blob = " ".join(artifact_names)
+    # If no per-agent artifacts AND we have an agent filter, the weak-fallback
+    # below is skipped so unbacked claims stay unbacked.
+    strict_mode = bool(agent) and not artifact_names
 
     # Sentence split — naive but good enough for plain-text briefings
     sentences = re.split(r'(?<=[\.\!\?])\s+|\n+', text or "")
@@ -129,8 +136,10 @@ def verify_text(
                         break
                 if backed:
                     break
-        # Fallback: any artifact at all in the window counts as a weak backing
-        if not backed and artifact_names:
+        # Fallback: any artifact at all in the window counts as a weak backing.
+        # SKIPPED in strict mode (per-agent check with no per-agent artifacts)
+        # so a non-shipping agent can't free-ride on global artifact noise.
+        if not backed and artifact_names and not strict_mode:
             backed = True
             matched = artifact_names[:1]
         findings.append({

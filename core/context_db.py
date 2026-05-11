@@ -205,6 +205,8 @@ def init_context_db():
             ("requested_by", "VARCHAR(50) DEFAULT 'unknown'"),
             ("status",       "VARCHAR(20) DEFAULT 'completed'"),
             ("action_summary", "TEXT"),
+            ("verified",     "BOOLEAN DEFAULT TRUE"),
+            ("unbacked_claims", "INT DEFAULT 0"),
         ]:
             try:
                 cur2.execute(f"ALTER TABLE task_journal ADD COLUMN {col} {typedef}")
@@ -503,15 +505,42 @@ def journal_log(agent_id: str, task_type: str, task_description: str,
         # Auto-generate a readable summary from type + description
         desc_short = (task_description or "")[:120]
         action_summary = f"{task_type}: {desc_short}" if task_type else desc_short
+
+    # Anti-fabrication guard: if `result` contains completion verbs but no
+    # backing artifact landed in the same 2h window for this agent, tag the
+    # entry as unverified and prepend a visible marker so Serge sees it in
+    # Telegram and the Pulse can count it as drift.
+    verified = True
+    unbacked = 0
+    if result and agent_id and os.environ.get("BAZA_DISABLE_CLAIM_VERIFY") != "1":
+        try:
+            from core.claim_verifier import verify_text
+            report = verify_text(result, hours=2, agent=agent_id)
+            verified = bool(report.get("verified", True))
+            unbacked = int(report.get("unbacked_count", 0))
+            if not verified and unbacked > 0:
+                result = (
+                    f"[UNVERIFIED CLAIM — {unbacked} completion claim(s) with no "
+                    f"matching artifact in last 2h for {agent_id}]\n" + (result or "")
+                )
+                logger.warning(
+                    f"journal_log: {agent_id} {task_type} flagged {unbacked} "
+                    f"unbacked claim(s); marked verified=FALSE."
+                )
+        except Exception as e:
+            logger.debug(f"claim_verifier skipped in journal_log: {e}")
+
     with _DB() as (cur, _):
         cur.execute("""
             INSERT INTO task_journal
             (agent_id, chat_id, task_type, task_description, input_data, result,
-             success, duration_ms, requested_by, status, action_summary)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             success, duration_ms, requested_by, status, action_summary,
+             verified, unbacked_claims)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (agent_id, chat_id, task_type, task_description,
               json.dumps(input_data), result, success, duration_ms,
-              requested_by, status, action_summary))
+              requested_by, status, action_summary,
+              verified, unbacked))
     # Publish event when a task is completed
     try:
         if "complete" in (task_type or "").lower():
