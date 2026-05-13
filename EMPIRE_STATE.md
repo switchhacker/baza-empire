@@ -23,6 +23,12 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-12 Verifying Specter PCA on Simon overload
+- 2026-05-12 Simon overload — Specter PCA rejected, fixed Duke tracker instead
+- 2026-05-12 Library trash + ".images shown as video" bugs fixed
+- 2026-05-12 Dual-GPU audit — config drift found, AMD card sitting idle
+- 2026-05-12 Broader canned-task cleanup + Specter dedup gate
+- 2026-05-12 HEVC video → "audio only" fix: on-demand transcode endpoint
 - 2026-05-11 Task: pull Google Drive + Google Photos images to baza cloud
 - 2026-05-11 Drive scope confirmed; pivoting to Takeout for Photos
 - 2026-05-11 GPU consult: Tesla P100 16GB
@@ -32,12 +38,6 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - 2026-05-11 Dash AHB Phase Manager: task time-to-complete switched from minutes → hours (UI)
 - 2026-05-11 Dash AHB Phase Manager: move a task to another phase via select-from-list
 - 2026-05-11 Dash AHB: Schedule tab rebuilt as a modern workflow Calendar
-- 2026-05-11 Takeout ingest started
-- 2026-05-11 Takeout ingest complete
-- 2026-05-11 Dash AHB: top-nav consolidation + Sticky Pad rebuild + invoice→project autolink
-- 2026-05-11 Vault tab, per-file lock-toggle, nav icons, QuickRF inline editor
-- 2026-05-11 Sticky Pad polish: color picker, drag-to-move, stable positions, smooth focus
-- 2026-05-11 Memories scanner + trash button
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
