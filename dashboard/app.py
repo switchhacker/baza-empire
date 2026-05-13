@@ -5316,8 +5316,15 @@ def api_ahb_projects_list():
             params.append(request.args['status'])
         q += " ORDER BY created_at DESC"
         rows = conn.execute(q, params).fetchall()
+        # Attach payment summary so the UI can flag Completed-but-unpaid projects
+        # without an N+1 round-trip per row.
+        result = []
+        for r in rows:
+            d = dict(r)
+            d['_payment'] = _ahb_project_payment_summary(conn, d['id'])
+            result.append(d)
         conn.close()
-        return jsonify([dict(r) for r in rows])
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -5338,7 +5345,7 @@ def api_ahb_projects_create():
             (pid, data.get('client_id'), data.get('title'), data.get('address'),
              data.get('scope'), data.get('description'),
              data.get('budget_low'), data.get('budget_high'),
-             data.get('status', 'estimate'), data.get('start_date'),
+             _ahb_canon_project_status(data.get('status', 'Planning')), data.get('start_date'),
              data.get('end_date'), data.get('assigned_agents'), data.get('notes'),
              data.get('value'), data.get('client_name', ''),
              data.get('client_email', ''), data.get('contact_info', ''),
@@ -5932,9 +5939,118 @@ def api_ahb_projects_delete(pid):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# ── AHB123 — canonical project status helpers ───────────────────────────────
+#
+# Project lifecycle is exactly 3 states:
+#   Planning     — quote/estimate phase (no signed contract, no money in)
+#   In Progress  — contract signed, deposit received, work happening
+#   Completed    — work finished (balance may or may not be paid)
+#
+# Invoice status follows from the project:
+#   Planning     -> invoice 'Sent'      (quote outstanding)
+#   In Progress  -> invoice 'Approved'  (deposit received; balance still owed)
+#   Completed    -> invoice 'Paid' if fully paid, else 'Approved' (final bill due)
+#
+# Anything else gets coerced into the closest of those three at the API edge.
+
+AHB_PROJECT_STATES = ('Planning', 'In Progress', 'Completed')
+
+def _ahb_canon_project_status(s):
+    if not s:
+        return 'Planning'
+    x = s.strip().lower().replace('_', ' ')
+    if x in ('planning', 'estimate', 'proposal', 'quote', 'lead'):
+        return 'Planning'
+    if x in ('in progress', 'inprogress', 'signed', 'active', 'invoiced'):
+        return 'In Progress'
+    if x in ('completed', 'complete', 'done', 'closed', 'paid'):
+        return 'Completed'
+    # Already canonical?
+    for c in AHB_PROJECT_STATES:
+        if x == c.lower():
+            return c
+    return 'Planning'
+
+
+def _ahb_project_payment_summary(conn, project_id):
+    """Compute payment state for a project from its linked invoice.
+
+    Returns a dict the frontend uses to decide if a Completed project still
+    owes money (red badge), if a project has any deposit recorded
+    (auto-flip Planning -> In Progress), etc.
+    """
+    row = conn.execute(
+        "SELECT id, invoice_number, total FROM ahb_invoices "
+        "WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+        (project_id,)
+    ).fetchone()
+    if not row:
+        return {'invoice_id': None, 'invoice_number': None,
+                'total': 0.0, 'paid': 0.0, 'owed': 0.0,
+                'has_payments': False, 'fully_paid': False}
+    total = float(row['total'] or 0)
+    pay_row = conn.execute(
+        "SELECT COALESCE(sum(amount),0) as paid FROM ahb_payments WHERE invoice_id = ?",
+        (row['id'],)
+    ).fetchone()
+    paid = float(pay_row['paid'] or 0) if pay_row else 0.0
+    # Floating-point tolerance — anything within a penny counts as paid in full.
+    fully_paid = total > 0 and paid + 0.01 >= total
+    return {
+        'invoice_id': row['id'],
+        'invoice_number': row['invoice_number'],
+        'total': total,
+        'paid': paid,
+        'owed': max(0.0, total - paid),
+        'has_payments': paid > 0,
+        'fully_paid': fully_paid,
+    }
+
+
+def _ahb_apply_status_sync(conn, project_id, new_status):
+    """Set project.status and align the linked invoice's status to match.
+
+    Returns (canonical_status, invoice_after_update_or_None).
+    Does NOT commit — caller owns the transaction.
+    """
+    canon = _ahb_canon_project_status(new_status)
+    now = datetime.datetime.now().isoformat()
+    conn.execute(
+        "UPDATE ahb_projects SET status = ?, updated_at = ? WHERE id = ?",
+        (canon, now, project_id)
+    )
+    inv = conn.execute(
+        "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+        (project_id,)
+    ).fetchone()
+    if not inv:
+        return canon, None
+    inv = dict(inv)
+    summary = _ahb_project_payment_summary(conn, project_id)
+    if canon == 'Planning':
+        target = 'Sent'
+    elif canon == 'In Progress':
+        target = 'Approved'
+    else:  # Completed
+        target = 'Paid' if summary['fully_paid'] else 'Approved'
+    update_fields = {'status': target, 'updated_at': now}
+    if canon == 'Completed' and not summary['fully_paid']:
+        update_fields['notes'] = f"Final bill due. Remaining balance: ${summary['owed']:.2f}"
+    if target == 'Paid' and not inv.get('paid_date'):
+        update_fields['paid_date'] = now[:10]
+    set_clause = ', '.join(f"{k} = ?" for k in update_fields)
+    vals = list(update_fields.values()) + [inv['id']]
+    conn.execute(f"UPDATE ahb_invoices SET {set_clause} WHERE id = ?", vals)
+    return canon, {**inv, **update_fields}
+
+
 @app.route('/api/ahb/projects/<pid>/status', methods=['POST'])
 def api_ahb_project_status_sync(pid):
-    """Update project status and auto-sync the linked invoice status + calendar events."""
+    """Update project status and auto-sync the linked invoice status + calendar events.
+
+    Accepts any of the legacy labels (estimate/signed/paid/etc.) and snaps to
+    the canonical 3-state lifecycle (Planning, In Progress, Completed).
+    """
     try:
         data = request.json or {}
         new_status = data.get('status')
@@ -5948,50 +6064,9 @@ def api_ahb_project_status_sync(pid):
             return jsonify({'success': False, 'error': 'Project not found'}), 404
         project = dict(project)
 
-        # Update project status
+        canon, invoice_result = _ahb_apply_status_sync(conn, pid, new_status)
+        new_status = canon
         now = datetime.datetime.now().isoformat()
-        conn.execute("UPDATE ahb_projects SET status = ?, updated_at = ? WHERE id = ?", (new_status, now, pid))
-
-        # Find linked invoice (first invoice for this project)
-        inv = conn.execute(
-            "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY created_at ASC LIMIT 1", (pid,)
-        ).fetchone()
-
-        inv_status = None
-        status_map = {
-            'Planning': 'Sent',
-            'planning': 'Sent',
-            'In Progress': 'Approved',
-            'in_progress': 'Approved',
-            'in progress': 'Approved',
-            'Completed': 'Approved',
-            'completed': 'Approved',
-            'Paid': 'Paid',
-            'paid': 'Paid',
-        }
-        inv_status = status_map.get(new_status)
-
-        invoice_result = None
-        if inv and inv_status:
-            inv = dict(inv)
-            update_fields = {'status': inv_status, 'updated_at': now}
-            # For completed projects, keep invoice as Approved (final bill due)
-            if new_status.lower() == 'completed':
-                # Calculate remaining balance: total minus payments received
-                payments = conn.execute(
-                    "SELECT COALESCE(sum(amount),0) as paid FROM ahb_payments WHERE invoice_id = ?", (inv['id'],)
-                ).fetchone()
-                paid_amount = payments['paid'] if payments else 0
-                remaining = (inv['total'] or 0) - paid_amount
-                update_fields['notes'] = f"Final bill due. Remaining balance: ${remaining:.2f}"
-
-            if new_status.lower() == 'paid':
-                update_fields['paid_date'] = now[:10]
-
-            set_clause = ', '.join(f"{k} = ?" for k in update_fields)
-            vals = list(update_fields.values()) + [inv['id']]
-            conn.execute(f"UPDATE ahb_invoices SET {set_clause} WHERE id = ?", vals)
-            invoice_result = {**inv, **update_fields}
 
         # If status is 'In Progress', create calendar events from project dates
         if new_status.lower().replace(' ', '_') in ('in_progress', 'in progress'):
@@ -9053,6 +9128,10 @@ def api_ahb_project_detail(pid):
         ).fetchone()
         result['linked_invoice'] = dict(linked_inv) if linked_inv else None
 
+        # Payment summary drives the "balance due upon completion" red badge
+        # and the deposit-paid → In Progress auto-flip flow on the frontend.
+        result['_payment'] = _ahb_project_payment_summary(conn, pid)
+
         # Permits count
         permits_row = conn.execute(
             "SELECT count(*) as cnt FROM ahb_files WHERE project_id = ? AND document_type = 'Permit'", (pid,)
@@ -9431,17 +9510,50 @@ def api_ahb_payments_list():
 
 @app.route('/api/ahb/payments', methods=['POST'])
 def api_ahb_payments_create():
+    """Record a payment and auto-progress the linked project status.
+
+    Deposit recorded on a Planning project -> project flips to In Progress.
+    Final payment that closes the balance on a Completed project -> invoice
+    flips to Paid (project stays Completed).
+    """
     try:
         data = request.json or {}
         conn = _ahb_db()
-        pid = str(uuid.uuid4())
+        pmt_id = str(uuid.uuid4())
+        invoice_id = data.get('invoice_id', '')
         conn.execute(
             """INSERT INTO ahb_payments (id, invoice_id, amount, payment_method, payment_date, notes)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (pid, data.get('invoice_id',''), data.get('amount',0), data.get('payment_method',''),
-             data.get('payment_date',''), data.get('notes','')))
+            (pmt_id, invoice_id, data.get('amount', 0), data.get('payment_method', ''),
+             data.get('payment_date', ''), data.get('notes', '')))
+
+        # Auto-advance project status from the deposit / balance signal.
+        project_id = None
+        project_status_after = None
+        if invoice_id:
+            inv_row = conn.execute(
+                "SELECT project_id FROM ahb_invoices WHERE id = ?", (invoice_id,)
+            ).fetchone()
+            project_id = inv_row['project_id'] if inv_row else None
+            if project_id:
+                proj_row = conn.execute(
+                    "SELECT status FROM ahb_projects WHERE id = ?", (project_id,)
+                ).fetchone()
+                cur_status = _ahb_canon_project_status(proj_row['status'] if proj_row else '')
+                summary = _ahb_project_payment_summary(conn, project_id)
+                # Deposit-or-better recorded on a Planning project → In Progress.
+                if cur_status == 'Planning' and summary['has_payments']:
+                    _ahb_apply_status_sync(conn, project_id, 'In Progress')
+                    project_status_after = 'In Progress'
+                # Re-align invoice status whenever balance closes on a Completed
+                # project (so the Approved badge auto-flips to Paid).
+                elif cur_status == 'Completed' and summary['fully_paid']:
+                    _ahb_apply_status_sync(conn, project_id, 'Completed')
+                    project_status_after = 'Completed'
         conn.commit(); conn.close()
-        return jsonify({'success': True, 'id': pid})
+        return jsonify({'success': True, 'id': pmt_id,
+                        'project_id': project_id,
+                        'project_status': project_status_after})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

@@ -846,11 +846,10 @@
     <input class="search-box" type="text" id="project-search" placeholder="Search projects..." oninput="filterProjects()">
     <select class="filter-select" id="project-status-filter" onchange="filterProjects()">
       <option value="">All Statuses</option>
-      <option value="estimate">Estimate</option>
       <option value="planning">Planning</option>
-      <option value="signed">Signed</option>
       <option value="in_progress">In Progress</option>
       <option value="completed">Completed</option>
+      <option value="balance_due">⚠ Balance Due</option>
     </select>
     <select class="filter-select" id="project-client-filter" onchange="filterProjects()">
       <option value="">All Clients</option>
@@ -901,19 +900,19 @@
   <div class="stats-row" id="invoice-stats">
     <div class="stat-card stat-total"><div class="stat-val" id="is-total" style="color:#00d084">$0</div><div class="stat-lbl">Total Revenue</div></div>
     <div class="stat-card stat-paid"><div class="stat-val" id="is-paid">$0</div><div class="stat-lbl">Paid</div></div>
-    <div class="stat-card stat-progress"><div class="stat-val" id="is-approved">$0</div><div class="stat-lbl">Approved</div></div>
-    <div class="stat-card stat-pending"><div class="stat-val" id="is-sent">$0</div><div class="stat-lbl">In Progress</div></div>
-    <div class="stat-card stat-overdue"><div class="stat-val" id="is-overdue">$0</div><div class="stat-lbl">Overdue</div></div>
+    <div class="stat-card stat-progress"><div class="stat-val" id="is-approved">$0</div><div class="stat-lbl">Approved (deposit in)</div></div>
+    <div class="stat-card stat-pending"><div class="stat-val" id="is-sent">$0</div><div class="stat-lbl">Sent (quote out)</div></div>
+    <div class="stat-card stat-overdue"><div class="stat-val" id="is-overdue">$0</div><div class="stat-lbl">Overdue / Balance Due</div></div>
   </div>
   <div class="toolbar">
     <input class="search-box" type="text" id="invoice-search" placeholder="Search invoices..." oninput="filterInvoices()">
     <select class="filter-select" id="invoice-status-filter" onchange="filterInvoices()">
       <option value="">All Statuses</option>
+      <option value="Sent">Sent (quote out)</option>
+      <option value="Approved">Approved (deposit in)</option>
       <option value="Paid">Paid</option>
-      <option value="Approved">Approved</option>
-      <option value="In Progress">In Progress</option>
       <option value="Overdue">Overdue</option>
-      <option value="Sent">Sent</option>
+      <option value="balance_due">⚠ Balance Due</option>
     </select>
     <select class="filter-select" id="invoice-year-filter" onchange="filterInvoices()">
       <option value="" selected>All Time</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
@@ -3386,11 +3385,9 @@
       </div>
     </div>
     <div class="form-group">
-      <label>Status</label>
+      <label>Status <span style="color:#444;font-weight:400;font-size:10px">(Planning = quote phase · In Progress = signed/deposit in · Completed = work done)</span></label>
       <select id="project-modal-status">
-        <option value="Estimate">Estimate</option>
         <option value="Planning" selected>Planning</option>
-        <option value="Signed">Signed</option>
         <option value="In Progress">In Progress</option>
         <option value="Completed">Completed</option>
       </select>
@@ -3871,11 +3868,11 @@
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <!-- Status workflow buttons -->
+        <!-- Status workflow buttons — 3-state lifecycle.
+             Completed prompts about the balance; the invoice auto-flips to Paid when payments close the total. -->
         <button class="btn btn-sm" style="background:#f59e0b33;color:#f59e0b;border:1px solid #f59e0b" onclick="setProjectStatus('Planning')">Planning</button>
         <button class="btn btn-sm" style="background:#4da6ff33;color:#4da6ff;border:1px solid #4da6ff" onclick="setProjectStatus('In Progress')">In Progress</button>
-        <button class="btn btn-sm" style="background:#00d08433;color:#00d084;border:1px solid #00d084" onclick="setProjectStatus('Completed')">Completed</button>
-        <button class="btn btn-sm" style="background:#00d08433;color:#0f0;border:1px solid #0f0" onclick="setProjectStatus('Paid')">Paid</button>
+        <button class="btn btn-sm" style="background:#00d08433;color:#00d084;border:1px solid #00d084" onclick="markProjectCompleted()">Completed</button>
         <button class="btn btn-sm btn-secondary" onclick="editProject(document.getElementById('pd-id').value);closeModal('projectDetailModal')">Edit</button>
         <button class="btn btn-sm btn-secondary" onclick="shareProject()">Share</button>
         <button class="btn-cancel" style="padding:6px 12px" onclick="closeModal('projectDetailModal')">Close</button>
@@ -4877,20 +4874,21 @@ function renderProjectStats(list){
   const _projectYear = (p) => {
     return (p.year || (p.end_date||'').slice(0,4) || (p.start_date||'').slice(0,4) || (p.created_at||'').slice(0,4) || '');
   };
-  const completedThisYear = data.filter(p => {
-    const isDone = p.status==='Completed' || p.status==='complete';
-    return isDone && _projectYear(p) === yr;
-  });
+  const completedThisYear = data.filter(p => _isCompletedProjectStatus(p.status) && _projectYear(p) === yr);
   const totalRevenue = completedThisYear.reduce((s,p)=>s+(p.value||p.budget_high||0),0);
   const tv = document.getElementById('ps-total-val');
   tv.textContent = fmtCurrency(totalRevenue);
   // Update label so the user knows the new scope
   const lbl = tv.parentElement && tv.parentElement.querySelector('.stat-lbl');
-  if (lbl) lbl.innerHTML = 'Revenue ('+yr+' Completed) <span class="help" tabindex="0" data-tip="Sum of value for projects with status COMPLETED in the current calendar year ('+yr+'). Excludes pipeline (Planning, In Progress, Signed) and prior years.&#10;&#10;Year is taken from the project\'s year field, falling back to end date → start date → created date.">?</span>';
+  if (lbl) lbl.innerHTML = 'Revenue ('+yr+' Completed) <span class="help" tabindex="0" data-tip="Sum of value for projects with status COMPLETED in the current calendar year ('+yr+'). Excludes pipeline (Planning, In Progress) and prior years.&#10;&#10;Year is taken from the project\'s year field, falling back to end date → start date → created date.">?</span>';
   document.getElementById('ps-count').textContent=data.length;
-  document.getElementById('ps-estimate').textContent=data.filter(p=>p.status==='Planning'||p.status==='estimate'||p.status==='proposal').length;
-  document.getElementById('ps-inprogress').textContent=data.filter(p=>p.status==='In Progress'||p.status==='in_progress'||p.status==='signed').length;
-  document.getElementById('ps-complete').textContent=data.filter(p=>p.status==='Completed'||p.status==='complete').length;
+  document.getElementById('ps-estimate').textContent=data.filter(p=>_isPlanningProjectStatus(p.status)).length;
+  document.getElementById('ps-inprogress').textContent=data.filter(p=>_isInProgressProjectStatus(p.status)).length;
+  // Completed: show "N (M due)" so the user sees unpaid balance count at a glance
+  const completed=data.filter(p=>_isCompletedProjectStatus(p.status));
+  const dueCount=completed.filter(_isBalanceDue).length;
+  const cEl=document.getElementById('ps-complete');
+  cEl.innerHTML = completed.length + (dueCount?` <span style="color:#ff5555;font-size:14px;font-weight:700">(${dueCount} due)</span>`:'');
 }
 
 function renderProjects(projects){
@@ -4899,13 +4897,18 @@ function renderProjects(projects){
     tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">&#128194;</div><h3>No projects found</h3><p>Create your first project</p></div></td></tr>';
     return;
   }
-  tbody.innerHTML=projects.map(p=>`
-    <tr style="cursor:pointer" onclick="openProjectDetail('${p.id}')">
+  tbody.innerHTML=projects.map(p=>{
+    const due=_isBalanceDue(p);
+    return `
+    <tr style="cursor:pointer${due?';background:#240b0b':''}" onclick="openProjectDetail('${p.id}')">
       <td style="font-weight:600;color:#ddd">${escHtml(p.title)}</td>
       <td style="font-size:12px;color:#888">${escHtml(p.client_name)||'&mdash;'}</td>
       <td style="font-size:12px;color:#666">${escHtml(p.scope)||'&mdash;'}</td>
       <td style="font-size:12px;color:#00d084">${p.value?fmtCurrency(p.value):(p.budget_high?fmtCurrency(p.budget_high):'&mdash;')}</td>
-      <td><span class="badge badge-${(p.status||'').toLowerCase().replace(' ','_')}">${p.status}</span></td>
+      <td>
+        <span class="badge badge-${(p.status||'').toLowerCase().replace(' ','_')}">${p.status}</span>
+        ${due?`<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px" title="Project complete, ${fmtCurrency(p._payment.owed)} still owed">⚠ BALANCE DUE</span>`:''}
+      </td>
       <td style="font-size:12px;color:#555">${fmtDate(p.start_date)}</td>
       <td style="font-size:12px;color:#555">${fmtDate(p.end_date)}</td>
       <td>${p.agents?'<span class="agent-chip">'+escHtml(p.agents)+'</span>':'<span style="color:#333">&mdash;</span>'}</td>
@@ -4916,8 +4919,8 @@ function renderProjects(projects){
           <button class="btn-icon del" onclick="event.stopPropagation();deleteProject('${p.id}')" title="Delete">&#10005;</button>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function filterProjects(){
@@ -4929,7 +4932,8 @@ function filterProjects(){
   // In By-Year view picking a year leaves only that year's section visible.
   const filtered=allProjects.filter(p=>{
     if(q && !(p.title||'').toLowerCase().includes(q) && !((p.description||'')+'').toLowerCase().includes(q) && !((p.client_name||'')+'').toLowerCase().includes(q) && !((p.address||'')+'').toLowerCase().includes(q)) return false;
-    if(s && _normalizeStatus(p.status)!==s) return false;
+    if(s==='balance_due'){ if(!_isBalanceDue(p)) return false; }
+    else if(s && _normalizeStatus(p.status)!==s) return false;
     if(c && String(p.client_id)!==String(c)) return false;
     if(y && (p.year||p.start_date||p.created_at||'').substring(0,4)!==y) return false;
     return true;
@@ -5199,33 +5203,56 @@ async function loadInvoices(){
 
 function renderInvoiceStats(list){
   const data=list||allInvoices;
-  const sum=(s)=>data.filter(i=>(i.status||'')===s).reduce((a,i)=>a+(i.total||0),0);
-  // "Total Revenue" headline = Sent + Paid (and treat "In Progress" as a sent variant).
-  // Excludes Draft/Approved/Overdue/Void — those aren't realized or in-flight collectible revenue.
-  const totalRev = sum('Paid') + sum('Sent') + sum('In Progress');
+  const sumExact=(s)=>data.filter(i=>(i.status||'')===s).reduce((a,i)=>a+(i.total||0),0);
+  // Project lookup so we can compute "balance due" against the project lifecycle
+  // (Completed project + invoice not paid).
+  const projById={}; (allProjects||[]).forEach(p=>{ projById[p.id]=p; });
+  const _balDue = (i) => {
+    const p = projById[i.project_id]; if(!p) return false;
+    if(!_isCompletedProjectStatus(p.status)) return false;
+    return (i.status||'').toLowerCase() !== 'paid';
+  };
+  const balanceDueTotal = data.filter(_balDue).reduce((a,i)=>a+(i.total||0),0);
+  const overdueTotal = sumExact('Overdue') + balanceDueTotal;
+  // "Total Revenue" headline = Sent + Paid (Sent = quote out, Paid = collected).
+  // Excludes Draft/Void — those aren't realized or actively in-flight.
+  const totalRev = sumExact('Paid') + sumExact('Sent');
   const tEl = document.getElementById('is-total');
   tEl.textContent = fmtCurrency(totalRev);
   const tLbl = tEl.parentElement && tEl.parentElement.querySelector('.stat-lbl');
-  if (tLbl) tLbl.innerHTML = 'Total Revenue (Sent + Paid) <span class="help" tabindex="0" data-tip="Sum of invoices with status SENT, IN PROGRESS, or PAID — i.e. money you\'ve already collected plus money you\'re actively expecting.&#10;&#10;Excludes Draft (not yet sent), Approved (not yet billed), and Overdue (separate stat). Void invoices not counted.">?</span>';
-  document.getElementById('is-paid').textContent=fmtCurrency(sum('Paid'));
-  document.getElementById('is-approved').textContent=fmtCurrency(sum('Approved'));
-  document.getElementById('is-sent').textContent=fmtCurrency(sum('In Progress'));
-  document.getElementById('is-overdue').textContent=fmtCurrency(sum('Overdue'));
+  if (tLbl) tLbl.innerHTML = 'Total Revenue (Sent + Paid) <span class="help" tabindex="0" data-tip="Sum of invoices with status SENT or PAID — money already collected plus quotes that are actively out.&#10;&#10;Approved (deposit in but balance owed) is shown separately. Overdue + balance-due-on-completed are folded into the Overdue card.">?</span>';
+  document.getElementById('is-paid').textContent=fmtCurrency(sumExact('Paid'));
+  document.getElementById('is-approved').textContent=fmtCurrency(sumExact('Approved'));
+  document.getElementById('is-sent').textContent=fmtCurrency(sumExact('Sent'));
+  document.getElementById('is-overdue').textContent=fmtCurrency(overdueTotal);
 }
 
+function _invoiceBalanceDue(i){
+  // An invoice has BALANCE DUE when its project is Completed and the invoice
+  // itself isn't yet Paid — i.e. the work is done but money is still owed.
+  const projById={}; (allProjects||[]).forEach(p=>{ projById[p.id]=p; });
+  const p = projById[i.project_id]; if(!p) return false;
+  if(!_isCompletedProjectStatus(p.status)) return false;
+  return (i.status||'').toLowerCase() !== 'paid';
+}
 function renderInvoices(invoices){
   const tbody=document.getElementById('invoices-tbody');
   if(!invoices.length){
     tbody.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">&#128196;</div><h3>No invoices found</h3><p>Create your first invoice</p></div></td></tr>';
     return;
   }
-  tbody.innerHTML=invoices.map(i=>`
-    <tr style="cursor:pointer" onclick="editInvoice('${i.id}')">
+  tbody.innerHTML=invoices.map(i=>{
+    const due=_invoiceBalanceDue(i);
+    return `
+    <tr style="cursor:pointer${due?';background:#240b0b':''}" onclick="editInvoice('${i.id}')">
       <td style="font-weight:600;color:#ddd">#${i.invoice_number||i.id}</td>
       <td style="font-size:12px;color:#888">${escHtml(i.client_name)||'&mdash;'}</td>
       <td style="font-size:12px;color:#666">${escHtml(i.project_name)||'&mdash;'}</td>
       <td style="font-weight:700;color:#00d084">${fmtCurrency(i.total)}</td>
-      <td><span class="badge badge-${i.status}">${i.status}</span></td>
+      <td>
+        <span class="badge badge-${i.status}">${i.status}</span>
+        ${due?`<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px" title="Project completed; invoice still owes">⚠ BALANCE DUE</span>`:''}
+      </td>
       <td style="font-size:12px;color:#555">${fmtDate(i.due_date)}</td>
       <td onclick="event.stopPropagation()">
         <div class="row-actions">
@@ -5237,8 +5264,8 @@ function renderInvoices(invoices){
           <button class="btn-icon del" onclick="event.stopPropagation();deleteInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Delete">&#10005;</button>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function filterInvoices(){
@@ -5247,7 +5274,8 @@ function filterInvoices(){
   const y=document.getElementById('invoice-year-filter').value;
   const filtered=allInvoices.filter(i=>{
     if(q && !(i.invoice_number||'').toString().includes(q) && !(i.client_name||'').toLowerCase().includes(q)) return false;
-    if(s && i.status!==s) return false;
+    if(s==='balance_due'){ if(!_invoiceBalanceDue(i)) return false; }
+    else if(s && i.status!==s) return false;
     if(y && (i.year||i.created_at||'').substring(0,4)!==y) return false;
     return true;
   });
@@ -5769,12 +5797,19 @@ const PROJECT_STATUS_META = {
 function _normalizeStatus(s){
   if(!s) return '';
   const lc=s.toLowerCase().replace(/\s+/g,'_');
-  if(lc==='estimate'||lc==='proposal') return 'estimate';
-  if(lc==='planning') return 'planning';
-  if(lc==='signed') return 'signed';
-  if(lc==='in_progress') return 'in_progress';
-  if(lc==='completed'||lc==='complete') return 'completed';
-  return lc;
+  if(lc==='planning'||lc==='estimate'||lc==='proposal'||lc==='quote'||lc==='lead') return 'planning';
+  if(lc==='in_progress'||lc==='inprogress'||lc==='signed'||lc==='active'||lc==='invoiced') return 'in_progress';
+  if(lc==='completed'||lc==='complete'||lc==='paid'||lc==='done'||lc==='closed') return 'completed';
+  return 'planning';
+}
+/* Returns true if the project is Completed but its linked invoice still
+   has money outstanding — the UI surfaces this as a red BALANCE DUE pill. */
+function _isBalanceDue(p){
+  if(!p) return false;
+  if(_normalizeStatus(p.status)!=='completed') return false;
+  const pay=p._payment;
+  if(!pay) return false;
+  return (pay.total||0) > 0 && !pay.fully_paid;
 }
 function _projectYear(p){
   // Match Shaski's logic: prefer start_date, fall back to year column, then created_at
@@ -5797,7 +5832,8 @@ function renderProjectByYear(preFiltered){
     const yf = document.getElementById('project-year-filter').value;
     list = allProjects.filter(p=>{
       if(q && !(p.title||'').toLowerCase().includes(q) && !((p.description||'')+'').toLowerCase().includes(q) && !((p.client_name||'')+'').toLowerCase().includes(q) && !((p.address||'')+'').toLowerCase().includes(q)) return false;
-      if(s && _normalizeStatus(p.status)!==s) return false;
+      if(s==='balance_due'){ if(!_isBalanceDue(p)) return false; }
+      else if(s && _normalizeStatus(p.status)!==s) return false;
       if(cf && String(p.client_id)!==String(cf)) return false;
       if(yf && (p.year||p.start_date||p.created_at||'').substring(0,4)!==yf) return false;
       return true;
@@ -5828,9 +5864,10 @@ function renderProjectByYear(preFiltered){
   container.innerHTML = years.map(yr=>{
     const projs = byYear[yr].slice().sort((a,b)=>(b.start_date||'').localeCompare(a.start_date||''));
     const totalVal = projs.reduce((sum,p)=>sum+(p.value||p.budget_high||0),0);
-    const completed = projs.filter(p=>(p.status||'').toLowerCase().includes('complet')).length;
-    const inProgress = projs.filter(p=>{const s=(p.status||'').toLowerCase();return s.includes('progress')||s==='signed';}).length;
-    const planning = projs.filter(p=>{const s=(p.status||'').toLowerCase();return s.includes('plan')||s==='estimate'||s==='proposal';}).length;
+    const completed = projs.filter(p=>_isCompletedProjectStatus(p.status)).length;
+    const inProgress = projs.filter(p=>_isInProgressProjectStatus(p.status)).length;
+    const planning = projs.filter(p=>_isPlanningProjectStatus(p.status)).length;
+    const balanceDue = projs.filter(_isBalanceDue).length;
     return `
       <details class="year-group" open>
         <summary class="year-group-header">
@@ -5843,14 +5880,16 @@ function renderProjectByYear(preFiltered){
             <span class="year-stat" title="Planning"><span style="color:#f5a623">📋 ${planning}</span></span>
             <span class="year-stat" title="In Progress"><span style="color:#4da6ff">🔨 ${inProgress}</span></span>
             <span class="year-stat" title="Completed"><span style="color:#00d084">✓ ${completed}</span></span>
+            ${balanceDue?`<span class="year-stat" title="Completed but balance owed"><span style="color:#ff5555">⚠ ${balanceDue} due</span></span>`:''}
             <span class="year-total">${fmtCurrency(totalVal)}</span>
           </div>
         </summary>
         <div class="year-group-body">
           ${projs.map(p=>{
             const meta = PROJECT_STATUS_META[p.status]||{color:'#666',icon:'•'};
-            return `<div class="year-project-row" onclick="openProjectDetail('${p.id}')">
-              <div class="ypr-status" style="background:${meta.color}"></div>
+            const due = _isBalanceDue(p);
+            return `<div class="year-project-row" onclick="openProjectDetail('${p.id}')" style="${due?'background:#1a0808;border-color:#ff555533':''}">
+              <div class="ypr-status" style="background:${due?'#ff5555':meta.color}"></div>
               <div class="ypr-main">
                 <div class="ypr-title">${escHtml(p.title||'(untitled)')}</div>
                 <div class="ypr-meta">
@@ -5865,6 +5904,7 @@ function renderProjectByYear(preFiltered){
               </div>
               <div class="ypr-value">${(p.value||p.budget_high)?fmtCurrency(p.value||p.budget_high):'<span style="color:#444">—</span>'}</div>
               <div class="ypr-status-badge" style="background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44">${meta.icon} ${p.status||''}</div>
+              ${due?`<div class="ypr-status-badge" title="${fmtCurrency(p._payment.owed)} still owed" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px">⚠ DUE</div>`:''}
               <div class="ypr-actions">
                 <button class="btn-icon" onclick="event.stopPropagation();moveProjectToYear('${p.id}','${escHtml(p.title||'')}')" title="Move to another year">📅</button>
                 <button class="btn-icon" onclick="event.stopPropagation();editProject('${p.id}')" title="Edit">✎</button>
@@ -5923,19 +5963,27 @@ async function moveInvoiceToYear(iid, label){
 function renderProjectKanban(filtered){
   const board=document.getElementById('projects-kanban');
   const src=Array.isArray(filtered)?filtered:allProjects;
-  const columns=[{label:'Estimate',keys:['estimate']},{label:'Planning',keys:['planning']},{label:'Signed',keys:['signed']},{label:'In Progress',keys:['in_progress']},{label:'Completed',keys:['completed']}];
+  const columns=[
+    {label:'Planning',keys:['planning']},
+    {label:'In Progress',keys:['in_progress']},
+    {label:'Completed',keys:['completed']},
+  ];
   board.innerHTML=columns.map(col=>{
     const cards=src.filter(p=>col.keys.includes(_normalizeStatus(p.status)));
     const st=col.label;
     return `<div class="kanban-col">
       <div class="kanban-col-header"><span>${st}</span><span class="col-count">${cards.length}</span></div>
-      <div class="kanban-col-body">${cards.length?cards.map(p=>`
-        <div class="kanban-card" style="position:relative" onclick="editProject('${p.id}')">
+      <div class="kanban-col-body">${cards.length?cards.map(p=>{
+        const due=_isBalanceDue(p);
+        return `
+        <div class="kanban-card" style="position:relative${due?';border-left:3px solid #ff5555':''}" onclick="editProject('${p.id}')">
           <button class="btn-icon del" style="position:absolute;top:6px;right:6px;font-size:11px;padding:2px 6px" onclick="event.stopPropagation();deleteProject('${p.id}')" title="Delete project">&#10005;</button>
           <div class="kanban-card-title" style="padding-right:22px">${escHtml(p.title)}</div>
           <div class="kanban-card-meta">${escHtml(p.client_name||'')}</div>
           ${p.value?'<div class="kanban-card-amount">'+fmtCurrency(p.value)+'</div>':''}
-        </div>`).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">No projects</div>'}</div>
+          ${due?`<div style="margin-top:4px"><span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;font-size:10px">⚠ BALANCE DUE ${fmtCurrency(p._payment.owed)}</span></div>`:''}
+        </div>`;
+      }).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">No projects</div>'}</div>
     </div>`;
   }).join('');
 }
@@ -5952,19 +6000,23 @@ function setInvoiceView(mode){
 }
 function renderInvoiceKanban(){
   const board=document.getElementById('invoices-kanban');
-  const statuses=['draft','In Progress','Approved','Sent','Paid','Overdue'];
+  // Lifecycle order: quote out → deposit in → fully paid; Overdue is the exception column.
+  const statuses=['Sent','Approved','Paid','Overdue'];
   board.innerHTML=statuses.map(st=>{
-    const cards=allInvoices.filter(i=>(i.status||'draft')===st);
-    if(!cards.length&&(st==='draft'||st==='Sent')) return '';
+    const cards=allInvoices.filter(i=>(i.status||'')===st);
     return `<div class="kanban-col">
       <div class="kanban-col-header"><span>${st}</span><span class="col-count">${cards.length}</span></div>
-      <div class="kanban-col-body">${cards.length?cards.map(i=>`
-        <div class="kanban-card" style="position:relative;cursor:pointer" onclick="editInvoice('${i.id}')">
+      <div class="kanban-col-body">${cards.length?cards.map(i=>{
+        const due=_invoiceBalanceDue(i);
+        return `
+        <div class="kanban-card" style="position:relative;cursor:pointer${due?';border-left:3px solid #ff5555':''}" onclick="editInvoice('${i.id}')">
           <button class="btn-icon del" style="position:absolute;top:6px;right:6px;font-size:11px;padding:2px 6px" onclick="event.stopPropagation();deleteInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Delete invoice">&#10005;</button>
           <div class="kanban-card-title" style="padding-right:22px">${escHtml(i.invoice_number||'—')}</div>
           <div class="kanban-card-meta">${escHtml(i.client_name||i.project_name||'')}</div>
           <div class="kanban-card-amount">${fmtCurrency(i.total)}</div>
-        </div>`).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">None</div>'}</div>
+          ${due?`<div style="margin-top:4px"><span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;font-size:10px">⚠ BALANCE DUE</span></div>`:''}
+        </div>`;
+      }).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">None</div>'}</div>
     </div>`;
   }).join('');
 }
@@ -10212,21 +10264,9 @@ function populateUncleSamYearSelector(){
   sel.innerHTML=sorted.map(y=>`<option value="${y}"${y===previous?' selected':''}>${y}</option>`).join('');
 }
 
-function _isCompletedProjectStatus(s){
-  if(!s) return false;
-  const x=s.toLowerCase();
-  return x.includes('complet')||x==='paid'||x==='closed'||x==='done';
-}
-function _isInProgressProjectStatus(s){
-  if(!s) return false;
-  const x=s.toLowerCase();
-  return x.includes('progress')||x==='signed';
-}
-function _isPlanningProjectStatus(s){
-  if(!s) return false;
-  const x=s.toLowerCase();
-  return x.includes('plan')||x==='estimate'||x==='proposal';
-}
+function _isCompletedProjectStatus(s){ return _normalizeStatus(s)==='completed'; }
+function _isInProgressProjectStatus(s){ return _normalizeStatus(s)==='in_progress'; }
+function _isPlanningProjectStatus(s){ return _normalizeStatus(s)==='planning'; }
 
 function _invoiceYear(inv){
   // Match the AHB convention used by the loader: year column wins, then paid_date,
@@ -11449,6 +11489,24 @@ async function openProjectDetail(pid){
     document.getElementById('pd-title').textContent=p.title||'Project';
     document.getElementById('pd-status').textContent=p.status||'';
     document.getElementById('pd-status').className='badge badge-'+(p.status||'').toLowerCase().replace(' ','_');
+    // Surface "balance due" so a Completed project missing its final payment
+    // is impossible to overlook from the project detail view.
+    {
+      const oldBanner=document.getElementById('pd-balance-banner'); if(oldBanner) oldBanner.remove();
+      if(_isBalanceDue(p)){
+        const banner=document.createElement('div');
+        banner.id='pd-balance-banner';
+        banner.style.cssText='background:#240b0b;border:1px solid #ff5555;border-radius:8px;padding:10px 14px;margin:8px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+        banner.innerHTML=`<span style="font-size:18px">⚠️</span>
+          <div style="flex:1;min-width:200px">
+            <div style="color:#ff5555;font-weight:700;font-size:13px">BALANCE DUE — total is due upon completion</div>
+            <div style="color:#aaa;font-size:11px;margin-top:2px">Paid ${fmtCurrency(p._payment.paid)} of ${fmtCurrency(p._payment.total)} · <span style="color:#ff5555;font-weight:700">${fmtCurrency(p._payment.owed)} owed</span></div>
+          </div>
+          <button class="btn btn-sm" style="background:#00d08433;color:#00d084;border:1px solid #00d084" onclick="pdMarkBalancePaid()">Mark Balance Paid</button>`;
+        const titleRow=document.getElementById('pd-title').closest('div');
+        if(titleRow && titleRow.parentElement) titleRow.parentElement.insertBefore(banner, titleRow.nextSibling);
+      }
+    }
     document.getElementById('pd-value').textContent=p.value?fmtCurrency(p.value):'';
     document.getElementById('pd-address').textContent=p.address||'';
     document.getElementById('pd-client').textContent=p.client_name||'';
@@ -11848,6 +11906,69 @@ async function setProjectStatus(status){
     if(data.success){showToast('Status → '+status+(data.invoice_status?' (Invoice → '+data.invoice_status+')':''));openProjectDetail(pid);loadProjects();}
     else showToast(data.error||'Failed','error');
   }catch(e){showToast('Error','error');}
+}
+/* "Completed" workflow: total is due upon completion, so if no balance has
+   been logged we prompt the user. Yes -> record the remaining balance as a
+   payment (which auto-flips the invoice to Paid via the backend). Not yet ->
+   project goes Completed but stays flagged with the red BALANCE DUE badge. */
+/* Record the remaining balance as a single payment — the backend payments
+   handler auto-flips the invoice status to Paid once paid >= total. */
+async function pdMarkBalancePaid(){
+  const pid=document.getElementById('pd-id').value;
+  const pay=(currentProjectDetail||{})._payment||null;
+  if(!pay || !pay.invoice_id){ showToast('No invoice linked','error'); return; }
+  if(!(pay.owed>0)){ showToast('Balance is already paid','info'); return; }
+  if(!confirm(`Record ${fmtCurrency(pay.owed)} as the final balance payment?`)) return;
+  try{
+    await fetch('/api/ahb/payments',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        invoice_id: pay.invoice_id,
+        amount: pay.owed,
+        payment_method: 'Balance on completion',
+        payment_date: new Date().toISOString().slice(0,10),
+        notes: 'Final balance recorded at project completion',
+      })
+    });
+    showToast('Balance recorded — invoice marked Paid');
+    openProjectDetail(pid);
+    loadProjects();
+  }catch(e){ showToast('Failed: '+e.message,'error'); }
+}
+async function markProjectCompleted(){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid) return;
+  // Pull current payment state from the project-detail context loaded into the modal.
+  const pay = (currentProjectDetail && currentProjectDetail._payment) || null;
+  const owed = pay ? (pay.owed||0) : 0;
+  const invId = pay ? pay.invoice_id : null;
+  if(pay && pay.total>0 && !pay.fully_paid && invId){
+    const yes = confirm(
+      `Project total: ${fmtCurrency(pay.total)}\n`+
+      `Paid so far: ${fmtCurrency(pay.paid)}\n`+
+      `Remaining balance: ${fmtCurrency(owed)}\n\n`+
+      `Has the balance been paid in full?\n\n`+
+      `OK = Yes, record full remaining balance as paid\n`+
+      `Cancel = Not yet (mark Completed with BALANCE DUE flag)`
+    );
+    if(yes){
+      try{
+        await fetch('/api/ahb/payments',{
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            invoice_id: invId,
+            amount: owed,
+            payment_method: 'Balance on completion',
+            payment_date: new Date().toISOString().slice(0,10),
+            notes: 'Final balance recorded at project completion',
+          })
+        });
+      }catch(e){
+        showToast('Failed to record balance — marking completed anyway','error');
+      }
+    }
+  }
+  await setProjectStatus('Completed');
 }
 async function syncInvoiceFromPhases(){
   const pid=document.getElementById('pd-id').value;
