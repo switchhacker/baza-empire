@@ -11097,14 +11097,16 @@ if CLOUD_ENABLED:
     ]
     CLOUD_IMG_EXTS = {'.jpg','.jpeg','.png','.heic','.heif','.tif','.tiff','.webp','.gif','.bmp',
                       '.dng','.cr2','.cr3','.nef','.arw','.orf','.rw2','.raw',
-                      '.insp'}
+                      '.insp','.thm'}
     CLOUD_VID_EXTS = {'.mov','.mp4','.m4v','.avi','.mkv','.webm','.3gp','.wmv','.flv','.mts',
-                      '.insv','.lrv','.thm'}
+                      '.insv','.lrv'}
     CLOUD_DOC_EXTS = {'.pdf','.doc','.docx','.txt','.csv','.xlsx','.xls','.md','.rtf',
                       '.odt','.pptx','.ppt','.pages','.numbers','.key'}
     CLOUD_SKIP_DIRS = {'.thumbnails', '.vault_meta', 'Vault', 'Imports'}
     THUMB_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.thumbnails')
+    TRANSCODE_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.transcodes')
     os.makedirs(THUMB_DIR, exist_ok=True)
+    os.makedirs(TRANSCODE_DIR, exist_ok=True)
 
     def _init_media_index():
         conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
@@ -11358,8 +11360,78 @@ if CLOUD_ENABLED:
                             src = s; break
             if not full:
                 return '', 404
-        return send_from_directory(os.path.dirname(full), os.path.basename(full),
-                                   as_attachment=False)
+        # Browsers default to application/octet-stream (forces download) for
+        # extensions Python's mimetypes module doesn't know — .thm is actually
+        # JPEG, .insv/.lrv are MP4 containers. Force a sensible inline type.
+        ext = os.path.splitext(full)[1].lower()
+        mime_override = {
+            '.thm': 'image/jpeg',
+            '.insv': 'video/mp4',
+            '.lrv': 'video/mp4',
+            '.insp': 'image/jpeg',
+            '.heic': 'image/heic',
+            '.heif': 'image/heif',
+        }
+        kwargs = {'as_attachment': False}
+        if ext in mime_override:
+            kwargs['mimetype'] = mime_override[ext]
+        return send_from_directory(os.path.dirname(full), os.path.basename(full), **kwargs)
+
+    @app.route('/api/cloud/media/play/<path:filepath>')
+    def api_cloud_media_play(filepath):
+        """Browser-playable video. H.264/MP4 streams as-is; HEVC and Insta360
+        containers (.insv/.lrv) get transcoded to H.264/AAC mp4 on first play
+        and cached. This is what fixes the "audio only, no video" symptom on
+        Chrome/Linux for iPhone Live Photo .MOVs."""
+        import hashlib, subprocess
+        full, _ = _resolve_media_path(filepath)
+        if not full:
+            parts = filepath.split('/', 1)
+            if len(parts) == 2:
+                for base, s in CLOUD_MEDIA_DIRS:
+                    if s == parts[0]:
+                        cand = os.path.realpath(os.path.join(base, parts[1]))
+                        if cand.startswith(os.path.realpath(base)) and os.path.exists(cand):
+                            full = cand; break
+            if not full:
+                return '', 404
+        ext = os.path.splitext(full)[1].lower()
+        # Detect the video codec; pass through if it's already browser-friendly.
+        codec = ''
+        try:
+            codec = subprocess.check_output(
+                ['ffprobe','-v','error','-select_streams','v:0',
+                 '-show_entries','stream=codec_name','-of','default=nw=1:nk=1', full],
+                timeout=5).decode().strip()
+        except Exception:
+            pass
+        pass_through_codecs = {'h264', 'vp8', 'vp9', 'av1'}
+        if codec in pass_through_codecs and ext not in ('.insv', '.lrv'):
+            return send_from_directory(os.path.dirname(full), os.path.basename(full),
+                                       as_attachment=False, mimetype='video/mp4')
+        mtime = os.path.getmtime(full)
+        size = os.path.getsize(full)
+        key = hashlib.md5(f"{full}|{mtime}|{size}".encode()).hexdigest() + '.mp4'
+        cached = os.path.join(TRANSCODE_DIR, key)
+        if not (os.path.exists(cached) and os.path.getsize(cached) > 0):
+            try:
+                subprocess.run(
+                    ['ffmpeg','-nostdin','-loglevel','error','-y','-i', full,
+                     '-c:v','libx264','-preset','ultrafast','-crf','23',
+                     '-pix_fmt','yuv420p',
+                     '-c:a','aac','-b:a','128k','-ac','2',
+                     '-movflags','+faststart', cached],
+                    check=True, timeout=600)
+            except Exception as e:
+                # Clean up any half-written cache file
+                try:
+                    if os.path.exists(cached):
+                        os.remove(cached)
+                except Exception:
+                    pass
+                return f'transcode failed: {e}', 500
+        return send_from_directory(TRANSCODE_DIR, key,
+                                   as_attachment=False, mimetype='video/mp4')
 
     @app.route('/api/cloud/media/favorite', methods=['POST'])
     def api_cloud_media_favorite():
@@ -11806,7 +11878,28 @@ if CLOUD_ENABLED:
             return jsonify({'success': False, 'error': 'no path'}), 400
         full, _ = _resolve_media_path(path)
         if not full:
-            return jsonify({'success': False, 'error': 'not found'}), 404
+            # Indexed rows store filepath as "{source}/{rel}" — strip the source
+            # prefix and try again against the matching base dir.
+            parts = path.split('/', 1)
+            if len(parts) == 2:
+                for base, s in CLOUD_MEDIA_DIRS:
+                    if s == parts[0]:
+                        cand = os.path.realpath(os.path.join(base, parts[1]))
+                        if (cand.startswith(os.path.realpath(base))
+                                and (os.path.exists(cand) or os.path.islink(cand))):
+                            full = cand
+                            break
+        if not full:
+            # File is gone but the index row may still be hanging around — clean it up.
+            try:
+                conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+                conn.execute("DELETE FROM cloud_media_index WHERE filepath=?", (path,))
+                conn.execute("DELETE FROM ahb_media_vision WHERE media_filepath=?", (path,))
+                conn.execute("DELETE FROM ahb_media_attachments WHERE media_filepath=?", (path,))
+                conn.commit(); conn.close()
+            except Exception:
+                pass
+            return jsonify({'success': True, 'removed': [], 'note': 'index-only cleanup; file was already gone'})
         removed = []
         try:
             target = None

@@ -1602,8 +1602,9 @@ function lbNav(dir){
 function renderLb(){
   const it=lbItems[lbIdx];if(!it)return;
   const c=document.getElementById('lb-content');
-  const url='/api/cloud/media/serve/'+encodeURIComponent(it.path);
-  if(it.type==='video'){
+  const isVid = it.type==='video';
+  const url = (isVid ? '/api/cloud/media/play/' : '/api/cloud/media/serve/') + encodeURIComponent(it.path);
+  if(isVid){
     c.innerHTML=`<video src="${url}" controls autoplay style="max-width:92vw;max-height:80vh;border-radius:4px"></video>`;
   }else{
     c.innerHTML=`<img src="${url}" style="max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px">`;

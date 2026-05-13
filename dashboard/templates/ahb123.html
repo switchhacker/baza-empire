@@ -13422,7 +13422,7 @@ function renderMediaLibrary(){
                 '<input type="checkbox" class="media-lib-cb" '+checked+' onchange="toggleMediaSelect(this)" style="width:18px;height:18px;cursor:pointer">'+
               '</label>'+
               workBadge+peopleBadge+(phaseBadge && !workBadge ? phaseBadge : '')+deleteBtn+
-              '<div style="position:relative;height:130px;background:#000;cursor:pointer" onclick="window.open(\'/api/cloud/media/serve/'+encodeURIComponent(it.filepath)+'\',\'_blank\')">'+
+              '<div style="position:relative;height:130px;background:#000;cursor:pointer" onclick="window.open(\''+(isVid?'/api/cloud/media/play/':'/api/cloud/media/serve/')+encodeURIComponent(it.filepath)+'\',\'_blank\')">'+
                 '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
                 (isVid?'<span style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.75);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700">VIDEO</span>':'')+
                 (it.latitude?'<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);color:#00bcd4;font-size:9px;padding:2px 5px;border-radius:4px">&#127759;</span>':'')+
@@ -13553,7 +13553,7 @@ function renderMediaTimeline(){
         const serve = '/api/cloud/media/serve/' + encodeURIComponent(it.filepath);
         const phase = it.phase || 'during';
         const proj = it.project_title ? escHtml(it.project_title.replace(/ – INV-\d+$/,'')) : '';
-        html += '<div class="media-thumb" data-fp="'+escHtml(it.filepath)+'" data-pid="'+escHtml(it.project_id||'')+'" data-phase="'+phase+'" style="position:relative;background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;cursor:pointer">'+
+        html += '<div class="media-thumb" data-fp="'+escHtml(it.filepath)+'" data-vid="'+(isVid?'1':'0')+'" data-pid="'+escHtml(it.project_id||'')+'" data-phase="'+phase+'" style="position:relative;background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;overflow:hidden;cursor:pointer">'+
                 '<div style="position:relative;height:140px;background:#000;overflow:hidden">'+
                   '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
                   '<span style="position:absolute;top:5px;left:5px;padding:2px 7px;border-radius:9px;background:'+(phaseColor[phase]||'#444')+';color:#000;font-size:9px;font-weight:800">'+phaseIcon[phase]+'</span>'+
@@ -13578,7 +13578,10 @@ function renderMediaTimeline(){
   tl.innerHTML = html;
   // Attach handlers
   tl.querySelectorAll('.media-thumb').forEach(el=>{
-    el.addEventListener('click', ()=> window.open('/api/cloud/media/serve/'+encodeURIComponent(el.dataset.fp),'_blank'));
+    el.addEventListener('click', ()=>{
+      const route = el.dataset.vid === '1' ? '/api/cloud/media/play/' : '/api/cloud/media/serve/';
+      window.open(route + encodeURIComponent(el.dataset.fp), '_blank');
+    });
   });
 }
 
