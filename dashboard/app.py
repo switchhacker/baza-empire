@@ -11216,7 +11216,7 @@ if CLOUD_ENABLED:
         """Generate and serve a thumbnail for a media file."""
         import hashlib
         size = int(request.args.get('size', 200))
-        size = min(max(size, 50), 600)
+        size = min(max(size, 50), 2400)
         full, src = _resolve_media_path(filepath)
         if not full:
             # Try with source prefix
@@ -11264,34 +11264,25 @@ if CLOUD_ENABLED:
                 lrv_path = os.path.join(os.path.dirname(full), lrv_name)
                 if os.path.exists(lrv_path):
                     source = lrv_path
-            try:
-                import subprocess
-                subprocess.run(
-                    ['ffmpeg', '-nostdin', '-loglevel', 'error', '-y',
-                     '-ss', '1', '-i', source,
-                     '-vframes', '1',
-                     '-vf', f'scale={size}:-2:force_original_aspect_ratio=decrease',
-                     '-q:v', '5', cached],
-                    check=True, timeout=15,
-                )
-                if os.path.exists(cached) and os.path.getsize(cached) > 0:
-                    return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
-                                               max_age=86400)
-            except Exception:
-                # Retry at frame 0 in case the file is shorter than 1s.
+            # Try -ss 1 first (skips boring intro frame), then -ss 0 as fallback
+            # for short clips (e.g. iPhone Live Photos at 0.066s where -ss 1
+            # silently produces no output even though ffmpeg exits 0).
+            import subprocess
+            for seek in ('1', '0'):
                 try:
                     subprocess.run(
                         ['ffmpeg', '-nostdin', '-loglevel', 'error', '-y',
-                         '-i', source, '-vframes', '1',
+                         '-ss', seek, '-i', source,
+                         '-vframes', '1',
                          '-vf', f'scale={size}:-2:force_original_aspect_ratio=decrease',
                          '-q:v', '5', cached],
-                        check=True, timeout=15,
+                        timeout=15,
                     )
-                    if os.path.exists(cached) and os.path.getsize(cached) > 0:
-                        return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
-                                                   max_age=86400)
                 except Exception:
-                    pass
+                    continue
+                if os.path.exists(cached) and os.path.getsize(cached) > 0:
+                    return send_from_directory(THUMB_DIR, cache_key, mimetype='image/jpeg',
+                                               max_age=86400)
         # Fallback: 1x1 transparent pixel
         import base64
         pixel = base64.b64decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
@@ -11432,6 +11423,51 @@ if CLOUD_ENABLED:
                 return f'transcode failed: {e}', 500
         return send_from_directory(TRANSCODE_DIR, key,
                                    as_attachment=False, mimetype='video/mp4')
+
+    @app.route('/api/cloud/media/upload', methods=['POST'])
+    def api_cloud_media_upload():
+        """Accept multipart photo/video uploads from the Media tab's Upload
+        button or drag-drop. Files land in
+        /mnt/empirepool/cloud/<user>/Uploads/<YYYY-MM-DD>/ and are indexed
+        immediately so they show up in the Library."""
+        import datetime, time as _time
+        from werkzeug.utils import secure_filename
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'success': False, 'error': 'no files'}), 400
+        today = datetime.date.today().isoformat()
+        dest_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), 'Uploads', today)
+        os.makedirs(dest_dir, exist_ok=True)
+        saved, skipped = [], []
+        max_bytes = 500 * 1024 * 1024  # 500MB per file cap
+        for f in files:
+            if not f or not f.filename:
+                continue
+            safe = secure_filename(f.filename) or ''
+            if not safe:
+                skipped.append(f.filename); continue
+            ext = os.path.splitext(safe)[1].lower()
+            if ext not in CLOUD_IMG_EXTS and ext not in CLOUD_VID_EXTS:
+                skipped.append(f.filename); continue
+            target = os.path.join(dest_dir, safe)
+            if os.path.exists(target):
+                stem, e = os.path.splitext(safe)
+                target = os.path.join(dest_dir, f"{stem}_{int(_time.time()*1000)}{e}")
+            try:
+                f.save(target)
+                if os.path.getsize(target) > max_bytes:
+                    os.remove(target)
+                    skipped.append(f.filename + ' (too large)')
+                    continue
+                saved.append(os.path.basename(target))
+            except Exception as exc:
+                skipped.append(f.filename + ' (' + str(exc) + ')')
+        try:
+            _scan_media_dirs()
+        except Exception:
+            pass
+        return jsonify({'success': True, 'saved': saved, 'skipped': skipped,
+                        'dest': f'Uploads/{today}'})
 
     @app.route('/api/cloud/media/favorite', methods=['POST'])
     def api_cloud_media_favorite():

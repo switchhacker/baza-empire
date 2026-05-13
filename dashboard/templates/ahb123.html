@@ -2654,6 +2654,8 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn-secondary" onclick="setMediaListMode('attached')" id="mode-btn-attached" style="font-weight:700;border-color:#00bcd4;color:#00bcd4">&#128279; Attached</button>
       <button class="btn-secondary" onclick="setMediaListMode('library')" id="mode-btn-library">&#128193; Library</button>
+      <button class="btn-primary" id="media-upload-btn" onclick="document.getElementById('media-upload-input').click()" title="Pick photos/videos from this device or camera roll">&#128228; Upload</button>
+      <input type="file" id="media-upload-input" multiple accept="image/*,video/*" style="display:none" onchange="uploadMediaFiles(this.files)">
       <span style="display:inline-flex;align-items:center;gap:4px">
         <select id="reclassify-radius" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;color:#aaa;font-size:12px">
           <option value="100">100m</option>
@@ -2668,6 +2670,14 @@
       <button class="btn-primary" id="media-view-toggle" onclick="toggleMediaView()">&#128205; Map View</button>
     </div>
   </div>
+
+  <!-- Drop overlay (drag files anywhere over the Media tab to upload) -->
+  <div id="media-drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,30,60,.88);z-index:99998;pointer-events:none;align-items:center;justify-content:center;flex-direction:column;color:#fff">
+    <div style="font-size:64px">&#128228;</div>
+    <div style="font-size:24px;font-weight:800;margin-top:14px">Drop to upload work photos &amp; videos</div>
+    <div style="font-size:13px;color:#bbb;margin-top:6px">Files land in Uploads/&lt;today&gt; and are indexed immediately.</div>
+  </div>
+  <div id="media-upload-progress" style="display:none;background:linear-gradient(135deg,#0a2a1a,#0d3e26);border:1px solid #1a4a2e;border-radius:10px;padding:10px 14px;margin-bottom:12px;color:#a8e6b8;font-size:13px"></div>
 
   <!-- Stats row -->
   <div class="stats-row">
@@ -13277,6 +13287,76 @@ async function loadPhotos(){   // entry point kept under old name for tab router
   return loadMedia();
 }
 
+async function uploadMediaFiles(fileList){
+  const files = Array.from(fileList || []);
+  if(!files.length) return;
+  const prog = document.getElementById('media-upload-progress');
+  prog.style.display = 'block';
+  prog.textContent = 'Uploading ' + files.length + ' file' + (files.length===1?'':'s') + '…';
+  const fd = new FormData();
+  files.forEach(f => fd.append('files', f, f.name));
+  try{
+    const r = await fetch('/api/cloud/media/upload', { method:'POST', body: fd });
+    const j = await r.json();
+    if(j.success){
+      const skipped = (j.skipped||[]).length;
+      const saved = (j.saved||[]).length;
+      prog.textContent = '✓ Uploaded ' + saved + (skipped ? ' · ' + skipped + ' skipped (unsupported type)' : '');
+      setTimeout(()=>{ prog.style.display='none'; }, 4000);
+      if(typeof showToast === 'function') showToast('Uploaded ' + saved + ' file' + (saved===1?'':'s'), 'success');
+      // Switch to Library so the new files are visible immediately
+      setMediaListMode('library');
+      mediaLibPage = 1;
+      loadMediaLibrary();
+    } else {
+      prog.textContent = 'Upload failed: ' + (j.error || 'unknown');
+      prog.style.background = 'linear-gradient(135deg,#2a0a0a,#3e0d0d)';
+      prog.style.borderColor = '#5a1a1a';
+      prog.style.color = '#ffb8b8';
+    }
+  }catch(e){
+    prog.textContent = 'Upload failed: ' + e.message;
+  }
+  // Reset input so the same file can be picked again
+  const inp = document.getElementById('media-upload-input');
+  if(inp) inp.value = '';
+}
+
+(function attachMediaDragDrop(){
+  const tab = document.getElementById('tab-photos');
+  if(!tab) return;
+  const overlay = document.getElementById('media-drop-overlay');
+  let dragDepth = 0;
+  function isFileDrag(e){
+    return e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files');
+  }
+  tab.addEventListener('dragenter', (e)=>{
+    if(!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth++;
+    overlay.style.display = 'flex';
+  });
+  tab.addEventListener('dragover', (e)=>{
+    if(!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  tab.addEventListener('dragleave', (e)=>{
+    if(!isFileDrag(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if(dragDepth === 0) overlay.style.display = 'none';
+  });
+  tab.addEventListener('drop', (e)=>{
+    if(!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.style.display = 'none';
+    if(e.dataTransfer.files && e.dataTransfer.files.length){
+      uploadMediaFiles(e.dataTransfer.files);
+    }
+  });
+})();
+
 function setMediaListMode(mode){
   mediaListMode = mode;
   mediaLibPage = 1;
@@ -13422,9 +13502,9 @@ function renderMediaLibrary(){
                 '<input type="checkbox" class="media-lib-cb" '+checked+' onchange="toggleMediaSelect(this)" style="width:18px;height:18px;cursor:pointer">'+
               '</label>'+
               workBadge+peopleBadge+(phaseBadge && !workBadge ? phaseBadge : '')+deleteBtn+
-              '<div style="position:relative;height:130px;background:#000;cursor:pointer" onclick="window.open(\''+(isVid?'/api/cloud/media/play/':'/api/cloud/media/serve/')+encodeURIComponent(it.filepath)+'\',\'_blank\')">'+
+              '<div style="position:relative;height:130px;background:#000;cursor:pointer" onclick="window.open(\''+(isVid?'/api/cloud/thumb/'+encodeURIComponent(it.filepath)+'?size=2000':'/api/cloud/media/serve/'+encodeURIComponent(it.filepath))+'\',\'_blank\')">'+
                 '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
-                (isVid?'<span style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.75);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700">VIDEO</span>':'')+
+                (isVid?'<span title="Play video" onclick="event.stopPropagation();window.open(\'/api/cloud/media/play/'+encodeURIComponent(it.filepath)+'\',\'_blank\')" style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.85);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;cursor:pointer">▶ VIDEO</span>':'')+
                 (it.latitude?'<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);color:#00bcd4;font-size:9px;padding:2px 5px;border-radius:4px">&#127759;</span>':'')+
               '</div>'+
               '<div style="padding:6px 8px;font-size:10px">'+
@@ -13557,7 +13637,7 @@ function renderMediaTimeline(){
                 '<div style="position:relative;height:140px;background:#000;overflow:hidden">'+
                   '<img src="'+thumb+'" loading="lazy" style="width:100%;height:100%;object-fit:cover">'+
                   '<span style="position:absolute;top:5px;left:5px;padding:2px 7px;border-radius:9px;background:'+(phaseColor[phase]||'#444')+';color:#000;font-size:9px;font-weight:800">'+phaseIcon[phase]+'</span>'+
-                  (isVid?'<span style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.75);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700">VIDEO</span>':'')+
+                  (isVid?'<span class="media-play-btn" title="Play video" style="position:absolute;bottom:5px;left:5px;background:rgba(0,0,0,.85);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;cursor:pointer">▶ VIDEO</span>':'')+
                   (it.distance_m!=null?'<span style="position:absolute;bottom:5px;right:5px;background:rgba(0,0,0,.75);color:#00bcd4;font-size:9px;padding:2px 5px;border-radius:4px">~'+Math.round(it.distance_m)+'m</span>':'')+
                 '</div>'+
                 '<div style="padding:7px 9px">'+
@@ -13578,10 +13658,22 @@ function renderMediaTimeline(){
   tl.innerHTML = html;
   // Attach handlers
   tl.querySelectorAll('.media-thumb').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      const route = el.dataset.vid === '1' ? '/api/cloud/media/play/' : '/api/cloud/media/serve/';
-      window.open(route + encodeURIComponent(el.dataset.fp), '_blank');
+    el.addEventListener('click', (ev)=>{
+      // Play-button overlay handles its own click — let it through.
+      if(ev.target.classList && ev.target.classList.contains('media-play-btn')) return;
+      const fp = encodeURIComponent(el.dataset.fp);
+      const url = el.dataset.vid === '1'
+        ? '/api/cloud/thumb/' + fp + '?size=2000'
+        : '/api/cloud/media/serve/' + fp;
+      window.open(url, '_blank');
     });
+    const playBtn = el.querySelector('.media-play-btn');
+    if(playBtn){
+      playBtn.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        window.open('/api/cloud/media/play/' + encodeURIComponent(el.dataset.fp), '_blank');
+      });
+    }
   });
 }
 
