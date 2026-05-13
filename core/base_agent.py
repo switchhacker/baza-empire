@@ -1158,7 +1158,23 @@ class BaseAgent(ContextMixin):
                             filed = {}
                         action = filed.get("action")
                         reply = None
-                        if action == "filed_receipt":
+                        if action == "queued_in_quickrf":
+                            total = filed.get("total") or 0
+                            vendor = filed.get("vendor") or "unknown vendor"
+                            rdate = filed.get("receipt_date") or "no date"
+                            proj = filed.get("project_id") or "-"
+                            cat = filed.get("category") or "(needs category)"
+                            reply = (
+                                f"🅿️ Parked in QuickRF — review & confirm\n"
+                                f"Vendor: {vendor}\n"
+                                f"Date: {rdate}\n"
+                                f"Total: ${float(total or 0):.2f}\n"
+                                f"Category: {cat}\n"
+                                f"Project: {proj}\n"
+                                f"Open AHB123 → QuickRF to confirm or edit."
+                            )
+                        elif action == "filed_receipt":
+                            # Legacy path kept for any non-Telegram callers
                             total = filed.get("total") or 0
                             vendor = filed.get("vendor") or "unknown vendor"
                             rdate = filed.get("receipt_date") or "no date"

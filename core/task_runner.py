@@ -78,29 +78,79 @@ LLM_RETRY_ON_TIMEOUT = os.getenv("BAZA_OLLAMA_RETRY_ON_TIMEOUT", "1") not in ("0
 MAX_TASK_ITERATIONS = int(os.getenv("BAZA_MAX_TASK_ITERATIONS", "3"))
 
 
-def is_ollama_busy(timeout: int = 3) -> bool:
-    """Check if Ollama is currently processing a request."""
+# Ollama instance pool — current pool per project_gpu_pool_pause_state.md
+# (2026-05-13): AMD 11434 + NVIDIA-CUDA 11435 + CPU 11436. Legacy AMD2 at
+# 11437 still up as additional fallback. GPUs come before CPU because CPU
+# inference of a 14B model exceeds the request timeout. CPU is reserved for
+# small models (≤7B) only — see is_cpu_capable_model().
+OLLAMA_INSTANCES_GPU = [
+    os.getenv("OLLAMA_URL", "http://localhost:11434"),  # AMD primary
+    "http://localhost:11435",                            # NVIDIA CUDA (small/fast)
+    "http://localhost:11437",                            # legacy AMD2
+]
+OLLAMA_INSTANCES_CPU = ["http://localhost:11436"]
+
+
+def is_cpu_capable_model(model: str) -> bool:
+    """Whether a model is small enough to run reasonably on CPU."""
+    m = (model or "").lower()
+    if any(k in m for k in ("gemma3:1b", "gemma3:4b", "gemma4:e2b", "gemma4:e4b",
+                            "llama3.2:1b", "llama3.2:3b", "qwen2.5:0.5b",
+                            "qwen2.5:1.5b", "qwen2.5:3b", "qwen2.5:7b",
+                            "phi3:mini", "phi3.5", "mistral:7b", "ministral")):
+        return True
+    return False
+
+
+def instances_for_model(model: str) -> list[str]:
+    instances = list(OLLAMA_INSTANCES_GPU)
+    if is_cpu_capable_model(model):
+        instances.append(OLLAMA_INSTANCES_CPU[0])
+    return instances
+
+
+# Back-compat — used for general "is the GPU pool free?" callers
+OLLAMA_INSTANCES = OLLAMA_INSTANCES_GPU + OLLAMA_INSTANCES_CPU
+
+
+def _instance_busy(url: str, timeout: int = 3) -> bool:
     try:
-        r = requests.get(f"{OLLAMA_URL}/api/ps", timeout=timeout)
-        if r.ok:
-            models = r.json().get("models", [])
-            return len(models) > 0  # models listed = actively running inference
-        return False
-    except:
-        return False  # if we can't reach it, assume not busy (will fail at inference time)
+        r = requests.get(f"{url}/api/ps", timeout=timeout)
+        if not r.ok:
+            return True  # treat as busy if we can't poll
+        return len(r.json().get("models", [])) > 0
+    except Exception:
+        return True
 
 
-def wait_for_ollama(max_wait: int = 120) -> bool:
-    """Wait until Ollama is free or timeout. Returns True if free, False if timed out."""
+def pick_free_ollama(model: str | None = None) -> str | None:
+    """Return URL of the first free Ollama instance suitable for this model.
+    Big models skip the CPU fallback entirely."""
+    for url in instances_for_model(model or ""):
+        if not _instance_busy(url):
+            return url
+    return None
+
+
+def is_ollama_busy(timeout: int = 3) -> bool:
+    """True only if ALL GPU instances are busy (CPU not considered)."""
+    return all(_instance_busy(u) for u in OLLAMA_INSTANCES_GPU)
+
+
+def wait_for_ollama(max_wait: int = 120, model: str | None = None) -> str | None:
+    """Wait until at least one suitable Ollama instance is free. Returns URL or None."""
     waited = 0
     while waited < max_wait:
-        if not is_ollama_busy():
-            return True
-        logger.info(f"  Ollama busy — waiting... ({waited}s)")
+        free = pick_free_ollama(model)
+        if free:
+            if free != OLLAMA_INSTANCES_GPU[0]:
+                logger.info(f"  Routing to fallback Ollama: {free}")
+            return free
+        logger.info(f"  All Ollama instances busy — waiting... ({waited}s)")
         time.sleep(10)
         waited += 10
-    logger.warning(f"  Ollama still busy after {max_wait}s — skipping task")
-    return False
+    logger.warning(f"  All Ollama instances still busy after {max_wait}s — skipping task")
+    return None
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_SIMON_BATELY")
 SERGE_CHAT_ID  = os.getenv("SERGE_CHAT_ID", "8551331144")
 DB_PATH        = os.path.join(FRAMEWORK_DIR, "dashboard", "baza_projects.db")
@@ -132,7 +182,7 @@ def is_llm_actionable(task: dict) -> bool:
     return any(kw in title for kw in LLM_ACTIONABLE)
 
 
-def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: str = "") -> dict:
+def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: str = "", ollama_url: str | None = None) -> dict:
     """
     Send a task to Ollama with the agent's persona.
     Returns {"success": bool, "output": str, "completed": bool}
@@ -197,10 +247,11 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: 
     attempts = 2 if LLM_RETRY_ON_TIMEOUT else 1
     last_err: Exception | None = None
     output = ""
+    target_url = ollama_url or OLLAMA_URL
     for attempt in range(1, attempts + 1):
         try:
             resp = requests.post(
-                f"{OLLAMA_URL}/api/chat",
+                f"{target_url}/api/chat",
                 json=payload,
                 timeout=LLM_REQUEST_TIMEOUT,
             )
@@ -456,9 +507,11 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
             start_task(task_id, notes="Requires external action or tool — marked in progress")
             continue
 
-        # Wait for Ollama to be free before running
-        if not wait_for_ollama(max_wait=120):
-            logger.warning(f"  Skipping {task_title[:40]} — Ollama busy")
+        # Wait for any Ollama instance suitable for this agent's model
+        agent_model = (agent_cfg.get("model") or "qwen2.5:14b")
+        ollama_url = wait_for_ollama(max_wait=120, model=agent_model)
+        if not ollama_url:
+            logger.warning(f"  Skipping {task_title[:40]} — all Ollama instances busy")
             results.append({"task": task_title, "status": "skipped"})
             continue
 
@@ -470,7 +523,7 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
         # Iterate: run, and if LLM said TASK_IN_PROGRESS, re-prompt up to
         # MAX_TASK_ITERATIONS times feeding prior output back. Stops on
         # TASK_COMPLETE, TASK_BLOCKED, or LLM failure.
-        result = run_task_with_llm(agent_id, agent_cfg, task)
+        result = run_task_with_llm(agent_id, agent_cfg, task, ollama_url=ollama_url)
         accumulated = result.get("output", "")
         iterations = 1
         while (
@@ -487,7 +540,7 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
                            "iteration": iterations})
             # Brief breath so we don't hammer Ollama back-to-back
             time.sleep(2)
-            result = run_task_with_llm(agent_id, agent_cfg, task, prior_output=accumulated)
+            result = run_task_with_llm(agent_id, agent_cfg, task, prior_output=accumulated, ollama_url=ollama_url)
             if result.get("success"):
                 accumulated = (accumulated + "\n\n--- next iteration ---\n\n"
                                + (result.get("output") or ""))[-12000:]

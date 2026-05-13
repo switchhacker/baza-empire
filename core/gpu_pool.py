@@ -127,15 +127,18 @@ class GPUSlot:
 # ── Pool ──────────────────────────────────────────────────────────────────────
 class GPUPool:
     def __init__(self):
-        # NVIDIA RTX 3070 is RESERVED for SD WebUI — not in Ollama pool.
-        # All LLM inference goes through AMD (Vulkan) or CPU fallback.
+        # Image gen (SD WebUI) paused for hardware-upgrade window — NVIDIA
+        # joins the LLM pool. Routing prefers smallest GPU that fits, so
+        # small models (≤6GB) land on NVIDIA (CUDA, fastest) and big models
+        # (8–11GB) land on AMD (Vulkan, 12GB). CPU is last-resort for >12GB.
+        # When SD WebUI returns, drop the NVIDIA slot and restore AMD2.
         self.slots = [
-            GPUSlot(id=0, url=AMD_URL, name="AMD RX 6700 XT (primary)",
+            GPUSlot(id=0, url=AMD_URL, name="AMD RX 6700 XT (Vulkan)",
                     backend="vulkan", vram_mb=AMD_VRAM_MB,
                     temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
-            GPUSlot(id=1, url=AMD2_URL, name="AMD RX 6700 XT (overflow)",
-                    backend="vulkan", vram_mb=AMD_VRAM_MB,
-                    temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
+            GPUSlot(id=1, url=NVIDIA_URL, name="NVIDIA RTX 3070 (CUDA)",
+                    backend="cuda", vram_mb=NVIDIA_VRAM_MB,
+                    temp_warn=NVIDIA_TEMP_WARN, temp_crit=NVIDIA_TEMP_CRIT),
             GPUSlot(id=2, url=CPU_URL, name="CPU + 64GB RAM",
                     backend="cpu",    vram_mb=0),
         ]

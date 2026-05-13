@@ -733,7 +733,20 @@ class BazaAgent(ContextMixin):
                             filed = {}
                         action = filed.get("action")
                         msg2 = None
-                        if action == "filed_receipt":
+                        if action == "queued_in_quickrf":
+                            total = filed.get("total") or 0
+                            vendor = filed.get("vendor") or "unknown vendor"
+                            date = filed.get("receipt_date") or "no date"
+                            proj = filed.get("project_id") or "-"
+                            cat = filed.get("category") or "(needs category)"
+                            msg2 = (f"🅿️ Parked in QuickRF — review & confirm\n"
+                                    f"Vendor: {vendor}\n"
+                                    f"Date: {date}\n"
+                                    f"Total: ${float(total or 0):.2f}\n"
+                                    f"Category: {cat}\n"
+                                    f"Project: {proj}\n"
+                                    f"Open AHB123 → QuickRF to confirm or edit.")
+                        elif action == "filed_receipt":
                             total = filed.get("total") or 0
                             vendor = filed.get("vendor") or "unknown vendor"
                             date = filed.get("receipt_date") or "no date"
