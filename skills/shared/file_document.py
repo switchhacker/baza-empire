@@ -237,36 +237,54 @@ def file_receipt():
     if receipt_date and len(receipt_date) >= 4:
         year = receipt_date[:4]
 
-    rid = uuid.uuid4().hex[:12]
+    # Telegram-inbound receipts PARK in the QuickRF queue (status='ready') so
+    # Serge can categorize and confirm the parsed values before they hit
+    # ahb_receipts. The queue row's result_json matches the shape the QuickRF
+    # confirm modal expects, so the UI can prefill every field.
+    qid = uuid.uuid4().hex
+    result_json = {
+        "success": True,
+        "ocr_raw": raw_text,
+        "structured": {
+            "store_name": vendor,
+            "store_location": store_location,
+            "teller_name": teller_name,
+            "purchase_date": receipt_date,
+            "purchase_time": purchase_time,
+            "items": items,
+            "subtotal": float(subtotal or 0),
+            "tax_amount": float(tax_amount or 0),
+            "total": float(total or 0),
+            "payment_method": payment,
+            "category": category,
+            "description": description,
+            "project_id": project_id or "",
+            "project_note": proj_note,
+            "year": year,
+            "agent_id": agent_id,
+        },
+        "warnings": [],
+    }
     try:
         conn = _conn()
         conn.execute(
-            """INSERT INTO ahb_receipts
-               (id, project_id, vendor, amount, category, description,
-                receipt_date, file_path, ocr_text, created_by,
-                store_name, store_location, teller_name, purchase_time,
-                payment_method, total, subtotal, tax_amount,
-                items_json, ocr_raw, ocr_structured, year, image_path)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (rid, project_id, vendor, float(total or 0), category, description,
-             receipt_date, file_path, raw_text, agent_id,
-             vendor, store_location, teller_name, purchase_time,
-             payment, float(total or 0), float(subtotal or 0), float(tax_amount or 0),
-             json.dumps(items), raw_text, json.dumps(structured), year, file_path),
+            """INSERT INTO ahb_receipt_queue
+               (id, image_path, mode, status, result_json, receipt_id, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (qid, file_path, "telegram", "ready", json.dumps(result_json), "", ""),
         )
-        conn.commit()
-        # Also link in ahb_documents
+        # Also link in ahb_documents so the project association sticks
         conn.execute("UPDATE ahb_documents SET project_id=? WHERE file_path=?",
                      (project_id, file_path))
         conn.commit()
         conn.close()
     except Exception as e:
-        return {"success": False, "step": "insert_receipt", "error": str(e)}
+        return {"success": False, "step": "queue_receipt", "error": str(e)}
 
     return {
         "success": True,
-        "action": "filed_receipt",
-        "receipt_id": rid,
+        "action": "queued_in_quickrf",
+        "queue_id": qid,
         "project_id": project_id,
         "project_note": proj_note,
         "vendor": vendor,
@@ -275,7 +293,7 @@ def file_receipt():
         "total": total,
         "receipt_date": receipt_date,
         "category": category,
-        "ocr_ok": bool(ocr.get("success")),
+        "ocr_ok": bool(ocr.get("success")) if isinstance(ocr, dict) else False,
     }
 
 def file_project_document(doc_type):
