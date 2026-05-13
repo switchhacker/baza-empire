@@ -57,7 +57,7 @@ REASSIGNMENT_CHAIN = {
     "simon_bately":  [],   # buck stops here
 }
 
-DISPATCH_COOLDOWN_HOURS  = 4    # don't re-dispatch the same task more than once per cycle
+DISPATCH_COOLDOWN_HOURS  = 5    # cron runs every 4h; keep cooldown strictly larger to avoid re-firing same tasks each cycle
 ESCALATION_DISPATCH_LIMIT = 2    # after 2 dispatches with no progress, reassign
 HUMAN_ESCALATE_REASSIGNS  = 2    # after 2 reassignments, escalate to Serge directly
 
@@ -181,9 +181,9 @@ def dispatch_all_uncompleted():
     conn = get_db()
     conn.row_factory = _sql.Row
 
-    # Pull every uncompleted task
+    # Pull every uncompleted, non-archived task
     rows = conn.execute(
-        "SELECT * FROM tasks WHERE status NOT IN ('completed','cancelled','closed','done') ORDER BY priority DESC, created_at"
+        "SELECT * FROM tasks WHERE status NOT IN ('completed','cancelled','closed','done','archived') ORDER BY priority DESC, created_at"
     ).fetchall()
 
     actions = []
@@ -383,7 +383,6 @@ def ensure_agents_have_work(workload):
 
         # Otherwise, create a maintenance/improvement task based on specialty
         specialty = AGENT_SPECIALTIES[agent]
-        tid = str(uuid.uuid4())
         titles = {
             "simon_bately": "Review current business priorities and update team directives",
             "claw_batto": "Infrastructure maintenance — check logs, clean up, optimize",
@@ -394,6 +393,13 @@ def ensure_agents_have_work(workload):
             "nova_sterling": "Review client communication history and draft outreach",
         }
         title = titles.get(agent, f"Review and improve {specialty}")
+        # Dedup: skip if this canned task already exists in the pipeline (any agent — they get reassigned)
+        existing = conn.execute(
+            "SELECT id FROM tasks WHERE title=? AND status IN ('pending','in_progress','blocked') LIMIT 1",
+            (title,)).fetchone()
+        if existing:
+            continue
+        tid = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO tasks (id, title, description, status, priority, assigned_to, created_at, notes) VALUES (?,?,?,?,?,?,?,?)",
             (tid, title, f"Auto-generated task to keep {agent} productive. Specialty: {specialty}",

@@ -114,6 +114,8 @@ def main():
     # Also log to PostgreSQL empire_knowledge if possible
     try:
         import psycopg2
+        import re
+        import unicodedata
         db_config = {
             "host": os.environ.get("BAZA_DB_HOST", "localhost"),
             "port": int(os.environ.get("BAZA_DB_PORT", "5432")),
@@ -123,15 +125,73 @@ def main():
         }
         conn = psycopg2.connect(**db_config)
         cur = conn.cursor()
+
+        # Similarity dedup gate — block near-duplicate insights that Specter resurfaces
+        # in different framings (e.g. "throttle Simon" vs "throttle high-volume agents").
+        # Overlap coefficient (|A∩B|/min(|A|,|B|)) on stemmed token sets. Calibrated
+        # against the live insight corpus (2026-05-12): dup variants score 0.40-0.54,
+        # unrelated topics top out at ~0.27. Threshold 0.40 gives a clear margin.
+        # Archived keys (`archived_*` prefix) are records Serge cleared; ignore those.
+        # Insight + alert are checked together because Specter republishes findings
+        # under both categories. Other categories dedup within themselves.
+        DEDUP_THRESHOLD = 0.40
+        STOPWORDS = {
+            "the","a","an","and","or","of","in","on","at","to","for","is","are","was",
+            "be","by","this","that","with","from","as","it","its","has","have","but",
+            "not","no","so","new","any","over","per","via","using","ha"
+        }
+        SUFFIXES = ("ing","tion","ment","ness","edly","ation","ings","ies","ied","ed","es","ly","s")
+        def _stem(w):
+            for suf in SUFFIXES:
+                if len(w) > len(suf) + 2 and w.endswith(suf):
+                    return w[:-len(suf)]
+            return w
+        def _tokens(s):
+            s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii").lower()
+            raw = re.findall(r"[a-z0-9_]+", s)
+            return {_stem(t) for t in raw if len(t) >= 3 and t not in STOPWORDS}
+
+        new_set = _tokens(content)
+        if category in ("insight", "alert"):
+            scope = ["insight", "alert"]
+        else:
+            scope = [category]
         cur.execute(
-            "INSERT INTO empire_knowledge (key, value, category) VALUES (%s, %s, %s) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = EXCLUDED.category",
-            (f"specter_{category}_{safe_title}", content[:2000], category),
+            "SELECT key, value FROM empire_knowledge "
+            "WHERE category = ANY(%s) AND key NOT LIKE 'archived_%%' "
+            "  AND updated_at > NOW() - INTERVAL '60 days'",
+            (scope,),
         )
-        conn.commit()
+        skip_db = False
+        if new_set:
+            best = (0.0, None)
+            for cand_key, cand_value in cur.fetchall():
+                cand_set = _tokens(cand_value)
+                if not cand_set:
+                    continue
+                inter = len(new_set & cand_set)
+                denom = min(len(new_set), len(cand_set))
+                overlap = inter / denom if denom else 0.0
+                if overlap > best[0]:
+                    best = (overlap, cand_key)
+                if overlap >= DEDUP_THRESHOLD:
+                    print(f"  DEDUP: similar to existing key '{cand_key}' (overlap={overlap:.2f}, threshold={DEDUP_THRESHOLD})")
+                    print(f"  Skipping empire_knowledge write to avoid resurfacing the same insight.")
+                    skip_db = True
+                    break
+            if not skip_db and best[1]:
+                print(f"  (closest existing insight: '{best[1]}' overlap={best[0]:.2f} — below threshold {DEDUP_THRESHOLD}, publishing)")
+
+        if not skip_db:
+            cur.execute(
+                "INSERT INTO empire_knowledge (key, value, category) VALUES (%s, %s, %s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, category = EXCLUDED.category",
+                (f"specter_{category}_{safe_title}", content[:2000], category),
+            )
+            conn.commit()
+            print(f"  Also logged to empire_knowledge table")
         cur.close()
         conn.close()
-        print(f"  Also logged to empire_knowledge table")
     except Exception as e:
         print(f"  Note: Could not log to empire_knowledge: {e}")
 
