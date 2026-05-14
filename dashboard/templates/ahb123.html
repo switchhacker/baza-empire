@@ -1078,21 +1078,36 @@
   <div class="panel" data-no-autosave style="margin-top:24px;border-color:#10b981">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
       <div>
-        <h3 style="color:#a7f3d0;margin:0">📋 Quick Edit Last Receipts</h3>
-        <div style="font-size:11px;color:#666;margin-top:2px">Edit any field inline — changes save as you stop typing</div>
+        <h3 style="color:#a7f3d0;margin:0">📋 Review &amp; Edit Recent Receipts</h3>
+        <div style="font-size:11px;color:#666;margin-top:2px">Preview the image, edit any field inline — changes save as you stop typing</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <span style="font-size:11px;color:#888">Show last</span>
-        <input type="number" id="rqe-count" value="25" min="1" max="500" style="width:70px;padding:6px 8px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px;color:#a7f3d0;font-weight:700">
+        <input type="number" id="rqe-count" value="25" min="1" max="500" style="width:70px;padding:6px 8px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px;color:#a7f3d0;font-weight:700" onchange="rqeLoad()">
         <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(10)">10</button>
         <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(25)">25</button>
         <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(50)">50</button>
         <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(100)">100</button>
-        <button class="btn btn-sm btn-primary" onclick="rqeLoad()">Load</button>
+        <button class="btn btn-sm btn-secondary" onclick="rqeSetCount(250)">250</button>
+        <button class="btn btn-sm btn-primary" onclick="rqeLoad()">Reload</button>
       </div>
     </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <input type="text" id="rqe-search" placeholder="🔎 Search vendor, store, category, payment, notes, amount, date..." oninput="rqeFilter()"
+             style="flex:1;min-width:240px;padding:8px 10px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px;color:#a7f3d0;font-size:12px">
+      <button class="btn btn-sm btn-secondary" onclick="rqeClearSearch()" title="Clear search">✕ Clear</button>
+      <span id="rqe-count-label" style="font-size:11px;color:#888;font-weight:700"></span>
+    </div>
     <div id="rqe-rows-host" style="overflow-x:auto">
-      <div style="text-align:center;padding:30px;color:#444;font-size:12px">Click <strong>Load</strong> to pull the most recent receipts.</div>
+      <div style="text-align:center;padding:30px;color:#444;font-size:12px">Loading recent receipts…</div>
+    </div>
+  </div>
+
+  <!-- Receipt image preview modal (lightbox) -->
+  <div id="rqe-img-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;padding:20px" onclick="rqeCloseImg(event)">
+    <div style="position:relative;max-width:95vw;max-height:95vh">
+      <button onclick="rqeCloseImg()" style="position:absolute;top:-40px;right:0;background:#2a0a14;color:#ff8a8a;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">✕ Close</button>
+      <img id="rqe-img-modal-img" src="" style="max-width:95vw;max-height:90vh;border-radius:8px;border:1px solid #2a2a4a;background:#000">
     </div>
   </div>
 
@@ -4383,7 +4398,7 @@ function switchTab(tabName){
     clients: loadClients,
     projects: loadProjects,
     invoices: loadInvoices,
-    receipts: loadReceipts,
+    receipts: function(){ loadReceipts(); rqeLoad(); },
     payroll: function(){ loadPayroll(); loadEmployees(); },
     estimator: loadEstimatorSettings,
     ipay: loadDebts,
@@ -6124,10 +6139,55 @@ let receiptViewMode='kanban';
 const RQE_CATEGORIES = ['Materials','Tools','Fuel','Food','Office supplies','Clothes','Other'];
 const RQE_PAYMENTS   = ['', 'Cash','Credit','Debit','Check','ACH','Other'];
 const _rqeSaveTimers = {};
+const RQE_GRID_COLS = '54px 1.5fr 1.1fr 105px 100px .9fr 105px 1.3fr 32px';
+let _rqeAllRows = [];
 
 function rqeSetCount(n){
   const el = document.getElementById('rqe-count');
   if(el){ el.value = n; rqeLoad(); }
+}
+function rqeClearSearch(){
+  const s = document.getElementById('rqe-search');
+  if(s){ s.value=''; rqeFilter(); }
+}
+function _rqeMatches(r, q){
+  if(!q) return true;
+  q = q.toLowerCase();
+  const haystack = [
+    r.vendor, r.store_name, r.store_location, r.teller_name,
+    r.category, r.payment_method, r.description,
+    r.receipt_date, r.purchase_time,
+    String(r.total ?? ''), String(r.amount ?? ''),
+    String(r.tax_amount ?? ''), String(r.subtotal ?? ''),
+    r.year, r.project_id, r.id
+  ].map(v=>(v==null?'':String(v)).toLowerCase()).join('  ');
+  return haystack.indexOf(q) !== -1;
+}
+function rqeFilter(){
+  const q = (document.getElementById('rqe-search')?.value || '').trim();
+  const filtered = _rqeAllRows.filter(r=>_rqeMatches(r,q));
+  _rqeRenderRows(filtered, q);
+}
+function _rqeRenderRows(rows, q){
+  const host = document.getElementById('rqe-rows-host');
+  const label = document.getElementById('rqe-count-label');
+  if(!host) return;
+  if(label){
+    label.textContent = q
+      ? `${rows.length} match${rows.length===1?'':'es'} of ${_rqeAllRows.length} loaded`
+      : `${rows.length} receipt${rows.length===1?'':'s'} loaded`;
+  }
+  if(!rows.length){
+    host.innerHTML = `<div style="text-align:center;padding:24px;color:#666">${q?'No receipts match this search.':'No receipts yet.'}</div>`;
+    return;
+  }
+  host.innerHTML = `
+    <div style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e;min-width:1100px">
+      <div>Preview</div><div>Vendor</div><div>Store / Location</div><div>Date</div><div>Amount</div><div>Tax</div><div>Category</div><div>Payment · Notes</div><div></div>
+    </div>
+    <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:1100px">
+      ${rows.map(r=>_rqeRowHtml(r)).join('')}
+    </div>`;
 }
 async function rqeLoad(){
   const host = document.getElementById('rqe-rows-host');
@@ -6139,42 +6199,58 @@ async function rqeLoad(){
     const res = await fetch('/api/ahb/receipts');
     let rows = await res.json();
     rows.sort((a,b)=>(b.receipt_date||b.created_at||'').localeCompare(a.receipt_date||a.created_at||''));
-    rows = rows.slice(0, n);
-    if(!rows.length){
-      host.innerHTML = '<div style="text-align:center;padding:24px;color:#666">No receipts yet.</div>';
-      return;
-    }
-    host.innerHTML = `
-      <div style="display:grid;grid-template-columns:1.6fr 110px 100px 1fr 110px 1.4fr 32px;gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e">
-        <div>Vendor / Store</div><div>Date</div><div>Amount</div><div>Category</div><div>Payment</div><div>Notes</div><div></div>
-      </div>
-      <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
-        ${rows.map(r=>_rqeRowHtml(r)).join('')}
-      </div>`;
+    _rqeAllRows = rows.slice(0, n);
+    rqeFilter();
   }catch(e){
     host.innerHTML = '<div style="color:#ff5555;padding:18px">Error: '+escHtml(e.message)+'</div>';
   }
 }
 function _rqeRowHtml(r){
-  const vendor = r.vendor || r.store_name || '';
+  const vendor = r.vendor || '';
+  const store  = r.store_name || '';
+  const loc    = r.store_location || '';
+  const storeLoc = store || loc ? `${store}${store&&loc?' · ':''}${loc}` : '';
   const date   = (r.receipt_date || '').slice(0,10);
   const amt    = (r.total != null && r.total !== '') ? r.total : (r.amount != null ? r.amount : '');
+  const tax    = (r.tax_amount != null && r.tax_amount !== '') ? r.tax_amount : '';
   const cat    = r.category || '';
   const pay    = r.payment_method || '';
   const notes  = r.description || '';
-  const inputBase = "background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:6px 8px;color:#e0e0e0;font-size:12px;width:100%";
+  const inputBase = "background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:6px 8px;color:#e0e0e0;font-size:12px;width:100%;box-sizing:border-box";
   const catOptions = RQE_CATEGORIES.map(c=>`<option value="${escHtml(c)}"${c===cat?' selected':''}>${escHtml(c)}</option>`).join('');
   const payOptions = RQE_PAYMENTS.map(p=>`<option value="${escHtml(p)}"${p===pay?' selected':''}>${p?escHtml(p):'—'}</option>`).join('');
-  return `<div class="rqe-row" data-id="${r.id}" style="display:grid;grid-template-columns:1.6fr 110px 100px 1fr 110px 1.4fr 32px;gap:6px;align-items:center;padding:4px 4px;border-bottom:1px solid #0e0e1e;position:relative">
-    <input style="${inputBase}" data-f="vendor"  value="${escHtml(vendor)}" oninput="rqeQueueSave('${r.id}')">
-    <input style="${inputBase}" data-f="receipt_date"   type="date" value="${escHtml(date)}" oninput="rqeQueueSave('${r.id}')">
-    <input style="${inputBase}" data-f="total"   type="number" step="0.01" value="${escHtml(amt)}" oninput="rqeQueueSave('${r.id}')">
+  const thumbUrl = '/api/ahb/receipts/image/' + r.id;
+  return `<div class="rqe-row" data-id="${r.id}" style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;align-items:center;padding:4px 4px;border-bottom:1px solid #0e0e1e;position:relative">
+    <img src="${thumbUrl}" alt="" loading="lazy"
+         style="width:48px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #1a1a2e;background:#0a0a18;cursor:zoom-in"
+         onclick="rqeOpenImg('${r.id}', event)"
+         onerror="this.style.display='none'; this.insertAdjacentHTML('afterend','<div style=\\'width:48px;height:60px;border:1px dashed #1a1a2e;border-radius:4px;color:#333;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center\\'>no<br>image</div>');">
+    <input style="${inputBase}" data-f="vendor" value="${escHtml(vendor)}" placeholder="Vendor" oninput="rqeQueueSave('${r.id}')">
+    <input style="${inputBase}" data-f="store_name" value="${escHtml(store)}" placeholder="Store name (optional)" oninput="rqeQueueSave('${r.id}')" title="Store: ${escHtml(storeLoc)}">
+    <input style="${inputBase}" data-f="receipt_date" type="date" value="${escHtml(date)}" oninput="rqeQueueSave('${r.id}')">
+    <input style="${inputBase}" data-f="total" type="number" step="0.01" value="${escHtml(amt)}" placeholder="0.00" oninput="rqeQueueSave('${r.id}')">
+    <input style="${inputBase}" data-f="tax_amount" type="number" step="0.01" value="${escHtml(tax)}" placeholder="Tax" oninput="rqeQueueSave('${r.id}')">
     <select style="${inputBase}" data-f="category" onchange="rqeQueueSave('${r.id}')">${catOptions}</select>
-    <select style="${inputBase}" data-f="payment_method" onchange="rqeQueueSave('${r.id}')">${payOptions}</select>
-    <input style="${inputBase}" data-f="description" value="${escHtml(notes)}" oninput="rqeQueueSave('${r.id}')" placeholder="Notes / line items">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <select style="${inputBase}" data-f="payment_method" onchange="rqeQueueSave('${r.id}')">${payOptions}</select>
+      <input style="${inputBase}" data-f="description" value="${escHtml(notes)}" oninput="rqeQueueSave('${r.id}')" placeholder="Notes / line items">
+    </div>
     <button class="btn-icon del" title="Delete receipt" onclick="rqeDelete('${r.id}')">✕</button>
     <span class="rqe-saved" id="rqe-saved-${r.id}" style="position:absolute;right:46px;top:8px;font-size:9px;color:#10b981;opacity:0;transition:opacity .3s;font-weight:700;letter-spacing:.5px;text-transform:uppercase">saved</span>
   </div>`;
+}
+function rqeOpenImg(id, ev){
+  if(ev){ ev.stopPropagation(); ev.preventDefault(); }
+  const modal = document.getElementById('rqe-img-modal');
+  const img = document.getElementById('rqe-img-modal-img');
+  if(!modal || !img) return;
+  img.src = '/api/ahb/receipts/image/' + id + '?t=' + Date.now();
+  modal.style.display = 'flex';
+}
+function rqeCloseImg(ev){
+  if(ev && ev.target && ev.target.tagName === 'IMG') return;
+  const modal = document.getElementById('rqe-img-modal');
+  if(modal) modal.style.display = 'none';
 }
 function rqeQueueSave(id){
   clearTimeout(_rqeSaveTimers[id]);
@@ -6193,12 +6269,19 @@ async function rqeSave(id){
       // Mirror to amount too so kanban/table totals stay consistent.
       payload.amount = v;
     }
+    if(k === 'tax_amount' || k === 'subtotal'){
+      const num = parseFloat(v);
+      v = isNaN(num) ? 0 : num;
+    }
     payload[k] = v;
   });
   try{
     const r = await fetch('/api/ahb/receipts/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const d = await r.json();
     if(!d || !d.success) throw new Error((d && d.error) || 'save failed');
+    // Keep in-memory cache in sync so search/re-filter still works after edits.
+    const cached = _rqeAllRows.find(x=>x.id===id);
+    if(cached) Object.assign(cached, payload);
     const badge = document.getElementById('rqe-saved-'+id);
     if(badge){ badge.style.opacity = '1'; setTimeout(()=>badge.style.opacity='0', 1100); }
   }catch(e){ showToast('Save failed: '+e.message,'error'); }
@@ -6207,8 +6290,8 @@ async function rqeDelete(id){
   if(!confirm('Delete this receipt? This removes the row from QuickRF.')) return;
   try{
     await fetch('/api/ahb/receipts/'+id, {method:'DELETE'});
-    const row = document.querySelector(`.rqe-row[data-id="${id}"]`);
-    if(row) row.remove();
+    _rqeAllRows = _rqeAllRows.filter(r=>r.id!==id);
+    rqeFilter();
     showToast('Deleted');
   }catch(e){ showToast('Delete failed: '+e.message,'error'); }
 }
