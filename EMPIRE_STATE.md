@@ -23,6 +23,12 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-13 Video tile UX + Upload from PWA/phone
+- 2026-05-13 Dual-GPU LLM pool ENABLED — SD WebUI paused for HW upgrade window
+- 2026-05-13 Receipt pipeline fix + Sam/Rex completion fix
+- 2026-05-13 Task runner CPU-fallback refinement
+- 2026-05-13 ahb123 project/invoice status coherence
+- 2026-05-13 QuickRF — review-recent panel: search + preview + more fields
 - 2026-05-12 Verifying Specter PCA on Simon overload
 - 2026-05-12 Simon overload — Specter PCA rejected, fixed Duke tracker instead
 - 2026-05-12 Library trash + ".images shown as video" bugs fixed
@@ -32,12 +38,6 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - 2026-05-11 Task: pull Google Drive + Google Photos images to baza cloud
 - 2026-05-11 Drive scope confirmed; pivoting to Takeout for Photos
 - 2026-05-11 GPU consult: Tesla P100 16GB
-- 2026-05-11 Dash AHB Projects: scope expansion + Payments bin in edit modal
-- 2026-05-11 Dash AHB: payments → detail modal · phase manager → workflow planner · scope alphabetized
-- 2026-05-11 Dash AHB: autosave-on-stop-typing across project edit + detail + phase manager
-- 2026-05-11 Dash AHB Phase Manager: task time-to-complete switched from minutes → hours (UI)
-- 2026-05-11 Dash AHB Phase Manager: move a task to another phase via select-from-list
-- 2026-05-11 Dash AHB: Schedule tab rebuilt as a modern workflow Calendar
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
