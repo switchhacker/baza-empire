@@ -4417,6 +4417,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!e.target.closest('.nav-dropdown')) document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'));
   });
   document.querySelectorAll('.nav-submenu a').forEach(a => a.addEventListener('click', () => document.querySelectorAll('.nav-dropdown.open').forEach(d => d.classList.remove('open'))));
+
+  // Receipt queue persistence: it lives in ahb_receipt_queue server-side, so on
+  // every page load and on browser-tab re-focus we re-hydrate the in-memory
+  // state. Without this the queue UI looks empty after you navigate away and
+  // come back, even though the receipts are still safely queued on the server.
+  if (typeof loadReceiptQueue === 'function') {
+    loadReceiptQueue();
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && typeof loadReceiptQueue === 'function') {
+      loadReceiptQueue();
+    }
+  });
 });
 
 /* ===================== GLOBALS ===================== */
@@ -4512,7 +4525,7 @@ function switchTab(tabName){
     clients: loadClients,
     projects: loadProjects,
     invoices: loadInvoices,
-    receipts: function(){ loadReceipts(); rqeLoad(); },
+    receipts: function(){ loadReceipts(); rqeLoad(); loadReceiptQueue(); },
     payroll: function(){ loadPayroll(); loadEmployees(); },
     estimator: loadEstimatorSettings,
     ipay: loadDebts,
