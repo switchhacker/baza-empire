@@ -3302,8 +3302,14 @@
 <!-- Project Modal -->
 <div class="modal-bg" id="projectModal">
   <div class="modal">
-    <h2 id="project-modal-title">Add Project <span id="project-modal-autosave" style="font-size:10px;color:#666;margin-left:8px;font-weight:400;opacity:0;transition:opacity .2s"></span></h2>
-    <div class="modal-sub">Create a new project for a client</div>
+    <h2 id="project-modal-title">Add Project
+      <span id="project-modal-autosave" style="font-size:10px;color:#666;margin-left:8px;font-weight:400;opacity:0;transition:opacity .2s"></span>
+      <button type="button" id="project-clear-draft-btn" onclick="clearProjectDraftAndUI()" data-no-autosave
+              style="display:none;float:right;background:#2a0a14;color:#ff8a8a;border:1px solid #4a1a24;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer;font-weight:600">
+        🗑 Discard draft
+      </button>
+    </h2>
+    <div class="modal-sub">Create a new project for a client <span style="color:#10b981">— typing is auto-saved as a draft, you won't lose work if the modal closes</span></div>
     <input type="hidden" id="edit-project-id">
     <div class="form-group">
       <label>Title</label>
@@ -3399,6 +3405,16 @@
         </datalist>
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Client Phone <span style="color:#444;font-weight:400;font-size:10px">(auto-filled when an existing client is picked)</span></label>
+        <input type="tel" id="project-client-phone" placeholder="(555) 123-4567" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Client Email</label>
+        <input type="email" id="project-client-email" placeholder="client@example.com" autocomplete="off">
+      </div>
+    </div>
     <div class="form-group">
       <label>Status <span style="color:#444;font-weight:400;font-size:10px">(Planning = quote phase · In Progress = signed/deposit in · Completed = work done)</span></label>
       <select id="project-modal-status">
@@ -3442,19 +3458,48 @@
         <input type="number" id="project-budget-high" placeholder="0" step="100">
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Start Date</label>
-        <input type="date" id="project-start">
+    <div class="form-group">
+      <label>Project Timeframe <span style="color:#444;font-weight:400;font-size:10px">(click to open the calendar — pick a start date, then an end date)</span></label>
+      <div style="display:flex;gap:8px;align-items:stretch;flex-wrap:wrap">
+        <button type="button" id="project-timeframe-btn" data-no-autosave onclick="openProjectCalendar()"
+                style="flex:1;min-width:240px;background:#070712;border:1px solid #1a3a5a;border-radius:8px;padding:10px 14px;cursor:pointer;color:#a7f3d0;font-size:13px;font-weight:600;text-align:left;display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px">📅</span>
+          <span id="project-timeframe-label" style="flex:1;color:#888;font-weight:500">Click to pick start &amp; end dates</span>
+        </button>
+        <button type="button" data-no-autosave onclick="clearProjectTimeframe()"
+                style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:11px">Clear</button>
       </div>
-      <div class="form-group">
-        <label>End Date</label>
-        <input type="date" id="project-end">
-      </div>
+      <input type="hidden" id="project-start">
+      <input type="hidden" id="project-end">
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="saveProject()">Save Project</button>
       <button class="btn-cancel" onclick="closeModal('projectModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Project Calendar Popup (timeframe picker) -->
+<div id="project-calendar-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target.id==='project-calendar-popup')closeProjectCalendar()">
+  <div style="background:#0a0a18;border:1px solid #1a3a5a;border-radius:12px;padding:18px;max-width:min(720px,95vw);width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#a7f3d0">📅 Pick Project Timeframe</div>
+        <div id="project-calendar-status" style="font-size:11px;color:#888;margin-top:2px">Click a date to set START</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button type="button" onclick="_pcNav(-1)" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:4px 10px;cursor:pointer">◀ Prev</button>
+        <button type="button" onclick="_pcNav(1)" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:4px 10px;cursor:pointer">Next ▶</button>
+      </div>
+    </div>
+    <div id="project-calendar-grid" style="margin:8px 0"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;border-top:1px solid #1a1a2e;padding-top:10px">
+      <div id="project-calendar-preview" style="font-size:12px;color:#a7f3d0;font-weight:600">Start: —  ·  End: —</div>
+      <div style="display:flex;gap:6px">
+        <button type="button" onclick="_pcReset()" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px">Clear</button>
+        <button type="button" onclick="_pcConfirm()" style="background:#10b981;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:11px;font-weight:700">Apply</button>
+        <button type="button" onclick="closeProjectCalendar()" style="background:#2a0a14;color:#ff8a8a;border:1px solid #4a1a24;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
@@ -4641,12 +4686,17 @@ function onClientNameInput(){
   const name=document.getElementById('project-client-name').value.trim();
   const status=document.getElementById('project-client-status');
   const hidden=document.getElementById('project-client');
+  const phoneEl=document.getElementById('project-client-phone');
+  const emailEl=document.getElementById('project-client-email');
   if(!name){ hidden.value=''; status.textContent=''; return; }
   const match=allClients.find(c=>c.name.toLowerCase()===name.toLowerCase());
   if(match){
     hidden.value=match.id;
     status.style.color='#00d084';
     status.innerHTML='&#10003; Existing client';
+    // Auto-fill contact info ONLY when blank (don't overwrite typed edits).
+    if(phoneEl && !phoneEl.value && match.phone) phoneEl.value=match.phone;
+    if(emailEl && !emailEl.value && match.email) emailEl.value=match.email;
   } else {
     hidden.value='';
     status.style.color='#f5a623';
@@ -4742,6 +4792,285 @@ async function _saveProjectQuiet(){
   };
   const res = await fetch('/api/ahb/projects/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
   if(!res.ok) throw new Error(await res.text());
+  // Push client contact-info changes to the client record alongside the project.
+  const cid = data.client_id;
+  const phone = (document.getElementById('project-client-phone').value||'').trim();
+  const email = (document.getElementById('project-client-email').value||'').trim();
+  if(cid && (phone || email)){
+    const cached = allClients.find(c=>c.id===cid);
+    if(!cached || cached.phone!==phone || cached.email!==email){
+      try{
+        await fetch('/api/ahb/clients/'+cid, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone:phone||null, email:email||null})});
+        if(cached){ cached.phone=phone; cached.email=email; }
+      }catch(e){ /* non-fatal */ }
+    }
+  }
+}
+
+/* ============================================================
+   PROJECT MODAL DRAFT AUTOSAVE (Add-Project mode)
+   ============================================================
+   When the user is creating a NEW project (no `edit-project-id`), every
+   input is debounce-saved to localStorage. If the modal is closed
+   accidentally, refreshed, or the tab is changed, the draft is restored
+   the next time the modal opens. The explicit "Save Project" button
+   clears the draft. The "Discard draft" button (in the modal header)
+   also clears it on demand. */
+const PROJECT_DRAFT_KEY = 'ahb_project_modal_draft';
+function _projectModalAutosave(){
+  const id = document.getElementById('edit-project-id').value;
+  if(id) return _saveProjectQuiet();   /* edit mode → server save */
+  return saveProjectDraft();           /* add mode → localStorage draft */
+}
+function _projectDraftSnapshot(){
+  return {
+    title: document.getElementById('project-title').value,
+    client_name: document.getElementById('project-client-name').value,
+    client_id: document.getElementById('project-client').value,
+    client_phone: document.getElementById('project-client-phone').value,
+    client_email: document.getElementById('project-client-email').value,
+    scope: document.getElementById('project-scope').value,
+    status: document.getElementById('project-modal-status').value,
+    address: document.getElementById('project-address').value,
+    description: document.getElementById('project-description').value,
+    notes: document.getElementById('project-notes').value,
+    budget_low: document.getElementById('project-budget-low').value,
+    budget_high: document.getElementById('project-budget-high').value,
+    start_date: document.getElementById('project-start').value,
+    end_date: document.getElementById('project-end').value,
+    saved_at: new Date().toISOString()
+  };
+}
+function _projectDraftHasContent(d){
+  if(!d) return false;
+  return ['title','client_name','client_phone','client_email','scope','address',
+          'description','notes','budget_low','budget_high','start_date','end_date']
+    .some(k => d[k] && String(d[k]).trim() !== '');
+}
+function saveProjectDraft(){
+  /* Only run while creating a new project. */
+  if(document.getElementById('edit-project-id').value) return;
+  const snap = _projectDraftSnapshot();
+  if(_projectDraftHasContent(snap)){
+    localStorage.setItem(PROJECT_DRAFT_KEY, JSON.stringify(snap));
+  } else {
+    localStorage.removeItem(PROJECT_DRAFT_KEY);
+  }
+  _updateClearDraftButton();
+}
+function clearProjectDraft(){
+  localStorage.removeItem(PROJECT_DRAFT_KEY);
+  _updateClearDraftButton();
+}
+function clearProjectDraftAndUI(){
+  if(!confirm('Discard the unsaved draft and clear all fields?')) return;
+  clearProjectDraft();
+  /* Wipe inputs without closing the modal. */
+  ['project-title','project-client-name','project-client','project-client-phone',
+   'project-client-email','project-scope','project-address','project-description',
+   'project-notes','project-budget-low','project-budget-high','project-start',
+   'project-end'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('project-modal-status').value='Planning';
+  document.getElementById('project-client-status').textContent='';
+  _updateProjectTimeframeLabel();
+  showToast('Draft discarded');
+}
+function _updateClearDraftButton(){
+  const btn=document.getElementById('project-clear-draft-btn');
+  if(!btn) return;
+  const isEdit=!!document.getElementById('edit-project-id').value;
+  const has=!!localStorage.getItem(PROJECT_DRAFT_KEY);
+  btn.style.display = (!isEdit && has) ? 'inline-block' : 'none';
+}
+function restoreProjectDraft(){
+  try{
+    const raw = localStorage.getItem(PROJECT_DRAFT_KEY);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    if(!_projectDraftHasContent(d)) return false;
+    const set=(id,v)=>{ const el=document.getElementById(id); if(el && v!=null) el.value=v; };
+    set('project-title', d.title);
+    set('project-client-name', d.client_name);
+    set('project-client', d.client_id);
+    set('project-client-phone', d.client_phone);
+    set('project-client-email', d.client_email);
+    set('project-scope', d.scope);
+    set('project-modal-status', d.status || 'Planning');
+    set('project-address', d.address);
+    set('project-description', d.description);
+    set('project-notes', d.notes);
+    set('project-budget-low', d.budget_low);
+    set('project-budget-high', d.budget_high);
+    set('project-start', d.start_date);
+    set('project-end', d.end_date);
+    if(d.client_name) onClientNameInput();
+    const when = d.saved_at ? new Date(d.saved_at).toLocaleString() : '';
+    showToast('🔄 Restored unsaved draft' + (when?' from '+when:''));
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ============================================================
+   PROJECT TIMEFRAME CALENDAR POPUP
+   ============================================================
+   Click the timeframe button → opens a 2-month calendar. First click sets
+   the START, second sets the END, then the picker closes and fills both
+   `#project-start` and `#project-end` (which feed the autosave + save). */
+const _PC_MONTH_NAMES = ['January','February','March','April','May','June',
+                         'July','August','September','October','November','December'];
+let _pcState = { start: null, end: null, viewYear: 0, viewMonth: 0, picking: 'start' };
+function _pcFmt(d){
+  if(!d) return '';
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function _pcParse(s){
+  if(!s) return null;
+  const [y,m,d] = String(s).slice(0,10).split('-').map(n=>parseInt(n,10));
+  if(!y||!m||!d) return null;
+  return new Date(y, m-1, d);
+}
+function _pcPretty(d){
+  if(!d) return '';
+  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+}
+function _updateProjectTimeframeLabel(){
+  const lbl = document.getElementById('project-timeframe-label');
+  if(!lbl) return;
+  const s = _pcParse(document.getElementById('project-start').value);
+  const e = _pcParse(document.getElementById('project-end').value);
+  if(s && e){
+    const days = Math.round((e-s)/86400000)+1;
+    lbl.textContent = `${_pcPretty(s)} → ${_pcPretty(e)}  (${days} day${days===1?'':'s'})`;
+    lbl.style.color = '#a7f3d0'; lbl.style.fontWeight='600';
+  } else if(s){
+    lbl.textContent = `Start: ${_pcPretty(s)} — pick an end date`;
+    lbl.style.color = '#f5a623'; lbl.style.fontWeight='600';
+  } else if(e){
+    lbl.textContent = `End: ${_pcPretty(e)} — pick a start date`;
+    lbl.style.color = '#f5a623'; lbl.style.fontWeight='600';
+  } else {
+    lbl.textContent = 'Click to pick start & end dates';
+    lbl.style.color = '#888'; lbl.style.fontWeight='500';
+  }
+}
+function clearProjectTimeframe(){
+  document.getElementById('project-start').value='';
+  document.getElementById('project-end').value='';
+  _updateProjectTimeframeLabel();
+  /* Fire change so autosave (draft or PUT) picks it up. */
+  document.getElementById('project-start').dispatchEvent(new Event('change',{bubbles:true}));
+}
+function openProjectCalendar(){
+  const startVal = document.getElementById('project-start').value;
+  const endVal = document.getElementById('project-end').value;
+  _pcState.start = _pcParse(startVal);
+  _pcState.end = _pcParse(endVal);
+  _pcState.picking = _pcState.start ? 'end' : 'start';
+  const anchor = _pcState.start || new Date();
+  _pcState.viewYear = anchor.getFullYear();
+  _pcState.viewMonth = anchor.getMonth();
+  document.getElementById('project-calendar-popup').style.display = 'flex';
+  _pcRender();
+}
+function closeProjectCalendar(){
+  document.getElementById('project-calendar-popup').style.display = 'none';
+}
+function _pcRender(){
+  const host = document.getElementById('project-calendar-grid');
+  if(!host) return;
+  let html = '<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center">';
+  for(let i=0;i<2;i++){
+    let m = _pcState.viewMonth + i;
+    let y = _pcState.viewYear;
+    while(m>11){ m-=12; y+=1; }
+    html += _pcMonthHtml(y, m);
+  }
+  html += '</div>';
+  host.innerHTML = html;
+  document.getElementById('project-calendar-status').textContent =
+    _pcState.picking === 'start' ? 'Click a date to set START'
+                                 : 'Click a date to set END (must be on/after start)';
+  const s=_pcState.start, e=_pcState.end;
+  document.getElementById('project-calendar-preview').innerHTML =
+    `Start: <b>${s?_pcFmt(s):'—'}</b>  ·  End: <b>${e?_pcFmt(e):'—'}</b>` +
+    (s&&e?`  · <span style="color:#888">(${Math.round((e-s)/86400000)+1} days)</span>`:'');
+}
+function _pcMonthHtml(year, month){
+  const first = new Date(year, month, 1);
+  const startWeekday = first.getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayKey = _pcFmt(new Date());
+  const startKey = _pcState.start ? _pcFmt(_pcState.start) : null;
+  const endKey   = _pcState.end   ? _pcFmt(_pcState.end)   : null;
+  let html = `<div style="background:#070712;border:1px solid #1a3a5a;border-radius:8px;padding:10px;min-width:240px">
+    <div style="text-align:center;font-weight:700;color:#a7f3d0;margin-bottom:8px;font-size:13px">${_PC_MONTH_NAMES[month]} ${year}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10px;color:#555;text-align:center;margin-bottom:4px">
+      <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">`;
+  for(let i=0;i<startWeekday;i++) html += '<div></div>';
+  for(let d=1; d<=daysInMonth; d++){
+    const dt = new Date(year, month, d);
+    const key = _pcFmt(dt);
+    const inRange = _pcState.start && _pcState.end && dt>=_pcState.start && dt<=_pcState.end;
+    const isStart = key === startKey;
+    const isEnd   = key === endKey;
+    const isToday = key === todayKey;
+    let bg='transparent', fg='#aaa', bd='1px solid transparent', fw='500';
+    if(inRange){ bg='#0a3a2a'; fg='#a7f3d0'; }
+    if(isStart || isEnd){ bg='#10b981'; fg='#fff'; bd='1px solid #fff'; fw='700'; }
+    else if(isToday){ bd='1px solid #4da6ff'; fg='#4da6ff'; }
+    html += `<button type="button" onclick="_pcPick(${year},${month},${d})"
+              style="background:${bg};color:${fg};border:${bd};border-radius:5px;padding:7px 0;cursor:pointer;font-weight:${fw};font-size:12px">${d}</button>`;
+  }
+  html += '</div></div>';
+  return html;
+}
+function _pcPick(y, m, d){
+  const dt = new Date(y, m, d);
+  if(_pcState.picking === 'start' || !_pcState.start){
+    _pcState.start = dt;
+    _pcState.end = null;
+    _pcState.picking = 'end';
+    _pcRender();
+    return;
+  }
+  // picking === 'end'
+  if(dt < _pcState.start){
+    // Clicking a date before the current start re-anchors the range.
+    _pcState.start = dt;
+    _pcState.end = null;
+    _pcRender();
+    return;
+  }
+  _pcState.end = dt;
+  _pcRender();
+  // Auto-apply after a tiny pause so the user can see their picked end highlighted.
+  setTimeout(_pcConfirm, 180);
+}
+function _pcNav(delta){
+  _pcState.viewMonth += delta;
+  while(_pcState.viewMonth < 0){ _pcState.viewMonth += 12; _pcState.viewYear -= 1; }
+  while(_pcState.viewMonth > 11){ _pcState.viewMonth -= 12; _pcState.viewYear += 1; }
+  _pcRender();
+}
+function _pcReset(){
+  _pcState.start = null; _pcState.end = null; _pcState.picking = 'start';
+  _pcRender();
+}
+function _pcConfirm(){
+  if(!_pcState.start){ closeProjectCalendar(); return; }
+  document.getElementById('project-start').value = _pcFmt(_pcState.start);
+  document.getElementById('project-end').value   = _pcState.end ? _pcFmt(_pcState.end) : '';
+  /* Fire change on the hidden inputs so autosave (draft or PUT) picks them up. */
+  ['project-start','project-end'].forEach(id=>{
+    document.getElementById(id).dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  _updateProjectTimeframeLabel();
+  closeProjectCalendar();
 }
 
 /* Quiet PUT for project detail modal's inline-edit panel (#pd-details). */
@@ -4965,11 +5294,14 @@ let projectScrapeStagingId = null;
 
 async function openProjectModal(){
   document.getElementById('edit-project-id').value='';
-  document.getElementById('project-modal-title').textContent='Add Project';
+  document.getElementById('project-modal-title').firstChild.textContent='Add Project';
+  // Keep the autosave indicator + clear-draft button (rebuilt below) intact.
   document.getElementById('project-title').value='';
   document.getElementById('project-client').value='';
   document.getElementById('project-client-name').value='';
   document.getElementById('project-client-status').textContent='';
+  document.getElementById('project-client-phone').value='';
+  document.getElementById('project-client-email').value='';
   document.getElementById('project-scope').value='';
   document.getElementById('project-modal-status').value='Planning';
   document.getElementById('project-address').value='';
@@ -4994,6 +5326,13 @@ async function openProjectModal(){
     }catch(e){}
   }
   populateClientDropdowns();
+  // Try to restore an unsaved draft from a prior close/refresh.
+  restoreProjectDraft();
+  _updateProjectTimeframeLabel();
+  // Autosave the draft to localStorage on every keystroke — protects long
+  // descriptions from accidental modal close before "Save Project" is clicked.
+  attachAutosave('projectModal', _projectModalAutosave, {indicator:'project-modal-autosave'});
+  _updateClearDraftButton();
 }
 
 async function editProject(id){
@@ -5007,11 +5346,13 @@ async function editProject(id){
   }
   populateClientDropdowns();
   document.getElementById('edit-project-id').value=id;
-  document.getElementById('project-modal-title').textContent='Edit Project';
+  document.getElementById('project-modal-title').firstChild.textContent='Edit Project';
   document.getElementById('project-title').value=p.title||'';
   document.getElementById('project-client').value=p.client_id||'';
   const cmatch=allClients.find(c=>c.id===p.client_id);
   document.getElementById('project-client-name').value=cmatch?cmatch.name:(p.client_name||'');
+  document.getElementById('project-client-phone').value=cmatch?(cmatch.phone||''):'';
+  document.getElementById('project-client-email').value=cmatch?(cmatch.email||''):'';
   onClientNameInput();
   document.getElementById('project-scope').value=p.scope||'';
   onScopeChange();
@@ -5026,9 +5367,12 @@ async function editProject(id){
   document.getElementById('project-doc-list').innerHTML='';
   document.getElementById('project-scrape-result').style.display='none';
   projectStagedDocs=[];
+  _updateProjectTimeframeLabel();
   document.getElementById('projectModal').classList.add('open');
-  /* Autosave: any change inside the project modal silently PUTs the project. */
-  attachAutosave('projectModal', _saveProjectQuiet, {indicator:'project-modal-autosave'});
+  /* Autosave: any change inside the project modal silently PUTs the project
+     when editing, or stores a localStorage draft when adding. */
+  attachAutosave('projectModal', _projectModalAutosave, {indicator:'project-modal-autosave'});
+  _updateClearDraftButton();
 }
 
 function projectDocsDrop(e){
@@ -5107,6 +5451,8 @@ function applyScrapedSuggestions(s){
   if(s.competitors && s.competitors.length){
     html+='<div style="margin-top:6px;color:#f5a623"><b>Competitor bids referenced:</b> '+s.competitors.map(escHtml).join(', ')+'</div>';
   }
+  if(fillIfEmpty('project-client-phone', s.client_phone)) filled.push('client phone');
+  if(fillIfEmpty('project-client-email', s.client_email)) filled.push('client email');
   if(s.client_phone||s.client_email){
     html+='<div style="margin-top:4px;color:#888">Client contact: '+escHtml(s.client_phone||'')+' '+escHtml(s.client_email||'')+'</div>';
   }
@@ -5115,22 +5461,34 @@ function applyScrapedSuggestions(s){
 
 async function saveProject(){
   const id=document.getElementById('edit-project-id').value;
+  const clientPhone=(document.getElementById('project-client-phone').value||'').trim();
+  const clientEmail=(document.getElementById('project-client-email').value||'').trim();
   // Resolve client: existing id, or create from typed name
   let clientId=document.getElementById('project-client').value||null;
   const clientName=document.getElementById('project-client-name').value.trim();
   if(!clientId && clientName){
     try{
-      const r=await fetch('/api/ahb/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:clientName,status:'lead',source:'project_modal'})});
+      const r=await fetch('/api/ahb/clients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:clientName,phone:clientPhone||null,email:clientEmail||null,status:'lead',source:'project_modal'})});
       const d=await r.json();
       if(d.success){
         clientId=d.id;
         // Update local cache so subsequent dropdowns include this client
-        allClients.push({id:d.id,name:clientName,status:'lead'});
+        allClients.push({id:d.id,name:clientName,phone:clientPhone,email:clientEmail,status:'lead'});
         populateClientDropdowns();
       }
     }catch(e){
       showToast('Could not create client','error');
       return;
+    }
+  } else if(clientId && (clientPhone || clientEmail)){
+    // Existing client — update contact info if user typed/changed it.
+    const cached=allClients.find(c=>c.id===clientId);
+    const needsUpdate = !cached || (clientPhone && cached.phone!==clientPhone) || (clientEmail && cached.email!==clientEmail);
+    if(needsUpdate){
+      try{
+        await fetch('/api/ahb/clients/'+clientId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:clientPhone||null,email:clientEmail||null})});
+        if(cached){ cached.phone=clientPhone; cached.email=clientEmail; }
+      }catch(e){ /* non-fatal — project save still proceeds */ }
     }
   }
   const scope=(document.getElementById('project-scope').value||'').trim();
@@ -5162,6 +5520,7 @@ async function saveProject(){
         await fetch('/api/ahb/projects/'+newId+'/adopt-staging',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({staging_id:projectScrapeStagingId})});
       }catch(e){}
     }
+    clearProjectDraft();   // explicit save = draft is no longer needed
     closeModal('projectModal');
     showToast(id?'Project updated':'Project added');
     loadProjects();
