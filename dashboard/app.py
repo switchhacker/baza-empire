@@ -2260,6 +2260,133 @@ def api_artifact_save_text():
                     'agent_id': agent_id, 'task_id': task_id,
                     'size': size, 'download_url': f'/api/artifacts/download/{project_id}/{safe_name}'})
 
+# ── Baza image picker ─────────────────────────────────────────────────────
+# Lets any image-upload surface (project before/during/after, project docs,
+# receipts, media library) pick from images already in artifacts/ —
+# especially Sam's .private-inbound/sam_axe/ Telegram drops while the SD
+# WebUI imaging path is down. The picker is an explicit opt-in, so it
+# includes private-inbound photos alongside public artifacts; the default
+# Data Hub views still hide private files.
+_PICK_IMG_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.heic', '.heif', '.bmp'}
+_PICK_KNOWN_AGENTS = ('sam_axe', 'phil_hass', 'simon_bately', 'claw_batto',
+                      'nova_sterling', 'duke_harmon', 'scout_reeves',
+                      'rex_valor', 'specter_voss')
+
+
+def _pick_encode_token(rel_path: str) -> str:
+    import base64 as _b64
+    return _b64.urlsafe_b64encode(rel_path.encode('utf-8')).decode('ascii').rstrip('=')
+
+
+def _pick_decode_token(token: str):
+    """Decode a Baza-picker token to an absolute path inside ARTIFACTS_DIR.
+    Returns None for invalid / out-of-tree / non-existent paths."""
+    import base64 as _b64
+    if not token or not isinstance(token, str):
+        return None
+    try:
+        pad = '=' * (-len(token) % 4)
+        rel = _b64.urlsafe_b64decode((token + pad).encode('ascii')).decode('utf-8')
+    except Exception:
+        return None
+    if '..' in rel.replace('\\', '/').split('/'):
+        return None
+    fpath = os.path.realpath(os.path.join(ARTIFACTS_DIR, rel))
+    if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
+        return None
+    if not os.path.isfile(fpath):
+        return None
+    return fpath
+
+
+def _pick_list_images(limit: int = 60, agent_filter: str = '',
+                      include_private: bool = True) -> list:
+    out = []
+    if not os.path.isdir(ARTIFACTS_DIR):
+        return out
+    for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
+        dirs[:] = [d for d in dirs
+                   if (not d.startswith('.') or d == PRIVATE_INBOUND_DIRNAME)
+                   and d not in {'__pycache__', '.git'}]
+        for fname in fnames:
+            if fname.endswith('.meta'):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in _PICK_IMG_EXTS:
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                st = os.stat(fpath)
+            except OSError:
+                continue
+            private = _is_private_path(fpath)
+            if private and not include_private:
+                continue
+            agent_id = ''
+            caption = ''
+            meta_path = fpath + '.meta'
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, 'r', encoding='utf-8', errors='replace') as fh:
+                        raw = fh.read().strip()
+                    if raw.startswith('{'):
+                        m = json.loads(raw)
+                        agent_id = str(m.get('agent_id', '') or '')
+                        caption = str(m.get('caption', '') or '')[:200]
+                except Exception:
+                    pass
+            if not agent_id:
+                for ag in _PICK_KNOWN_AGENTS:
+                    if fname.startswith(ag + '_'):
+                        agent_id = ag
+                        break
+            if agent_filter and agent_id != agent_filter:
+                continue
+            rel = os.path.relpath(fpath, ARTIFACTS_DIR).replace(os.sep, '/')
+            out.append({
+                'token':    _pick_encode_token(rel),
+                'name':     fname,
+                'rel_path': rel,
+                'size':     st.st_size,
+                'mtime':    st.st_mtime,
+                'modified': datetime.datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M'),
+                'ext':      ext,
+                'agent_id': agent_id,
+                'private':  private,
+                'caption':  caption,
+            })
+    out.sort(key=lambda r: r['mtime'], reverse=True)
+    if limit and len(out) > limit:
+        out = out[:limit]
+    return out
+
+
+@app.route('/api/datahub/images/recent')
+def api_datahub_images_recent():
+    """List recent images from artifacts/ for the Baza picker UI. Includes
+    .private-inbound by default — the picker is an explicit opt-in surface."""
+    try:
+        limit = int(request.args.get('limit', 60))
+    except (TypeError, ValueError):
+        limit = 60
+    limit = max(1, min(limit, 300))
+    agent_filter = (request.args.get('agent') or '').strip()
+    include_private = request.args.get('include_private', '1') not in ('0', 'false', 'no')
+    images = _pick_list_images(limit=limit, agent_filter=agent_filter,
+                               include_private=include_private)
+    return jsonify({'ok': True, 'count': len(images), 'images': images})
+
+
+@app.route('/api/datahub/pick/serve/<token>')
+def api_datahub_pick_serve(token):
+    """Serve a Baza picker file inline. Path is verified to stay under
+    ARTIFACTS_DIR by _pick_decode_token."""
+    fpath = _pick_decode_token(token)
+    if not fpath:
+        return jsonify({'error': 'Not found'}), 404
+    return send_from_directory(os.path.dirname(fpath), os.path.basename(fpath))
+
+
 @app.route('/api/artifacts/upload', methods=['POST'])
 def api_artifact_upload():
     import re as _re
@@ -5225,6 +5352,24 @@ def portal_page():
 
 # ── AHB123 — Clients ─────────────────────────────────────────────────────────
 
+@app.route('/api/ahb/scopes', methods=['GET'])
+def api_ahb_scopes_list():
+    """Return every distinct, non-empty scope ever used on a project, in
+    alphabetical (case-insensitive) order. Used by the project modal datalist
+    so any custom scope a user types becomes a suggestion for the next run."""
+    try:
+        conn = _ahb_db()
+        rows = conn.execute(
+            "SELECT DISTINCT scope FROM ahb_projects "
+            "WHERE scope IS NOT NULL AND TRIM(scope) != '' "
+            "ORDER BY scope COLLATE NOCASE"
+        ).fetchall()
+        conn.close()
+        return jsonify([r['scope'] for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/ahb/clients', methods=['GET'])
 def api_ahb_clients_list():
     try:
@@ -6633,18 +6778,44 @@ def api_ahb_receipts_ocr(rid):
 
 @app.route('/api/ahb/receipts/upload', methods=['POST'])
 def api_ahb_receipts_upload():
-    """Upload a receipt image, save to disk, create receipt record, and trigger OCR."""
+    """Upload a receipt image (multipart `file`/`image`) or reference one
+    via `pick_token` from the Baza picker, save to disk, create receipt
+    record, and trigger OCR. If `target_id` is provided, attaches the image
+    to an existing receipt instead of creating a new one."""
     try:
+        import shutil as _shutil
         f = request.files.get('file') or request.files.get('image')
-        if not f:
-            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+        pick_token = (request.form.get('pick_token') or '').strip()
+        target_id = (request.form.get('target_id') or '').strip()
 
-        rid = str(uuid.uuid4())
+        rid = target_id or str(uuid.uuid4())
         upload_dir = os.path.join(DASHBOARD_DIR, 'uploads', 'ahb', 'receipts')
         os.makedirs(upload_dir, exist_ok=True)
-        safe_name = re.sub(r'[^\w.\-]', '_', f.filename or 'receipt.jpg')
-        file_path = os.path.join(upload_dir, f"{rid}_{safe_name}")
-        f.save(file_path)
+
+        if f:
+            safe_name = re.sub(r'[^\w.\-]', '_', f.filename or 'receipt.jpg')
+            file_path = os.path.join(upload_dir, f"{rid}_{safe_name}")
+            f.save(file_path)
+        elif pick_token:
+            src = _pick_decode_token(pick_token)
+            if not src:
+                return jsonify({'success': False, 'error': 'Invalid pick_token'}), 400
+            safe_name = re.sub(r'[^\w.\-]', '_', os.path.basename(src)) or 'receipt.jpg'
+            file_path = os.path.join(upload_dir, f"{rid}_{safe_name}")
+            _shutil.copy2(src, file_path)
+        else:
+            return jsonify({'success': False, 'error': 'No file or pick_token uploaded'}), 400
+
+        # Attach-to-existing branch: skip the INSERT, update image_path on the
+        # existing row, and return early.
+        if target_id:
+            conn = _ahb_db()
+            conn.execute("UPDATE ahb_receipts SET image_path = ?, file_path = ? WHERE id = ?",
+                         (file_path, file_path, target_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'id': target_id, 'image_path': file_path,
+                            'image_url': f'/api/ahb/receipts/image/{target_id}', 'attached': True})
 
         # Get form data
         data = request.form.to_dict()
@@ -8345,24 +8516,40 @@ def api_ahb_files_delete(fid):
 
 @app.route('/api/ahb/projects/<pid>/files', methods=['POST'])
 def api_ahb_project_files_upload(pid):
-    """Upload photos or documents to a project. Supports photo_section and document_type."""
+    """Upload photos or documents to a project. Accepts either a multipart
+    `file` upload OR a `pick_token` referencing an existing image in
+    artifacts/ (Baza picker flow — used for Sam's Telegram-inbound photos
+    while SD imaging is down). Supports photo_section + document_type."""
     try:
-        f = request.files.get('file')
-        if not f:
-            return jsonify({'success': False, 'error': 'No file provided'}), 400
-
+        import shutil as _shutil
         upload_dir = os.path.join(DASHBOARD_DIR, 'uploads', 'ahb', 'projects', pid)
         os.makedirs(upload_dir, exist_ok=True)
         fid = uuid.uuid4().hex[:24]
-        safe_name = re.sub(r'[^\w.\-]', '_', f.filename or 'file')
-        file_path = os.path.join(upload_dir, f"{fid}_{safe_name}")
-        f.save(file_path)
 
+        f = request.files.get('file')
         data = request.form
+        pick_token = (data.get('pick_token') or '').strip()
+
+        if f:
+            safe_name = re.sub(r'[^\w.\-]', '_', f.filename or 'file')
+            file_path = os.path.join(upload_dir, f"{fid}_{safe_name}")
+            f.save(file_path)
+            original_name = f.filename or safe_name
+        elif pick_token:
+            src = _pick_decode_token(pick_token)
+            if not src:
+                return jsonify({'success': False, 'error': 'Invalid pick_token'}), 400
+            base = os.path.basename(src)
+            safe_name = re.sub(r'[^\w.\-]', '_', base) or 'file'
+            file_path = os.path.join(upload_dir, f"{fid}_{safe_name}")
+            _shutil.copy2(src, file_path)
+            original_name = data.get('name') or base
+        else:
+            return jsonify({'success': False, 'error': 'No file or pick_token provided'}), 400
+
         photo_section = data.get('photo_section', '')  # before / during / after
         document_type = data.get('document_type', '')   # Permit, Contract, COI, etc.
 
-        # Determine file_type and category from inputs
         ext = os.path.splitext(safe_name)[1].lower()
         is_image = ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic')
         file_type = 'photo' if is_image else 'document'
@@ -8372,7 +8559,7 @@ def api_ahb_project_files_upload(pid):
         conn.execute(
             """INSERT INTO ahb_files (id, name, file_type, file_path, size, tags, category, year, project_id, photo_section, document_type)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (fid, f.filename or safe_name, file_type, file_path,
+            (fid, original_name, file_type, file_path,
              os.path.getsize(file_path), data.get('tags', ''), category,
              str(datetime.datetime.now().year), pid, photo_section, document_type))
         conn.commit()
@@ -11539,13 +11726,16 @@ if CLOUD_ENABLED:
     @app.route('/api/cloud/media/upload', methods=['POST'])
     def api_cloud_media_upload():
         """Accept multipart photo/video uploads from the Media tab's Upload
-        button or drag-drop. Files land in
-        /mnt/empirepool/cloud/<user>/Uploads/<YYYY-MM-DD>/ and are indexed
-        immediately so they show up in the Library."""
-        import datetime, time as _time
+        button or drag-drop. Also accepts comma-separated `pick_tokens` from
+        the Baza picker (copies from artifacts/ into Uploads/<date>/). Files
+        land in /mnt/empirepool/cloud/<user>/Uploads/<YYYY-MM-DD>/ and are
+        indexed immediately so they show up in the Library."""
+        import datetime, time as _time, shutil as _shutil
         from werkzeug.utils import secure_filename
         files = request.files.getlist('files')
-        if not files:
+        pick_tokens_raw = request.form.get('pick_tokens') or ''
+        pick_tokens = [t.strip() for t in pick_tokens_raw.split(',') if t.strip()]
+        if not files and not pick_tokens:
             return jsonify({'success': False, 'error': 'no files'}), 400
         today = datetime.date.today().isoformat()
         dest_dir = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), 'Uploads', today)
@@ -11574,6 +11764,30 @@ if CLOUD_ENABLED:
                 saved.append(os.path.basename(target))
             except Exception as exc:
                 skipped.append(f.filename + ' (' + str(exc) + ')')
+        for tok in pick_tokens:
+            src = _pick_decode_token(tok)
+            if not src:
+                skipped.append(f'(token:{tok[:8]}…)'); continue
+            base = os.path.basename(src)
+            safe = secure_filename(base) or ''
+            if not safe:
+                skipped.append(base); continue
+            ext = os.path.splitext(safe)[1].lower()
+            if ext not in CLOUD_IMG_EXTS and ext not in CLOUD_VID_EXTS:
+                skipped.append(base); continue
+            target = os.path.join(dest_dir, safe)
+            if os.path.exists(target):
+                stem, e = os.path.splitext(safe)
+                target = os.path.join(dest_dir, f"{stem}_{int(_time.time()*1000)}{e}")
+            try:
+                _shutil.copy2(src, target)
+                if os.path.getsize(target) > max_bytes:
+                    os.remove(target)
+                    skipped.append(base + ' (too large)')
+                    continue
+                saved.append(os.path.basename(target))
+            except Exception as exc:
+                skipped.append(base + ' (' + str(exc) + ')')
         try:
             _scan_media_dirs()
         except Exception:

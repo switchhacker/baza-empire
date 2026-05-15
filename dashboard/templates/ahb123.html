@@ -111,8 +111,12 @@
     .year-stat{font-size:12px;font-weight:700}
     .year-total{font-size:16px;font-weight:800;color:#00d084;background:#0a2a18;padding:5px 12px;border-radius:8px;border:1px solid #1a3a2a}
     .year-group-body{padding:6px 0}
-    .year-project-row{display:grid;grid-template-columns:6px 1fr 130px 110px 130px 70px;gap:10px;align-items:center;padding:11px 18px;border-bottom:1px solid #0e0e1e;cursor:pointer;transition:background .15s}
+    .year-project-row{display:grid;grid-template-columns:6px 1fr 130px 110px 130px 70px;gap:10px;align-items:center;padding:11px 18px;border-bottom:1px solid #0e0e1e;cursor:grab;transition:background .15s}
     .year-project-row:hover{background:#0e0e1e}
+    .year-project-row:active{cursor:grabbing}
+    .year-project-row.yr-dragging{opacity:.45;background:#0e0e1e;outline:1px dashed #10b981}
+    .year-group.yr-drop-target{outline:2px dashed #10b981;outline-offset:-2px;background:#0a1a14}
+    .year-group.yr-drop-target .year-group-header{background:linear-gradient(135deg,#0e3a26,#072014)}
     .year-project-row:last-child{border-bottom:none}
     .ypr-status{height:38px;border-radius:3px}
     .ypr-main{min-width:0}
@@ -871,8 +875,7 @@
         <th>Scope</th>
         <th>Budget</th>
         <th>Status</th>
-        <th>Start</th>
-        <th>End</th>
+        <th colspan="2">Timeframe</th>
         <th>Agents</th>
         <th style="width:100px">Actions</th>
       </tr>
@@ -1108,6 +1111,51 @@
     <div style="position:relative;max-width:95vw;max-height:95vh">
       <button onclick="rqeCloseImg()" style="position:absolute;top:-40px;right:0;background:#2a0a14;color:#ff8a8a;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">✕ Close</button>
       <img id="rqe-img-modal-img" src="" style="max-width:95vw;max-height:90vh;border-radius:8px;border:1px solid #2a2a4a;background:#000">
+    </div>
+  </div>
+
+  <!-- Baza image picker — reusable picker for selecting images from artifacts/
+       (incl. .private-inbound Telegram drops). Used by project Before/During/After,
+       project docs, receipt upload, and the Media tab. -->
+  <div class="modal-bg" id="bazaPickModal">
+    <div class="modal wide" style="max-width:1100px;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h2 id="bazaPickTitle" style="margin:0">📂 Pick from Baza</h2>
+          <div class="modal-sub" style="margin:4px 0 0" id="bazaPickSub">Recent images in Data Hub (incl. Sam's Telegram drops)</div>
+        </div>
+        <button class="btn-secondary" onclick="closeModal('bazaPickModal')" style="padding:6px 14px">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="bazaPickSearch" placeholder="Search filename, agent, caption…" oninput="bazaPickRender()"
+               style="flex:1;min-width:200px;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+        <select id="bazaPickAgent" onchange="bazaPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+          <option value="">All sources</option>
+          <option value="sam_axe">Sam (Telegram)</option>
+          <option value="phil_hass">Phil</option>
+          <option value="simon_bately">Simon</option>
+          <option value="claw_batto">Claw</option>
+          <option value="specter_voss">Specter</option>
+        </select>
+        <select id="bazaPickLimit" onchange="bazaPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+          <option value="60">Last 60</option>
+          <option value="120" selected>Last 120</option>
+          <option value="250">Last 250</option>
+          <option value="300">Last 300 (max)</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="bazaPickLoad()">↻ Refresh</button>
+        <span id="bazaPickCount" style="color:#666;font-size:11px;margin-left:auto"></span>
+      </div>
+      <div id="bazaPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:60vh;overflow-y:auto;padding:4px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;min-height:200px">
+        <div style="grid-column:1/-1;text-align:center;padding:40px;color:#444;font-size:12px">Loading…</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;flex-wrap:wrap">
+        <div style="color:#888;font-size:11px"><span id="bazaPickSelCount">0</span> selected</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-secondary" onclick="closeModal('bazaPickModal')">Cancel</button>
+          <button class="btn-primary" id="bazaPickUseBtn" onclick="bazaPickConfirm()" disabled>Use selected</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2670,6 +2718,7 @@
       <button class="btn-secondary" onclick="setMediaListMode('library')" id="mode-btn-library">&#128193; Library</button>
       <button class="btn-primary" id="media-upload-btn" onclick="document.getElementById('media-upload-input').click()" title="Pick photos/videos from this device or camera roll">&#128228; Upload</button>
       <input type="file" id="media-upload-input" multiple accept="image/*,video/*" style="display:none" onchange="uploadMediaFiles(this.files)">
+      <button class="btn-secondary" onclick="pickMediaFromBaza()" title="Copy images from Baza Data Hub (incl. Sam's Telegram drops) into the Media Library" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed">&#128193; Baza</button>
       <span style="display:inline-flex;align-items:center;gap:4px">
         <select id="reclassify-radius" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;color:#aaa;font-size:12px">
           <option value="100">100m</option>
@@ -3459,16 +3508,13 @@
       </div>
     </div>
     <div class="form-group">
-      <label>Project Timeframe <span style="color:#444;font-weight:400;font-size:10px">(click to open the calendar — pick a start date, then an end date)</span></label>
-      <div style="display:flex;gap:8px;align-items:stretch;flex-wrap:wrap">
-        <button type="button" id="project-timeframe-btn" data-no-autosave onclick="openProjectCalendar()"
-                style="flex:1;min-width:240px;background:#070712;border:1px solid #1a3a5a;border-radius:8px;padding:10px 14px;cursor:pointer;color:#a7f3d0;font-size:13px;font-weight:600;text-align:left;display:flex;align-items:center;gap:10px">
-          <span style="font-size:18px">📅</span>
-          <span id="project-timeframe-label" style="flex:1;color:#888;font-weight:500">Click to pick start &amp; end dates</span>
-        </button>
-        <button type="button" data-no-autosave onclick="clearProjectTimeframe()"
-                style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:11px">Clear</button>
-      </div>
+      <label>Project Timeframe <span style="color:#444;font-weight:400;font-size:10px">(click to pick from the calendar — first click sets start, next sets end)</span></label>
+      <button type="button" id="project-timeframe-field" data-no-autosave
+              onclick="openProjectModalTimeframe()"
+              style="width:100%;background:#070712;border:1px solid #1a3a5a;border-radius:8px;padding:10px 14px;cursor:pointer;color:#a7f3d0;font-size:13px;font-weight:600;text-align:left;display:flex;align-items:center;gap:10px">
+        <span style="font-size:16px">📅</span>
+        <span id="project-timeframe-field-label" style="flex:1;color:#888;font-weight:500">Click to pick start &amp; end dates</span>
+      </button>
       <input type="hidden" id="project-start">
       <input type="hidden" id="project-end">
     </div>
@@ -3479,27 +3525,28 @@
   </div>
 </div>
 
-<!-- Project Calendar Popup (timeframe picker) -->
-<div id="project-calendar-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target.id==='project-calendar-popup')closeProjectCalendar()">
-  <div style="background:#0a0a18;border:1px solid #1a3a5a;border-radius:12px;padding:18px;max-width:min(720px,95vw);width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+<!-- ============================================================
+     SHARED PROJECT TIMEFRAME CALENDAR POPUP
+     Single instance — used by the project modal AND by every
+     project row's inline date field. Visual styling matches the
+     schedule tab's mini-cal (.cal-mini-* classes).
+     ============================================================ -->
+<div id="project-timeframe-popup" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10001;align-items:center;justify-content:center;padding:20px"
+     onclick="if(event.target.id==='project-timeframe-popup')closeProjectTimeframePicker()">
+  <div style="background:#0a0a18;border:1px solid #1a3a5a;border-radius:12px;padding:18px;width:340px;max-width:95vw;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.6)">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:8px">
       <div>
-        <div style="font-size:15px;font-weight:700;color:#a7f3d0">📅 Pick Project Timeframe</div>
-        <div id="project-calendar-status" style="font-size:11px;color:#888;margin-top:2px">Click a date to set START</div>
+        <div style="font-size:14px;font-weight:700;color:#a7f3d0">📅 Project Timeframe</div>
+        <div id="project-timeframe-status" style="font-size:11px;color:#888;margin-top:2px">Click a date to set START</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <button type="button" onclick="_pcNav(-1)" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:4px 10px;cursor:pointer">◀ Prev</button>
-        <button type="button" onclick="_pcNav(1)" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:4px 10px;cursor:pointer">Next ▶</button>
-      </div>
+      <button type="button" onclick="closeProjectTimeframePicker()"
+              style="background:#2a0a14;color:#ff8a8a;border:1px solid #4a1a24;border-radius:5px;padding:3px 8px;font-size:10px;cursor:pointer">✕</button>
     </div>
-    <div id="project-calendar-grid" style="margin:8px 0"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;border-top:1px solid #1a1a2e;padding-top:10px">
-      <div id="project-calendar-preview" style="font-size:12px;color:#a7f3d0;font-weight:600">Start: —  ·  End: —</div>
-      <div style="display:flex;gap:6px">
-        <button type="button" onclick="_pcReset()" style="background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px">Clear</button>
-        <button type="button" onclick="_pcConfirm()" style="background:#10b981;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:11px;font-weight:700">Apply</button>
-        <button type="button" onclick="closeProjectCalendar()" style="background:#2a0a14;color:#ff8a8a;border:1px solid #4a1a24;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px">Cancel</button>
-      </div>
+    <div id="project-timeframe-cal" class="cal-mini" style="font-size:13px"></div>
+    <div id="project-timeframe-preview" style="font-size:11px;color:#a7f3d0;font-weight:600;margin-top:10px;text-align:center">Start: —  ·  End: —</div>
+    <div style="display:flex;gap:6px;margin-top:10px;border-top:1px solid #1a1a2e;padding-top:10px">
+      <button type="button" onclick="_pcalClear()" style="flex:1;background:#1a1a2e;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:6px;cursor:pointer;font-size:11px">Clear</button>
+      <button type="button" onclick="_pcalConfirm()" style="flex:2;background:#10b981;color:#fff;border:none;border-radius:6px;padding:6px;cursor:pointer;font-size:11px;font-weight:700">Apply</button>
     </div>
   </div>
 </div>
@@ -3815,10 +3862,13 @@
         <div id="rd-no-image" style="color:#444;text-align:center;padding:40px">
           <div style="font-size:48px;margin-bottom:12px">&#128247;</div>
           <p>No receipt image</p>
-          <label class="btn btn-sm btn-secondary" style="margin-top:12px;cursor:pointer">
-            Upload Image
-            <input type="file" id="rd-image-upload" accept="image/*" style="display:none" onchange="uploadReceiptImage(this.files)">
-          </label>
+          <div style="display:flex;gap:6px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+            <label class="btn btn-sm btn-secondary" style="cursor:pointer">
+              Upload Image
+              <input type="file" id="rd-image-upload" accept="image/*" style="display:none" onchange="uploadReceiptImage(this.files)">
+            </label>
+            <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" onclick="pickReceiptImageFromBazaForExisting()">📂 Baza</button>
+          </div>
         </div>
         <img id="rd-image" style="max-width:100%;max-height:100%;object-fit:contain;display:none;transition:transform .3s" onclick="toggleImageZoom()">
         <div id="rd-image-tools" style="display:none;position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.8);border-radius:8px;padding:6px 10px;display:flex;gap:8px">
@@ -3827,10 +3877,11 @@
           <button class="btn-icon" onclick="zoomReceiptImage(1.2)" title="Zoom In" style="color:#ccc;border-color:#555">+</button>
           <button class="btn-icon" onclick="zoomReceiptImage(0.8)" title="Zoom Out" style="color:#ccc;border-color:#555">&minus;</button>
           <button class="btn-icon" onclick="resetReceiptImage()" title="Reset" style="color:#ccc;border-color:#555">&#8634;</button>
-          <label class="btn-icon" style="cursor:pointer;color:#ccc;border:1px solid #555;border-radius:5px;padding:5px 8px;font-size:12px" title="Replace">
+          <label class="btn-icon" style="cursor:pointer;color:#ccc;border:1px solid #555;border-radius:5px;padding:5px 8px;font-size:12px" title="Replace from device">
             &#128247;
             <input type="file" accept="image/*" style="display:none" onchange="uploadReceiptImage(this.files)">
           </label>
+          <button class="btn-icon" onclick="pickReceiptImageFromBazaForExisting()" title="Replace from Baza" style="color:#c4b5fd;border-color:#7c3aed;background:#7c3aed22">📂</button>
         </div>
       </div>
       <!-- Detail Fields -->
@@ -4223,10 +4274,13 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Photos</h3>
-          <div style="display:flex;gap:4px">
-            <label class="btn btn-sm btn-secondary" style="cursor:pointer">+ Before<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'before')"></label>
-            <label class="btn btn-sm btn-secondary" style="cursor:pointer">+ During<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'during')"></label>
-            <label class="btn btn-sm btn-secondary" style="cursor:pointer">+ After<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'after')"></label>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <label class="btn btn-sm btn-secondary" style="cursor:pointer" title="Upload from this device">+ Before<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'before')"></label>
+            <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub (incl. Sam's Telegram drops)" onclick="pickProjectPhotosFromBaza('before')">📂 Baza</button>
+            <label class="btn btn-sm btn-secondary" style="cursor:pointer" title="Upload from this device">+ During<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'during')"></label>
+            <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub" onclick="pickProjectPhotosFromBaza('during')">📂 Baza</button>
+            <label class="btn btn-sm btn-secondary" style="cursor:pointer" title="Upload from this device">+ After<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'after')"></label>
+            <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub" onclick="pickProjectPhotosFromBaza('after')">📂 Baza</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
@@ -4239,9 +4293,12 @@
       <div class="panel">
         <div class="panel-header">
           <h3>Permits & Documents</h3>
-          <label class="btn btn-sm btn-primary" style="cursor:pointer">+ Upload
-            <input type="file" multiple style="display:none" onchange="uploadProjectDoc(this.files)">
-          </label>
+          <div style="display:flex;gap:6px">
+            <label class="btn btn-sm btn-primary" style="cursor:pointer" title="Upload from this device">+ Upload
+              <input type="file" multiple style="display:none" onchange="uploadProjectDoc(this.files)">
+            </label>
+            <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub" onclick="pickProjectDocFromBaza()">📂 Baza</button>
+          </div>
         </div>
         <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
           <button class="btn btn-sm btn-secondary pd-doc-filter active" onclick="filterProjectDocs('')">All</button>
@@ -4725,6 +4782,38 @@ function onScopeChange(){
   /* Scope is now a free-text combobox backed by a <datalist>; no toggle needed. */
 }
 
+/* ============================================================
+   CUSTOM SCOPES — persist any new scope a user types
+   ============================================================
+   Endpoint /api/ahb/scopes returns DISTINCT scopes ever saved on a project.
+   This merges them into the <datalist id="project-scope-options"> alongside
+   the hardcoded built-ins, so any custom scope ("Hot Tub Wiring", "Pet Door
+   Install", etc.) appears as a suggestion the next time the modal opens. */
+let _customScopesLoaded = false;
+async function loadProjectScopes(force){
+  if(_customScopesLoaded && !force) return;
+  try{
+    const r = await fetch('/api/ahb/scopes');
+    if(!r.ok) return;
+    const scopes = await r.json();
+    if(!Array.isArray(scopes)) return;
+    const dl = document.getElementById('project-scope-options');
+    if(!dl) return;
+    const existing = new Set();
+    dl.querySelectorAll('option').forEach(o=>existing.add((o.value||'').trim().toLowerCase()));
+    scopes.forEach(s=>{
+      const v = (s||'').trim();
+      if(!v) return;
+      if(existing.has(v.toLowerCase())) return;
+      const opt = document.createElement('option');
+      opt.value = v;
+      dl.appendChild(opt);
+      existing.add(v.toLowerCase());
+    });
+    _customScopesLoaded = true;
+  }catch(e){ /* non-fatal — fall back to the hardcoded options */ }
+}
+
 /* ===================== AUTOSAVE =====================
    Generic debounced autosave for "I'm editing an existing record" modals.
    Attach to a scope element + a quiet save function — every input/textarea/
@@ -4874,7 +4963,7 @@ function clearProjectDraftAndUI(){
   });
   document.getElementById('project-modal-status').value='Planning';
   document.getElementById('project-client-status').textContent='';
-  _updateProjectTimeframeLabel();
+  _refreshProjectModalTimeframeLabel();
   showToast('Draft discarded');
 }
 function _updateClearDraftButton(){
@@ -4912,166 +5001,6 @@ function restoreProjectDraft(){
   }catch(e){ return false; }
 }
 
-/* ============================================================
-   PROJECT TIMEFRAME CALENDAR POPUP
-   ============================================================
-   Click the timeframe button → opens a 2-month calendar. First click sets
-   the START, second sets the END, then the picker closes and fills both
-   `#project-start` and `#project-end` (which feed the autosave + save). */
-const _PC_MONTH_NAMES = ['January','February','March','April','May','June',
-                         'July','August','September','October','November','December'];
-let _pcState = { start: null, end: null, viewYear: 0, viewMonth: 0, picking: 'start' };
-function _pcFmt(d){
-  if(!d) return '';
-  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
-}
-function _pcParse(s){
-  if(!s) return null;
-  const [y,m,d] = String(s).slice(0,10).split('-').map(n=>parseInt(n,10));
-  if(!y||!m||!d) return null;
-  return new Date(y, m-1, d);
-}
-function _pcPretty(d){
-  if(!d) return '';
-  return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
-}
-function _updateProjectTimeframeLabel(){
-  const lbl = document.getElementById('project-timeframe-label');
-  if(!lbl) return;
-  const s = _pcParse(document.getElementById('project-start').value);
-  const e = _pcParse(document.getElementById('project-end').value);
-  if(s && e){
-    const days = Math.round((e-s)/86400000)+1;
-    lbl.textContent = `${_pcPretty(s)} → ${_pcPretty(e)}  (${days} day${days===1?'':'s'})`;
-    lbl.style.color = '#a7f3d0'; lbl.style.fontWeight='600';
-  } else if(s){
-    lbl.textContent = `Start: ${_pcPretty(s)} — pick an end date`;
-    lbl.style.color = '#f5a623'; lbl.style.fontWeight='600';
-  } else if(e){
-    lbl.textContent = `End: ${_pcPretty(e)} — pick a start date`;
-    lbl.style.color = '#f5a623'; lbl.style.fontWeight='600';
-  } else {
-    lbl.textContent = 'Click to pick start & end dates';
-    lbl.style.color = '#888'; lbl.style.fontWeight='500';
-  }
-}
-function clearProjectTimeframe(){
-  document.getElementById('project-start').value='';
-  document.getElementById('project-end').value='';
-  _updateProjectTimeframeLabel();
-  /* Fire change so autosave (draft or PUT) picks it up. */
-  document.getElementById('project-start').dispatchEvent(new Event('change',{bubbles:true}));
-}
-function openProjectCalendar(){
-  const startVal = document.getElementById('project-start').value;
-  const endVal = document.getElementById('project-end').value;
-  _pcState.start = _pcParse(startVal);
-  _pcState.end = _pcParse(endVal);
-  _pcState.picking = _pcState.start ? 'end' : 'start';
-  const anchor = _pcState.start || new Date();
-  _pcState.viewYear = anchor.getFullYear();
-  _pcState.viewMonth = anchor.getMonth();
-  document.getElementById('project-calendar-popup').style.display = 'flex';
-  _pcRender();
-}
-function closeProjectCalendar(){
-  document.getElementById('project-calendar-popup').style.display = 'none';
-}
-function _pcRender(){
-  const host = document.getElementById('project-calendar-grid');
-  if(!host) return;
-  let html = '<div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center">';
-  for(let i=0;i<2;i++){
-    let m = _pcState.viewMonth + i;
-    let y = _pcState.viewYear;
-    while(m>11){ m-=12; y+=1; }
-    html += _pcMonthHtml(y, m);
-  }
-  html += '</div>';
-  host.innerHTML = html;
-  document.getElementById('project-calendar-status').textContent =
-    _pcState.picking === 'start' ? 'Click a date to set START'
-                                 : 'Click a date to set END (must be on/after start)';
-  const s=_pcState.start, e=_pcState.end;
-  document.getElementById('project-calendar-preview').innerHTML =
-    `Start: <b>${s?_pcFmt(s):'—'}</b>  ·  End: <b>${e?_pcFmt(e):'—'}</b>` +
-    (s&&e?`  · <span style="color:#888">(${Math.round((e-s)/86400000)+1} days)</span>`:'');
-}
-function _pcMonthHtml(year, month){
-  const first = new Date(year, month, 1);
-  const startWeekday = first.getDay();
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  const todayKey = _pcFmt(new Date());
-  const startKey = _pcState.start ? _pcFmt(_pcState.start) : null;
-  const endKey   = _pcState.end   ? _pcFmt(_pcState.end)   : null;
-  let html = `<div style="background:#070712;border:1px solid #1a3a5a;border-radius:8px;padding:10px;min-width:240px">
-    <div style="text-align:center;font-weight:700;color:#a7f3d0;margin-bottom:8px;font-size:13px">${_PC_MONTH_NAMES[month]} ${year}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:10px;color:#555;text-align:center;margin-bottom:4px">
-      <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">`;
-  for(let i=0;i<startWeekday;i++) html += '<div></div>';
-  for(let d=1; d<=daysInMonth; d++){
-    const dt = new Date(year, month, d);
-    const key = _pcFmt(dt);
-    const inRange = _pcState.start && _pcState.end && dt>=_pcState.start && dt<=_pcState.end;
-    const isStart = key === startKey;
-    const isEnd   = key === endKey;
-    const isToday = key === todayKey;
-    let bg='transparent', fg='#aaa', bd='1px solid transparent', fw='500';
-    if(inRange){ bg='#0a3a2a'; fg='#a7f3d0'; }
-    if(isStart || isEnd){ bg='#10b981'; fg='#fff'; bd='1px solid #fff'; fw='700'; }
-    else if(isToday){ bd='1px solid #4da6ff'; fg='#4da6ff'; }
-    html += `<button type="button" onclick="_pcPick(${year},${month},${d})"
-              style="background:${bg};color:${fg};border:${bd};border-radius:5px;padding:7px 0;cursor:pointer;font-weight:${fw};font-size:12px">${d}</button>`;
-  }
-  html += '</div></div>';
-  return html;
-}
-function _pcPick(y, m, d){
-  const dt = new Date(y, m, d);
-  if(_pcState.picking === 'start' || !_pcState.start){
-    _pcState.start = dt;
-    _pcState.end = null;
-    _pcState.picking = 'end';
-    _pcRender();
-    return;
-  }
-  // picking === 'end'
-  if(dt < _pcState.start){
-    // Clicking a date before the current start re-anchors the range.
-    _pcState.start = dt;
-    _pcState.end = null;
-    _pcRender();
-    return;
-  }
-  _pcState.end = dt;
-  _pcRender();
-  // Auto-apply after a tiny pause so the user can see their picked end highlighted.
-  setTimeout(_pcConfirm, 180);
-}
-function _pcNav(delta){
-  _pcState.viewMonth += delta;
-  while(_pcState.viewMonth < 0){ _pcState.viewMonth += 12; _pcState.viewYear -= 1; }
-  while(_pcState.viewMonth > 11){ _pcState.viewMonth -= 12; _pcState.viewYear += 1; }
-  _pcRender();
-}
-function _pcReset(){
-  _pcState.start = null; _pcState.end = null; _pcState.picking = 'start';
-  _pcRender();
-}
-function _pcConfirm(){
-  if(!_pcState.start){ closeProjectCalendar(); return; }
-  document.getElementById('project-start').value = _pcFmt(_pcState.start);
-  document.getElementById('project-end').value   = _pcState.end ? _pcFmt(_pcState.end) : '';
-  /* Fire change on the hidden inputs so autosave (draft or PUT) picks them up. */
-  ['project-start','project-end'].forEach(id=>{
-    document.getElementById(id).dispatchEvent(new Event('change',{bubbles:true}));
-  });
-  _updateProjectTimeframeLabel();
-  closeProjectCalendar();
-}
 
 /* Quiet PUT for project detail modal's inline-edit panel (#pd-details). */
 async function _saveProjectDetailsQuiet(){
@@ -5253,8 +5182,14 @@ function renderProjects(projects){
         <span class="badge badge-${(p.status||'').toLowerCase().replace(' ','_')}">${p.status}</span>
         ${due?`<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px" title="Project complete, ${fmtCurrency(p._payment.owed)} still owed">⚠ BALANCE DUE</span>`:''}
       </td>
-      <td style="font-size:12px;color:#555">${fmtDate(p.start_date)}</td>
-      <td style="font-size:12px;color:#555">${fmtDate(p.end_date)}</td>
+      <td colspan="2" onclick="event.stopPropagation()" style="font-size:12px;color:#555">
+        <button type="button" id="pf-row-${p.id}" onclick="event.stopPropagation();openProjectRowTimeframe('${p.id}')"
+                title="Click to pick start & end dates from the calendar"
+                style="background:#0a0a18;border:1px solid #1a2e1a;border-radius:5px;padding:5px 8px;color:#a7f3d0;font-size:11px;cursor:pointer;text-align:left;width:230px;font-weight:600;display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px">📅</span>
+          <span style="flex:1">${_pfFieldLabel(p.start_date, p.end_date)}</span>
+        </button>
+      </td>
       <td>${p.agents?'<span class="agent-chip">'+escHtml(p.agents)+'</span>':'<span style="color:#333">&mdash;</span>'}</td>
       <td>
         <div class="row-actions">
@@ -5326,9 +5261,10 @@ async function openProjectModal(){
     }catch(e){}
   }
   populateClientDropdowns();
+  loadProjectScopes();
   // Try to restore an unsaved draft from a prior close/refresh.
   restoreProjectDraft();
-  _updateProjectTimeframeLabel();
+  _refreshProjectModalTimeframeLabel();
   // Autosave the draft to localStorage on every keystroke — protects long
   // descriptions from accidental modal close before "Save Project" is clicked.
   attachAutosave('projectModal', _projectModalAutosave, {indicator:'project-modal-autosave'});
@@ -5345,6 +5281,7 @@ async function editProject(id){
     }catch(e){}
   }
   populateClientDropdowns();
+  loadProjectScopes();
   document.getElementById('edit-project-id').value=id;
   document.getElementById('project-modal-title').firstChild.textContent='Edit Project';
   document.getElementById('project-title').value=p.title||'';
@@ -5367,7 +5304,7 @@ async function editProject(id){
   document.getElementById('project-doc-list').innerHTML='';
   document.getElementById('project-scrape-result').style.display='none';
   projectStagedDocs=[];
-  _updateProjectTimeframeLabel();
+  _refreshProjectModalTimeframeLabel();
   document.getElementById('projectModal').classList.add('open');
   /* Autosave: any change inside the project modal silently PUTs the project
      when editing, or stores a localStorage draft when adding. */
@@ -5524,6 +5461,9 @@ async function saveProject(){
     closeModal('projectModal');
     showToast(id?'Project updated':'Project added');
     loadProjects();
+    /* Refresh custom scopes so the next modal-open includes whatever the
+       user just typed (case where they entered a brand-new scope). */
+    loadProjectScopes(true);
   }catch(e){
     showToast('Error: '+e.message,'error');
   }
@@ -5536,6 +5476,190 @@ async function deleteProject(id){
     showToast('Project deleted');
     loadProjects();
   }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+/* ============================================================
+   SHARED PROJECT TIMEFRAME CALENDAR
+   ============================================================
+   One popup component used by:
+   - the project modal (Add / Edit Project) date field
+   - every project row's date field (table + by-year views)
+   First click sets START, next click sets END (auto-closes & applies).
+   Visual style mirrors the schedule tab's .cal-mini calendar. */
+const _pcal = { start:null, end:null, picking:'start', viewYear:0, viewMonth:0, onApply:null };
+function _pcalParse(iso){
+  if(!iso) return null;
+  const [y,m,d] = String(iso).slice(0,10).split('-').map(n=>parseInt(n,10));
+  if(!y||!m||!d) return null;
+  return new Date(y, m-1, d);
+}
+function _pcalFmt(d){
+  if(!d) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function _pcalPretty(d){
+  if(!d) return '';
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+}
+/* Build the label that goes inside any project's timeframe field. */
+function _pfFieldLabel(startISO, endISO){
+  const s = _pcalParse(startISO), e = _pcalParse(endISO);
+  if(s && e){
+    const days = Math.round((e-s)/86400000)+1;
+    return `${_pcalPretty(s)} → ${_pcalPretty(e)} (${days}d)`;
+  }
+  if(s) return `${_pcalPretty(s)} → ?`;
+  if(e) return `? → ${_pcalPretty(e)}`;
+  return 'Click to pick dates';
+}
+
+function openProjectTimeframePicker(initStartISO, initEndISO, onApply){
+  _pcal.start = _pcalParse(initStartISO);
+  _pcal.end = _pcalParse(initEndISO);
+  _pcal.picking = _pcal.start ? 'end' : 'start';
+  const anchor = _pcal.start || new Date();
+  _pcal.viewYear = anchor.getFullYear();
+  _pcal.viewMonth = anchor.getMonth();
+  _pcal.onApply = onApply || null;
+  document.getElementById('project-timeframe-popup').style.display = 'flex';
+  _pcalRender();
+}
+function closeProjectTimeframePicker(){
+  document.getElementById('project-timeframe-popup').style.display = 'none';
+}
+function _pcalNav(delta){
+  _pcal.viewMonth += delta;
+  while(_pcal.viewMonth < 0){ _pcal.viewMonth += 12; _pcal.viewYear -= 1; }
+  while(_pcal.viewMonth > 11){ _pcal.viewMonth -= 12; _pcal.viewYear += 1; }
+  _pcalRender();
+}
+function _pcalClear(){
+  _pcal.start = null; _pcal.end = null; _pcal.picking='start';
+  _pcalRender();
+}
+function _pcalPick(y, m, d){
+  const dt = new Date(y, m, d);
+  if(_pcal.picking === 'start' || !_pcal.start){
+    _pcal.start = dt; _pcal.end = null; _pcal.picking='end';
+    _pcalRender();
+    return;
+  }
+  if(dt < _pcal.start){
+    _pcal.start = dt; _pcal.end = null;
+    _pcalRender();
+    return;
+  }
+  _pcal.end = dt;
+  _pcalRender();
+  /* Auto-apply ~200ms after picking the end so the user sees the highlight. */
+  setTimeout(_pcalConfirm, 200);
+}
+function _pcalConfirm(){
+  const startISO = _pcal.start ? _pcalFmt(_pcal.start) : '';
+  const endISO   = _pcal.end   ? _pcalFmt(_pcal.end)   : '';
+  if(_pcal.onApply) _pcal.onApply({startISO, endISO});
+  closeProjectTimeframePicker();
+}
+function _pcalRender(){
+  const host = document.getElementById('project-timeframe-cal');
+  if(!host) return;
+  const y = _pcal.viewYear, m = _pcal.viewMonth;
+  const firstDow = new Date(y,m,1).getDay();
+  const days = new Date(y,m+1,0).getDate();
+  const prevDays = new Date(y,m,0).getDate();
+  const todayKey = _pcalFmt(new Date());
+  const startKey = _pcal.start ? _pcalFmt(_pcal.start) : null;
+  const endKey   = _pcal.end   ? _pcalFmt(_pcal.end)   : null;
+  let cells = '';
+  for(let i=firstDow-1; i>=0; i--) cells += `<div class="cal-mini-day muted">${prevDays-i}</div>`;
+  for(let d=1; d<=days; d++){
+    const ds = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dt = new Date(y, m, d);
+    const inRange = _pcal.start && _pcal.end && dt > _pcal.start && dt < _pcal.end;
+    let cls = 'cal-mini-day';
+    let style = '';
+    if(ds === startKey || ds === endKey){
+      style = 'background:#10b981;color:#fff;font-weight:800';
+    } else if(inRange){
+      style = 'background:#0a3a2a;color:#a7f3d0;font-weight:600';
+    } else if(ds === todayKey){
+      cls += ' today';
+    }
+    cells += `<div class="${cls}" style="${style}" onclick="_pcalPick(${y},${m},${d})">${d}</div>`;
+  }
+  const total = firstDow + days;
+  const trail = total % 7 === 0 ? 0 : 7 - (total % 7);
+  for(let i=1; i<=trail; i++) cells += `<div class="cal-mini-day muted">${i}</div>`;
+  const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  host.innerHTML = `
+    <div class="cal-mini-hdr">
+      <button class="cal-mini-nav" onclick="_pcalNav(-1)">‹</button>
+      <span style="font-size:13px;font-weight:700;color:#ddd">${monthLabel}</span>
+      <button class="cal-mini-nav" onclick="_pcalNav(1)">›</button>
+    </div>
+    <div class="cal-mini-dow"><div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div></div>
+    <div class="cal-mini-days">${cells}</div>`;
+  document.getElementById('project-timeframe-status').textContent =
+    _pcal.picking === 'start' ? 'Click a date to set START'
+                              : 'Click a date to set END (must be on/after start)';
+  document.getElementById('project-timeframe-preview').innerHTML =
+    `Start: <b>${_pcal.start?_pcalFmt(_pcal.start):'—'}</b>  ·  End: <b>${_pcal.end?_pcalFmt(_pcal.end):'—'}</b>` +
+    (_pcal.start && _pcal.end ? `  · <span style="color:#888">(${Math.round((_pcal.end-_pcal.start)/86400000)+1}d)</span>` : '');
+}
+
+/* Modal opener — writes back into hidden #project-start / #project-end and
+   updates the field label; fires change events so draft/edit autosave picks
+   the new dates up. */
+function openProjectModalTimeframe(){
+  const s = document.getElementById('project-start').value;
+  const e = document.getElementById('project-end').value;
+  openProjectTimeframePicker(s, e, ({startISO, endISO})=>{
+    document.getElementById('project-start').value = startISO || '';
+    document.getElementById('project-end').value   = endISO   || '';
+    document.getElementById('project-timeframe-field-label').textContent = _pfFieldLabel(startISO, endISO);
+    ['project-start','project-end'].forEach(id=>{
+      document.getElementById(id).dispatchEvent(new Event('change',{bubbles:true}));
+    });
+  });
+}
+function _refreshProjectModalTimeframeLabel(){
+  const lbl = document.getElementById('project-timeframe-field-label');
+  if(!lbl) return;
+  const s = document.getElementById('project-start').value;
+  const e = document.getElementById('project-end').value;
+  lbl.textContent = _pfFieldLabel(s, e);
+  lbl.style.color = (s||e) ? '#a7f3d0' : '#888';
+  lbl.style.fontWeight = (s||e) ? '700' : '500';
+}
+
+/* Row opener — PUTs both dates to /api/ahb/projects/<pid>, updates the local
+   cache, and re-paints the row's field label. */
+async function openProjectRowTimeframe(pid){
+  const p = allProjects.find(x=>x.id===pid);
+  if(!p) return;
+  openProjectTimeframePicker(p.start_date, p.end_date, async ({startISO, endISO})=>{
+    try{
+      const r = await fetch('/api/ahb/projects/'+pid, {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({start_date: startISO || null, end_date: endISO || null})
+      });
+      if(!r.ok) throw new Error(await r.text());
+      p.start_date = startISO || null;
+      p.end_date   = endISO   || null;
+      /* Update both possible row buttons without rerendering the whole list. */
+      ['pf-row-'+pid, 'pf-yr-'+pid].forEach(id=>{
+        const btn = document.getElementById(id);
+        if(btn){
+          const spans = btn.querySelectorAll('span');
+          if(spans.length >= 2) spans[1].textContent = _pfFieldLabel(p.start_date, p.end_date);
+          btn.style.borderColor = '#10b981';
+          setTimeout(()=>{ btn.style.borderColor = '#1a2e1a'; }, 900);
+        }
+      });
+    }catch(e){
+      showToast('Save failed: '+e.message,'error');
+    }
+  });
 }
 
 async function deleteInvoice(id, num){
@@ -6243,12 +6367,16 @@ function renderProjectByYear(preFiltered){
     const planning = projs.filter(p=>_isPlanningProjectStatus(p.status)).length;
     const balanceDue = projs.filter(_isBalanceDue).length;
     return `
-      <details class="year-group" open>
-        <summary class="year-group-header">
+      <details class="year-group" open data-year="${yr}"
+               ondragover="_yrDragOver(event, this)"
+               ondragleave="_yrDragLeave(event, this)"
+               ondrop="_yrDrop(event, this)">
+        <summary class="year-group-header" title="Drop a project row here to move it into ${yr}">
           <div class="year-group-left">
             <span class="year-chevron">▾</span>
             <span class="year-label">${yr}</span>
             <span class="year-count">${projs.length} project${projs.length===1?'':'s'}</span>
+            <span style="font-size:10px;color:#555;font-weight:500;margin-left:6px">↕ drag rows between years</span>
           </div>
           <div class="year-group-right">
             <span class="year-stat" title="Planning"><span style="color:#f5a623">📋 ${planning}</span></span>
@@ -6262,7 +6390,11 @@ function renderProjectByYear(preFiltered){
           ${projs.map(p=>{
             const meta = PROJECT_STATUS_META[p.status]||{color:'#666',icon:'•'};
             const due = _isBalanceDue(p);
-            return `<div class="year-project-row" onclick="openProjectDetail('${p.id}')" style="${due?'background:#1a0808;border-color:#ff555533':''}">
+            return `<div class="year-project-row" draggable="true" data-pid="${p.id}" data-year="${yr}"
+                         ondragstart="_yrRowDragStart(event,'${p.id}','${yr}')"
+                         ondragend="_yrRowDragEnd(event)"
+                         onclick="openProjectDetail('${p.id}')"
+                         style="${due?'background:#1a0808;border-color:#ff555533':''}">
               <div class="ypr-status" style="background:${due?'#ff5555':meta.color}"></div>
               <div class="ypr-main">
                 <div class="ypr-title">${escHtml(p.title||'(untitled)')}</div>
@@ -6272,9 +6404,13 @@ function renderProjectByYear(preFiltered){
                   ${p.scope?'<span>🔧 '+escHtml(p.scope)+'</span>':''}
                 </div>
               </div>
-              <div class="ypr-dates">
-                <div class="ypr-date">${fmtDate(p.start_date)}</div>
-                <div class="ypr-date-end">${fmtDate(p.end_date)}</div>
+              <div class="ypr-dates" onclick="event.stopPropagation()">
+                <button type="button" id="pf-yr-${p.id}" onclick="event.stopPropagation();openProjectRowTimeframe('${p.id}')"
+                        title="Click to pick start & end dates from the calendar"
+                        style="background:#0a0a18;border:1px solid #1a2e1a;border-radius:5px;padding:4px 6px;color:#a7f3d0;font-size:10px;cursor:pointer;text-align:left;width:160px;font-weight:600;display:flex;align-items:center;gap:5px">
+                  <span style="font-size:11px">📅</span>
+                  <span style="flex:1">${_pfFieldLabel(p.start_date, p.end_date)}</span>
+                </button>
               </div>
               <div class="ypr-value">${(p.value||p.budget_high)?fmtCurrency(p.value||p.budget_high):'<span style="color:#444">—</span>'}</div>
               <div class="ypr-status-badge" style="background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44">${meta.icon} ${p.status||''}</div>
@@ -6296,6 +6432,13 @@ async function moveProjectToYear(pid, title){
   if(!newYear) return;
   if(!/^\d{4}$/.test(newYear)){ showToast('Year must be YYYY','error'); return; }
   if(!confirm(`Move project + all its linked invoices to ${newYear}?`)) return;
+  await _movePidToYear(pid, newYear);
+}
+
+/* Shared mover used by both the prompt action and the drag-and-drop handler.
+   Hits the existing POST /api/ahb/projects/<pid>/move-to-year endpoint, which
+   shifts the project's year, start/end dates, and every linked invoice's year. */
+async function _movePidToYear(pid, newYear){
   try{
     const r=await fetch(`/api/ahb/projects/${pid}/move-to-year`,{
       method:'POST',headers:{'Content-Type':'application/json'},
@@ -6303,14 +6446,76 @@ async function moveProjectToYear(pid, title){
     });
     const d=await r.json();
     if(d.success){
-      showToast(`Moved to ${newYear} (${d.invoices_updated} invoices updated)`);
+      showToast(`Moved to ${newYear}${d.invoices_updated?' ('+d.invoices_updated+' invoice'+(d.invoices_updated===1?'':'s')+' updated)':''}`);
       await loadProjects();
-      // Also reload invoices since their year changed
       try{ const ri=await fetch('/api/ahb/invoices'); allInvoices=await ri.json(); }catch(e){}
+      return true;
     } else {
       showToast(d.error||'Move failed','error');
+      return false;
     }
-  }catch(e){ showToast('Move failed','error'); }
+  }catch(e){ showToast('Move failed','error'); return false; }
+}
+
+/* ============================================================
+   DRAG-AND-DROP — drag a project row between year groups
+   ============================================================
+   Each .year-project-row in the By-Year view is draggable; each .year-group
+   is a drop target. Dropping a row onto a different year POSTs the move and
+   then re-renders. Dropping onto "Undated" is rejected (backend requires
+   YYYY). Click is preserved — dragstart vs click is the browser's call. */
+let _yrDragPid = null;
+let _yrDragFromYear = null;
+function _yrRowDragStart(ev, pid, fromYear){
+  _yrDragPid = pid;
+  _yrDragFromYear = fromYear;
+  try{
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('text/plain', pid);
+  }catch(e){}
+  ev.currentTarget.classList.add('yr-dragging');
+}
+function _yrRowDragEnd(ev){
+  ev.currentTarget.classList.remove('yr-dragging');
+  document.querySelectorAll('.year-group.yr-drop-target').forEach(el=>el.classList.remove('yr-drop-target'));
+  _yrDragPid = null; _yrDragFromYear = null;
+}
+function _yrDragOver(ev, groupEl){
+  if(!_yrDragPid) return;
+  ev.preventDefault();
+  try{ ev.dataTransfer.dropEffect = 'move'; }catch(e){}
+  const targetYear = groupEl.dataset.year;
+  if(targetYear === _yrDragFromYear) return;   /* no-op into same year */
+  groupEl.classList.add('yr-drop-target');
+}
+function _yrDragLeave(ev, groupEl){
+  /* relatedTarget is the new element under the cursor; only clear when we've
+     actually left the group bounds, not when crossing nested children. */
+  if(!groupEl.contains(ev.relatedTarget)){
+    groupEl.classList.remove('yr-drop-target');
+  }
+}
+async function _yrDrop(ev, groupEl){
+  ev.preventDefault();
+  groupEl.classList.remove('yr-drop-target');
+  const pid = _yrDragPid || (ev.dataTransfer && ev.dataTransfer.getData('text/plain'));
+  if(!pid) return;
+  const fromYear = _yrDragFromYear;
+  _yrDragPid = null; _yrDragFromYear = null;
+  const toYear = groupEl.dataset.year;
+  if(!toYear || toYear === fromYear) return;
+  if(toYear === 'Undated'){
+    showToast('Cannot drop into "Undated" — pick a real year','error');
+    return;
+  }
+  if(!/^\d{4}$/.test(toYear)){
+    showToast('Target year must be YYYY','error');
+    return;
+  }
+  const p = allProjects.find(x=>x.id===pid);
+  const title = p ? (p.title||'project') : 'project';
+  if(!confirm(`Move "${title.slice(0,60)}" from ${fromYear||'(unknown)'} to ${toYear}?\n\nThe project's year, start/end dates, and every linked invoice will shift.`)) return;
+  await _movePidToYear(pid, toYear);
 }
 
 async function moveInvoiceToYear(iid, label){
@@ -12521,6 +12726,228 @@ async function uploadProjectDoc(files){
     await fetch('/api/ahb/projects/'+pid+'/files',{method:'POST',body:fd});
   }
   showToast(files.length+' document(s) uploaded');openProjectDetail(pid);
+}
+
+/* ===================== BAZA IMAGE PICKER =====================
+   Reusable picker — call openBazaPicker(onPick, opts) from any upload
+   surface. onPick receives an array of {token, name, url}. opts:
+   {multiple:true, title:'Pick from Baza', subtitle:'…'} */
+let _bazaPickAll=[];          // last loaded image list from backend
+let _bazaPickSel=new Set();   // selected tokens
+let _bazaPickCb=null;         // pending callback
+let _bazaPickMulti=true;
+
+function openBazaPicker(onPick,opts){
+  _bazaPickCb=onPick||null;
+  _bazaPickMulti=opts && opts.multiple===false ? false : true;
+  _bazaPickSel=new Set();
+  if(opts && opts.title) document.getElementById('bazaPickTitle').textContent=opts.title;
+  else document.getElementById('bazaPickTitle').textContent='📂 Pick from Baza';
+  if(opts && opts.subtitle) document.getElementById('bazaPickSub').textContent=opts.subtitle;
+  else document.getElementById('bazaPickSub').textContent='Recent images in Data Hub (incl. Sam’s Telegram drops)';
+  document.getElementById('bazaPickSearch').value='';
+  document.getElementById('bazaPickUseBtn').textContent=_bazaPickMulti?'Use selected':'Use this image';
+  document.getElementById('bazaPickModal').classList.add('open');
+  bazaPickLoad();
+}
+
+async function bazaPickLoad(){
+  const grid=document.getElementById('bazaPickGrid');
+  grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#444;font-size:12px">Loading…</div>';
+  const agent=document.getElementById('bazaPickAgent').value;
+  const limit=document.getElementById('bazaPickLimit').value||'120';
+  try{
+    const u=new URL('/api/datahub/images/recent',window.location.origin);
+    u.searchParams.set('limit',limit);
+    if(agent) u.searchParams.set('agent',agent);
+    const r=await fetch(u.toString());
+    const j=await r.json();
+    _bazaPickAll=(j&&j.images)||[];
+  }catch(e){
+    _bazaPickAll=[];
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#ff6b6b;font-size:12px">Error loading: '+e.message+'</div>';
+    return;
+  }
+  bazaPickRender();
+}
+
+function bazaPickRender(){
+  const grid=document.getElementById('bazaPickGrid');
+  const q=(document.getElementById('bazaPickSearch').value||'').toLowerCase().trim();
+  const rows=_bazaPickAll.filter(r=>{
+    if(!q) return true;
+    const blob=(r.name+' '+(r.agent_id||'')+' '+(r.caption||'')+' '+(r.modified||'')).toLowerCase();
+    return blob.indexOf(q)>=0;
+  });
+  document.getElementById('bazaPickCount').textContent=rows.length+' of '+_bazaPickAll.length;
+  if(!rows.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#444;font-size:12px">No images match.</div>';
+    return;
+  }
+  grid.innerHTML=rows.map(r=>{
+    const sel=_bazaPickSel.has(r.token);
+    const url='/api/datahub/pick/serve/'+r.token;
+    const tag=r.agent_id?('<span style="font-size:9px;color:#c4b5fd;background:#7c3aed22;padding:1px 5px;border-radius:8px;border:1px solid #7c3aed44">'+r.agent_id.replace('_axe','')+'</span>'):'';
+    const lock=r.private?'<span title="From .private-inbound" style="font-size:9px;color:#f59e0b">🔒</span>':'';
+    return `<div class="baza-pick-card" data-token="${r.token}" onclick="bazaPickToggle('${r.token}')"
+      style="cursor:pointer;border:2px solid ${sel?'#7c3aed':'#1a1a2e'};border-radius:8px;overflow:hidden;background:#0e0e1e;position:relative;transition:border-color .15s">
+      <div style="position:relative;width:100%;aspect-ratio:1;background:#000;overflow:hidden">
+        <img src="${url}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
+        ${sel?'<div style="position:absolute;top:4px;right:4px;background:#7c3aed;color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">✓</div>':''}
+      </div>
+      <div style="padding:5px 6px">
+        <div style="font-size:10px;color:#bbb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.name}">${r.name}</div>
+        <div style="font-size:9px;color:#555;margin-top:2px;display:flex;gap:4px;align-items:center;justify-content:space-between">
+          <span>${r.modified||''}</span>
+          <span style="display:flex;gap:3px;align-items:center">${lock}${tag}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function bazaPickToggle(token){
+  if(!_bazaPickMulti){
+    _bazaPickSel=new Set([token]);
+  } else {
+    if(_bazaPickSel.has(token)) _bazaPickSel.delete(token);
+    else _bazaPickSel.add(token);
+  }
+  document.getElementById('bazaPickSelCount').textContent=_bazaPickSel.size;
+  document.getElementById('bazaPickUseBtn').disabled=_bazaPickSel.size===0;
+  bazaPickRender();
+}
+
+function bazaPickConfirm(){
+  if(!_bazaPickSel.size) return;
+  const items=_bazaPickAll.filter(r=>_bazaPickSel.has(r.token)).map(r=>({
+    token:r.token,
+    name:r.name,
+    url:'/api/datahub/pick/serve/'+r.token,
+    agent_id:r.agent_id||'',
+    private:!!r.private
+  }));
+  const cb=_bazaPickCb;
+  closeModal('bazaPickModal');
+  _bazaPickCb=null;
+  if(cb) cb(items);
+}
+
+/* Convenience wrappers — Baza → project photos, docs, receipts, media. */
+async function pickProjectPhotosFromBaza(section){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid){showToast('Open a project first','error');return;}
+  openBazaPicker(async(items)=>{
+    if(!items.length) return;
+    let ok=0;
+    for(const it of items){
+      const fd=new FormData();
+      fd.append('pick_token',it.token);
+      fd.append('project_id',pid);
+      fd.append('photo_section',section);
+      fd.append('name',it.name);
+      fd.append('file_type','image');
+      try{
+        const r=await fetch('/api/ahb/projects/'+pid+'/files',{method:'POST',body:fd});
+        const j=await r.json();
+        if(j.success) ok++;
+      }catch(e){}
+    }
+    showToast(ok+' photo(s) attached from Baza');
+    openProjectDetail(pid);
+  },{title:'📂 Pick '+section.toUpperCase()+' photos from Baza',subtitle:'Click images to select; "Use selected" attaches to this project'});
+}
+
+async function pickProjectDocFromBaza(){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid){showToast('Open a project first','error');return;}
+  const docType=prompt('Document type:\n1. Permit\n2. Contract\n3. COI\n4. W9\n5. Estimate\n6. Change Order\n7. Other');
+  const types={'1':'Permit','2':'Contract','3':'COI (Certificate of Insurance)','4':'W9 Form','5':'Estimate','6':'Change Order','7':'Other'};
+  const dt=types[docType]||'Other';
+  openBazaPicker(async(items)=>{
+    if(!items.length) return;
+    let ok=0;
+    for(const it of items){
+      const fd=new FormData();
+      fd.append('pick_token',it.token);
+      fd.append('project_id',pid);
+      fd.append('document_type',dt);
+      fd.append('name',it.name);
+      try{
+        const r=await fetch('/api/ahb/projects/'+pid+'/files',{method:'POST',body:fd});
+        const j=await r.json();
+        if(j.success) ok++;
+      }catch(e){}
+    }
+    showToast(ok+' document(s) attached from Baza');
+    openProjectDetail(pid);
+  },{title:'📂 Pick '+dt+' from Baza'});
+}
+
+async function pickReceiptImageFromBazaForExisting(){
+  const id=document.getElementById('rd-id').value;
+  if(!id){showToast('Save receipt first','error');return;}
+  openBazaPicker(async(items)=>{
+    if(!items.length) return;
+    const it=items[0];
+    const fd=new FormData();
+    fd.append('pick_token',it.token);
+    fd.append('target_id',id);
+    try{
+      const r=await fetch('/api/ahb/receipts/upload',{method:'POST',body:fd});
+      const j=await r.json();
+      if(j.success){
+        showToast('Image attached from Baza');
+        const img=document.getElementById('rd-image');
+        img.src='/api/ahb/receipts/image/'+id+'?t='+Date.now();
+        img.style.display='block';
+        const noImg=document.getElementById('rd-no-image'); if(noImg) noImg.style.display='none';
+        const tools=document.getElementById('rd-image-tools'); if(tools) tools.style.display='flex';
+        if(typeof loadReceipts==='function') loadReceipts();
+      } else {
+        showToast('Failed: '+(j.error||'unknown'),'error');
+      }
+    }catch(e){showToast('Error: '+e.message,'error');}
+  },{title:'📂 Pick receipt image from Baza',multiple:false});
+}
+async function pickReceiptFromBaza(){
+  openBazaPicker(async(items)=>{
+    if(!items.length) return;
+    const it=items[0];
+    const fd=new FormData();
+    fd.append('pick_token',it.token);
+    fd.append('vendor','');
+    try{
+      const r=await fetch('/api/ahb/receipts/upload',{method:'POST',body:fd});
+      const j=await r.json();
+      if(j.success){
+        showToast('Receipt added from Baza');
+        if(typeof loadReceipts==='function') loadReceipts();
+        if(typeof rqeAutoload==='function') rqeAutoload();
+      } else {
+        showToast('Failed: '+(j.error||'unknown'),'error');
+      }
+    }catch(e){showToast('Error: '+e.message,'error');}
+  },{title:'📂 Pick a receipt image from Baza',multiple:false});
+}
+
+async function pickMediaFromBaza(){
+  openBazaPicker(async(items)=>{
+    if(!items.length) return;
+    const fd=new FormData();
+    fd.append('pick_tokens',items.map(i=>i.token).join(','));
+    try{
+      const r=await fetch('/api/cloud/media/upload',{method:'POST',body:fd});
+      const j=await r.json();
+      if(j.success){
+        showToast((j.saved||[]).length+' item(s) added to Media Library');
+        if(typeof reloadMedia==='function') reloadMedia();
+        else if(typeof loadCloudMedia==='function') loadCloudMedia();
+      } else {
+        showToast('Failed: '+(j.error||'unknown'),'error');
+      }
+    }catch(e){showToast('Error: '+e.message,'error');}
+  },{title:'📂 Copy from Baza to Media Library'});
 }
 async function pdDeleteFile(fid){
   if(!confirm('Delete this file?'))return;
