@@ -105,7 +105,7 @@
       '<h2>Vision Catalogue</h2>' +
       '<p>Pick a folder on the left to load thumbnails. ' +
       'Search uses caption + tags + attribute values — try things like ' +
-      '<em>blonde bikini beach</em> or <em>female smiling studio</em>.</p>' +
+      '<em>volley ball sunny day beach game net</em> or <em>female smiling studio</em>.</p>' +
       '<div class="landing-stats">' +
         '<div class="landing-stat"><span class="landing-stat-num">' + s.pending + '</span>' +
           '<span class="landing-stat-label">pending</span></div>' +
@@ -167,10 +167,39 @@
 
   // ── Clock ───────────────────────────────────────────────────────────────
   function tickClock() {
+    var c = el('clock'); if (!c) return;
     var d = new Date();
-    el('clock').textContent = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    c.textContent = d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   }
   setInterval(tickClock, 30 * 1000); tickClock();
+
+  // ── Queue backfill ──────────────────────────────────────────────────────
+  // Walks dashboard/artifacts/ and queues every uncataloged image as pending.
+  // Used while the SD/vision engine is paused — fills the work queue so the
+  // indexer has things to do when the GPU pool is back.
+  function runBackfill() {
+    var btn = el('backfillBtn'); var status = el('queueStatus');
+    if (!btn) return;
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Scanning…';
+    if (status) { status.style.display = 'block'; status.textContent = 'Walking artifacts/ — this can take a minute on the first run…'; }
+    fetch('/api/vision/queue/backfill', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({include_public: true})
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      btn.disabled = false; btn.textContent = orig;
+      if (j && j.ok) {
+        if (status) status.textContent = 'Scanned ' + j.seen + ' images — added ' + j.new_rows + ' new to the queue. ' + j.queue_pending + ' pending total (will run when the vision engine is back up).';
+        refreshTree();
+      } else if (status) {
+        status.textContent = 'Backfill failed: ' + ((j && j.error) || 'unknown');
+      }
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = orig;
+      if (status) status.textContent = 'Backfill error: ' + e.message;
+    });
+  }
+  var bb = el('backfillBtn'); if (bb) bb.addEventListener('click', runBackfill);
 
   // ── Boot ────────────────────────────────────────────────────────────────
   // Privacy default: no thumbnails until the user clicks a folder. Stats are
@@ -181,5 +210,8 @@
       j.tree.forEach(function (n) { root.appendChild(renderTreeNode(n, 0)); });
       showLanding(j.stats || null);
     }
+  }).catch(function (e) {
+    var root = el('tree'); if (root) root.innerHTML = '<div style="color:#ff6b6b;font-size:12px;padding:8px">Vision API error: '+ e.message +'</div>';
+    var c = el('content'); if (c) c.innerHTML = '<div class="empty">Failed to reach /api/vision/tree — check the dashboard service log.</div>';
   });
 })();

@@ -71,8 +71,10 @@
     <main class="main">
       <div class="breadcrumb" id="breadcrumb">Vision</div>
       <div class="toolbar">
-        <input class="search" id="search" placeholder="Search captions, tags, attributes (e.g. blonde bikini beach)">
+        <input class="search" id="search" placeholder="Search captions, tags, attributes (e.g. volley ball sunny day beach game net)">
+        <button class="btn" id="backfillBtn" title="Scan dashboard/artifacts/ for un-cataloged images and queue them as pending. Safe to run any time — idempotent.">⟳ Queue all images</button>
       </div>
+      <div id="queueStatus" style="font-size:11px;color:#888;margin-bottom:10px;display:none"></div>
       <div id="content"></div>
       <div class="pager" id="pager"></div>
     </main>

@@ -182,6 +182,66 @@ def api_keep_unlocked():
     return jsonify({"ok": True, "keep_unlocked": keep})
 
 
+@bp.route("/api/vision/queue/backfill", methods=["POST"])
+def api_queue_backfill():
+    """Walk dashboard/artifacts/ and insert pending asset rows for every
+    image not already in the catalog. Idempotent. Body: {"include_public":
+    true|false} (default true — for the SD-down workflow we want every
+    image queued, ready to process when the GPU pool comes back)."""
+    body = request.get_json(silent=True) or {}
+    include_public = body.get("include_public", True)
+    init_db()
+
+    import os as _os
+    from dashboard.vision.ingest import observe as _observe
+    from dashboard.vision.migrate_existing import (
+        ARTIFACTS_DIR, IMG_EXTS, _agent_hint,
+    )
+    from dashboard.private_inbound import is_private as _is_priv
+
+    con = connect()
+    try:
+        before = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+    finally:
+        con.close()
+
+    seen = added = skipped = 0
+    for root, dirs, files in _os.walk(ARTIFACTS_DIR):
+        dirs[:] = [d for d in dirs if d not in (".vision-generated",
+                                                ".vision-scraped",
+                                                ".vision-crops")]
+        for fn in files:
+            if fn.endswith(".meta") or fn.endswith(".private"):
+                continue
+            ext = _os.path.splitext(fn)[1].lower()
+            if ext not in IMG_EXTS:
+                continue
+            path = _os.path.join(root, fn)
+            if not include_public and not _is_priv(path):
+                continue
+            seen += 1
+            try:
+                _observe(path, source="inbound",
+                         origin_agent=_agent_hint(path))
+                added += 1
+            except Exception:
+                skipped += 1
+
+    con = connect()
+    try:
+        after = con.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
+        pending = con.execute("SELECT COUNT(*) FROM assets WHERE status='pending'").fetchone()[0]
+    finally:
+        con.close()
+    return jsonify({
+        "ok": True,
+        "seen": seen,
+        "new_rows": after - before,
+        "queue_pending": pending,
+        "skipped": skipped,
+    })
+
+
 @bp.route("/api/vision/specter/seed", methods=["POST"])
 def api_specter_seed():
     body = request.get_json(silent=True) or {}
@@ -214,15 +274,16 @@ def api_asset_thumb(asset_id: int):
         if not os.path.isfile(path):
             abort(404)
 
-        # Re-use the existing private serve gate — defense in depth: only
-        # serve files under .private-inbound/ or .vision-* dirs.
-        allowed_prefixes = (
-            os.path.join(os.path.dirname(__file__), "artifacts", ".private-inbound"),
-            os.path.join(os.path.dirname(__file__), "artifacts", ".vision-generated"),
-            os.path.join(os.path.dirname(__file__), "artifacts", ".vision-scraped"),
-            os.path.join(os.path.dirname(__file__), "artifacts", ".vision-crops"),
+        # Defense-in-depth: only serve files inside dashboard/artifacts/.
+        # The dashboard auth boundary already gates this whole route — the
+        # earlier .private-inbound-only whitelist 403'd every public image
+        # (including all 385 just queued via the backfill), so thumbnails
+        # rendered as broken icons.
+        artifacts_root = os.path.realpath(
+            os.path.join(os.path.dirname(__file__), "artifacts")
         )
-        if not any(os.path.abspath(path).startswith(p) for p in allowed_prefixes):
+        real_path = os.path.realpath(path)
+        if not real_path.startswith(artifacts_root + os.sep):
             abort(403)
 
         if full:

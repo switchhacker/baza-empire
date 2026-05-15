@@ -715,9 +715,10 @@
       <div class="page-title">Dashboard</div>
       <div class="page-sub">All Home Building Co LLC — Business Overview</div>
     </div>
-    <select class="filter-select" id="dash-year-filter" onchange="loadDashboard()" style="font-size:13px;padding:10px 16px">
-      <option value="" selected>All Time</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
-    </select>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <div id="dash-year-tabs" style="display:flex;gap:4px"></div>
+      <select class="filter-select" id="dash-year-filter" onchange="onDashYearChange()" title="All years (and All Time)" style="font-size:13px;padding:10px 16px"></select>
+    </div>
   </div>
   <div class="dash-grid" id="dash-overview">
     <div class="dash-card">
@@ -2369,9 +2370,10 @@
       <div class="page-title">🦅 Uncle Sam — Tax Operations</div>
       <div class="page-sub">PA LLC tax requirements, deadlines, business profile &amp; live invoice rollup</div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <label style="font-size:10px;color:#666;font-weight:700;text-transform:uppercase;letter-spacing:1px">Tax Year:</label>
-      <select id="us-year" onchange="loadOtherIncome();renderInvoiceRollup()" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;font-weight:700;font-family:monospace"></select>
+      <div id="us-year-tabs" style="display:flex;gap:4px"></div>
+      <select id="us-year" onchange="onUsYearChange()" title="All years with data" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px 12px;color:#fff;font-size:13px;font-weight:700;font-family:monospace"></select>
       <button class="btn-secondary" onclick="openTaxModal()">+ Custom Reminder</button>
       <button class="btn-secondary" onclick="openSummaryGenerator()">📄 Generate Summary</button>
     </div>
@@ -2703,6 +2705,16 @@
     <thead><tr><th>Invoice #</th><th>Client</th><th>Amount</th><th>Status</th><th>Interest</th><th>Total Due</th><th style="width:100px">Actions</th></tr></thead>
     <tbody id="billing-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
   </table>
+
+  <!-- Completed projects, grouped by year — newest first. Always shows
+       2023→current as separate sections, even when empty. -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:30px;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+    <h3 style="font-size:14px;font-weight:700;color:#fff;margin:0">✓ Completed Projects by Year</h3>
+    <div id="billing-completed-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+  </div>
+  <div id="billing-completed-years" style="display:flex;flex-direction:column;gap:10px">
+    <div style="text-align:center;padding:30px;color:#333;font-size:12px">Loading completed projects…</div>
+  </div>
 </div>
 
 <!-- ===================== REVIEWS TAB ===================== -->
@@ -6157,8 +6169,72 @@ async function shareInvoice(id,invNum){
 
 /* ===================== DASHBOARD ===================== */
 let dashMap=null;
+/* Populate the dashboard year dropdown with current + past 3 years + "All Time"
+   and render the quick-jump pills. Default selection is the current year. */
+function populateDashYearSelector(){
+  const sel = document.getElementById('dash-year-filter');
+  if(!sel) return;
+  const cy = new Date().getFullYear();
+  const years = [cy, cy-1, cy-2, cy-3].map(String);
+  if(!sel.dataset.built){
+    /* First build — populate options and force the default to current year. */
+    sel.innerHTML =
+      years.map(y=>`<option value="${y}">${y}</option>`).join('') +
+      `<option value="">All Time</option>`;
+    sel.value = String(cy);
+    sel.dataset.built = '1';
+  }
+  /* On subsequent calls, leave sel.value as-is (preserves the user's pick). */
+  renderDashYearTabs();
+}
+function renderDashYearTabs(){
+  const host = document.getElementById('dash-year-tabs');
+  if(!host) return;
+  const sel = document.getElementById('dash-year-filter');
+  const cy = new Date().getFullYear();
+  const cur = sel ? String(sel.value) : String(cy);
+  const years = [cy-3, cy-2, cy-1, cy].map(String);
+  /* Pills: past three years + current year + All Time toggle. */
+  const pills = years.map(y=>{
+    const isCur = y === cur;
+    const isThisYear = y === String(cy);
+    const bg = isCur ? '#10b981' : '#070712';
+    const fg = isCur ? '#fff' : (isThisYear ? '#a7f3d0' : '#888');
+    const bd = isCur ? '#10b981' : '#2a2a4a';
+    const label = isThisYear ? (y + ' · now') : y;
+    return `<button type="button" onclick="dashYearJump('${y}')"
+              title="${isThisYear?'Current year (default)':'Jump to '+y}"
+              style="background:${bg};color:${fg};border:1px solid ${bd};border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:monospace;min-width:62px">${label}</button>`;
+  }).join('');
+  const allBg = (cur === '') ? '#7c3aed' : '#070712';
+  const allFg = (cur === '') ? '#fff' : '#888';
+  const allBd = (cur === '') ? '#7c3aed' : '#2a2a4a';
+  const allPill = `<button type="button" onclick="dashYearJump('')"
+                    title="Show all-time totals"
+                    style="background:${allBg};color:${allFg};border:1px solid ${allBd};border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:monospace">All</button>`;
+  host.innerHTML = pills + allPill;
+}
+function dashYearJump(y){
+  const sel = document.getElementById('dash-year-filter');
+  if(!sel) return;
+  /* Ensure the value exists as an option (current-3..current always do; All Time too). */
+  if(!Array.from(sel.options).some(o => o.value === String(y))){
+    const opt = document.createElement('option');
+    opt.value = String(y);
+    opt.textContent = String(y) || 'All Time';
+    sel.appendChild(opt);
+  }
+  sel.value = String(y);
+  onDashYearChange();
+}
+function onDashYearChange(){
+  renderDashYearTabs();
+  loadDashboard();
+}
+
 async function loadDashboard(){
   try{
+    populateDashYearSelector();
     const year=document.getElementById('dash-year-filter').value;
     const res=await fetch('/api/ahb/dashboard'+(year?'?year='+year:''));
     const s=await res.json();
@@ -10906,9 +10982,63 @@ function populateUncleSamYearSelector(){
   });
   const currentYear=String(new Date().getFullYear());
   years.add(currentYear);
+  /* Always make the current year + the three most recent past years available
+     as quick tabs even if no data has been entered for them yet. */
+  for(let i=1;i<=3;i++) years.add(String(parseInt(currentYear,10)-i));
   const sorted=[...years].sort((a,b)=>b.localeCompare(a));
-  const previous=sel.value||currentYear;
-  sel.innerHTML=sorted.map(y=>`<option value="${y}"${y===previous?' selected':''}>${y}</option>`).join('');
+  /* Default to current year unless the user has explicitly picked another
+     year in this session (keep their selection if it's still in the list). */
+  const prev = sel.value;
+  const selected = (prev && sorted.includes(prev)) ? prev : currentYear;
+  sel.innerHTML=sorted.map(y=>`<option value="${y}"${y===selected?' selected':''}>${y}</option>`).join('');
+  renderUsYearTabs();
+}
+
+/* Render the quick-tab year pills (current year + past 3 years). The pill
+   matching the currently selected year is highlighted. Clicking a pill jumps
+   the Uncle Sam view to that year. Older years remain reachable via the
+   dropdown beside the pills. */
+function renderUsYearTabs(){
+  const host = document.getElementById('us-year-tabs');
+  if(!host) return;
+  const sel = document.getElementById('us-year');
+  const cy = new Date().getFullYear();
+  const cur = String(sel?.value || cy);
+  const years = [cy-3, cy-2, cy-1, cy].map(String);
+  host.innerHTML = years.map(y=>{
+    const isCur = y === cur;
+    const isThisYear = y === String(cy);
+    const bg = isCur ? '#10b981' : '#070712';
+    const fg = isCur ? '#fff' : (isThisYear ? '#a7f3d0' : '#888');
+    const bd = isCur ? '#10b981' : '#2a2a4a';
+    const label = isThisYear ? (y + ' · now') : y;
+    return `<button type="button" onclick="usYearJump('${y}')"
+              title="${isThisYear?'Current year (default)':'Jump to '+y}"
+              style="background:${bg};color:${fg};border:1px solid ${bd};border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:monospace;min-width:54px">${label}</button>`;
+  }).join('');
+}
+
+/* Programmatic year switch — keeps the dropdown and the pills in sync, then
+   re-runs the same loaders the dropdown change would have run. */
+function usYearJump(y){
+  const sel = document.getElementById('us-year');
+  if(!sel) return;
+  /* Make sure the year exists in the dropdown (it normally does because
+     populateUncleSamYearSelector pre-adds the last 3 years, but be safe). */
+  if(!Array.from(sel.options).some(o=>o.value===String(y))){
+    const opt = document.createElement('option');
+    opt.value = String(y); opt.textContent = String(y);
+    sel.appendChild(opt);
+  }
+  sel.value = String(y);
+  onUsYearChange();
+}
+
+/* Single entry point for any year change (dropdown or pill). */
+function onUsYearChange(){
+  renderUsYearTabs();
+  loadOtherIncome();
+  renderInvoiceRollup();
 }
 
 function _isCompletedProjectStatus(s){ return _normalizeStatus(s)==='completed'; }
@@ -13200,7 +13330,99 @@ async function loadBilling(){
         </div></td>
       </tr>`;
     }).join(''):`<tr><td colspan="7" style="text-align:center;padding:40px;color:#333">${unpaidOnly?'All invoices paid':'No invoices'}</td></tr>`;
+    // Completed-projects-by-year section (independent of the year/unpaid filters).
+    renderBillingCompletedByYear();
   }catch(e){console.error('loadBilling',e);}
+}
+
+/* Render the "Completed Projects by Year" section on the Billing tab.
+   Always shows year sections from 2023 to the current year, newest first.
+   Each section is an expandable <details> with a row per completed project. */
+async function renderBillingCompletedByYear(){
+  const host = document.getElementById('billing-completed-years');
+  const tabsHost = document.getElementById('billing-completed-tabs');
+  if(!host) return;
+  /* Make sure projects are loaded (Billing tab might be opened first). */
+  if(!allProjects.length){
+    try{ allProjects = await fetch('/api/ahb/projects').then(r=>r.json()); }catch(e){}
+  }
+  const completed = (allProjects||[]).filter(p => _isCompletedProjectStatus(p.status));
+  const cy = new Date().getFullYear();
+  /* Always include 2023..current; add any older years that actually have data. */
+  const yearsSet = new Set();
+  for(let y = cy; y >= 2023; y--) yearsSet.add(String(y));
+  completed.forEach(p => {
+    const yr = _projectYear(p);
+    if(/^\d{4}$/.test(yr)) yearsSet.add(yr);
+  });
+  /* Newest first; place "Undated" (if any completed project lacks a year) at the bottom. */
+  const years = [...yearsSet].sort((a,b)=>b.localeCompare(a));
+  const hasUndated = completed.some(p => _projectYear(p) === 'Undated');
+  if(hasUndated) years.push('Undated');
+
+  /* Top jump-tabs — one per year section. */
+  tabsHost.innerHTML = years.map(yr => {
+    const n = completed.filter(p => _projectYear(p) === yr).length;
+    const isCur = yr === String(cy);
+    const bg = isCur ? '#10b981' : '#070712';
+    const fg = isCur ? '#fff' : (n ? '#a7f3d0' : '#666');
+    const bd = isCur ? '#10b981' : '#2a2a4a';
+    return `<button type="button" onclick="_jumpToBillingYear('${yr}')"
+              title="${n} completed project${n===1?'':'s'} in ${yr}"
+              style="background:${bg};color:${fg};border:1px solid ${bd};border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:monospace">${yr} · ${n}</button>`;
+  }).join('');
+
+  /* One <details> per year, newest first. Group sums + row table inside. */
+  host.innerHTML = years.map(yr => {
+    const projs = completed
+      .filter(p => _projectYear(p) === yr)
+      .sort((a,b)=>(b.end_date||b.start_date||'').localeCompare(a.end_date||a.start_date||''));
+    const total = projs.reduce((s,p)=>s+(p.value||p.budget_high||0),0);
+    const isCur = yr === String(cy);
+    return `<details class="year-group" id="bl-yr-${yr}" ${isCur||projs.length<=10?'open':''}>
+      <summary class="year-group-header" style="cursor:pointer">
+        <div class="year-group-left">
+          <span class="year-chevron">▾</span>
+          <span class="year-label">${yr}</span>
+          <span class="year-count">${projs.length} completed project${projs.length===1?'':'s'}</span>
+        </div>
+        <div class="year-group-right">
+          <span class="year-total">${fmtCurrency(total)}</span>
+        </div>
+      </summary>
+      <div class="year-group-body">
+        ${projs.length ? projs.map(p => {
+          const due = _isBalanceDue(p);
+          return `<div class="year-project-row" onclick="openProjectDetail('${p.id}')" style="${due?'background:#1a0808':''};cursor:pointer">
+            <div class="ypr-status" style="background:${due?'#ff5555':'#00d084'}"></div>
+            <div class="ypr-main">
+              <div class="ypr-title">${escHtml(p.title||'(untitled)')}</div>
+              <div class="ypr-meta">
+                ${p.client_name?'<span>👤 '+escHtml(p.client_name)+'</span>':''}
+                ${p.address?'<span>📍 '+escHtml(p.address.slice(0,40))+'</span>':''}
+                ${p.scope?'<span>🔧 '+escHtml(p.scope)+'</span>':''}
+              </div>
+            </div>
+            <div class="ypr-dates" style="font-size:10px;color:#666">
+              ${p.start_date?fmtDate(p.start_date):'—'}<br>${p.end_date?fmtDate(p.end_date):'—'}
+            </div>
+            <div class="ypr-value">${(p.value||p.budget_high)?fmtCurrency(p.value||p.budget_high):'<span style="color:#444">—</span>'}</div>
+            <div class="ypr-status-badge" style="background:${due?'#ff555522':'#00d08422'};color:${due?'#ff5555':'#00d084'};border:1px solid ${due?'#ff5555':'#00d08444'}">${due?'⚠ DUE':'✓ Done'}</div>
+            <div class="ypr-actions">
+              <button class="btn-icon" onclick="event.stopPropagation();editProject('${p.id}')" title="Edit">✎</button>
+            </div>
+          </div>`;
+        }).join('') : `<div style="padding:18px 22px;font-size:12px;color:#444;font-style:italic">No completed projects in ${yr}.</div>`}
+      </div>
+    </details>`;
+  }).join('');
+}
+
+function _jumpToBillingYear(yr){
+  const el = document.getElementById('bl-yr-'+yr);
+  if(!el) return;
+  el.open = true;
+  el.scrollIntoView({behavior:'smooth', block:'start'});
 }
 async function markInvoicePaid(id){
   if(!confirm('Mark this invoice as Paid?'))return;

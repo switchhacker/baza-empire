@@ -8,7 +8,14 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from dashboard.private_inbound import is_private as _is_private_path, PRIVATE_INBOUND_DIRNAME
+from dashboard.private_inbound import (
+    is_private as _is_private_path,
+    PRIVATE_INBOUND_DIRNAME,
+    VAULT_DIRNAME,
+    move_to_vault as _vault_move_in,
+    move_out_of_vault as _vault_move_out,
+    migrate_legacy_inbound_meta as _migrate_legacy_inbound_meta,
+)
 
 try:
     from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -790,18 +797,22 @@ def scan_artifacts_dir(base_dir: str, project_id: str = "", agent_id: str = "") 
 
     files = []
     for root, dirs, fnames in os.walk(base_dir):
-        # Skip hidden dirs (incl. .private-inbound) and meta files, EXCEPT the
-        # Vault directory itself — we surface those in Data Hub now, tagged
-        # with `private=true` so the UI can render a Vault badge + lock state.
-        dirs[:] = [d for d in dirs if (not d.startswith('.')) or d == PRIVATE_INBOUND_DIRNAME]
+        # Vault (.vault/) is excluded entirely — no ghost thumbnails in
+        # Data Hub. .private-inbound/ is now PUBLIC staging and gets
+        # included. Other dotted dirs (.git, .vision-*) stay excluded.
+        dirs[:] = [d for d in dirs
+                   if (not d.startswith('.') or d == PRIVATE_INBOUND_DIRNAME)
+                   and d != VAULT_DIRNAME]
         for fname in sorted(fnames):
             # Skip sidecar meta files
             if fname.endswith('.meta'):
                 continue
             fpath = os.path.join(root, fname)
-            # Compute privacy flag (don't skip — we now show private files
-            # alongside public ones with a visible lock indicator).
+            # Per-file privacy still respected (legacy meta flag) but the
+            # vault dir is already excluded above.
             file_private = _is_private_path(fpath)
+            if file_private:
+                continue
             rel   = os.path.relpath(fpath, base_dir)
             # Determine project_id from relative path structure: {project}/{file}
             parts = rel.split(os.sep)
@@ -1273,18 +1284,17 @@ def _is_private_unlocked() -> bool:
 
 
 def _list_private_files() -> list:
-    """Walk artifacts/ and return all files marked private. Includes the
-    .private-inbound/ tree (which we explicitly descend into) plus any
-    legacy private-marked files still in public project dirs."""
+    """List files in the vault (.vault/). The strict-private location is
+    the ONLY thing surfaced here — Telegram inbound is public now and
+    appears in Data Hub instead."""
     out = []
-    if not os.path.isdir(ARTIFACTS_DIR):
+    vault_root = os.path.join(ARTIFACTS_DIR, VAULT_DIRNAME)
+    if not os.path.isdir(vault_root):
         return out
     img_ext   = {'.png','.jpg','.jpeg','.gif','.webp','.bmp','.tiff','.tif'}
     audio_ext = {'.mp3','.wav','.ogg','.flac','.m4a','.opus'}
     video_ext = {'.mp4','.mkv','.mov','.webm'}
-    for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
-        # Descend into dotted dirs here (we WANT .private-inbound/) — skip
-        # only DB-side scratch dirs that start with __ or .git.
+    for root, dirs, fnames in os.walk(vault_root):
         dirs[:] = [d for d in dirs if not d.startswith('__') and d != '.git']
         for fname in fnames:
             if fname.endswith('.meta'):
@@ -1397,9 +1407,8 @@ def api_datahub_lock_toggle():
 
     Body: { project_id: <string>, name: <relative path within project> }
     Action is inferred from current state:
-      - public file → move to .private-inbound/<agent_id>/ (locks)
-      - private file → move to _unlocked/<agent_id>/ (unlocks)
-    Sidecar .meta moves with the file and is updated to reflect the new state."""
+      - public file → move to .vault/ (file disappears from Data Hub)
+      - vault file  → move to .private-inbound/<agent_id>/ (visible again)"""
     payload = request.get_json(silent=True) or {}
     project_id = (payload.get('project_id') or '').strip()
     rel        = (payload.get('name') or '').strip()
@@ -1412,71 +1421,77 @@ def api_datahub_lock_toggle():
         cur = os.path.join(ARTIFACTS_DIR, rel)
     cur = os.path.realpath(cur)
     art_root = os.path.realpath(ARTIFACTS_DIR)
-    # Path containment guard — no traversal out of artifacts/.
     if not (cur == art_root or cur.startswith(art_root + os.sep)) or not os.path.isfile(cur):
         return jsonify({'ok': False, 'error': 'not found'}), 404
 
     locking = not _is_private_path(cur)
-    meta = _read_artifact_meta(cur)
-    agent_id = (meta.get('agent_id') or
-                _infer_agent_from_filename(os.path.basename(cur), []) or
-                'shared').strip() or 'shared'
-
-    if locking:
-        dest_root = os.path.join(ARTIFACTS_DIR, PRIVATE_INBOUND_DIRNAME, agent_id)
-    else:
-        dest_root = os.path.join(ARTIFACTS_DIR, '_unlocked', agent_id)
+    framework_dir = os.path.dirname(DASHBOARD_DIR)
     try:
-        os.makedirs(dest_root, exist_ok=True)
-    except OSError as e:
-        return jsonify({'ok': False, 'error': f'mkdir failed: {e}'}), 500
-
-    base = os.path.basename(cur)
-    dest = os.path.join(dest_root, base)
-    # Resolve filename collisions in destination.
-    n = 1
-    while os.path.exists(dest):
-        stem, ext = os.path.splitext(base)
-        dest = os.path.join(dest_root, f"{stem}_{n}{ext}")
-        n += 1
-
-    try:
-        os.rename(cur, dest)
-    except OSError as e:
-        return jsonify({'ok': False, 'error': f'move failed: {e}'}), 500
-    # Move sidecar too if present.
-    src_meta = cur + '.meta'
-    dst_meta = dest + '.meta'
-    if os.path.isfile(src_meta):
-        try:
-            os.rename(src_meta, dst_meta)
-        except OSError:
-            pass
-
-    # Update meta to reflect new state — write JSON; preserve origin so a
-    # subsequent unlock can hint at where the file came from.
-    new_meta = _read_artifact_meta(dest)
-    if locking:
-        new_meta['private'] = True
-        new_meta['privacy'] = 'private'
-        if project_id and 'origin_project' not in new_meta:
-            new_meta['origin_project'] = project_id
-        new_meta.setdefault('agent_id', agent_id)
-    else:
-        new_meta['private'] = False
-        new_meta['privacy'] = 'public'
-    try:
-        with open(dst_meta, 'w', encoding='utf-8') as fh:
-            json.dump(new_meta, fh, indent=2, default=str)
-    except OSError:
-        pass
-
+        if locking:
+            new_path = _vault_move_in(cur, framework_dir,
+                                      extra={'origin_project': project_id} if project_id else None)
+        else:
+            new_path = _vault_move_out(cur, framework_dir)
+    except (OSError, ValueError, FileNotFoundError) as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
     return jsonify({
         'ok': True,
         'locked': locking,
-        'new_project': PRIVATE_INBOUND_DIRNAME if locking else '_unlocked',
-        'new_name': os.path.relpath(dest, ARTIFACTS_DIR).replace(os.sep, '/')
+        'new_project': VAULT_DIRNAME if locking else PRIVATE_INBOUND_DIRNAME,
+        'new_name': os.path.relpath(new_path, ARTIFACTS_DIR).replace(os.sep, '/'),
     })
+
+
+@app.route('/api/vault/add', methods=['POST'])
+def api_vault_add():
+    """Move a file under artifacts/ into .vault/. Body: { token } (a Baza
+    pick token) OR { project_id, name } (Data Hub coords). Once moved, the
+    file disappears from Data Hub and is only listed by the vault view."""
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get('token') or '').strip()
+    project_id = (payload.get('project_id') or '').strip()
+    name = (payload.get('name') or '').strip()
+    if token:
+        cur = _pick_decode_token(token)
+        if not cur:
+            return jsonify({'ok': False, 'error': 'invalid token'}), 400
+    elif name:
+        base = os.path.join(ARTIFACTS_DIR, project_id, name) if (project_id and project_id != 'shared') \
+               else os.path.join(ARTIFACTS_DIR, name)
+        cur = os.path.realpath(base)
+        art_root = os.path.realpath(ARTIFACTS_DIR)
+        if not cur.startswith(art_root + os.sep) or not os.path.isfile(cur):
+            return jsonify({'ok': False, 'error': 'not found'}), 404
+    else:
+        return jsonify({'ok': False, 'error': 'token or name required'}), 400
+    framework_dir = os.path.dirname(DASHBOARD_DIR)
+    try:
+        new_path = _vault_move_in(cur, framework_dir,
+                                  extra={'origin_project': project_id} if project_id else None)
+    except (OSError, ValueError, FileNotFoundError) as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True,
+                    'vault_path': os.path.relpath(new_path, ARTIFACTS_DIR).replace(os.sep, '/')})
+
+
+@app.route('/api/vault/remove', methods=['POST'])
+def api_vault_remove():
+    """Move a file out of .vault/ back to .private-inbound/manual/. Body:
+    { token }  — a vault-listing token from /api/datahub/private/list."""
+    if not _is_private_unlocked():
+        return jsonify({'ok': False, 'error': 'Locked'}), 401
+    payload = request.get_json(silent=True) or {}
+    token = (payload.get('token') or '').strip()
+    cur = _decode_private_token(token)
+    if not cur:
+        return jsonify({'ok': False, 'error': 'invalid token'}), 400
+    framework_dir = os.path.dirname(DASHBOARD_DIR)
+    try:
+        new_path = _vault_move_out(cur, framework_dir)
+    except (OSError, ValueError, FileNotFoundError) as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    return jsonify({'ok': True,
+                    'new_path': os.path.relpath(new_path, ARTIFACTS_DIR).replace(os.sep, '/')})
 
 
 @app.route('/api/datahub/private/list')
@@ -2417,21 +2432,22 @@ def api_artifact_upload():
 
 @app.route('/api/artifacts/download/<project_id>/<path:filename>')
 def api_artifact_download(project_id, filename):
-    if project_id.startswith('.') or PRIVATE_INBOUND_DIRNAME in filename.split('/'):
-        return jsonify({'error': 'Private'}), 403
+    # Block vault paths only — .private-inbound/ is public now.
+    if project_id == VAULT_DIRNAME or VAULT_DIRNAME in filename.split('/'):
+        return jsonify({'error': 'Vault — locked'}), 403
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
     fpath = os.path.realpath(os.path.join(proj_dir, filename))
     if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
         return jsonify({'error': 'Forbidden'}), 403
     if _is_private_path(fpath):
-        return jsonify({'error': 'Private'}), 403
+        return jsonify({'error': 'Vault — locked'}), 403
     return send_from_directory(proj_dir, filename, as_attachment=True)
 
 @app.route('/api/artifacts/view/<project_id>/<path:filename>')
 def api_artifact_view(project_id, filename):
     """Read text file content for preview. Supports subpaths."""
-    if project_id.startswith('.') or PRIVATE_INBOUND_DIRNAME in filename.split('/'):
-        return jsonify({'error': 'Private'}), 403
+    if project_id == VAULT_DIRNAME or VAULT_DIRNAME in filename.split('/'):
+        return jsonify({'error': 'Vault — locked'}), 403
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
     fpath = os.path.realpath(os.path.join(proj_dir, filename))
     if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
@@ -2612,9 +2628,9 @@ def api_artifact_grep():
 @app.route('/api/artifacts/serve/<project_id>/<path:filename>')
 def api_artifact_serve(project_id, filename):
     """Serve file inline for browser preview (images, PDFs, etc). Supports subpaths."""
-    # Refuse any reach into the private-inbound tree or other dotted projects.
-    if project_id.startswith('.') or PRIVATE_INBOUND_DIRNAME in filename.split('/'):
-        return jsonify({'error': 'Private'}), 403
+    # Block vault paths only — .private-inbound/ is public now.
+    if project_id == VAULT_DIRNAME or VAULT_DIRNAME in filename.split('/'):
+        return jsonify({'error': 'Vault — locked'}), 403
     proj_dir = os.path.join(ARTIFACTS_DIR, project_id)
     fpath    = os.path.realpath(os.path.join(proj_dir, filename))
     # Path traversal guard — must stay inside ARTIFACTS_DIR
