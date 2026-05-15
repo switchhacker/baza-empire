@@ -14,6 +14,7 @@ When user sends a photo:
 import os
 import re
 import json
+import time
 import asyncio
 import logging
 import tempfile
@@ -24,7 +25,7 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from core.base_agent import BaseAgent
 from core.memory import save_message, get_history
-from dashboard.private_inbound import private_inbound_dir, mark_private
+from dashboard.private_inbound import inbound_dir, write_attachment_meta
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,11 @@ class SamAxe(BaseAgent):
         super().__init__()
         self._session_images: dict = {}  # {chat_id: [path, ...]}
         self._pending_edits: dict = self._load_pending_edits()
+        # Burst debounce — Serge often pastes 5-30 photos in a row. Each one
+        # used to trigger a separate ack. Now we accumulate per chat and emit
+        # ONE summary message _BURST_WINDOW seconds after the last arrival.
+        self._photo_burst: dict = {}  # {chat_id: {"files": [...], "job": Job|None}}
+        self._BURST_WINDOW = 5.0  # seconds of inter-photo silence to flush
 
     def _load_pending_edits(self) -> dict:
         """Load pending edits from disk (survives restarts)."""
@@ -328,6 +334,151 @@ class SamAxe(BaseAgent):
                         except Exception:
                             pass
 
+    # ── Photo burst-batch helpers ─────────────────────────────────────────────
+    # Serge typically pastes 5-30 photos at a time. Replying to each one
+    # spams the chat and hides the useful summary. These helpers accumulate
+    # per chat and emit ONE message once the burst goes quiet for
+    # _BURST_WINDOW seconds. Implementation is a debounced job on PTB's
+    # JobQueue — every new photo cancels the prior pending flush.
+
+    async def _enqueue_photo_burst(self, context, chat_id: int,
+                                   filename: str, local_path: str,
+                                   caption: str):
+        burst = self._photo_burst.setdefault(chat_id, {"files": [], "job": None})
+        burst["files"].append({
+            "name": filename, "path": local_path,
+            "caption": (caption or "")[:80],
+            "ts": time.time(),
+        })
+        # Cancel any pending flush; reschedule to debounce on the latest arrival.
+        old_job = burst.get("job")
+        if old_job is not None:
+            try:
+                old_job.schedule_removal()
+            except Exception:
+                pass
+        jq = getattr(context.application, "job_queue", None)
+        if jq is None:
+            # No JobQueue — fall back to immediate per-photo ack so we don't
+            # silently swallow the response.
+            files = burst["files"]; burst["files"] = []; burst["job"] = None
+            await self._send_response(context.bot, chat_id, f"📥 Saved (private) — {files[-1]['name']}")
+            return
+        burst["job"] = jq.run_once(
+            self._flush_photo_burst, when=self._BURST_WINDOW,
+            data={"chat_id": chat_id}, name=f"sam_burst_{chat_id}",
+        )
+
+    async def _flush_photo_burst(self, context):
+        chat_id = context.job.data.get("chat_id") if context.job else None
+        if not chat_id:
+            return
+        burst = self._photo_burst.get(chat_id)
+        if not burst or not burst["files"]:
+            return
+        files = burst["files"]
+        burst["files"] = []
+        burst["job"] = None
+        n = len(files)
+        if n == 1:
+            f = files[0]
+            msg = (
+                f"📥 Added to Data Hub — *{f['name']}*\n"
+                f"Pick it from any project's Before/During/After (or any other\n"
+                f"image upload) via the 📂 Baza button.\n\n"
+                f"Or tell me what to do:\n"
+                f"  • `ref: face` / `ref: wardrobe` — add as character reference\n"
+                f"  • `analyze` — describe what's in it\n"
+                f"  • `paint walls warm gray` (or any edit) — generate variants\n"
+                f"  • `send to vault` — move to the private vault\n"
+                f"_(SD imaging is paused — generation resumes when the GPU is back.)_"
+            )
+        else:
+            shown = files[:12]
+            listing = "\n".join(f"  • {f['name']}" for f in shown)
+            more = f"\n  …and {n - 12} more" if n > 12 else ""
+            msg = (
+                f"📥 OK — added *{n} files* to Data Hub:\n"
+                f"{listing}{more}\n\n"
+                f"Would you like me to take any action with these?\n"
+                f"  • `analyze all` — caption + tag each image (queues them for vision)\n"
+                f"  • `ref: wardrobe` (or `ref: face` / `ref: pose`) — treat as character references\n"
+                f"  • `attach to <project name> as before/during/after` — file under an AHB project\n"
+                f"  • `send all to vault` — move the whole batch into the private vault\n"
+                f"  • Or pick them yourself from the AHB project modal via the 📂 Baza button\n"
+                f"_(SD imaging is paused. Any images are also queued for vision — they'll be classified when the GPU pool is back.)_"
+            )
+        save_message(chat_id, self.AGENT_ID, "assistant", msg)
+        try:
+            await self._send_response(context.bot, chat_id, msg)
+        except Exception as e:
+            logger.warning(f"[sam_axe] flush_photo_burst send failed: {e}")
+
+    # ── Generic attachment intake (PDFs/video/audio/voice/docs) ───────────────
+    # Photos still go through handle_photo (which has the analyze/edit
+    # pipeline). Everything else lands in inbound + joins the burst summary
+    # so a mixed drop of "10 photos + 2 PDFs + a voice memo" produces ONE
+    # ack like "Added 13 files to Data Hub".
+
+    async def handle_attachment_quiet(self, update: Update,
+                                      context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.effective_chat.id
+        msg = update.message
+        if not msg:
+            return
+        caption = (msg.caption or "").strip()
+        logger.info(f"[sam_axe] Attachment received from {chat_id}, caption: {caption[:60]}")
+
+        # Resolve the file object + a sensible filename per Telegram type.
+        file_obj = None
+        orig_name = None
+        kind = "file"
+        if msg.document:
+            file_obj = await context.bot.get_file(msg.document.file_id)
+            orig_name = msg.document.file_name or f"doc_{msg.document.file_unique_id}"
+            kind = "document"
+        elif msg.video:
+            file_obj = await context.bot.get_file(msg.video.file_id)
+            orig_name = msg.video.file_name or f"video_{msg.video.file_unique_id}.mp4"
+            kind = "video"
+        elif msg.audio:
+            file_obj = await context.bot.get_file(msg.audio.file_id)
+            orig_name = msg.audio.file_name or f"audio_{msg.audio.file_unique_id}.mp3"
+            kind = "audio"
+        elif msg.voice:
+            file_obj = await context.bot.get_file(msg.voice.file_id)
+            orig_name = f"voice_{msg.voice.file_unique_id}.ogg"
+            kind = "voice"
+        if not file_obj:
+            return
+
+        import uuid, datetime as _dt
+        framework_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        in_dir = inbound_dir(framework_dir, self.AGENT_ID)
+        safe = re.sub(r"[^\w.\-_ ()]", "_", orig_name).strip() or "upload"
+        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Keep the original filename visible — that's what Serge sees in the
+        # burst summary. Prefix with timestamp + short uuid to avoid collisions.
+        fname = f"{ts}_{uuid.uuid4().hex[:6]}_{safe}"
+        local_path = os.path.join(in_dir, fname)
+        await file_obj.download_to_drive(local_path)
+        write_attachment_meta(local_path, extra={
+            "agent_id": self.AGENT_ID,
+            "chat_id": chat_id,
+            "kind": kind,
+            "caption": caption[:500],
+            "original_name": orig_name,
+            "received_at": _dt.datetime.now().isoformat(),
+        })
+        save_message(chat_id, self.AGENT_ID, "user", f"[{kind.title()}: {orig_name}] {caption}")
+        self.journal("attachment_received",
+                     f"{kind}: {orig_name} ({os.path.getsize(local_path)} bytes)",
+                     chat_id=chat_id)
+        # Roll into the shared burst — Serge gets one summary message, not
+        # one per file.
+        await self._enqueue_photo_burst(context, chat_id,
+                                        orig_name or fname, local_path, caption)
+
     # ── Photo Handler — the main analysis pipeline ────────────────────────────
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -338,18 +489,18 @@ class SamAxe(BaseAgent):
         logger.info(f"[sam_axe] Photo received from {chat_id}, caption: {caption[:60]}")
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-        # Download photo (highest res) into the private-inbound dir so the
-        # Data Hub indexer + search never sees Serge's personal reference
-        # photos. mark_private writes a JSON .meta sidecar with private=true.
+        # Download photo (highest res) into the public inbound staging dir
+        # so it appears in Data Hub by default. Only files Serge explicitly
+        # sends to the vault become private.
         photo = update.message.photo[-1]
         tg_file = await photo.get_file()
         import uuid, datetime as _dt
         framework_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        inbound_dir = private_inbound_dir(framework_dir, self.AGENT_ID)
+        in_dir = inbound_dir(framework_dir, self.AGENT_ID)
         filename = f"sam_axe_{_dt.datetime.now().strftime('%Y%m%d_%H%M')}_{uuid.uuid4().hex[:6]}.jpg"
-        local_path = os.path.join(inbound_dir, filename)
+        local_path = os.path.join(in_dir, filename)
         await tg_file.download_to_drive(local_path)
-        mark_private(local_path, extra={
+        write_attachment_meta(local_path, extra={
             "agent_id": self.AGENT_ID,
             "chat_id": chat_id,
             "kind": "photo",
@@ -437,17 +588,9 @@ class SamAxe(BaseAgent):
             })
             self._save_pending_edits()
             self.remember("last_received_photo", local_path, "images")
-            response = (
-                "📥 Saved (private) — available in Baza Data Hub.\n"
-                "Pick it from any project's Before/During/After section via the\n"
-                "📂 Baza button, or tell me what to do here:\n"
-                "  • `ref: face` / `ref: wardrobe` — add as character reference\n"
-                "  • `analyze` — describe what's in it\n"
-                "  • `paint walls warm gray` (or any edit) — generate variants\n"
-                "_(SD imaging is temporarily down — generation will resume when it's back.)_"
-            )
-            save_message(chat_id, self.AGENT_ID, "assistant", response)
-            await self._send_response(context.bot, chat_id, response)
+            # Accumulate into the per-chat burst; ONE summary message will be
+            # sent _BURST_WINDOW seconds after the last photo lands.
+            await self._enqueue_photo_burst(context, chat_id, filename, local_path, caption)
             return
 
         if existing_ctx.get("description"):
@@ -906,8 +1049,14 @@ class SamAxe(BaseAgent):
         app = Application.builder().token(token).build()
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
+        # Any non-photo attachment (PDFs, videos, audio, voice, generic docs)
+        # gets stashed in Data Hub and rolled into the same burst-summary.
+        app.add_handler(MessageHandler(
+            filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE,
+            self.handle_attachment_quiet,
+        ))
 
-        logger.info(f"[{self.AGENT_ID}] Starting Telegram bot (with photo + edit pipeline)...")
+        logger.info(f"[{self.AGENT_ID}] Starting Telegram bot (with photo + edit pipeline + attachment intake)...")
 
         async with app:
             await app.initialize()
