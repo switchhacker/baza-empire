@@ -438,11 +438,13 @@ class SamAxe(BaseAgent):
             self._save_pending_edits()
             self.remember("last_received_photo", local_path, "images")
             response = (
-                "📥 Saved (private).\n"
-                "Send another, or tell me what to do:\n"
+                "📥 Saved (private) — available in Baza Data Hub.\n"
+                "Pick it from any project's Before/During/After section via the\n"
+                "📂 Baza button, or tell me what to do here:\n"
                 "  • `ref: face` / `ref: wardrobe` — add as character reference\n"
                 "  • `analyze` — describe what's in it\n"
-                "  • `paint walls warm gray` (or any edit) — generate variants"
+                "  • `paint walls warm gray` (or any edit) — generate variants\n"
+                "_(SD imaging is temporarily down — generation will resume when it's back.)_"
             )
             save_message(chat_id, self.AGENT_ID, "assistant", response)
             await self._send_response(context.bot, chat_id, response)
