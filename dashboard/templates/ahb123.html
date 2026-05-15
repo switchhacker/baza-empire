@@ -6779,8 +6779,11 @@ let receiptViewMode='kanban';
 const RQE_CATEGORIES = ['Materials','Tools','Fuel','Food','Office supplies','Clothes','Other'];
 const RQE_PAYMENTS   = ['', 'Cash','Credit','Debit','Check','ACH','Other'];
 const _rqeSaveTimers = {};
-const RQE_GRID_COLS = '54px 1.5fr 1.1fr 105px 100px .9fr 105px 1.3fr 32px';
+const RQE_GRID_COLS = '54px 1.4fr 1.3fr 105px 100px 105px 1.2fr 1.2fr 32px';
 let _rqeAllRows = [];
+let _rqeProjects = [];          // sorted list: in-progress first, then recent
+let _rqeProjectsLoaded = false;
+let _rqeOpenPickerId = null;    // row id whose project picker is open
 
 function rqeSetCount(n){
   const el = document.getElementById('rqe-count');
@@ -6793,13 +6796,15 @@ function rqeClearSearch(){
 function _rqeMatches(r, q){
   if(!q) return true;
   q = q.toLowerCase();
+  const proj = (typeof _rqeProjectLookup === 'function') ? _rqeProjectLookup(r.project_id) : null;
   const haystack = [
     r.vendor, r.store_name, r.store_location, r.teller_name,
     r.category, r.payment_method, r.description,
     r.receipt_date, r.purchase_time,
     String(r.total ?? ''), String(r.amount ?? ''),
     String(r.tax_amount ?? ''), String(r.subtotal ?? ''),
-    r.year, r.project_id, r.id
+    r.year, r.project_id, r.id,
+    proj ? proj.title : '', proj ? proj.address : ''
   ].map(v=>(v==null?'':String(v)).toLowerCase()).join('  ');
   return haystack.indexOf(q) !== -1;
 }
@@ -6822,10 +6827,10 @@ function _rqeRenderRows(rows, q){
     return;
   }
   host.innerHTML = `
-    <div style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e;min-width:1100px">
-      <div>Preview</div><div>Vendor</div><div>Store / Location</div><div>Date</div><div>Amount</div><div>Tax</div><div>Category</div><div>Payment · Notes</div><div></div>
+    <div style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e;min-width:1180px">
+      <div>Preview</div><div>Vendor</div><div>Store · Address</div><div>Date</div><div>Amount</div><div>Category</div><div>Payment · Notes</div><div>Project</div><div></div>
     </div>
-    <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:1100px">
+    <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:1180px">
       ${rows.map(r=>_rqeRowHtml(r)).join('')}
     </div>`;
 }
@@ -6836,10 +6841,14 @@ async function rqeLoad(){
   const n = Math.max(1, Math.min(500, isNaN(nRaw) ? 25 : nRaw));
   host.innerHTML = '<div style="text-align:center;padding:24px;color:#666">Loading…</div>';
   try{
+    // Pre-warm the project cache so the project picker is instant on first click.
+    _rqeEnsureProjects();
     const res = await fetch('/api/ahb/receipts');
     let rows = await res.json();
     rows.sort((a,b)=>(b.receipt_date||b.created_at||'').localeCompare(a.receipt_date||a.created_at||''));
     _rqeAllRows = rows.slice(0, n);
+    // Stamp load-time vendor so we can detect a real rename on blur.
+    _rqeAllRows.forEach(r => { r._orig_vendor = (r.vendor || ''); });
     rqeFilter();
   }catch(e){
     host.innerHTML = '<div style="color:#ff5555;padding:18px">Error: '+escHtml(e.message)+'</div>';
@@ -6849,14 +6858,13 @@ function _rqeRowHtml(r){
   const vendor = r.vendor || '';
   const store  = r.store_name || '';
   const loc    = r.store_location || '';
-  const storeLoc = store || loc ? `${store}${store&&loc?' · ':''}${loc}` : '';
   const date   = (r.receipt_date || '').slice(0,10);
   const amt    = (r.total != null && r.total !== '') ? r.total : (r.amount != null ? r.amount : '');
-  const tax    = (r.tax_amount != null && r.tax_amount !== '') ? r.tax_amount : '';
   const cat    = r.category || '';
   const pay    = r.payment_method || '';
   const notes  = r.description || '';
   const inputBase = "background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:6px 8px;color:#e0e0e0;font-size:12px;width:100%;box-sizing:border-box";
+  const inputSmall = inputBase + ";font-size:11px;padding:4px 7px";
   const catOptions = RQE_CATEGORIES.map(c=>`<option value="${escHtml(c)}"${c===cat?' selected':''}>${escHtml(c)}</option>`).join('');
   const payOptions = RQE_PAYMENTS.map(p=>`<option value="${escHtml(p)}"${p===pay?' selected':''}>${p?escHtml(p):'—'}</option>`).join('');
   const thumbUrl = '/api/ahb/receipts/image/' + r.id;
@@ -6865,16 +6873,19 @@ function _rqeRowHtml(r){
          style="width:48px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #1a1a2e;background:#0a0a18;cursor:zoom-in"
          onclick="rqeOpenImg('${r.id}', event)"
          onerror="this.style.display='none'; this.insertAdjacentHTML('afterend','<div style=\\'width:48px;height:60px;border:1px dashed #1a1a2e;border-radius:4px;color:#333;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center\\'>no<br>image</div>');">
-    <input style="${inputBase}" data-f="vendor" value="${escHtml(vendor)}" placeholder="Vendor" oninput="rqeQueueSave('${r.id}')">
-    <input style="${inputBase}" data-f="store_name" value="${escHtml(store)}" placeholder="Store name (optional)" oninput="rqeQueueSave('${r.id}')" title="Store: ${escHtml(storeLoc)}">
+    <input style="${inputBase}" data-f="vendor" data-orig="${escHtml(r._orig_vendor != null ? r._orig_vendor : vendor)}" value="${escHtml(vendor)}" placeholder="Vendor" oninput="rqeQueueSave('${r.id}')" onblur="rqeCheckBulkRename('${r.id}')">
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <input style="${inputSmall}" data-f="store_name" value="${escHtml(store)}" placeholder="Store name" oninput="rqeQueueSave('${r.id}')">
+      <input style="${inputSmall}" data-f="store_location" value="${escHtml(loc)}" placeholder="Address" oninput="rqeQueueSave('${r.id}')" title="${escHtml(loc)}">
+    </div>
     <input style="${inputBase}" data-f="receipt_date" type="date" value="${escHtml(date)}" oninput="rqeQueueSave('${r.id}')">
     <input style="${inputBase}" data-f="total" type="number" step="0.01" value="${escHtml(amt)}" placeholder="0.00" oninput="rqeQueueSave('${r.id}')">
-    <input style="${inputBase}" data-f="tax_amount" type="number" step="0.01" value="${escHtml(tax)}" placeholder="Tax" oninput="rqeQueueSave('${r.id}')">
     <select style="${inputBase}" data-f="category" onchange="rqeQueueSave('${r.id}')">${catOptions}</select>
     <div style="display:flex;flex-direction:column;gap:4px">
       <select style="${inputBase}" data-f="payment_method" onchange="rqeQueueSave('${r.id}')">${payOptions}</select>
       <input style="${inputBase}" data-f="description" value="${escHtml(notes)}" oninput="rqeQueueSave('${r.id}')" placeholder="Notes / line items">
     </div>
+    ${_rqeProjectCellHtml(r)}
     <button class="btn-icon del" title="Delete receipt" onclick="rqeDelete('${r.id}')">✕</button>
     <span class="rqe-saved" id="rqe-saved-${r.id}" style="position:absolute;right:46px;top:8px;font-size:9px;color:#10b981;opacity:0;transition:opacity .3s;font-weight:700;letter-spacing:.5px;text-transform:uppercase">saved</span>
   </div>`;
@@ -6926,6 +6937,287 @@ async function rqeSave(id){
     if(badge){ badge.style.opacity = '1'; setTimeout(()=>badge.style.opacity='0', 1100); }
   }catch(e){ showToast('Save failed: '+e.message,'error'); }
 }
+/* ---------- Project picker (searchable, recent + in-progress first) ---------- */
+function _rqeProjStatus(p){
+  const s = ((p && p.status) || '').toLowerCase();
+  if(s.startsWith('in') || s === 'signed' || s === 'invoiced') return 'In Progress';
+  if(s.startsWith('plan') || s === 'estimate' || s === 'proposal') return 'Planning';
+  if(s.startsWith('comp') || s === 'paid' || s === 'done') return 'Completed';
+  return p && p.status ? p.status : 'Other';
+}
+function _rqeProjUpdated(p){
+  return (p && (p.updated_at || p.start_date || p.created_at || '')) || '';
+}
+async function _rqeEnsureProjects(){
+  if(_rqeProjectsLoaded) return;
+  try{
+    const r = await fetch('/api/ahb/projects');
+    const list = await r.json();
+    // Stamp normalized status + sort: In Progress first, then Planning, then Completed, others last;
+    // within each bucket, most-recently-updated first.
+    const bucket = {'In Progress':0,'Planning':1,'Completed':2,'Other':3};
+    list.forEach(p => { p._rqe_status = _rqeProjStatus(p); });
+    list.sort((a,b)=>{
+      const ba = bucket[a._rqe_status] ?? 3;
+      const bb = bucket[b._rqe_status] ?? 3;
+      if(ba !== bb) return ba - bb;
+      return (_rqeProjUpdated(b)||'').localeCompare(_rqeProjUpdated(a)||'');
+    });
+    _rqeProjects = list;
+    _rqeProjectsLoaded = true;
+    if(typeof allProjects !== 'undefined' && Array.isArray(allProjects) && !allProjects.length){
+      allProjects = list;
+    }
+  }catch(e){ console.error('rqe projects load', e); }
+}
+function _rqeProjectLookup(pid){
+  if(!pid) return null;
+  return _rqeProjects.find(p => p.id === pid) || (Array.isArray(allProjects) ? allProjects.find(p => p.id === pid) : null);
+}
+function _rqeProjectCellHtml(r){
+  const pid = r.project_id || '';
+  const p = _rqeProjectLookup(pid);
+  const label = p ? (p.title || '(untitled)') : '+ Link project';
+  const status = p ? (p._rqe_status || _rqeProjStatus(p)) : '';
+  const statusColor = status === 'In Progress' ? '#10b981' : (status === 'Planning' ? '#f59e0b' : (status === 'Completed' ? '#6b7280' : '#888'));
+  const btnBg = p ? '#10243a' : '#0a0a18';
+  const btnFg = p ? '#a7c4ff' : '#666';
+  return `<div class="rqe-proj-cell" data-rid="${r.id}" style="position:relative">
+    <button type="button" onclick="rqeTogglePicker('${r.id}',event)"
+            style="width:100%;text-align:left;background:${btnBg};border:1px solid #1a1a2e;border-radius:5px;padding:6px 8px;color:${btnFg};font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px;overflow:hidden">
+      ${status ? `<span style="width:6px;height:6px;border-radius:50%;background:${statusColor};flex-shrink:0"></span>` : ''}
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(label)}</span>
+      <span style="color:#444;flex-shrink:0">▾</span>
+    </button>
+  </div>`;
+}
+function rqeTogglePicker(rowId, ev){
+  if(ev){ ev.stopPropagation(); ev.preventDefault(); }
+  if(_rqeOpenPickerId === rowId){ rqeClosePicker(); return; }
+  rqeClosePicker();
+  _rqeOpenPickerId = rowId;
+  _rqeEnsureProjects().then(()=>_rqeRenderPicker(rowId));
+}
+function rqeClosePicker(){
+  if(!_rqeOpenPickerId) return;
+  const cell = document.querySelector(`.rqe-proj-cell[data-rid="${_rqeOpenPickerId}"] .rqe-proj-dropdown`);
+  if(cell) cell.remove();
+  _rqeOpenPickerId = null;
+}
+function _rqeRenderPicker(rowId){
+  if(_rqeOpenPickerId !== rowId) return;
+  const cell = document.querySelector(`.rqe-proj-cell[data-rid="${rowId}"]`);
+  if(!cell) return;
+  // Remove any stale dropdown
+  const stale = cell.querySelector('.rqe-proj-dropdown');
+  if(stale) stale.remove();
+  const dd = document.createElement('div');
+  dd.className = 'rqe-proj-dropdown';
+  dd.style.cssText = 'position:absolute;top:calc(100% + 4px);left:0;right:0;min-width:280px;background:#0d0d22;border:1px solid #2a2a4a;border-radius:7px;box-shadow:0 8px 24px rgba(0,0,0,0.5);z-index:200;max-height:340px;display:flex;flex-direction:column;overflow:hidden';
+  dd.innerHTML = `
+    <input type="text" class="rqe-proj-search" placeholder="🔎 Search projects…" autocomplete="off"
+           oninput="_rqeFilterPicker('${rowId}')"
+           style="background:#0a0a18;border:none;border-bottom:1px solid #1a1a2e;padding:8px 10px;color:#e0e0e0;font-size:12px;outline:none">
+    <div class="rqe-proj-list" style="overflow-y:auto;flex:1"></div>`;
+  cell.appendChild(dd);
+  _rqePaintPickerList(rowId, '');
+  // Focus search and stop further bubbles
+  setTimeout(()=>{ const s = dd.querySelector('.rqe-proj-search'); if(s){ s.focus(); } }, 30);
+  dd.addEventListener('click', (e)=>e.stopPropagation());
+}
+function _rqeFilterPicker(rowId){
+  const cell = document.querySelector(`.rqe-proj-cell[data-rid="${rowId}"]`);
+  if(!cell) return;
+  const s = cell.querySelector('.rqe-proj-search');
+  _rqePaintPickerList(rowId, (s && s.value) || '');
+}
+function _rqePaintPickerList(rowId, q){
+  const cell = document.querySelector(`.rqe-proj-cell[data-rid="${rowId}"]`);
+  if(!cell) return;
+  const list = cell.querySelector('.rqe-proj-list');
+  if(!list) return;
+  const row = _rqeAllRows.find(x => x.id === rowId);
+  const currentPid = row ? (row.project_id || '') : '';
+  const all = _rqeProjects || [];
+  const qLow = (q || '').trim().toLowerCase();
+  const matches = (p) => {
+    if(!qLow) return true;
+    return (p.title || '').toLowerCase().indexOf(qLow) !== -1
+        || (p.address || '').toLowerCase().indexOf(qLow) !== -1
+        || (p.client_name || '').toLowerCase().indexOf(qLow) !== -1;
+  };
+  const rowHtml = (p, badge) => {
+    const status = p._rqe_status || _rqeProjStatus(p);
+    const statusColor = status === 'In Progress' ? '#10b981' : (status === 'Planning' ? '#f59e0b' : (status === 'Completed' ? '#6b7280' : '#888'));
+    const isCur = p.id === currentPid;
+    return `<div onclick="rqeAssignProject('${rowId}','${p.id}')"
+                 style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a;${isCur?'background:#15264a':''}"
+                 onmouseover="this.style.background='#1a1a35'"
+                 onmouseout="this.style.background='${isCur?'#15264a':'transparent'}'">
+      <span style="width:7px;height:7px;border-radius:50%;background:${statusColor};flex-shrink:0"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e0e0e0;font-size:12px">${escHtml(p.title || '(untitled)')}</span>
+      ${badge ? `<span style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0">${badge}</span>` : ''}
+      ${isCur ? '<span style="color:#10b981;font-size:11px;flex-shrink:0">✓</span>' : ''}
+    </div>`;
+  };
+  const sectionHeader = (label, count) =>
+    `<div style="padding:6px 10px;font-size:9px;color:#777;text-transform:uppercase;letter-spacing:.6px;background:#08081a;border-bottom:1px solid #1a1a2e;font-weight:700">${label}${count!=null?` <span style="color:#444">(${count})</span>`:''}</div>`;
+  const unlinkRow = currentPid
+    ? `<div onclick="rqeAssignProject('${rowId}','')"
+            style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a;color:#ff8a8a;font-size:12px"
+            onmouseover="this.style.background='#2a0a14'"
+            onmouseout="this.style.background='transparent'">
+        ✕ Unlink from project
+      </div>`
+    : '';
+
+  let html = unlinkRow;
+  if(qLow){
+    const flat = all.filter(matches);
+    html += sectionHeader('Search results', flat.length);
+    if(!flat.length){
+      html += '<div style="padding:14px 10px;color:#555;font-size:11px;text-align:center">No projects match</div>';
+    } else {
+      html += flat.slice(0, 100).map(p => rowHtml(p, p._rqe_status)).join('');
+    }
+  } else {
+    const active = all.filter(p => p._rqe_status === 'In Progress' || p._rqe_status === 'Planning');
+    const recent = active.slice(0, 5);  // already sorted: In Progress first, then Planning, by updated_at desc
+    const recentIds = new Set(recent.map(p => p.id));
+    const inProg = all.filter(p => p._rqe_status === 'In Progress' && !recentIds.has(p.id));
+    const planning = all.filter(p => p._rqe_status === 'Planning' && !recentIds.has(p.id));
+    const completed = all.filter(p => p._rqe_status === 'Completed');
+    if(recent.length){
+      html += sectionHeader('Recent', recent.length);
+      html += recent.map(p => rowHtml(p, p._rqe_status)).join('');
+    }
+    if(inProg.length){
+      html += sectionHeader('In Progress', inProg.length);
+      html += inProg.map(p => rowHtml(p)).join('');
+    }
+    if(planning.length){
+      html += sectionHeader('Planning', planning.length);
+      html += planning.map(p => rowHtml(p)).join('');
+    }
+    if(completed.length){
+      html += sectionHeader('Completed', completed.length);
+      html += completed.slice(0, 80).map(p => rowHtml(p)).join('');
+    }
+    if(!all.length){
+      html = '<div style="padding:14px 10px;color:#555;font-size:11px;text-align:center">No projects loaded</div>';
+    }
+  }
+  list.innerHTML = html;
+}
+async function rqeAssignProject(rowId, pid){
+  rqeClosePicker();
+  try{
+    const r = await fetch('/api/ahb/receipts/' + rowId, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({project_id: pid || ''})
+    });
+    const d = await r.json();
+    if(!d || !d.success) throw new Error((d && d.error) || 'save failed');
+    const cached = _rqeAllRows.find(x => x.id === rowId);
+    if(cached) cached.project_id = pid || '';
+    // Refresh just this row's button by re-rendering all visible rows from cache.
+    rqeFilter();
+    showToast(pid ? 'Linked to project' : 'Unlinked');
+  }catch(e){
+    showToast('Project link failed: ' + e.message, 'error');
+  }
+}
+// Click anywhere outside an open picker closes it.
+document.addEventListener('click', (e)=>{
+  if(!_rqeOpenPickerId) return;
+  const cell = document.querySelector(`.rqe-proj-cell[data-rid="${_rqeOpenPickerId}"]`);
+  if(cell && cell.contains(e.target)) return;
+  rqeClosePicker();
+});
+
+// Tracks (rowId|oldNorm|newNorm) tuples the user has already declined,
+// so a re-blur with the same value doesn't re-prompt.
+const _rqeRenameDismissed = new Set();
+const _rqeBulkInFlight = new Set();
+async function rqeCheckBulkRename(id){
+  if(_rqeBulkInFlight.has(id)) return;
+  const row = document.querySelector(`.rqe-row[data-id="${id}"]`);
+  if(!row) return;
+  const input = row.querySelector('input[data-f="vendor"]');
+  if(!input) return;
+  const newV = (input.value || '').trim();
+  const oldV = (input.dataset.orig || '').trim();
+  if(!newV || !oldV) return;
+  if(newV.toLowerCase() === oldV.toLowerCase() && newV === oldV) return;
+  const dismissKey = id + '|' + oldV.toLowerCase() + '|' + newV.toLowerCase();
+  if(_rqeRenameDismissed.has(dismissKey)) return;
+  _rqeBulkInFlight.add(id);
+  try{
+    // Flush any pending per-row save first so DB is coherent.
+    if(_rqeSaveTimers[id]){
+      clearTimeout(_rqeSaveTimers[id]);
+      delete _rqeSaveTimers[id];
+      try{ await rqeSave(id); }catch(_){}
+    }
+    // Dry-run count of *other* receipts still carrying the old name.
+    const dr = await fetch('/api/ahb/receipts/bulk-rename-vendor', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({old_vendor: oldV, new_vendor: newV, exclude_id: id, dry_run: true})
+    }).then(r=>r.json()).catch(e=>({success:false, error:e.message}));
+    if(!dr || !dr.success){
+      // Silent — don't bother the user if the lookup itself failed.
+      return;
+    }
+    const cnt = dr.matching_count || 0;
+    if(cnt <= 0){
+      // Nothing else to update; just refresh this row's "original" so we
+      // don't re-prompt on the next blur for the same edit.
+      const cached = _rqeAllRows.find(x => x.id === id);
+      if(cached) cached._orig_vendor = newV;
+      input.dataset.orig = newV;
+      return;
+    }
+    const ok = confirm(
+      `Rename ${cnt} other receipt${cnt===1?'':'s'} from "${oldV}" to "${newV}"?\n\n` +
+      `This updates every receipt currently filed under "${oldV}" and remembers ` +
+      `the correction so future imports use the right name.`
+    );
+    if(!ok){
+      _rqeRenameDismissed.add(dismissKey);
+      return;
+    }
+    const res = await fetch('/api/ahb/receipts/bulk-rename-vendor', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({old_vendor: oldV, new_vendor: newV, exclude_id: id})
+    }).then(r=>r.json());
+    if(!res || !res.success) throw new Error((res && res.error) || 'bulk rename failed');
+    // Update in-memory cache so search/filter + future blur logic stay coherent.
+    const updatedSet = new Set(res.updated_ids || []);
+    const oldLower = oldV.toLowerCase();
+    _rqeAllRows.forEach(r => {
+      const matchesById = updatedSet.has(r.id);
+      const matchesByName = (r.vendor || '').trim().toLowerCase() === oldLower;
+      if(matchesById || matchesByName){
+        r.vendor = newV;
+        r._orig_vendor = newV;
+      }
+    });
+    // Also stamp the originating row so we don't re-prompt.
+    const cached = _rqeAllRows.find(x => x.id === id);
+    if(cached){ cached._orig_vendor = newV; cached.vendor = newV; }
+    input.dataset.orig = newV;
+    rqeFilter();
+    showToast(`Renamed ${res.updated_count} other receipt${res.updated_count===1?'':'s'} → "${newV}"`);
+  }catch(e){
+    showToast('Bulk rename failed: ' + e.message, 'error');
+  }finally{
+    _rqeBulkInFlight.delete(id);
+  }
+}
+
 async function rqeDelete(id){
   if(!confirm('Delete this receipt? This removes the row from QuickRF.')) return;
   try{

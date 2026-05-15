@@ -2295,7 +2295,8 @@ def _pick_encode_token(rel_path: str) -> str:
 
 def _pick_decode_token(token: str):
     """Decode a Baza-picker token to an absolute path inside ARTIFACTS_DIR.
-    Returns None for invalid / out-of-tree / non-existent paths."""
+    Returns None for invalid / out-of-tree / non-existent paths. Vault
+    files are refused — they're only reachable via the vault flow."""
     import base64 as _b64
     if not token or not isinstance(token, str):
         return None
@@ -2304,7 +2305,8 @@ def _pick_decode_token(token: str):
         rel = _b64.urlsafe_b64decode((token + pad).encode('ascii')).decode('utf-8')
     except Exception:
         return None
-    if '..' in rel.replace('\\', '/').split('/'):
+    parts = rel.replace('\\', '/').split('/')
+    if '..' in parts or VAULT_DIRNAME in parts:
         return None
     fpath = os.path.realpath(os.path.join(ARTIFACTS_DIR, rel))
     if not fpath.startswith(os.path.realpath(ARTIFACTS_DIR)):
@@ -2320,9 +2322,10 @@ def _pick_list_images(limit: int = 60, agent_filter: str = '',
     if not os.path.isdir(ARTIFACTS_DIR):
         return out
     for root, dirs, fnames in os.walk(ARTIFACTS_DIR):
+        # Skip vault entirely; descend into .private-inbound (public).
         dirs[:] = [d for d in dirs
                    if (not d.startswith('.') or d == PRIVATE_INBOUND_DIRNAME)
-                   and d not in {'__pycache__', '.git'}]
+                   and d not in {'__pycache__', '.git', VAULT_DIRNAME}]
         for fname in fnames:
             if fname.endswith('.meta'):
                 continue
@@ -2335,7 +2338,10 @@ def _pick_list_images(limit: int = 60, agent_filter: str = '',
             except OSError:
                 continue
             private = _is_private_path(fpath)
-            if private and not include_private:
+            # Vault is excluded by the dirs filter above; this only catches
+            # legacy `.meta private=true` stragglers, which should not appear
+            # in the picker either.
+            if private:
                 continue
             agent_id = ''
             caption = ''
@@ -6641,6 +6647,84 @@ def api_ahb_receipt_update(rid):
             'success': True,
             'changed_fields': [c[2] for c in corrections],
             'changed_by': changed_by,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/receipts/bulk-rename-vendor', methods=['POST'])
+def api_ahb_receipt_bulk_rename_vendor():
+    """Propagate a vendor (or store_name) rename across every receipt that
+    currently carries the old name. Each touched row is also logged in
+    ahb_receipt_corrections so receipt_learn.py picks up the alias and
+    future imports normalize correctly. Supports ?dry_run for a count
+    preview before the user confirms."""
+    try:
+        data = request.json or {}
+        field = (data.get('field') or 'vendor').strip()
+        if field not in ('vendor', 'store_name'):
+            return jsonify({'success': False, 'error': 'field must be vendor or store_name'}), 400
+        old_v = (data.get('old_vendor') or '').strip()
+        new_v = (data.get('new_vendor') or '').strip()
+        if not old_v or not new_v:
+            return jsonify({'success': False, 'error': 'old_vendor and new_vendor required'}), 400
+        if old_v.lower() == new_v.lower() and old_v == new_v:
+            return jsonify({'success': True, 'updated_count': 0, 'updated_ids': []})
+
+        dry_run = bool(data.get('dry_run'))
+        exclude_id = data.get('exclude_id')
+        changed_by = (
+            request.headers.get('X-Agent-Id')
+            or data.get('_edited_by')
+            or 'serge'
+        )
+
+        conn = _ahb_db()
+        conn.row_factory = sqlite3.Row
+        params = [old_v]
+        extra = ''
+        if exclude_id:
+            extra = ' AND id != ?'
+            params.append(exclude_id)
+        rows = conn.execute(
+            f"SELECT id, {field} AS cur FROM ahb_receipts "
+            f"WHERE LOWER(TRIM({field})) = LOWER(TRIM(?)){extra}",
+            params
+        ).fetchall()
+        matching_ids = [r['id'] for r in rows]
+
+        if dry_run:
+            conn.close()
+            return jsonify({
+                'success': True,
+                'matching_count': len(matching_ids),
+                'matching_ids': matching_ids,
+                'field': field,
+                'old_vendor': old_v,
+                'new_vendor': new_v,
+            })
+
+        if matching_ids:
+            placeholders = ','.join(['?'] * len(matching_ids))
+            conn.execute(
+                f"UPDATE ahb_receipts SET {field} = ? WHERE id IN ({placeholders})",
+                [new_v] + matching_ids,
+            )
+            conn.executemany(
+                """INSERT INTO ahb_receipt_corrections
+                        (receipt_id, changed_by, field, old_value, new_value)
+                   VALUES (?, ?, ?, ?, ?)""",
+                [(rid, changed_by, field, old_v, new_v) for rid in matching_ids],
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'success': True,
+            'updated_count': len(matching_ids),
+            'updated_ids': matching_ids,
+            'field': field,
+            'old_vendor': old_v,
+            'new_vendor': new_v,
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -15475,6 +15559,19 @@ def datahub_private_page():
     return render_template('private.html',
                            passphrase_set=_private_pass_is_set(),
                            unlocked=_is_private_unlocked())
+
+
+# One-shot migration: sweep legacy `.private-inbound/` .meta sidecars so any
+# auto-private mark from before the inbound-is-public flip is removed. Runs
+# at import time on every dashboard start; idempotent (no-op when nothing
+# left to sweep).
+try:
+    _framework_dir = os.path.dirname(DASHBOARD_DIR)
+    _swept = _migrate_legacy_inbound_meta(_framework_dir)
+    if _swept:
+        print(f"[dashboard] swept {_swept} legacy private-meta sidecars (now public).")
+except Exception as _e:
+    print(f"[dashboard] legacy meta sweep failed (non-fatal): {_e}")
 
 
 if __name__ == '__main__':
