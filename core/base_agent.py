@@ -42,7 +42,7 @@ from core.memory import (
 )
 from core.task_updater import AgentTaskManager
 from skills.shared.save_artifact import save_artifact as _save_artifact_fn, save_binary_artifact as _save_binary_artifact_fn
-from dashboard.private_inbound import private_inbound_dir, mark_private
+from dashboard.private_inbound import inbound_dir, write_attachment_meta
 
 logger = logging.getLogger(__name__)
 
@@ -848,11 +848,11 @@ class BaseAgent(ContextMixin):
             return
         try:
             framework_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            # All Telegram-inbound media lands in the private-inbound tree so
-            # the Data Hub indexer + search never index personal photos. The
-            # dotted directory name (`.private-inbound/`) is also implicitly
-            # excluded from the artifact walks.
-            upload_dir = private_inbound_dir(framework_dir, self.AGENT_ID)
+            # Inbound is public now — files land in Data Hub by default.
+            # `inbound_dir()` returns the same on-disk path as the legacy
+            # `private_inbound_dir()` (dotted name kept for vision.db
+            # backwards-compat) but the semantics are public.
+            upload_dir = inbound_dir(framework_dir, self.AGENT_ID)
 
             # Pick the right file object + filename
             file_obj = None
@@ -895,9 +895,10 @@ class BaseAgent(ContextMixin):
             fpath = os.path.join(upload_dir, fname)
             await file_obj.download_to_drive(fpath)
 
-            # Sidecar meta — JSON, with private=true so the indexer + Data Hub
-            # filter this out of search and serve.
-            mark_private(fpath, extra={
+            # Sidecar meta — JSON, attachment metadata only. No private flag:
+            # inbound is public, and the file appears in Data Hub. The user
+            # can explicitly send specific files to the vault from the UI.
+            write_attachment_meta(fpath, extra={
                 "agent_id": self.AGENT_ID,
                 "chat_id": chat_id,
                 "kind": kind,
