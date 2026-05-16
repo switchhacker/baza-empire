@@ -23,7 +23,10 @@ from pathlib import Path
 LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
 LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "baza-litellm-internal")
 OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "llava:13b")
+# qwen3-vl is markedly better at document understanding than llava and is
+# installed on both AMD instances. Override with OLLAMA_VISION_MODEL if needed.
+OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:latest")
+OLLAMA_VISION_FALLBACK = os.environ.get("OLLAMA_VISION_FALLBACK", "llava:13b")
 
 EMPTY_STRUCTURED = {
     "store_name": "",
@@ -379,8 +382,96 @@ def _top_vendors_hint(limit: int = 10) -> str:
     return "Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's"
 
 
+def _parse_vision_json(content: str) -> dict | None:
+    """Strip code fences + try to parse a JSON object out of a vision model's
+    response. Returns None if there's no plausible JSON in there.
+
+    Local vision models often pad JSON with prose ("Here's the data: { ... }"),
+    so we also try to extract the first {...} block as a last resort."""
+    if not content:
+        return None
+    content = content.strip()
+    if content.startswith("```"):
+        content = re.sub(r'^```(?:json)?\s*', '', content)
+        content = re.sub(r'```\s*$', '', content)
+        content = content.strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+    # Heuristic: pull out the first balanced JSON object.
+    start = content.find('{')
+    end = content.rfind('}')
+    if start != -1 and end > start:
+        snippet = content[start:end + 1]
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _coerce_money(v) -> float:
+    """qwen3-vl occasionally returns money fields as '$56.19' or '1,234.50'
+    despite the prompt asking for plain numbers. Normalize before merge."""
+    if v is None:
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace('$', '').replace(',', '').replace(' ', '')
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _normalize_vision_numbers(parsed: dict) -> dict:
+    """In-place coercion of numeric fields to floats."""
+    if not isinstance(parsed, dict):
+        return parsed
+    for k in ('total', 'subtotal', 'tax_amount'):
+        if k in parsed:
+            parsed[k] = _coerce_money(parsed[k])
+    items = parsed.get('items')
+    if isinstance(items, list):
+        for it in items:
+            if isinstance(it, dict) and 'price' in it:
+                it['price'] = _coerce_money(it['price'])
+    return parsed
+
+
+def _vision_result_is_useful(parsed: dict | None) -> bool:
+    """True if the parsed JSON contains *anything* worth keeping (a date, a
+    non-zero total, or a non-empty store name). Filters out 'I cannot see
+    images' style hallucinations from text-only fallbacks."""
+    if not parsed or not isinstance(parsed, dict):
+        return False
+    if (parsed.get("store_name") or "").strip():
+        return True
+    if (parsed.get("purchase_date") or "").strip():
+        return True
+    try:
+        if float(parsed.get("total") or 0) != 0:
+            return True
+        if float(parsed.get("subtotal") or 0) != 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
 def run_llm_analysis(image_path: str) -> dict:
-    """Send receipt image to a vision-capable LLM via LiteLLM proxy."""
+    """Extract structured fields from a receipt image.
+
+    Order of preference:
+      1. Local Ollama vision (qwen3-vl by default — fast, free, reliable).
+      2. Llava fallback if the primary local vision model errors out.
+      3. LiteLLM cloud proxy (gpt-4o) only as a last resort, because the
+         current fallback chain in litellm.yaml can land on a text-only
+         model that silently returns garbage like "I cannot see images".
+
+    Raises if every path returns useless output, so the caller surfaces the
+    error in `warnings` instead of writing zeros into the receipt."""
     img_path = Path(image_path)
     suffix = img_path.suffix.lower().lstrip(".")
     mime_map = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif", "webp": "webp", "bmp": "bmp"}
@@ -417,70 +508,78 @@ def run_llm_analysis(image_path: str) -> dict:
         "Return ONLY valid JSON. Use empty string for unknown text fields and 0 for unknown numbers."
     )
 
-    payload = {
-        "model": "gpt-4o",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{img_b64}",
-                        },
-                    },
-                ],
-            }
-        ],
-        "max_tokens": 2000,
-        "temperature": 0.1,
-    }
+    last_err: Exception | None = None
 
+    # 1) Primary local vision model.
     try:
+        content = _ollama_vision_analyze(prompt, img_b64, mime_type, model=OLLAMA_VISION_MODEL)
+        parsed = _parse_vision_json(content)
+        if _vision_result_is_useful(parsed):
+            return _normalize_vision_numbers(parsed)
+    except Exception as e:
+        last_err = e
+
+    # 2) Local secondary fallback (older but reliable for cases qwen3-vl misses).
+    if OLLAMA_VISION_FALLBACK and OLLAMA_VISION_FALLBACK != OLLAMA_VISION_MODEL:
+        try:
+            content = _ollama_vision_analyze(prompt, img_b64, mime_type, model=OLLAMA_VISION_FALLBACK)
+            parsed = _parse_vision_json(content)
+            if _vision_result_is_useful(parsed):
+                return parsed
+        except Exception as e:
+            last_err = e
+
+    # 3) Cloud as last resort, with the same usefulness gate so a text-only
+    # routing accident can't poison the receipt with zeros.
+    try:
+        payload = {
+            "model": "gpt-4o",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}},
+                    ],
+                }
+            ],
+            "max_tokens": 2000,
+            "temperature": 0.1,
+        }
         resp = requests.post(
             f"{LITELLM_BASE}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {LITELLM_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {LITELLM_KEY}", "Content-Type": "application/json"},
             json=payload,
             timeout=60,
         )
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
-    except Exception as cloud_err:
-        # LiteLLM proxy down, no cloud key, or routed to a text-only fallback.
-        # Drop to local Ollama vision so OCR garbage doesn't end up in fields.
-        content = _ollama_vision_analyze(prompt, img_b64, mime_type)
-        if not content:
-            raise cloud_err
+        parsed = _parse_vision_json(content)
+        if _vision_result_is_useful(parsed):
+            return _normalize_vision_numbers(parsed)
+    except Exception as e:
+        last_err = e
 
-    # Strip markdown code fences if present
-    content = content.strip()
-    if content.startswith("```"):
-        content = re.sub(r'^```(?:json)?\s*', '', content)
-        content = re.sub(r'```\s*$', '', content)
-        content = content.strip()
-
-    parsed = json.loads(content)
-    return parsed
+    if last_err:
+        raise last_err
+    raise RuntimeError("vision analysis returned no usable data")
 
 
-def _ollama_vision_analyze(prompt: str, img_b64: str, mime_type: str) -> str:
-    """Local vision fallback — Ollama llava. Returns the model's raw text
-    response, or '' on failure."""
+def _ollama_vision_analyze(prompt: str, img_b64: str, mime_type: str, model: str | None = None) -> str:
+    """Local vision call to Ollama. Returns the model's raw text response,
+    or '' on failure. `model` defaults to OLLAMA_VISION_MODEL."""
+    mdl = model or OLLAMA_VISION_MODEL
     try:
         resp = requests.post(
             f"{OLLAMA_BASE}/api/generate",
             json={
-                "model": OLLAMA_VISION_MODEL,
+                "model": mdl,
                 "prompt": prompt + "\n\nReturn ONLY a JSON object — no commentary.",
                 "images": [img_b64],
                 "stream": False,
                 "options": {"temperature": 0.1, "num_predict": 1500},
             },
-            timeout=120,
+            timeout=180,
         )
         resp.raise_for_status()
         return (resp.json() or {}).get("response", "") or ""
