@@ -525,7 +525,7 @@ def run_llm_analysis(image_path: str) -> dict:
             content = _ollama_vision_analyze(prompt, img_b64, mime_type, model=OLLAMA_VISION_FALLBACK)
             parsed = _parse_vision_json(content)
             if _vision_result_is_useful(parsed):
-                return parsed
+                return _normalize_vision_numbers(parsed)
         except Exception as e:
             last_err = e
 
