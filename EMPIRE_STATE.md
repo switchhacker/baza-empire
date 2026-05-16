@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-05-13 Video tile UX + Upload from PWA/phone
-- 2026-05-13 Dual-GPU LLM pool ENABLED — SD WebUI paused for HW upgrade window
-- 2026-05-13 Receipt pipeline fix + Sam/Rex completion fix
-- 2026-05-13 Task runner CPU-fallback refinement
-- 2026-05-13 ahb123 project/invoice status coherence
-- 2026-05-13 QuickRF — review-recent panel: search + preview + more fields
-- 2026-05-12 Verifying Specter PCA on Simon overload
-- 2026-05-12 Simon overload — Specter PCA rejected, fixed Duke tracker instead
-- 2026-05-12 Library trash + ".images shown as video" bugs fixed
-- 2026-05-12 Dual-GPU audit — config drift found, AMD card sitting idle
-- 2026-05-12 Broader canned-task cleanup + Specter dedup gate
-- 2026-05-12 HEVC video → "audio only" fix: on-demand transcode endpoint
-- 2026-05-11 Task: pull Google Drive + Google Photos images to baza cloud
-- 2026-05-11 Drive scope confirmed; pivoting to Takeout for Photos
-- 2026-05-11 GPU consult: Tesla P100 16GB
+- 2026-05-15 ahb123 — Add Project modal: calendar range, client contact, draft autosave
+- 2026-05-15 ahb123 — revert Add Project date selector to plain inputs
+- 2026-05-15 ahb123 — inline editable Start/End dates on each project row
+- 2026-05-15 ahb123 — unified click-to-pick project timeframe (modal + edit + list)
+- 2026-05-15 ahb123 — persistent custom scopes in project modal datalist
+- 2026-05-15 Baza image picker — pick from Data Hub anywhere an image upload exists
+- 2026-05-15 ahb123 — drag-and-drop projects between year groups
+- 2026-05-15 ahb123 — Uncle Sam quick year tabs (current + past 3)
+- 2026-05-15 Vision tab fix + queue backfill + Sam burst-batch reply
+- 2026-05-15 Vision thumbnails — 403 fix
+- 2026-05-15 ahb123 — fix: year pills on DASHBOARD tab (not Uncle Sam)
+- 2026-05-15 ahb123 — Billing: completed projects grouped by year
+- 2026-05-15 Inbound is now public; Vault is the only private location; Sam handles all file types
+- 2026-05-15 QuickRF — bulk vendor rename propagation in Review & Edit Recent panel
+- 2026-05-15 QuickRF — rqe column rework + project picker
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
