@@ -384,29 +384,17 @@ class SamAxe(BaseAgent):
             f = files[0]
             msg = (
                 f"📥 Added to Data Hub — *{f['name']}*\n"
-                f"Pick it from any project's Before/During/After (or any other\n"
-                f"image upload) via the 📂 Baza button.\n\n"
-                f"Or tell me what to do:\n"
-                f"  • `ref: face` / `ref: wardrobe` — add as character reference\n"
-                f"  • `analyze` — describe what's in it\n"
-                f"  • `paint walls warm gray` (or any edit) — generate variants\n"
-                f"  • `send to vault` — move to the private vault\n"
-                f"_(SD imaging is paused — generation resumes when the GPU is back.)_"
+                f"Pick it from any project's Before/During/After (or any other "
+                f"image upload) via the 📂 Baza button."
             )
         else:
             shown = files[:12]
             listing = "\n".join(f"  • {f['name']}" for f in shown)
             more = f"\n  …and {n - 12} more" if n > 12 else ""
             msg = (
-                f"📥 OK — added *{n} files* to Data Hub:\n"
+                f"📥 Added *{n} files* to Data Hub:\n"
                 f"{listing}{more}\n\n"
-                f"Would you like me to take any action with these?\n"
-                f"  • `analyze all` — caption + tag each image (queues them for vision)\n"
-                f"  • `ref: wardrobe` (or `ref: face` / `ref: pose`) — treat as character references\n"
-                f"  • `attach to <project name> as before/during/after` — file under an AHB project\n"
-                f"  • `send all to vault` — move the whole batch into the private vault\n"
-                f"  • Or pick them yourself from the AHB project modal via the 📂 Baza button\n"
-                f"_(SD imaging is paused. Any images are also queued for vision — they'll be classified when the GPU pool is back.)_"
+                f"Pick them from any project's image upload via the 📂 Baza button."
             )
         save_message(chat_id, self.AGENT_ID, "assistant", msg)
         try:
@@ -482,16 +470,17 @@ class SamAxe(BaseAgent):
     # ── Photo Handler — the main analysis pipeline ────────────────────────────
 
     async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Clean-slate inbound bridge: download → meta → vision register →
+        # roll into the shared burst summary. No analyze/ref/edit branching
+        # on intake — Serge wants a quiet pipe to Data Hub. Any downstream
+        # action (analyze, generate, vault) is initiated explicitly via the
+        # text handler against files already in Data Hub.
         chat_id = update.effective_chat.id
         caption = update.message.caption or ""
-        caption_low = caption.lower()
 
         logger.info(f"[sam_axe] Photo received from {chat_id}, caption: {caption[:60]}")
         await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-        # Download photo (highest res) into the public inbound staging dir
-        # so it appears in Data Hub by default. Only files Serge explicitly
-        # sends to the vault become private.
         photo = update.message.photo[-1]
         tg_file = await photo.get_file()
         import uuid, datetime as _dt
@@ -512,184 +501,8 @@ class SamAxe(BaseAgent):
 
         save_message(chat_id, self.AGENT_ID, "user", f"[Photo: {filename}] {caption}")
         self.journal("photo_received", f"Photo: {filename}", chat_id=chat_id)
-
-        # Decide whether the user actually wants analysis right now.
-        # Default is QUIET SAVE — Serge often pastes batches of reference
-        # photos and doesn't want a room-by-room readout for each one.
-        wants_analysis = any(t in caption_low for t in ANALYZE_TRIGGER_KEYWORDS)
-        is_ref_upload   = self._is_reference_upload(caption)
-        has_open_refs   = self._has_references(chat_id)
-
-        # ── Reference-upload branch (avatar / character mood board) ───────────
-        # An open ref session (`has_open_refs`) means Serge is mid-batch — keep
-        # accepting new photos as references even when the caption omits a
-        # `ref:` trigger.
-        if is_ref_upload or has_open_refs:
-            role = self._detect_ref_role(caption) if is_ref_upload else "general"
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"📥 Reference received (role: {role}, private). Analyzing facial features and style cues..."
-            )
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, self.skills.run, "analyze_image",
-                {"image_path": local_path, "prompt": PORTRAIT_ANALYSIS_PROMPT, "mode": "analyze"},
-                chat_id
-            )
-
-            ref_description = ""
-            if result.get("success"):
-                output = result.get("output", "")
-                try:
-                    parsed = json.loads(output.split("\n")[-1])
-                    ref_description = parsed.get("analysis", output)
-                except Exception:
-                    ref_description = output.split("\n---\n")[-1] if "\n---\n" in output else output
-                    if '{"success"' in ref_description:
-                        ref_description = ref_description[:ref_description.index('{"success"')].strip()
-
-            self._add_reference(chat_id, local_path, role, ref_description.strip(), caption)
-            refs = self._pending_edits[chat_id].get("references", [])
-            roles_summary = ", ".join(r["role"] for r in refs)
-
-            response = (
-                f"✅ Reference saved as **{role}** ({len(refs)} ref(s) total: {roles_summary})\n\n"
-                f"📋 What I see:\n{ref_description[:600]}\n\n"
-                f"➕ Send more references with captions like:\n"
-                f"  • `ref: wardrobe` (clothing/style)\n"
-                f"  • `ref: pose` (body language)\n"
-                f"  • `ref: mood` (overall vibe)\n\n"
-                f"🎨 When ready, say: **\"generate the cole ray avatar from refs, oil on canvas\"**"
-            )
-            save_message(chat_id, self.AGENT_ID, "assistant", response)
-            await self._send_response(context.bot, chat_id, response)
-            return
-
-        # ── Quiet-save default ────────────────────────────────────────────────
-        # No `ref:` trigger and no analyze keyword → Serge is just pasting a
-        # photo, possibly mid-thought. Stash it as a private inbound, ack
-        # briefly, and STOP. No room-architecture readout, no GPU spend.
-        # Serge can follow up with "analyze this" / "ref: face" / "edit it"
-        # to take action.
-        img_hash = self._get_image_hash(local_path)
-        existing_ctx = self._get_context(img_hash)
-
-        if not wants_analysis and not existing_ctx.get("description"):
-            # Track as the most recently received photo so a follow-up like
-            # "analyze it" or "edit the cabinets white" can pick it up.
-            slot = self._pending_edits.setdefault(chat_id, {})
-            slot.update({
-                "source": local_path,
-                "image_hash": img_hash,
-                "context_file": os.path.join(CONTEXT_DIR, f"{img_hash}.json"),
-                "awaiting_instructions": True,
-            })
-            self._save_pending_edits()
-            self.remember("last_received_photo", local_path, "images")
-            # Accumulate into the per-chat burst; ONE summary message will be
-            # sent _BURST_WINDOW seconds after the last photo lands.
-            await self._enqueue_photo_burst(context, chat_id, filename, local_path, caption)
-            return
-
-        if existing_ctx.get("description"):
-            # SKIP analysis — we've seen this image before
-            description = existing_ctx["description"]
-            edit_count = len(existing_ctx.get("edits", []))
-            response = (
-                f"📸 I recognize this image ({edit_count} previous edit(s)).\n\n"
-                f"📋 Previous description:\n{description[:800]}\n\n"
-                f"✏️ Tell me what changes you want — I'll generate 2 variants."
-            )
-            self._pending_edits[chat_id] = {
-                "source": local_path,
-                "description": description,
-                "image_hash": img_hash,
-                "context_file": os.path.join(CONTEXT_DIR, f"{img_hash}.json"),
-            }
-            self._save_pending_edits()
-        else:
-            # Full analysis
-            await context.bot.send_message(chat_id=chat_id, text="🔍 Analyzing image... identifying objects, materials, geometry, viewpoint\n⏱ ~30-60 seconds")
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-            loop = asyncio.get_event_loop()
-            analysis_prompt = (
-                "Analyze this image in extreme detail for architectural/construction visualization. "
-                "Identify and describe:\n"
-                "1. VIEWPOINT: Camera angle, perspective, room orientation\n"
-                "2. OBJECTS: Every visible item (cabinets, counters, appliances, fixtures, furniture)\n"
-                "3. MATERIALS: Wall finish, floor type, ceiling, trim, hardware\n"
-                "4. COLORS: Exact colors/tones of walls, floor, ceiling, cabinets, counters\n"
-                "5. LIGHTING: Natural/artificial, direction, quality\n"
-                "6. GEOMETRY: Room shape, dimensions (estimate), layout\n"
-                "7. CONDITION: New/old, needs work, quality level\n"
-                "8. STYLE: Modern, traditional, farmhouse, etc.\n\n"
-                "Be specific and exhaustive. This description will be used to regenerate "
-                "the image with modifications."
-            )
-
-            result = await loop.run_in_executor(
-                None, self.skills.run, "analyze_image",
-                {"image_path": local_path, "prompt": analysis_prompt, "mode": "analyze"}, chat_id
-            )
-
-            if result.get("success"):
-                output = result.get("output", "")
-                # Extract analysis text
-                try:
-                    parsed = json.loads(output.split("\n")[-1])
-                    description = parsed.get("analysis", output)
-                except Exception:
-                    description = output.split("\n---\n")[-1] if "\n---\n" in output else output
-                    if '{"success"' in description:
-                        description = description[:description.index('{"success"')].strip()
-
-                # Save context
-                ctx = {
-                    "description": description,
-                    "source_image": local_path,
-                    "image_hash": img_hash,
-                    "analyzed_at": _dt.datetime.now().isoformat(),
-                    "edits": [],
-                }
-                self._save_context(img_hash, ctx)
-
-                response = (
-                    f"📸 Image Analysis Complete\n\n"
-                    f"📋 Description:\n{description[:1200]}\n\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"✏️ Tell me what to change — I'll generate 2 variants.\n"
-                    f"Examples:\n"
-                    f"  • add white shaker cabinets and granite countertops\n"
-                    f"  • paint the walls warm gray\n"
-                    f"  • install natural wood floors\n"
-                    f"  • add a kitchen island with seating"
-                )
-                slot = self._pending_edits.setdefault(chat_id, {})
-                slot.update({
-                    "source": local_path,
-                    "description": description,
-                    "image_hash": img_hash,
-                    "context_file": os.path.join(CONTEXT_DIR, f"{img_hash}.json"),
-                })
-                self._save_pending_edits()
-            else:
-                error = result.get("error", result.get("output", "Unknown error"))
-                response = f"Could not analyze image: {error}\n\nDescribe what you want changed and I'll try anyway."
-                slot = self._pending_edits.setdefault(chat_id, {})
-                slot.update({
-                    "source": local_path,
-                    "description": "",
-                    "image_hash": img_hash,
-                })
-                self._save_pending_edits()
-
-        self.remember("last_image_analysis", description[:500] if 'description' in dir() else "", "images")
-        self.remember("last_analyzed_photo", local_path, "images")
-        save_message(chat_id, self.AGENT_ID, "assistant", response)
-        await self._send_response(context.bot, chat_id, response)
+        self.remember("last_received_photo", local_path, "images")
+        await self._enqueue_photo_burst(context, chat_id, filename, local_path, caption)
 
     # ── Text Handler ──────────────────────────────────────────────────────────
 
