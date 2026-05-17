@@ -24,11 +24,20 @@ if not query:
 
 # ── Ollama API Search ──────────────────────────────────────────────────────────
 
+try:
+    import ollama as _ollama_mod
+    _HAS_OLLAMA = True
+except ImportError:
+    _ollama_mod = None
+    _HAS_OLLAMA = False
+
+
 def ollama_search(query: str, max_results: int = 5) -> list:
     """Use Ollama's web search API. Returns list of {title, url, snippet}."""
-    import ollama
+    if not _HAS_OLLAMA:
+        return [{"error": "ollama module not installed in this interpreter"}]
     try:
-        response = ollama.web_search(query, max_results=max_results)
+        response = _ollama_mod.web_search(query, max_results=max_results)
         results = []
         for r in (response.results if hasattr(response, "results") else response.get("results", [])):
             if hasattr(r, "title"):
@@ -90,15 +99,24 @@ def ddg_search(query: str, max_results: int = 5) -> list:
 
 api_key = os.environ.get("OLLAMA_API_KEY", "")
 
-if api_key:
+results = []
+source  = "duckduckgo"
+if api_key and _HAS_OLLAMA:
     results = ollama_search(query, n)
     source  = "ollama"
+    # If ollama returned only errors (or nothing), fall back to DDG silently
+    real = [r for r in results if not (len(r) == 1 and "error" in r)]
+    if not real:
+        results = ddg_search(query, n)
+        source  = "duckduckgo (ollama failed)"
+    else:
+        results = real
 else:
     results = ddg_search(query, n)
     source  = "duckduckgo"
 
-# Strip error-only results
-results = [r for r in results if not (len(r) == 1 and "error" in r)] or results
+# Final scrub of error-only entries
+results = [r for r in results if not (len(r) == 1 and "error" in r)]
 
 if output == "json":
     print(json.dumps({"success": True, "query": query, "source": source, "results": results}))
