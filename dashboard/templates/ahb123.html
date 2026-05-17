@@ -1115,51 +1115,6 @@
     </div>
   </div>
 
-  <!-- Baza image picker — reusable picker for selecting images from artifacts/
-       (incl. .private-inbound Telegram drops). Used by project Before/During/After,
-       project docs, receipt upload, and the Media tab. -->
-  <div class="modal-bg" id="bazaPickModal">
-    <div class="modal wide" style="max-width:1100px;padding:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div>
-          <h2 id="bazaPickTitle" style="margin:0">📂 Pick from Baza</h2>
-          <div class="modal-sub" style="margin:4px 0 0" id="bazaPickSub">Recent images in Data Hub (incl. Sam's Telegram drops)</div>
-        </div>
-        <button class="btn-secondary" onclick="closeModal('bazaPickModal')" style="padding:6px 14px">✕</button>
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-        <input type="text" id="bazaPickSearch" placeholder="Search filename, agent, caption…" oninput="bazaPickRender()"
-               style="flex:1;min-width:200px;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
-        <select id="bazaPickAgent" onchange="bazaPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
-          <option value="">All sources</option>
-          <option value="sam_axe">Sam (Telegram)</option>
-          <option value="phil_hass">Phil</option>
-          <option value="simon_bately">Simon</option>
-          <option value="claw_batto">Claw</option>
-          <option value="specter_voss">Specter</option>
-        </select>
-        <select id="bazaPickLimit" onchange="bazaPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
-          <option value="60">Last 60</option>
-          <option value="120" selected>Last 120</option>
-          <option value="250">Last 250</option>
-          <option value="300">Last 300 (max)</option>
-        </select>
-        <button class="btn btn-sm btn-secondary" onclick="bazaPickLoad()">↻ Refresh</button>
-        <span id="bazaPickCount" style="color:#666;font-size:11px;margin-left:auto"></span>
-      </div>
-      <div id="bazaPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:60vh;overflow-y:auto;padding:4px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;min-height:200px">
-        <div style="grid-column:1/-1;text-align:center;padding:40px;color:#444;font-size:12px">Loading…</div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;flex-wrap:wrap">
-        <div style="color:#888;font-size:11px"><span id="bazaPickSelCount">0</span> selected</div>
-        <div style="display:flex;gap:8px">
-          <button class="btn-secondary" onclick="closeModal('bazaPickModal')">Cancel</button>
-          <button class="btn-primary" id="bazaPickUseBtn" onclick="bazaPickConfirm()" disabled>Use selected</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="panel" style="margin-top:24px">
     <h3>Quick Add Receipt</h3>
     <div class="form-row">
@@ -1198,6 +1153,52 @@
       <select id="receipt-project" class="filter-select" style="width:100%;padding:10px 12px"><option value="">No Project</option></select>
     </div>
     <button class="btn btn-primary" onclick="saveReceipt()">Save Receipt</button>
+  </div>
+</div>
+
+<!-- Baza image picker — reusable picker for selecting images from artifacts/
+     (incl. .private-inbound Telegram drops). Used by project Before/During/After,
+     project docs, receipt upload, and the Media tab.
+     MUST live at body level (not inside any tab-pane) so it's visible from any tab. -->
+<div class="modal-bg" id="bazaPickModal" style="z-index:1100">
+  <div class="modal wide" style="max-width:1100px;padding:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div>
+        <h2 id="bazaPickTitle" style="margin:0">📂 Pick from Baza</h2>
+        <div class="modal-sub" style="margin:4px 0 0" id="bazaPickSub">Recent images in Data Hub (incl. Sam's Telegram drops)</div>
+      </div>
+      <button class="btn-secondary" onclick="closeModal('bazaPickModal')" style="padding:6px 14px">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="bazaPickSearch" placeholder="Search filename, agent, caption…" oninput="bazaPickRender()"
+             style="flex:1;min-width:200px;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+      <select id="bazaPickAgent" onchange="bazaPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+        <option value="">All sources</option>
+        <option value="sam_axe">Sam (Telegram)</option>
+        <option value="phil_hass">Phil</option>
+        <option value="simon_bately">Simon</option>
+        <option value="claw_batto">Claw</option>
+        <option value="specter_voss">Specter</option>
+      </select>
+      <select id="bazaPickLimit" onchange="bazaPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+        <option value="60">Last 60</option>
+        <option value="120" selected>Last 120</option>
+        <option value="250">Last 250</option>
+        <option value="300">Last 300 (max)</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="bazaPickLoad()">↻ Refresh</button>
+      <span id="bazaPickCount" style="color:#666;font-size:11px;margin-left:auto"></span>
+    </div>
+    <div id="bazaPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:60vh;overflow-y:auto;padding:4px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;min-height:200px">
+      <div style="grid-column:1/-1;text-align:center;padding:40px;color:#444;font-size:12px">Loading…</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;flex-wrap:wrap">
+      <div style="color:#888;font-size:11px"><span id="bazaPickSelCount">0</span> selected</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="closeModal('bazaPickModal')">Cancel</button>
+        <button class="btn-primary" id="bazaPickUseBtn" onclick="bazaPickConfirm()" disabled>Use selected</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -7553,6 +7554,21 @@ function populateReceiptProjectDropdowns(){
 let receiptQueue=[];
 let _rqPollTimer=null;
 const RQ_CATEGORIES=['Materials','Tools','Fuel','Food','Office supplies','Clothes'];
+// Per-row in-memory edits. The 3s poll fetches fresh server state and
+// re-renders rows from receiptQueue, which would wipe whatever the user
+// just typed. We stash edits here keyed by qid + field and prefer them
+// over the server value on every render. Cleared on file/erase/rescan.
+const _rqEdits={};
+function _rqVal(qid,field,serverVal){
+  const e=_rqEdits[qid];
+  if(e && Object.prototype.hasOwnProperty.call(e,field)) return e[field];
+  return serverVal;
+}
+function _rqStash(qid,field,val){
+  if(!_rqEdits[qid]) _rqEdits[qid]={};
+  _rqEdits[qid][field]=val;
+}
+function _rqClearEdits(qid){ delete _rqEdits[qid]; }
 
 function rqAutoOcrEnabled(){
   const v=localStorage.getItem('quickrf_auto_ocr');
@@ -7676,37 +7692,48 @@ function renderReceiptQueue(){
 
   // ── BIN 3: Analyzed — full review rows ──
   const reviewItems=receiptQueue.filter(q=>q.status==='ready');
-  if(anEl){
+  // Don't clobber the bin while the user is mid-edit. The 3s polling timer
+  // would otherwise replace the focused <input> with a fresh DOM node every
+  // tick — focus is lost and the next keystroke goes nowhere. Only skip for
+  // text-entry focus; button clicks still trigger a refresh so rows update
+  // after File/Erase/Rescan.
+  const ae=document.activeElement;
+  const editing=ae && anEl && anEl.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
+  if(anEl && !editing){
     anEl.innerHTML=reviewItems.map(q=>{
       let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
       const s=parsed.structured||{};
-      const total = s.total!=null?s.total:'';
-      const tax   = s.tax_amount!=null?s.tax_amount:'';
-      const sub   = s.subtotal!=null?s.subtotal:'';
+      const store = _rqVal(q.id,'store_name', s.store_name||'');
+      const total = _rqVal(q.id,'total',       s.total!=null?s.total:'');
+      const tax   = _rqVal(q.id,'tax_amount',  s.tax_amount!=null?s.tax_amount:'');
+      const sub   = _rqVal(q.id,'subtotal',    s.subtotal!=null?s.subtotal:'');
+      const date  = _rqVal(q.id,'receipt_date',s.purchase_date||'');
+      const pay   = _rqVal(q.id,'payment_method', s.payment_method||'');
+      const cat   = _rqVal(q.id,'category',    s.category||'');
       return `<div class="rq-row" data-qid="${q.id}" style="display:grid;grid-template-columns:24px 90px 1fr;gap:12px;padding:12px;margin:8px 0;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid #5cdc99;border-radius:8px;align-items:start">
         <input type="checkbox" class="rq-check" data-qid="${q.id}" style="margin-top:38px;cursor:pointer">
         <img src="/api/ahb/receipts/queue/image/${q.id}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a" onclick="rqOpenEditor('${q.id}')" onerror="this.style.display='none'">
         <div>
           <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">STORE</label>
-              <input class="rq-f" data-f="store_name" value="${escHtml(s.store_name||'')}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+              <input class="rq-f" data-f="store_name" data-qid="${q.id}" oninput="_rqStash('${q.id}','store_name',this.value)" value="${escHtml(store)}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">TOTAL</label>
-              <input class="rq-f" data-f="total" type="number" step="0.01" value="${total}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#00d084;font-weight:700;border-radius:4px;font-size:12px"></div>
+              <input class="rq-f" data-f="total" data-qid="${q.id}" oninput="_rqStash('${q.id}','total',this.value)" type="number" step="0.01" value="${total}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#00d084;font-weight:700;border-radius:4px;font-size:12px"></div>
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">TAX</label>
-              <input class="rq-f" data-f="tax_amount" type="number" step="0.01" value="${tax}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+              <input class="rq-f" data-f="tax_amount" data-qid="${q.id}" oninput="_rqStash('${q.id}','tax_amount',this.value)" type="number" step="0.01" value="${tax}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">SUBTOTAL</label>
-              <input class="rq-f" data-f="subtotal" type="number" step="0.01" value="${sub}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+              <input class="rq-f" data-f="subtotal" data-qid="${q.id}" oninput="_rqStash('${q.id}','subtotal',this.value)" type="number" step="0.01" value="${sub}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">DATE</label>
-              <input class="rq-f" data-f="receipt_date" type="date" value="${s.purchase_date||''}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+              <input class="rq-f" data-f="receipt_date" data-qid="${q.id}" oninput="_rqStash('${q.id}','receipt_date',this.value)" type="date" value="${date}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">PAYMENT</label>
-              <input class="rq-f" data-f="payment_method" value="${escHtml(s.payment_method||'')}" placeholder="cash / card / check" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
+              <input class="rq-f" data-f="payment_method" data-qid="${q.id}" oninput="_rqStash('${q.id}','payment_method',this.value)" value="${escHtml(pay)}" placeholder="cash / card / check" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">CATEGORY</label>
-              <select class="rq-f" data-f="category" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqCategoryOptions(s.category||'')}</select></div>
+              <select class="rq-f" data-f="category" data-qid="${q.id}" onchange="_rqStash('${q.id}','category',this.value)" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqCategoryOptions(cat)}</select></div>
             <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">PROJECT (type to filter)</label>
               <input class="rq-proj-search" data-qid="${q.id}" oninput="rqFilterProjects('${q.id}',this.value)" placeholder="Search projects..." style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px;margin-bottom:3px">
-              <select class="rq-f" data-f="project_id" id="rq-proj-${q.id}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqProjectOptions('')}</select></div>
+              <select class="rq-f" data-f="project_id" id="rq-proj-${q.id}" onchange="_rqStash('${q.id}','project_id',this.value)" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqProjectOptions(_rqVal(q.id,'project_id',''))}</select></div>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
             <span style="font-size:10px;color:#444;font-family:monospace">${escHtml(s.teller_name||'')} ${s.purchase_time?'· '+s.purchase_time:''}</span>
@@ -7794,7 +7821,7 @@ async function rqFile(qid){
       structured:merged
     })});
     const data=await res.json();
-    if(data.success){showToast('Filed: '+(v.store_name||'receipt'));loadReceiptQueue();loadReceipts();}
+    if(data.success){_rqClearEdits(qid);showToast('Filed: '+(v.store_name||'receipt'));loadReceiptQueue();loadReceipts();}
     else showToast(data.error||'Failed','error');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
@@ -7888,7 +7915,7 @@ async function rqRescan(qid){
   try{
     const res=await fetch('/api/ahb/receipts/queue/'+qid+'/rescan',{method:'POST'});
     const data=await res.json();
-    if(data.success){showToast('Re-OCR queued');loadReceiptQueue();_rqStartPolling();}
+    if(data.success){_rqClearEdits(qid);showToast('Re-OCR queued');loadReceiptQueue();_rqStartPolling();}
     else showToast(data.error||'Rescan failed','error');
   }catch(e){showToast('Error: '+e.message,'error');}
 }
@@ -7981,6 +8008,7 @@ async function rejectQueueItem(qid){
   if(!confirm('Discard this receipt?'))return;
   try{
     await fetch('/api/ahb/receipts/queue/'+qid+'/reject',{method:'POST'});
+    _rqClearEdits(qid);
     showToast('Rejected');loadReceiptQueue();
   }catch(e){showToast('Error','error');}
 }
