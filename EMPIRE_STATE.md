@@ -23,6 +23,8 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-16 Receipt OCR — fix totals/dates returning zero (LiteLLM routing gpt-4o → text-only model)
+- 2026-05-16 Receipt OCR — promote gemma3:27b-cloud to primary; add math self-correction
 - 2026-05-15 ahb123 — Add Project modal: calendar range, client contact, draft autosave
 - 2026-05-15 ahb123 — revert Add Project date selector to plain inputs
 - 2026-05-15 ahb123 — inline editable Start/End dates on each project row
@@ -36,8 +38,6 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - 2026-05-15 ahb123 — fix: year pills on DASHBOARD tab (not Uncle Sam)
 - 2026-05-15 ahb123 — Billing: completed projects grouped by year
 - 2026-05-15 Inbound is now public; Vault is the only private location; Sam handles all file types
-- 2026-05-15 QuickRF — bulk vendor rename propagation in Review & Edit Recent panel
-- 2026-05-15 QuickRF — rqe column rework + project picker
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
