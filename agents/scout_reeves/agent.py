@@ -215,8 +215,19 @@ class ScoutReeves(BaseAgent):
         web_block = self._format_web(web_results, scrapes)
         local_block = biz_block.strip() if biz_block else ""
 
-        # Synthesis prompt — inject findings as authoritative data
+        # Build the whitelist of URLs the LLM is allowed to cite
+        allowed_urls = sorted({(r.get("url") or "").strip() for r in web_results if r.get("url")})
+        allowed_urls = [u for u in allowed_urls if u]
+
+        # ── Empty-findings short-circuit ───────────────────────────────────
+        # If everything came back empty, do NOT call the LLM — it'll invent URLs.
+        # Emit a deterministic honest report instead.
+        if not baza_hits and not web_results and not local_block:
+            return self._empty_findings_report(text, terms)
+
+        # Synthesis prompt — inject findings as authoritative data + URL whitelist
         system = self.build_system_prompt() or ""
+        url_list_block = "\n".join(f"  - {u}" for u in allowed_urls) if allowed_urls else "  (no URLs available — do NOT cite any URL)"
         system += (
             "\n\n== SUPER MODE — INTEL SYNTHESIS ==\n"
             "You have just been handed fresh findings. Produce ONE structured intel report.\n"
@@ -244,9 +255,20 @@ class ScoutReeves(BaseAgent):
             "3. <step>\n\n"
             "⚠️ WATCH: <single line — risk or thing to monitor; omit line if none>\n\n"
             "━━━━━━━━━━━━━━━━\n"
-            "End with the literal token TASK_COMPLETE on its own line.\n"
-            "Rules: cite URLs verbatim from the findings; do NOT invent sources; if findings are thin, "
-            "say so honestly and recommend a tighter follow-up query.\n"
+            "End with the literal token TASK_COMPLETE on its own line.\n\n"
+            "=== HARD RULES (violations = broken report) ===\n"
+            "1. ONLY cite URLs that appear in the ALLOWED_URLS list below. Copy each URL "
+            "character-for-character. Do NOT compose, guess, complete, or 'fix' URLs. "
+            "Do NOT invent paths, slugs, or domains. If the URL isn't in the list, you "
+            "may NOT write it.\n"
+            "2. Every fact in 🌐 WEB FINDINGS must come from the supplied SNIPPET or BODY "
+            "text — not your prior knowledge of the topic.\n"
+            "3. If WEB RESULTS is empty/sparse, say so plainly in 🌐 WEB FINDINGS (e.g. "
+            "'• Web search returned no usable results') and propose a sharper follow-up "
+            "query in 💡 COURSE OF ACTION. Do NOT pad the section with invented sources.\n"
+            "4. The 🎯 HOW THIS HELPS section may use general knowledge for advice, but it "
+            "may NOT reference any URL not in ALLOWED_URLS.\n\n"
+            "ALLOWED_URLS:\n" + url_list_block + "\n"
             "== END SUPER MODE ==\n"
         )
 
@@ -260,11 +282,61 @@ class ScoutReeves(BaseAgent):
 
         messages = list(history) + [{
             "role": "user",
-            "content": findings_doc + "\n[Now write the Intel Report.]"
+            "content": findings_doc + "\n[Now write the Intel Report. Remember: only URLs from ALLOWED_URLS.]"
         }]
 
         response = await loop.run_in_executor(None, self.llm_chat, messages, system)
-        return response or "_(no response)_"
+        if not response:
+            return "_(no response)_"
+
+        # Post-check: strip any URLs the LLM invented despite the rule
+        return self._strip_unknown_urls(response, allowed_urls)
+
+    def _strip_unknown_urls(self, text: str, allowed: list) -> str:
+        """Replace any http(s) URL not in `allowed` with [URL REMOVED — not in findings]."""
+        if not text:
+            return text
+        allowed_set = set(allowed)
+        def repl(m):
+            u = m.group(0).rstrip(").,;:'\"")
+            if u in allowed_set:
+                return m.group(0)
+            return "[URL REMOVED — not in findings]"
+        # Match bare URLs (http/https)
+        return re.sub(r"https?://[^\s)\]<>'\"]+", repl, text)
+
+    def _empty_findings_report(self, text: str, terms: list) -> str:
+        """Deterministic report when both Baza and the web returned nothing.
+        Never invents data — just tells Serge the search came up dry and suggests
+        sharper follow-up queries."""
+        topic = " ".join(terms[:6]) if terms else text[:80]
+        return (
+            "━━━━━━━━━━━━━━━━\n"
+            f"🔍 SCOUT INTEL — {topic}\n"
+            "━━━━━━━━━━━━━━━━\n\n"
+            "📥 YOUR REQUEST\n"
+            f"{text.strip()[:300]}\n\n"
+            "🏛️ BAZA FINDINGS  (from local empire data)\n"
+            "• No matching baza records.\n\n"
+            "🌐 WEB FINDINGS\n"
+            "• Web search returned no usable results for this query.\n"
+            "  (This usually means the query is too broad, too vague, or the upstream "
+            "search API was throttled.)\n\n"
+            "🎯 HOW THIS HELPS\n"
+            "👤 Serge: Nothing actionable yet — Scout needs a sharper question.\n"
+            "🤖 Agents: No dispatch warranted until findings exist.\n"
+            "🏗️ Baza / Infra: If this keeps happening, check the web_search skill "
+            "(ollama API key / DDG fallback).\n\n"
+            "💡 COURSE OF ACTION\n"
+            "1. Re-ask with 2–4 concrete keywords (brand name, model number, city, year).\n"
+            "2. Or paste a specific URL and Scout will scrape it directly.\n"
+            "3. Or name the kind of source you want (gov filing, code section, "
+            "vendor spec, news article, GitHub repo).\n\n"
+            "⚠️ WATCH: Empty-findings reports are intentionally blank — Scout will "
+            "never invent URLs to pad them.\n\n"
+            "━━━━━━━━━━━━━━━━\n"
+            "TASK_COMPLETE"
+        )
 
     # ── telegram handler ───────────────────────────────────────────────────
 
