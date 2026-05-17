@@ -7050,8 +7050,11 @@ function _rqePaintPickerList(rowId, q){
   if(!cell) return;
   const list = cell.querySelector('.rqe-proj-list');
   if(!list) return;
+  const ctx = _picCtx.get(rowId);
   const row = _rqeAllRows.find(x => x.id === rowId);
-  const currentPid = row ? (row.project_id || '') : '';
+  const currentPid = ctx && typeof ctx.getCurrent === 'function'
+    ? (ctx.getCurrent() || '')
+    : (row ? (row.project_id || '') : '');
   const all = _rqeProjects || [];
   const qLow = (q || '').trim().toLowerCase();
   const matches = (p) => {
@@ -7095,19 +7098,33 @@ function _rqePaintPickerList(rowId, q){
       html += flat.slice(0, 100).map(p => rowHtml(p, p._rqe_status)).join('');
     }
   } else {
-    const active = all.filter(p => p._rqe_status === 'In Progress' || p._rqe_status === 'Planning');
-    const recent = active.slice(0, 5);  // already sorted: In Progress first, then Planning, by updated_at desc
-    const recentIds = new Set(recent.map(p => p.id));
-    const inProg = all.filter(p => p._rqe_status === 'In Progress' && !recentIds.has(p.id));
-    const planning = all.filter(p => p._rqe_status === 'Planning' && !recentIds.has(p.id));
+    // Section order Serge asked for: In Progress first, then Recently Linked
+    // (projects that appear on the loaded recent receipts), then Planning,
+    // then Completed. 'Recently Linked' is derived from _rqeAllRows so it
+    // surfaces the projects he actually files receipts against, not the
+    // ones with the freshest updated_at.
+    const inProg = all.filter(p => p._rqe_status === 'In Progress');
+    const planning = all.filter(p => p._rqe_status === 'Planning');
     const completed = all.filter(p => p._rqe_status === 'Completed');
-    if(recent.length){
-      html += sectionHeader('Recent', recent.length);
-      html += recent.map(p => rowHtml(p, p._rqe_status)).join('');
-    }
+    const inProgIds = new Set(inProg.map(p => p.id));
+    const linkedCounts = new Map();
+    (_rqeAllRows || []).forEach(r => {
+      const pid = r && r.project_id;
+      if(pid) linkedCounts.set(pid, (linkedCounts.get(pid) || 0) + 1);
+    });
+    const recentlyLinked = Array.from(linkedCounts.entries())
+      .sort((a,b) => b[1] - a[1])
+      .map(([pid]) => _rqeProjectLookup(pid))
+      .filter(p => p && !inProgIds.has(p.id))
+      .slice(0, 8);
+
     if(inProg.length){
       html += sectionHeader('In Progress', inProg.length);
       html += inProg.map(p => rowHtml(p)).join('');
+    }
+    if(recentlyLinked.length){
+      html += sectionHeader('Recently Linked', recentlyLinked.length);
+      html += recentlyLinked.map(p => rowHtml(p, p._rqe_status)).join('');
     }
     if(planning.length){
       html += sectionHeader('Planning', planning.length);
@@ -7125,6 +7142,15 @@ function _rqePaintPickerList(rowId, q){
 }
 async function rqeAssignProject(rowId, pid){
   rqeClosePicker();
+  // Polymorphic dispatch: queue rows (Analyzed bin) and other surfaces register
+  // a context handler; if found, it owns the assign step and the receipt PUT
+  // is skipped.
+  const ctx = _picCtx.get(rowId);
+  if(ctx && typeof ctx.onAssign === 'function'){
+    try{ ctx.onAssign(pid || ''); }
+    catch(e){ showToast('Project link failed: ' + e.message, 'error'); }
+    return;
+  }
   try{
     const r = await fetch('/api/ahb/receipts/' + rowId, {
       method:'PUT',
@@ -7135,13 +7161,17 @@ async function rqeAssignProject(rowId, pid){
     if(!d || !d.success) throw new Error((d && d.error) || 'save failed');
     const cached = _rqeAllRows.find(x => x.id === rowId);
     if(cached) cached.project_id = pid || '';
-    // Refresh just this row's button by re-rendering all visible rows from cache.
     rqeFilter();
     showToast(pid ? 'Linked to project' : 'Unlinked');
   }catch(e){
     showToast('Project link failed: ' + e.message, 'error');
   }
 }
+// Shared picker context: surfaces other than Recent Receipts (e.g. the OCR
+// queue Analyzed bin) register a {getCurrent, onAssign} pair here keyed by
+// row id. The picker reads currentPid from getCurrent and routes the assign
+// click to onAssign, so a single picker UI serves multiple list types.
+const _picCtx = new Map();
 // Click anywhere outside an open picker closes it.
 document.addEventListener('click', (e)=>{
   if(!_rqeOpenPickerId) return;
@@ -7554,6 +7584,71 @@ function populateReceiptProjectDropdowns(){
 let receiptQueue=[];
 let _rqPollTimer=null;
 const RQ_CATEGORIES=['Materials','Tools','Fuel','Food','Office supplies','Clothes'];
+const RQ_PAYMENTS=['','Cash','Credit','Debit','Check','ACH','Other'];
+// Match the Recent Receipts grid (54px thumb / 1.4fr vendor / 1.3fr store /
+// 105 date / 100 amt / 105 cat / 1.2fr pay·notes / 1.2fr project / 32 X /
+// 70 file) but with two trailing columns: File button + ⋯ secondary menu.
+const RQ_GRID_COLS='54px 1.4fr 1.3fr 105px 100px 105px 1.2fr 1.2fr 70px 28px';
+function _rqRowHtml(q, rqInput, rqInputSm){
+  let parsed={}; try{ parsed=JSON.parse(q.result_json||'{}'); }catch(e){}
+  const s=parsed.structured||{};
+  const vendor=_rqVal(q.id,'store_name', s.store_name||'');
+  const store =_rqVal(q.id,'store_name', s.store_name||'');
+  const loc   =_rqVal(q.id,'store_location', s.store_location||'');
+  const date  =_rqVal(q.id,'receipt_date', (s.purchase_date||'').slice(0,10));
+  const total =_rqVal(q.id,'total',        s.total!=null?s.total:'');
+  const cat   =_rqVal(q.id,'category',     s.category||'');
+  const pay   =_rqVal(q.id,'payment_method', s.payment_method||'');
+  const notes =_rqVal(q.id,'description',  s.description||'');
+  const catOptions=RQ_CATEGORIES.map(c=>`<option value="${escHtml(c)}"${c===cat?' selected':''}>${escHtml(c)}</option>`).join('');
+  const payOptions=RQ_PAYMENTS.map(p=>`<option value="${escHtml(p)}"${p===pay?' selected':''}>${p?escHtml(p):'—'}</option>`).join('');
+  const projCell=_rqeProjectCellHtml({id:q.id, project_id:_rqVal(q.id,'project_id',(s.project_id)||'')});
+  const mergeBtn=q.pair_id?`<div onclick="_rqMenuClose();rqMerge('${q.id}')" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a" onmouseover="this.style.background='#1a1a35'" onmouseout="this.style.background='transparent'">⇆ Merge halves</div>`:'';
+  return `<div class="rq-row" data-qid="${q.id}" style="display:grid;grid-template-columns:${RQ_GRID_COLS};gap:6px;align-items:center;padding:4px 4px;border-bottom:1px solid #0e0e1e;position:relative">
+    <img src="/api/ahb/receipts/queue/image/${q.id}?w=400&bw=1" alt="" loading="lazy"
+         style="width:48px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #1a1a2e;background:#0a0a18;cursor:pointer"
+         onclick="rqOpenEditor('${q.id}')" onerror="this.style.display='none'">
+    <input class="rq-f" style="${rqInput}" data-f="store_name" oninput="_rqStash('${q.id}','store_name',this.value)" value="${escHtml(vendor)}" placeholder="Vendor">
+    <input class="rq-f" style="${rqInput}" data-f="store_location" oninput="_rqStash('${q.id}','store_location',this.value)" value="${escHtml(loc)}" placeholder="Address" title="${escHtml(loc)}">
+    <input class="rq-f" style="${rqInput}" data-f="receipt_date" type="date" oninput="_rqStash('${q.id}','receipt_date',this.value)" value="${escHtml(date)}">
+    <input class="rq-f" style="${rqInput};color:#00d084;font-weight:700" data-f="total" type="number" step="0.01" oninput="_rqStash('${q.id}','total',this.value)" value="${escHtml(total)}" placeholder="0.00">
+    <select class="rq-f" style="${rqInput}" data-f="category" onchange="_rqStash('${q.id}','category',this.value)">${catOptions}</select>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <select class="rq-f" style="${rqInput}" data-f="payment_method" onchange="_rqStash('${q.id}','payment_method',this.value)">${payOptions}</select>
+      <input class="rq-f" style="${rqInput}" data-f="description" oninput="_rqStash('${q.id}','description',this.value)" value="${escHtml(notes)}" placeholder="Notes / line items">
+    </div>
+    ${projCell}
+    <button onclick="rqFile('${q.id}')" title="File this receipt to ahb_receipts" style="background:#0e3a26;border:1px solid #10b981;color:#a7f3d0;font-size:11px;font-weight:700;padding:6px 0;border-radius:5px;cursor:pointer">📂 File</button>
+    <button onclick="_rqMenuToggle('${q.id}',event)" title="More actions" style="background:#1a1a2e;border:1px solid #2a2a4a;color:#888;font-size:14px;padding:5px 0;border-radius:5px;cursor:pointer">⋯</button>
+    <div class="rq-menu" data-qid="${q.id}" style="display:none;position:absolute;top:calc(100% - 4px);right:0;background:#0d0d22;border:1px solid #2a2a4a;border-radius:7px;box-shadow:0 8px 24px rgba(0,0,0,0.6);z-index:150;min-width:170px;font-size:12px;color:#ddd">
+      <div onclick="_rqMenuClose();rqOpenEditor('${q.id}')" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a" onmouseover="this.style.background='#1a1a35'" onmouseout="this.style.background='transparent'">🎨 Edit Image</div>
+      <div onclick="_rqMenuClose();rqRotate('${q.id}')" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a" onmouseover="this.style.background='#1a1a35'" onmouseout="this.style.background='transparent'">↻ Rotate 90°</div>
+      <div onclick="_rqMenuClose();rqSplit('${q.id}')" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a" onmouseover="this.style.background='#1a1a35'" onmouseout="this.style.background='transparent'">✂ Force Split</div>
+      ${mergeBtn}
+      <div onclick="_rqMenuClose();rqRescan('${q.id}')" style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #15152a" onmouseover="this.style.background='#1a1a35'" onmouseout="this.style.background='transparent'">🔁 Rescan OCR</div>
+      <div onclick="_rqMenuClose();rejectQueueItem('${q.id}')" style="padding:7px 10px;cursor:pointer;color:#ff8a8a" onmouseover="this.style.background='#2a0a14'" onmouseout="this.style.background='transparent'">🗑 Erase</div>
+    </div>
+  </div>`;
+}
+let _rqMenuOpenId=null;
+function _rqMenuClose(){
+  if(!_rqMenuOpenId) return;
+  document.querySelectorAll('.rq-menu').forEach(m=>m.style.display='none');
+  _rqMenuOpenId=null;
+}
+function _rqMenuToggle(qid, ev){
+  if(ev){ ev.stopPropagation(); ev.preventDefault(); }
+  if(_rqMenuOpenId===qid){ _rqMenuClose(); return; }
+  _rqMenuClose();
+  const m=document.querySelector(`.rq-menu[data-qid="${qid}"]`);
+  if(m){ m.style.display='block'; _rqMenuOpenId=qid; }
+}
+document.addEventListener('click',(e)=>{
+  if(!_rqMenuOpenId) return;
+  const m=document.querySelector(`.rq-menu[data-qid="${_rqMenuOpenId}"]`);
+  if(m && m.contains(e.target)) return;
+  _rqMenuClose();
+});
 // Per-row in-memory edits. The 3s poll fetches fresh server state and
 // re-renders rows from receiptQueue, which would wipe whatever the user
 // just typed. We stash edits here keyed by qid + field and prefer them
@@ -7690,66 +7785,40 @@ function renderReceiptQueue(){
     }).join('')||'<div style="text-align:center;padding:10px;color:#444;font-size:11px">Idle</div>';
   }
 
-  // ── BIN 3: Analyzed — full review rows ──
+  // ── BIN 3: Analyzed — simple inline-edit rows that mirror the Review &
+  // Edit Recent Receipts layout (preview / vendor / store·address / date /
+  // amount / category / payment·notes / project / file).
   const reviewItems=receiptQueue.filter(q=>q.status==='ready');
-  // Don't clobber the bin while the user is mid-edit. The 3s polling timer
-  // would otherwise replace the focused <input> with a fresh DOM node every
-  // tick — focus is lost and the next keystroke goes nowhere. Only skip for
-  // text-entry focus; button clicks still trigger a refresh so rows update
-  // after File/Erase/Rescan.
+  // Don't clobber the bin while the user is mid-edit. Only skip for text
+  // focus; button clicks still refresh so the row clears after File/Erase.
   const ae=document.activeElement;
   const editing=ae && anEl && anEl.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
   if(anEl && !editing){
-    anEl.innerHTML=reviewItems.map(q=>{
-      let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
-      const s=parsed.structured||{};
-      const store = _rqVal(q.id,'store_name', s.store_name||'');
-      const total = _rqVal(q.id,'total',       s.total!=null?s.total:'');
-      const tax   = _rqVal(q.id,'tax_amount',  s.tax_amount!=null?s.tax_amount:'');
-      const sub   = _rqVal(q.id,'subtotal',    s.subtotal!=null?s.subtotal:'');
-      const date  = _rqVal(q.id,'receipt_date',s.purchase_date||'');
-      const pay   = _rqVal(q.id,'payment_method', s.payment_method||'');
-      const cat   = _rqVal(q.id,'category',    s.category||'');
-      return `<div class="rq-row" data-qid="${q.id}" style="display:grid;grid-template-columns:24px 90px 1fr;gap:12px;padding:12px;margin:8px 0;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid #5cdc99;border-radius:8px;align-items:start">
-        <input type="checkbox" class="rq-check" data-qid="${q.id}" style="margin-top:38px;cursor:pointer">
-        <img src="/api/ahb/receipts/queue/image/${q.id}" style="width:90px;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a" onclick="rqOpenEditor('${q.id}')" onerror="this.style.display='none'">
-        <div>
-          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">STORE</label>
-              <input class="rq-f" data-f="store_name" data-qid="${q.id}" oninput="_rqStash('${q.id}','store_name',this.value)" value="${escHtml(store)}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">TOTAL</label>
-              <input class="rq-f" data-f="total" data-qid="${q.id}" oninput="_rqStash('${q.id}','total',this.value)" type="number" step="0.01" value="${total}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#00d084;font-weight:700;border-radius:4px;font-size:12px"></div>
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">TAX</label>
-              <input class="rq-f" data-f="tax_amount" data-qid="${q.id}" oninput="_rqStash('${q.id}','tax_amount',this.value)" type="number" step="0.01" value="${tax}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">SUBTOTAL</label>
-              <input class="rq-f" data-f="subtotal" data-qid="${q.id}" oninput="_rqStash('${q.id}','subtotal',this.value)" type="number" step="0.01" value="${sub}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">DATE</label>
-              <input class="rq-f" data-f="receipt_date" data-qid="${q.id}" oninput="_rqStash('${q.id}','receipt_date',this.value)" type="date" value="${date}" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">PAYMENT</label>
-              <input class="rq-f" data-f="payment_method" data-qid="${q.id}" oninput="_rqStash('${q.id}','payment_method',this.value)" value="${escHtml(pay)}" placeholder="cash / card / check" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px"></div>
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">CATEGORY</label>
-              <select class="rq-f" data-f="category" data-qid="${q.id}" onchange="_rqStash('${q.id}','category',this.value)" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqCategoryOptions(cat)}</select></div>
-            <div><label style="font-size:9px;color:#666;display:block;margin-bottom:2px">PROJECT (type to filter)</label>
-              <input class="rq-proj-search" data-qid="${q.id}" oninput="rqFilterProjects('${q.id}',this.value)" placeholder="Search projects..." style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px;margin-bottom:3px">
-              <select class="rq-f" data-f="project_id" id="rq-proj-${q.id}" onchange="_rqStash('${q.id}','project_id',this.value)" style="width:100%;padding:5px 8px;background:#06060e;border:1px solid #2a2a4a;color:#fff;border-radius:4px;font-size:12px">${_rqProjectOptions(_rqVal(q.id,'project_id',''))}</select></div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-            <span style="font-size:10px;color:#444;font-family:monospace">${escHtml(s.teller_name||'')} ${s.purchase_time?'· '+s.purchase_time:''}</span>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-sm btn-secondary" onclick="rqOpenEditor('${q.id}')" title="Open zoom / rotate / brightness / crop / split editor">&#127912; Edit Image</button>
-              <button class="btn btn-sm btn-secondary" onclick="rqRotate('${q.id}')" title="Rotate source 90° CW and re-detect (server-side, handles split pairs)">&#128260; Rotate</button>
-              ${q.pair_id?`<button class="btn btn-sm btn-secondary" onclick="rqMerge('${q.id}')" title="This was incorrectly split — merge halves back into one">&#8646; Merge</button>`:''}
-              <button class="btn btn-sm btn-secondary" onclick="rqSplit('${q.id}')" title="Force-split this image at the midpoint">&#9986; Force Split</button>
-              <button class="btn btn-sm btn-secondary" onclick="rqRescan('${q.id}')" title="Re-run OCR on this image">&#128257; Rescan</button>
-              <button class="btn btn-sm btn-primary" onclick="rqFile('${q.id}')">&#128194; File</button>
-              <button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">&#128465; Erase</button>
-            </div>
-          </div>
+    const rqInput="background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:6px 8px;color:#e0e0e0;font-size:12px;width:100%;box-sizing:border-box";
+    const rqInputSm=rqInput+";font-size:11px;padding:4px 7px";
+    if(reviewItems.length){
+      anEl.innerHTML=`
+        <div style="display:grid;grid-template-columns:${RQ_GRID_COLS};gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e;min-width:1180px">
+          <div>Preview</div><div>Vendor</div><div>Address</div><div>Date</div><div>Amount</div><div>Category</div><div>Payment · Notes</div><div>Project</div><div></div><div></div>
         </div>
-      </div>`;
-    }).join('')||'<div style="text-align:center;padding:14px;color:#444">No analyzed receipts pending review</div>';
+        <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:1180px">
+          ${reviewItems.map(q=>_rqRowHtml(q, rqInput, rqInputSm)).join('')}
+        </div>`;
+      // Register a project-picker context per queue row so the shared popup
+      // picker writes the chosen project into _rqEdits instead of PUTting to
+      // the (not-yet-existing) ahb_receipts row.
+      reviewItems.forEach(q=>{
+        _picCtx.set(q.id, {
+          getCurrent: ()=>{
+            let p={}; try{ p=JSON.parse(q.result_json||'{}'); }catch(e){}
+            return _rqVal(q.id,'project_id', (p.structured||{}).project_id||'');
+          },
+          onAssign: (pid)=>{ _rqStash(q.id,'project_id',pid); renderReceiptQueue(); }
+        });
+      });
+    } else {
+      anEl.innerHTML='<div style="text-align:center;padding:14px;color:#444">No analyzed receipts pending review</div>';
+    }
   }
 }
 
@@ -7808,6 +7877,10 @@ function _rqRowValues(qid){
 
 async function rqFile(qid){
   const v=_rqRowValues(qid);if(!v)return;
+  // Merge any stash-only fields (project_id picked from the popup picker
+  // never lands in a DOM input).
+  const stash=_rqEdits[qid]||{};
+  Object.keys(stash).forEach(k=>{ if(!(k in v) || v[k]===undefined || v[k]==='') v[k]=stash[k]; });
   const q=receiptQueue.find(x=>x.id===qid);
   let parsed={};try{parsed=JSON.parse(q.result_json||'{}');}catch(e){}
   const s=parsed.structured||{};

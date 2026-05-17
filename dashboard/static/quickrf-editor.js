@@ -54,10 +54,9 @@
 
     var stage = $$(
       '<div id="qrfStage" style="' +
-        'flex:1;position:relative;overflow:hidden;background:#06060c;' +
+        'flex:1;position:relative;overflow:auto;background:#06060c;' +
         'display:flex;align-items:center;justify-content:center;touch-action:none">' +
-        '<canvas id="qrfCanvas" style="display:block;max-width:100%;max-height:100%;' +
-          'touch-action:none;cursor:grab"></canvas>' +
+        '<canvas id="qrfCanvas" style="display:block;touch-action:none;cursor:grab"></canvas>' +
         '<div id="qrfCropOverlay" style="position:absolute;inset:0;pointer-events:none;display:none"></div>' +
       '</div>'
     );
@@ -70,6 +69,7 @@
           '<button class="qrf-btn" id="qrfRotL">⟲ Rotate L</button>' +
           '<button class="qrf-btn" id="qrfRotR">⟳ Rotate R</button>' +
           '<button class="qrf-btn" id="qrfCropTog">Crop ▢</button>' +
+          '<button class="qrf-btn active" id="qrfBwTog" title="Toggle B&W / Color preview">B&W</button>' +
         '</div>' +
         '<label style="display:flex;flex-direction:column;font-size:11px;color:#aaa">' +
           'Brightness <span id="qrfBriLbl" style="color:#eee">1.00</span>' +
@@ -108,6 +108,7 @@
     host.querySelector('#qrfRotL').addEventListener('click', function () { S.rotation = (S.rotation + 270) % 360; schedule(); });
     host.querySelector('#qrfRotR').addEventListener('click', function () { S.rotation = (S.rotation + 90) % 360; schedule(); });
     host.querySelector('#qrfCropTog').addEventListener('click', toggleCrop);
+    host.querySelector('#qrfBwTog').addEventListener('click', function () { setBwMode(!S.bw); });
     host.querySelector('#qrfBri').addEventListener('input', function (e) {
       S.brightness = parseFloat(e.target.value) || 1;
       host.querySelector('#qrfBriLbl').textContent = S.brightness.toFixed(2);
@@ -127,6 +128,9 @@
     var startCrop = null, startSplit = 0;
     var pinchDist0 = 0, pinchScale0 = 1;
     var pinchMid0 = null;
+    // Stage scroll position at drag start — pan now scrolls the stage so the
+    // visible window expands with zoom (canvas can overflow naturally).
+    var scrollX0 = 0, scrollY0 = 0;
 
     function pos(ev) {
       var rect = canvas.getBoundingClientRect();
@@ -158,17 +162,25 @@
         return;
       }
       dragging = true; dragKind = 'pan';
-      startX = p.x - S.panX;
-      startY = p.y - S.panY;
+      // Capture stage scroll at drag start; pan now scrolls the stage so the
+      // canvas can overflow with zoom and remain navigable.
+      var st = host.querySelector('#qrfStage');
+      scrollX0 = st.scrollLeft; scrollY0 = st.scrollTop;
+      var t = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+      startX = t.clientX; startY = t.clientY;
       canvas.style.cursor = 'grabbing';
     }
 
     function onMove(ev) {
+      // Tier-upgrade hook: also fires on pinch zoom.
+      if (dragKind === 'pinch') { maybeUpgradeTier(); }
       if (dragKind === 'pinch' && ev.touches && ev.touches.length === 2) {
         var t0 = ev.touches[0], t1 = ev.touches[1];
         var d = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
         var newZoom = clamp(pinchScale0 * (d / Math.max(1, pinchDist0)), 0.5, 8);
+        var prevZoom = S.zoom;
         S.zoom = newZoom;
+        zoomAroundClient(pinchMid0.x, pinchMid0.y, prevZoom, newZoom);
         schedule();
         return;
       }
@@ -176,9 +188,12 @@
       ev.preventDefault();
       var p = pos(ev);
       if (dragKind === 'pan') {
-        S.panX = p.x - startX;
-        S.panY = p.y - startY;
-        schedule();
+        // Translate drag into stage scroll so zoom can overflow the stage.
+        var tt = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+        var st = host.querySelector('#qrfStage');
+        st.scrollLeft = scrollX0 - (tt.clientX - startX);
+        st.scrollTop  = scrollY0 - (tt.clientY - startY);
+        return;
       } else if (dragKind === 'split') {
         var imgX = displayToImageX(p.x);
         S.splitColNatural = clamp(imgX, 1, S.imageW - 1);
@@ -199,8 +214,29 @@
     function onWheel(ev) {
       ev.preventDefault();
       var factor = ev.deltaY < 0 ? 1.1 : 0.9;
+      var prevZoom = S.zoom;
       S.zoom = clamp(S.zoom * factor, 0.5, 8);
+      // Keep the point under the cursor anchored as the canvas grows.
+      zoomAroundClient(ev.clientX, ev.clientY, prevZoom, S.zoom);
+      maybeUpgradeTier();
       schedule();
+    }
+
+    // After a zoom change, recompute the canvas size and shift stage scroll
+    // so the pixel the user was hovering stays under the cursor (instead of
+    // the receipt sliding off to the corner). cx/cy are client-space coords.
+    function zoomAroundClient(cx, cy, prevZoom, newZoom) {
+      var st = host.querySelector('#qrfStage');
+      var stRect = st.getBoundingClientRect();
+      // Position relative to the inner-scrollable origin
+      var contentX = (cx - stRect.left) + st.scrollLeft;
+      var contentY = (cy - stRect.top)  + st.scrollTop;
+      applyZoomLayout();
+      var ratio = newZoom / prevZoom;
+      var newContentX = contentX * ratio;
+      var newContentY = contentY * ratio;
+      st.scrollLeft = newContentX - (cx - stRect.left);
+      st.scrollTop  = newContentY - (cy - stRect.top);
     }
 
     stage.addEventListener('mousedown', onDown);
@@ -286,9 +322,59 @@
     });
   }
 
+  // Progressive resolution tiers. The first one (1600) is requested on open
+  // — already 3-5x larger than the raw 480x640 source so zoom 1-3 looks
+  // sharp. We upgrade as the user zooms further: pinch/wheel past 2.5x
+  // fetches the 2400 tier, past 4x fetches 3200, past 6x fetches 4000.
+  // Each tier is server-side Lanczos+UnsharpMask and disk-cached, so the
+  // second visit to the same tier is instant.
+  var HI_TIERS = [1600, 2400, 3200, 4000];
+  function tierForZoom(z) {
+    if (z >= 6) return HI_TIERS[3];
+    if (z >= 4) return HI_TIERS[2];
+    if (z >= 2.5) return HI_TIERS[1];
+    return HI_TIERS[0];
+  }
+  function _bwSuffix() { return (S.bw === false) ? '' : '&bw=1'; }
+  var _tierLoading = false;
+  function maybeUpgradeTier() {
+    if (S.mode === 'split') return; // split adjuster uses imgParent path
+    var want = tierForZoom(S.zoom);
+    if (want <= S.loadedTier || _tierLoading) return;
+    _tierLoading = true;
+    loadImage('/api/ahb/receipts/queue/image/' + S.qid + '?w=' + want + _bwSuffix())
+      .then(function (im) {
+        imgHalf = im;
+        S.loadedTier = want;
+        S.imageW = im.naturalWidth;
+        S.imageH = im.naturalHeight;
+        fitToStage();
+        schedule();
+      })
+      .catch(function () { /* keep current tier */ })
+      .then(function () { _tierLoading = false; });
+  }
+  // Switch between sharp-color and adaptive-threshold B&W. Reloads only the
+  // current tier so the swap is instant after the first per-mode fetch.
+  function setBwMode(on) {
+    S.bw = !!on;
+    var btn = host && host.querySelector('#qrfBwTog');
+    if (btn) btn.classList.toggle('active', S.bw);
+    var want = S.loadedTier || HI_TIERS[0];
+    loadImage('/api/ahb/receipts/queue/image/' + S.qid + '?w=' + want + _bwSuffix())
+      .then(function (im) {
+        imgHalf = im;
+        S.imageW = im.naturalWidth;
+        S.imageH = im.naturalHeight;
+        fitToStage();
+        schedule();
+      })
+      .catch(function () { /* keep current */ });
+  }
+
   function ensureParentImage() {
     if (imgParent) return Promise.resolve(imgParent);
-    return loadImage('/api/ahb/receipts/queue/image/' + S.qid + '?parent=1').then(function (i) {
+    return loadImage('/api/ahb/receipts/queue/image/' + S.qid + '?parent=1&w=' + HI_TIERS[1] + _bwSuffix()).then(function (i) {
       imgParent = i;
       return i;
     });
@@ -320,10 +406,33 @@
     var rotated = (S.rotation % 180) !== 0;
     var iw = rotated ? S.imageH : S.imageW;
     var ih = rotated ? S.imageW : S.imageH;
-    var scale = Math.min(sw / iw, sh / ih, 1);
-    canvas.width = Math.max(1, Math.floor(iw * scale));
-    canvas.height = Math.max(1, Math.floor(ih * scale));
-    S.fitScale = scale;
+    // baseScale = "zoom=1" fit-into-stage scale; cap at 1:1 so tiny images
+    // don't get cheaply blown up.
+    var baseScale = Math.min(sw / iw, sh / ih, 1);
+    S.fitScale = baseScale;
+    applyZoomLayout();
+  }
+
+  // Resize the canvas bitmap to match (image × fitScale × zoom). With the
+  // stage set to overflow:auto, zooming in grows the canvas past the stage
+  // edges and the user gets real scrollbars to navigate the larger receipt
+  // instead of a clipped fixed window. Capped at 8000px on the long edge
+  // so we don't allocate gigantic bitmaps if Serge cranks the zoom.
+  function applyZoomLayout() {
+    if (!canvas) return;
+    var rotated = (S.rotation % 180) !== 0;
+    var iw = rotated ? S.imageH : S.imageW;
+    var ih = rotated ? S.imageW : S.imageH;
+    var dw = iw * S.fitScale * S.zoom;
+    var dh = ih * S.fitScale * S.zoom;
+    var MAX = 8000;
+    var longEdge = Math.max(dw, dh);
+    if (longEdge > MAX) {
+      var clamp = MAX / longEdge;
+      dw *= clamp; dh *= clamp;
+    }
+    canvas.width = Math.max(1, Math.floor(dw));
+    canvas.height = Math.max(1, Math.floor(dh));
   }
 
   function schedule() {
@@ -338,11 +447,13 @@
     ctx.save();
     ctx.fillStyle = '#06060c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.translate(canvas.width / 2 + S.panX, canvas.height / 2 + S.panY);
-    ctx.scale(S.zoom, S.zoom);
+    // Canvas dims already encode fitScale × zoom (see applyZoomLayout);
+    // just center and draw at canvas size. Pan is handled by stage scroll.
+    ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate(S.rotation * Math.PI / 180);
-    var dw = S.imageW * S.fitScale;
-    var dh = S.imageH * S.fitScale;
+    var rotated = (S.rotation % 180) !== 0;
+    var dw = rotated ? canvas.height : canvas.width;
+    var dh = rotated ? canvas.width  : canvas.height;
     ctx.filter = 'brightness(' + S.brightness + ') contrast(' + S.contrast + ')';
     ctx.drawImage(src, -dw / 2, -dh / 2, dw, dh);
     ctx.filter = 'none';
@@ -566,7 +677,9 @@
       splitColNatural: null,
       imageW: 1,
       imageH: 1,
-      fitScale: 1
+      fitScale: 1,
+      loadedTier: 0, // current resolution tier (px wide); 0 until first load
+      bw: true       // B&W default per Serge — toggle with Color/BW button
     };
     host.querySelector('#qrfBri').value = '1';
     host.querySelector('#qrfCon').value = '1';
@@ -574,8 +687,10 @@
     host.querySelector('#qrfConLbl').textContent = '1.00';
     host.querySelector('#qrfCropTog').classList.remove('active');
     host.style.display = 'flex';
-    loadImage('/api/ahb/receipts/queue/image/' + qid).then(function (im) {
+    // Open with first tier + B&W default. Higher tiers fetched on zoom.
+    loadImage('/api/ahb/receipts/queue/image/' + qid + '?w=' + HI_TIERS[0] + _bwSuffix()).then(function (im) {
       imgHalf = im;
+      S.loadedTier = HI_TIERS[0];
       afterImageReady(true);
     }).catch(function (e) {
       alert('Could not load image: ' + e.message);

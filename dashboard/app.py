@@ -10583,9 +10583,80 @@ def api_ahb_receipts_queue_adjust_split(qid):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+def _enhance_receipt_image(src_path, dst_path, target_long_edge, bw=False):
+    """Receipt preview enhancement, fully local. Minimal-impact pipeline:
+      1. EXIF-transpose via PIL.
+      2. Lanczos upscale (cv2.INTER_LANCZOS4) to target_long_edge.
+      3. Strong unsharp mask — restore the bite Lanczos smooths off, and
+         compensate for the soft Telegram-JPEG source.
+      4. Mild CLAHE on the L channel (clipLimit=1.2) for uneven lighting.
+      5. bw=True: median blur 3 → adaptive Gaussian threshold sized to
+         receipt char height.
+    Earlier versions added fastNlMeansDenoisingColored before upscale —
+    pulled out because it smeared text into haze on Telegram-compressed
+    sources. Same for bilateralFilter. Without active denoising the result
+    keeps Telegram's compression grain but text stays legible.
+    Saves JPEG quality 92, no chroma subsampling.
+    """
+    import cv2
+    import numpy as np
+    from PIL import Image, ImageOps
+    pil_im = Image.open(src_path)
+    try:
+        pil_im = ImageOps.exif_transpose(pil_im)
+    except Exception:
+        pass
+    pil_im = pil_im.convert('RGB')
+    img = cv2.cvtColor(np.array(pil_im), cv2.COLOR_RGB2BGR)
+
+    # 2) Lanczos upscale
+    h, w = img.shape[:2]
+    long_edge = max(h, w)
+    if target_long_edge > long_edge:
+        scale = target_long_edge / long_edge
+        img = cv2.resize(img, (max(1, int(w * scale)), max(1, int(h * scale))),
+                         interpolation=cv2.INTER_LANCZOS4)
+
+    # 3) Light unsharp — single pass, sigma 1.5, amount 0.35. Strong enough
+    # to restore Lanczos smoothing but doesn't brighten or harden edges.
+    # (Previous two-pass version made everything look posterized; serge
+    # complained 'too bright and too sharp'.)
+    blur = cv2.GaussianBlur(img, (0, 0), 1.5)
+    img = cv2.addWeighted(img, 1.35, blur, -0.35, 0)
+
+    # CLAHE intentionally removed — was lifting whites and crushing blacks
+    # into a harsh, posterized look. The source contrast is fine on its own.
+
+    if bw:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # Mild pre-blur knocks out grain without thinning text.
+        gray = cv2.GaussianBlur(gray, (0, 0), 0.7)
+        # Otsu-on-blocks: pick block ≈3× char height; C=8 retains stroke
+        # weight (was 14 — too aggressive, made text look hollow).
+        block = max(41, ((target_long_edge // 30) | 1))
+        thresh = cv2.adaptiveThreshold(
+            gray, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            block, 8,
+        )
+        img = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+
+    cv2.imwrite(dst_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 92,
+                                int(cv2.IMWRITE_JPEG_OPTIMIZE), 1])
+
+
 @app.route('/api/ahb/receipts/queue/image/<qid>', methods=['GET'])
 def api_ahb_receipts_queue_image(qid):
-    """Serve a queue item's image. ?parent=1 serves the original (pre-split) parent."""
+    """Serve a queue item's image.
+      ?parent=1   — original pre-split parent
+      ?w=<int>    — Lanczos-upscaled + unsharp-masked variant at the given
+                    long-edge width. Cached to <dir>/_hi/<qid>_w<N>.jpg so
+                    we don't re-encode on every preview render. Used by the
+                    editor and lightbox so pinch/wheel zoom has real pixels
+                    to work with instead of browser bicubic on a 480x640
+                    Telegram-compressed source.
+    """
     try:
         conn = _ahb_db()
         row = conn.execute(
@@ -10598,6 +10669,31 @@ def api_ahb_receipts_queue_image(qid):
         path = row['parent_image_path'] if want_parent else row['image_path']
         if not path or not os.path.exists(path):
             return 'Not found', 404
+
+        try:
+            w_req = int(request.args.get('w', '0') or 0)
+        except (TypeError, ValueError):
+            w_req = 0
+        w_req = max(0, min(4000, w_req))
+        bw_req = request.args.get('bw') in ('1', 'true', 'yes')
+
+        if w_req > 0:
+            try:
+                cache_dir = os.path.join(os.path.dirname(path), '_hi')
+                os.makedirs(cache_dir, exist_ok=True)
+                kind = 'parent' if want_parent else 'crop'
+                bw_suffix = '_bw' if bw_req else ''
+                cache_name = f"{qid}_{kind}_w{w_req}{bw_suffix}.jpg"
+                cache_path = os.path.join(cache_dir, cache_name)
+                src_mtime = os.path.getmtime(path)
+                if (not os.path.exists(cache_path)) or os.path.getmtime(cache_path) < src_mtime:
+                    _enhance_receipt_image(path, cache_path, w_req, bw=bw_req)
+                return send_from_directory(cache_dir, cache_name)
+            except Exception:
+                # Any failure → fall back to the raw source. Better blurry
+                # than blank.
+                pass
+
         return send_from_directory(os.path.dirname(path), os.path.basename(path))
     except Exception as e:
         return str(e), 500
