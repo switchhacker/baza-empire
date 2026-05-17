@@ -24,11 +24,14 @@ from pathlib import Path
 LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
 LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "baza-litellm-internal")
 OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-# gemma3:27b-cloud beats local vision models for receipts in head-to-head
-# testing (consistent totals, valid subtotal+tax math, accurate dates).
-# qwen3-vl is local fallback for when cloud is down; llava is last resort.
-OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "gemma3:27b-cloud")
-OLLAMA_VISION_FALLBACK = os.environ.get("OLLAMA_VISION_FALLBACK", "qwen3-vl:latest")
+# Local-only by Serge's rule (feedback_no_outside_apis): nothing in the OCR
+# path may depend on a cloud service. Primary is qwen3-vl (best local
+# accuracy); llava is a backup for when qwen3-vl errors out. Cloud models
+# (gemma3:27b-cloud, gpt-4o) are still reachable for one-off opt-in by
+# setting OLLAMA_VISION_MODEL or RECEIPT_OCR_ALLOW_CLOUD=1.
+OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:latest")
+OLLAMA_VISION_FALLBACK = os.environ.get("OLLAMA_VISION_FALLBACK", "llava:13b")
+ALLOW_CLOUD = os.environ.get("RECEIPT_OCR_ALLOW_CLOUD", "0") in ("1", "true", "yes")
 
 EMPTY_STRUCTURED = {
     "store_name": "",
@@ -594,8 +597,13 @@ def run_llm_analysis(image_path: str) -> dict:
         except Exception as e:
             last_err = e
 
-    # 3) Cloud as last resort, with the same usefulness gate so a text-only
-    # routing accident can't poison the receipt with zeros.
+    # 3) Cloud as opt-in last resort. Off by default — Serge's rule is
+    # local-only for the empire's own tools. Set RECEIPT_OCR_ALLOW_CLOUD=1
+    # to re-enable the LiteLLM gpt-4o fallback.
+    if not ALLOW_CLOUD:
+        if last_err:
+            raise last_err
+        raise RuntimeError("local vision returned no usable data (cloud disabled)")
     try:
         payload = {
             "model": "gpt-4o",
