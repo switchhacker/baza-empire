@@ -298,6 +298,9 @@
   <!-- Subcategory tabs (shown for Media / Code / Docs) -->
   <div class="hub-subtabs" id="subTabs"></div>
 
+  <!-- MD family chips (shown whenever current view contains .md files) -->
+  <div class="hub-subtabs" id="mdFamilyChips"></div>
+
   <!-- Toolbar -->
   <div class="toolbar">
     <button class="drawer-toggle" onclick="toggleDrawer()" aria-label="Filters">&#9776;</button>
@@ -552,7 +555,7 @@ function toggleDrawer(){ document.querySelector('.sidebar').classList.toggle('op
 function closeDrawer(){ document.querySelector('.sidebar').classList.remove('open'); document.getElementById('drawerBackdrop').classList.remove('open'); }
 document.addEventListener('DOMContentLoaded',()=>{ const sb=document.querySelector('.sidebar'); if(sb) sb.addEventListener('click',e=>{ if(window.innerWidth<=800 && (e.target.closest('.proj-item')||e.target.closest('.cat-item'))) closeDrawer(); }); });
 
-let allFiles=[], currentProject='', currentTab='all', currentCat='all', currentAgent='', currentSubcat='all', uploadQueue=[];
+let allFiles=[], currentProject='', currentTab='all', currentCat='all', currentAgent='', currentSubcat='all', currentMdFamily='', uploadQueue=[];
 /* Multi-select state for share / download / erase actions on the gallery. */
 let dhSelectMode = false;
 const dhSelectedKeys = new Set();
@@ -630,6 +633,25 @@ function getCategory(f){
   if(n.includes('research')||n.includes('analysis'))return 'research';
   return 'other';
 }
+function getMdFamily(f){
+  // Group .md files by their leading "family" prefix so the same
+  // daily reports (brand_monitor_2026-05-15.md, infra_health_…, etc.)
+  // collapse onto one chip. Returns '' for non-MD files.
+  if((f.ext||'').toLowerCase()!=='.md') return '';
+  let n=((f.basename||f.name||'')+'').toLowerCase().replace(/\.md$/,'');
+  // Strip trailing date/timestamp suffixes
+  n=n.replace(/[_-]\d{4}-\d{2}-\d{2}([_-].*)?$/,'');
+  n=n.replace(/[_-]\d{8}[_-]\d{4}([_-].*)?$/,'');
+  n=n.replace(/[_-]\d{8}([_-].*)?$/,'');
+  // Strip leading YYYY-MM-DD_ prefix
+  n=n.replace(/^\d{4}-\d{2}-\d{2}[_-]/,'');
+  return n||'misc';
+}
+const MD_FAMILY_LABELS={
+  brand_monitor:'Brand Monitor',code_review:'Code Reviews',infra_health:'Infra Health',
+  task_manager:'Task Manager',market_watch:'Market Watch',financial_review:'Financial Review',
+  infra_report:'Infra Reports',tech_radar:'Tech Radar',compliance:'Compliance'
+};
 function fuzzyText(s){return (s||'').toLowerCase().replace(/[_\-\/.]+/g,' ').replace(/\s+/g,' ').trim()}
 function matchesQuery(f,q){
   if(!q)return true;
@@ -659,7 +681,7 @@ async function loadFiles(){
     let url='/api/artifacts';
     if(currentProject)url+='?project_id='+encodeURIComponent(currentProject);
     const r=await fetch(url);allFiles=await r.json();
-    allFiles.forEach(f=>f.category=getCategory(f));
+    allFiles.forEach(f=>{f.category=getCategory(f);f.md_family=getMdFamily(f);});
     renderAll();
   }catch(e){console.error(e)}
 }
@@ -756,7 +778,35 @@ function renderAll(){
   if(currentAgent)filtered=filtered.filter(f=>f.agent_id===currentAgent);
   const q=(document.getElementById('searchBox').value||'').trim();
   if(q)filtered=filtered.filter(f=>matchesQuery(f,q));
+  // Compute MD family chips off the pre-family-filter pool so the chips
+  // reflect what's available in the current view (after tab/agent/search).
+  renderMdFamilyChips(filtered);
+  if(currentMdFamily)filtered=filtered.filter(f=>f.md_family===currentMdFamily);
+  // Newest → oldest by modification time. `modified` is "YYYY-MM-DD HH:MM"
+  // which sorts lexicographically.
+  filtered.sort((a,b)=>(b.modified||'').localeCompare(a.modified||''));
   renderStats();renderProjects();renderAgentSidebar();renderCatSidebar();renderSubTabs();renderGrid(filtered);renderTabCounts();
+}
+
+function renderMdFamilyChips(pool){
+  const el=document.getElementById('mdFamilyChips');
+  if(!el) return;
+  const mds=pool.filter(f=>(f.ext||'').toLowerCase()==='.md');
+  if(mds.length<2){el.classList.remove('show');el.innerHTML='';return;}
+  const counts={};
+  mds.forEach(f=>{const k=f.md_family||'misc';counts[k]=(counts[k]||0)+1;});
+  const fams=Object.keys(counts);
+  if(fams.length<2){el.classList.remove('show');el.innerHTML='';return;}
+  // Sort by count desc, then alpha
+  fams.sort((a,b)=>counts[b]-counts[a]||a.localeCompare(b));
+  const label=(k)=>MD_FAMILY_LABELS[k]||k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  let html=`<div class="hub-subtab ${!currentMdFamily?'active':''}" onclick="setMdFamily('')">\u{1F4C4} All MD <span class="sc-count">${mds.length}</span></div>`;
+  fams.forEach(k=>{
+    const active=currentMdFamily===k?'active':'';
+    html+=`<div class="hub-subtab ${active}" onclick="setMdFamily('${k}')">${escHtml(label(k))} <span class="sc-count">${counts[k]}</span></div>`;
+  });
+  el.innerHTML=html;
+  el.classList.add('show');
 }
 
 function renderStats(){
@@ -1035,14 +1085,16 @@ function renderGrid(files){
 function setTab(tab,el){
   currentTab=tab;
   currentSubcat='all';
+  currentMdFamily='';
   document.querySelectorAll('.hub-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   renderAll();
 }
-function setSubcat(key){currentSubcat=key;renderAll()}
-function setProject(p){currentProject=p;loadFiles()}
-function setCat(c){currentCat=c;renderAll()}
-function setAgent(a){currentAgent=a;renderAll()}
+function setSubcat(key){currentSubcat=key;currentMdFamily='';renderAll()}
+function setProject(p){currentProject=p;currentMdFamily='';loadFiles()}
+function setCat(c){currentCat=c;currentMdFamily='';renderAll()}
+function setAgent(a){currentAgent=a;currentMdFamily='';renderAll()}
+function setMdFamily(k){currentMdFamily=k;renderAll()}
 function applyFilters(){renderAll()}
 
 // Image-index status: "42/257 captioned (215 pending)" with live progress
