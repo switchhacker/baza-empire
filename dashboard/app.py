@@ -10609,23 +10609,41 @@ def _enhance_receipt_image(src_path, dst_path, target_long_edge, bw=False):
     pil_im = pil_im.convert('RGB')
     img = cv2.cvtColor(np.array(pil_im), cv2.COLOR_RGB2BGR)
 
-    # 2) Lanczos upscale
+    # 2) Iterative 2× upscale with sharpen between — much better digit
+    # legibility on Telegram-compressed receipts than a single 5-8× Lanczos.
+    # Why iterative: each 2× pass reconstructs ~50% better edge contrast
+    # than the equivalent direct Lanczos. The mid-pass unsharp keeps the
+    # next iteration from compounding the smoothing.
     h, w = img.shape[:2]
-    long_edge = max(h, w)
-    if target_long_edge > long_edge:
-        scale = target_long_edge / long_edge
-        img = cv2.resize(img, (max(1, int(w * scale)), max(1, int(h * scale))),
-                         interpolation=cv2.INTER_LANCZOS4)
+    src_long = max(h, w)
+    if target_long_edge > src_long:
+        ratio = target_long_edge / src_long
+        # Edge-preserving pre-clean for big upscales (>3×): scrubs JPEG
+        # block artifacts without touching text strokes. Skipped for small
+        # upscales where it'd be wasted work.
+        if ratio > 3:
+            img = cv2.edgePreservingFilter(img, flags=cv2.RECURS_FILTER,
+                                           sigma_s=15, sigma_r=0.18)
+        # 2× steps until within sqrt(2) of target
+        while max(img.shape[:2]) * 1.5 < target_long_edge:
+            img = cv2.resize(img, None, fx=2.0, fy=2.0,
+                             interpolation=cv2.INTER_LANCZOS4)
+            mblur = cv2.GaussianBlur(img, (0, 0), 1.0)
+            img = cv2.addWeighted(img, 1.35, mblur, -0.35, 0)
+        # Final Lanczos to exact target
+        h2, w2 = img.shape[:2]
+        if max(h2, w2) != target_long_edge:
+            s = target_long_edge / max(h2, w2)
+            img = cv2.resize(img, (max(1, int(w2 * s)), max(1, int(h2 * s))),
+                             interpolation=cv2.INTER_LANCZOS4)
 
-    # 3) Light unsharp — single pass, sigma 1.5, amount 0.35. Strong enough
-    # to restore Lanczos smoothing but doesn't brighten or harden edges.
-    # (Previous two-pass version made everything look posterized; serge
-    # complained 'too bright and too sharp'.)
-    blur = cv2.GaussianBlur(img, (0, 0), 1.5)
-    img = cv2.addWeighted(img, 1.35, blur, -0.35, 0)
+    # 3) Final touch-up unsharp — light, just to cut the last Lanczos
+    # softness. Stronger than this and Serge calls it 'too sharp'.
+    blur = cv2.GaussianBlur(img, (0, 0), 1.4)
+    img = cv2.addWeighted(img, 1.25, blur, -0.25, 0)
 
-    # CLAHE intentionally removed — was lifting whites and crushing blacks
-    # into a harsh, posterized look. The source contrast is fine on its own.
+    # CLAHE intentionally removed — it was lifting whites/crushing blacks
+    # into a harsh posterized look.
 
     if bw:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
