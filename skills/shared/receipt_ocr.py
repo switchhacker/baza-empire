@@ -17,6 +17,7 @@ import sys
 import json
 import re
 import base64
+import io
 import requests
 from pathlib import Path
 
@@ -481,6 +482,46 @@ def _vision_result_is_useful(parsed: dict | None) -> bool:
     return False
 
 
+def _preprocess_for_vision(image_path: str) -> tuple[bytes, str]:
+    """Upscale small/blurry receipts and boost contrast before sending to a
+    vision model. Returns (jpeg_bytes, mime_type).
+
+    Many queue images arrive at ~480x640 (Telegram-compressed) where small text
+    like dates and totals is only a handful of pixels per glyph — the vision
+    model then misreads digits ('3' vs '0', '8' vs '3') or picks up unrelated
+    numbers like the return-policy expiration date instead of the purchase
+    date. Upscaling with Lanczos + unsharp mask + a mild contrast bump gives
+    the model more patches per character.
+
+    Falls back to the raw file bytes on any error — preprocessing must never
+    block analysis."""
+    try:
+        from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+        im = Image.open(image_path)
+        try:
+            im = ImageOps.exif_transpose(im)
+        except Exception:
+            pass
+        im = im.convert('RGB')
+        w, h = im.size
+        target_long = 1800
+        long_edge = max(w, h)
+        if long_edge < target_long:
+            scale = target_long / long_edge
+            im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            im = im.filter(ImageFilter.UnsharpMask(radius=1.5, percent=130, threshold=2))
+            im = ImageEnhance.Contrast(im).enhance(1.15)
+        buf = io.BytesIO()
+        im.save(buf, 'JPEG', quality=95, subsampling=0)
+        return buf.getvalue(), 'image/jpeg'
+    except Exception:
+        img_path = Path(image_path)
+        suffix = img_path.suffix.lower().lstrip(".")
+        mime_map = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png",
+                    "gif": "gif", "webp": "webp", "bmp": "bmp"}
+        return img_path.read_bytes(), f"image/{mime_map.get(suffix, 'jpeg')}"
+
+
 def run_llm_analysis(image_path: str) -> dict:
     """Extract structured fields from a receipt image.
 
@@ -493,12 +534,8 @@ def run_llm_analysis(image_path: str) -> dict:
 
     Raises if every path returns useless output, so the caller surfaces the
     error in `warnings` instead of writing zeros into the receipt."""
-    img_path = Path(image_path)
-    suffix = img_path.suffix.lower().lstrip(".")
-    mime_map = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "gif": "gif", "webp": "webp", "bmp": "bmp"}
-    mime_type = f"image/{mime_map.get(suffix, 'jpeg')}"
-
-    img_b64 = base64.b64encode(img_path.read_bytes()).decode("utf-8")
+    img_bytes, mime_type = _preprocess_for_vision(image_path)
+    img_b64 = base64.b64encode(img_bytes).decode("utf-8")
 
     vendor_hint = _top_vendors_hint()
 
@@ -512,7 +549,14 @@ def run_llm_analysis(image_path: str) -> dict:
         "- store_location: full street address + city/state if printed\n"
         "- teller_name: cashier/server name; often labeled Cashier/CSHR/Server/Op/By; "
         "  strip leading IDs; leave empty if not clearly a person's name\n"
-        "- purchase_date: YYYY-MM-DD (the date printed on the receipt, not today)\n"
+        "- purchase_date: YYYY-MM-DD. The date the customer PAID — usually printed\n"
+        "  near the top, next to the time/register number, OR adjacent to the\n"
+        "  total/payment line at the bottom. NEVER use a 'RETURN POLICY EXPIRES',\n"
+        "  'WARRANTY UNTIL', 'GOOD THROUGH', 'VALID UNTIL', or any future-dated\n"
+        "  expiration as the purchase_date. If you only see an expiration date,\n"
+        "  return empty. Prefer dates printed with the time-of-day (08:40 AM\n"
+        "  next to 03/27/26 is the purchase). Read each digit carefully: 0/3/8\n"
+        "  and 1/7 look alike on faded thermal paper.\n"
         "- purchase_time: HH:MM (24h) if printed\n"
         "- items: [{name, quantity, price}]\n"
         "- subtotal: pre-tax subtotal as number\n"
