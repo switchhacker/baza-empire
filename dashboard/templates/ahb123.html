@@ -5196,6 +5196,7 @@ function renderProjects(projects){
     tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">&#128194;</div><h3>No projects found</h3><p>Create your first project</p></div></td></tr>';
     return;
   }
+  projects = projects.slice().sort(_projectSortByStatusThenDate);
   tbody.innerHTML=projects.map(p=>{
     const due=_isBalanceDue(p);
     return `
@@ -6390,6 +6391,22 @@ function _normalizeStatus(s){
   if(lc==='completed'||lc==='complete'||lc==='paid'||lc==='done'||lc==='closed') return 'completed';
   return 'planning';
 }
+/* Sort bucket: Planning first, then In Progress, then Completed, then other.
+   Within a bucket, newest start_date wins (falls back to created_at). */
+function _projectStatusBucket(p){
+  const n=_normalizeStatus(p&&p.status);
+  if(n==='planning') return 0;
+  if(n==='in_progress') return 1;
+  if(n==='completed') return 2;
+  return 3;
+}
+function _projectSortByStatusThenDate(a,b){
+  const ba=_projectStatusBucket(a), bb=_projectStatusBucket(b);
+  if(ba!==bb) return ba-bb;
+  const da=(a.start_date||a.created_at||'');
+  const db=(b.start_date||b.created_at||'');
+  return db.localeCompare(da);
+}
 /* Returns true if the project is Completed but its linked invoice still
    has money outstanding — the UI surfaces this as a red BALANCE DUE pill. */
 function _isBalanceDue(p){
@@ -6450,7 +6467,7 @@ function renderProjectByYear(preFiltered){
 
   // Render each year as an accordion-style section that mimics Shaski's stacked groups
   container.innerHTML = years.map(yr=>{
-    const projs = byYear[yr].slice().sort((a,b)=>(b.start_date||'').localeCompare(a.start_date||''));
+    const projs = byYear[yr].slice().sort(_projectSortByStatusThenDate);
     const totalVal = projs.reduce((sum,p)=>sum+(p.value||p.budget_high||0),0);
     const completed = projs.filter(p=>_isCompletedProjectStatus(p.status)).length;
     const inProgress = projs.filter(p=>_isInProgressProjectStatus(p.status)).length;

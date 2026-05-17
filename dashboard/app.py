@@ -10609,56 +10609,53 @@ def _enhance_receipt_image(src_path, dst_path, target_long_edge, bw=False):
     pil_im = pil_im.convert('RGB')
     img = cv2.cvtColor(np.array(pil_im), cv2.COLOR_RGB2BGR)
 
-    # 2) Iterative 2× upscale with sharpen between — much better digit
+    # 2) Iterative 2× upscale with mid-pass sharpen — much better digit
     # legibility on Telegram-compressed receipts than a single 5-8× Lanczos.
-    # Why iterative: each 2× pass reconstructs ~50% better edge contrast
-    # than the equivalent direct Lanczos. The mid-pass unsharp keeps the
-    # next iteration from compounding the smoothing.
+    # Mid-pass unsharp is dialed down vs earlier versions so the B&W
+    # threshold below doesn't grab unsharp halos as black.
     h, w = img.shape[:2]
     src_long = max(h, w)
     if target_long_edge > src_long:
         ratio = target_long_edge / src_long
-        # Edge-preserving pre-clean for big upscales (>3×): scrubs JPEG
-        # block artifacts without touching text strokes. Skipped for small
-        # upscales where it'd be wasted work.
         if ratio > 3:
             img = cv2.edgePreservingFilter(img, flags=cv2.RECURS_FILTER,
                                            sigma_s=15, sigma_r=0.18)
-        # 2× steps until within sqrt(2) of target
         while max(img.shape[:2]) * 1.5 < target_long_edge:
             img = cv2.resize(img, None, fx=2.0, fy=2.0,
                              interpolation=cv2.INTER_LANCZOS4)
             mblur = cv2.GaussianBlur(img, (0, 0), 1.0)
-            img = cv2.addWeighted(img, 1.35, mblur, -0.35, 0)
-        # Final Lanczos to exact target
+            img = cv2.addWeighted(img, 1.18, mblur, -0.18, 0)
         h2, w2 = img.shape[:2]
         if max(h2, w2) != target_long_edge:
             s = target_long_edge / max(h2, w2)
             img = cv2.resize(img, (max(1, int(w2 * s)), max(1, int(h2 * s))),
                              interpolation=cv2.INTER_LANCZOS4)
 
-    # 3) Final touch-up unsharp — light, just to cut the last Lanczos
-    # softness. Stronger than this and Serge calls it 'too sharp'.
+    # 3) Light final unsharp — kept gentle so threshold doesn't capture
+    # halos as black strokes (= 'pasty/leaky ink').
     blur = cv2.GaussianBlur(img, (0, 0), 1.4)
-    img = cv2.addWeighted(img, 1.25, blur, -0.25, 0)
-
-    # CLAHE intentionally removed — it was lifting whites/crushing blacks
-    # into a harsh posterized look.
+    img = cv2.addWeighted(img, 1.15, blur, -0.15, 0)
 
     if bw:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # Mild pre-blur knocks out grain without thinning text.
         gray = cv2.GaussianBlur(gray, (0, 0), 0.7)
-        # Otsu-on-blocks: pick block ≈3× char height; C=8 retains stroke
-        # weight (was 14 — too aggressive, made text look hollow).
+        # Block ≈3× char height at target res; C=12 reduces the aggressive
+        # black capture that was making strokes merge into globs (was 8).
         block = max(41, ((target_long_edge // 30) | 1))
         thresh = cv2.adaptiveThreshold(
             gray, 255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
-            block, 8,
+            block, 12,
         )
         img = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+        # PNG lossless — JPEG q=92 was ringing on every binary transition
+        # (that was the actual 'leaky ink' halo, not the threshold itself).
+        png_path = dst_path
+        if not png_path.lower().endswith('.png'):
+            png_path = os.path.splitext(dst_path)[0] + '.png'
+        cv2.imwrite(png_path, img, [int(cv2.IMWRITE_PNG_COMPRESSION), 3])
+        return
 
     cv2.imwrite(dst_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 92,
                                 int(cv2.IMWRITE_JPEG_OPTIMIZE), 1])
@@ -10701,7 +10698,10 @@ def api_ahb_receipts_queue_image(qid):
                 os.makedirs(cache_dir, exist_ok=True)
                 kind = 'parent' if want_parent else 'crop'
                 bw_suffix = '_bw' if bw_req else ''
-                cache_name = f"{qid}_{kind}_w{w_req}{bw_suffix}.jpg"
+                # PNG for B&W (lossless on binary text, no JPEG DCT
+                # ringing along stroke edges); JPEG for color.
+                ext = '.png' if bw_req else '.jpg'
+                cache_name = f"{qid}_{kind}_w{w_req}{bw_suffix}{ext}"
                 cache_path = os.path.join(cache_dir, cache_name)
                 src_mtime = os.path.getmtime(path)
                 if (not os.path.exists(cache_path)) or os.path.getmtime(cache_path) < src_mtime:
