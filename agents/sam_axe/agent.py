@@ -876,7 +876,7 @@ class SamAxe(BaseAgent):
             await app.start()
             asyncio.ensure_future(self._heartbeat_loop())
             asyncio.ensure_future(self._artifact_context_loop())
-            await app.updater.start_polling(drop_pending_updates=True)
+            await app.updater.start_polling(drop_pending_updates=False)
             try:
                 await asyncio.Event().wait()
             finally:
