@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-05-16 Receipt OCR — fix totals/dates returning zero (LiteLLM routing gpt-4o → text-only model)
-- 2026-05-16 Receipt OCR — promote gemma3:27b-cloud to primary; add math self-correction
-- 2026-05-15 ahb123 — Add Project modal: calendar range, client contact, draft autosave
-- 2026-05-15 ahb123 — revert Add Project date selector to plain inputs
-- 2026-05-15 ahb123 — inline editable Start/End dates on each project row
-- 2026-05-15 ahb123 — unified click-to-pick project timeframe (modal + edit + list)
-- 2026-05-15 ahb123 — persistent custom scopes in project modal datalist
-- 2026-05-15 Baza image picker — pick from Data Hub anywhere an image upload exists
-- 2026-05-15 ahb123 — drag-and-drop projects between year groups
-- 2026-05-15 ahb123 — Uncle Sam quick year tabs (current + past 3)
-- 2026-05-15 Vision tab fix + queue backfill + Sam burst-batch reply
-- 2026-05-15 Vision thumbnails — 403 fix
-- 2026-05-15 ahb123 — fix: year pills on DASHBOARD tab (not Uncle Sam)
-- 2026-05-15 ahb123 — Billing: completed projects grouped by year
-- 2026-05-15 Inbound is now public; Vault is the only private location; Sam handles all file types
+- 2026-05-17 Sam — drop_pending_updates flipped True → False
+- 2026-05-17 Receipt OCR — investigate inaccurate dates; user says queue images are low-quality vs high-quality…
+- 2026-05-17 Receipt OCR — date accuracy fix: upscale 480px→1800px + tightened prompt
+- 2026-05-17 ahb123 Baza picker — z-index fix
+- 2026-05-17 QuickRF Analyzed bin — fix: typing in total/date/store fields gets eaten
+- 2026-05-17 QuickRF Analyzed bin — template cache made fix invisible until dashboard restart
+- 2026-05-17 QuickRF Analyzed bin — fix: edits revert to OCR value after blur
+- 2026-05-17 ahb123 Baza picker — real root cause: nested inside #tab-receptss
+- 2026-05-17 Saved session — Baza picker fix + lessons learned to memory
+- 2026-05-17 Data Hub — newest-first sort + MD family chips
+- 2026-05-17 QuickRF Analyzed bin restyled + project picker reorder
+- 2026-05-17 QuickRF Analyzed — fixed flickering broken row at top
+- 2026-05-17 Scout Reeves — Super Mode rewrite
+- 2026-05-17 Receipt preview — progressive Lanczos tiers + LOCAL-ONLY policy
+- 2026-05-17 Editor — zoom-expand + drag-to-pan + cv2 enhancement pipeline
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
