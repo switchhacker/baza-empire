@@ -10637,25 +10637,28 @@ def _enhance_receipt_image(src_path, dst_path, target_long_edge, bw=False):
     img = cv2.addWeighted(img, 1.15, blur, -0.15, 0)
 
     if bw:
+        # High-contrast grayscale, NOT adaptive-threshold binarization.
+        # Threshold gave us: thick blob strokes (JPEG mush captured as
+        # black), broken characters (uneven darkness), cartoonized cel-
+        # shaded edges at zoom. Grayscale keeps antialiasing intact —
+        # text stays readable at every zoom level and there are no hard
+        # transitions for JPEG to ring on.
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (0, 0), 0.7)
-        # Block ≈3× char height at target res; C=12 reduces the aggressive
-        # black capture that was making strokes merge into globs (was 8).
-        block = max(41, ((target_long_edge // 30) | 1))
-        thresh = cv2.adaptiveThreshold(
-            gray, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            block, 12,
-        )
-        img = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
-        # PNG lossless — JPEG q=92 was ringing on every binary transition
-        # (that was the actual 'leaky ink' halo, not the threshold itself).
-        png_path = dst_path
-        if not png_path.lower().endswith('.png'):
-            png_path = os.path.splitext(dst_path)[0] + '.png'
-        cv2.imwrite(png_path, img, [int(cv2.IMWRITE_PNG_COMPRESSION), 3])
-        return
+        # Gentle local-contrast lift — uneven receipt lighting flattened
+        # without crushing whites or lifting blacks (CLAHE was removed
+        # from the color path for that reason; here we keep it mild).
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        # Percentile contrast stretch — pin 2nd %ile to 0, 98th %ile to
+        # 255. Makes the page read as black-text-on-white without the
+        # all-or-nothing failure mode of thresholding.
+        lo, hi = np.percentile(gray, [2, 98])
+        if hi > lo + 1:
+            gray = np.clip(
+                (gray.astype(np.float32) - lo) * (255.0 / (hi - lo)),
+                0, 255,
+            ).astype(np.uint8)
+        img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     cv2.imwrite(dst_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), 92,
                                 int(cv2.IMWRITE_JPEG_OPTIMIZE), 1])
@@ -10698,10 +10701,9 @@ def api_ahb_receipts_queue_image(qid):
                 os.makedirs(cache_dir, exist_ok=True)
                 kind = 'parent' if want_parent else 'crop'
                 bw_suffix = '_bw' if bw_req else ''
-                # PNG for B&W (lossless on binary text, no JPEG DCT
-                # ringing along stroke edges); JPEG for color.
-                ext = '.png' if bw_req else '.jpg'
-                cache_name = f"{qid}_{kind}_w{w_req}{bw_suffix}{ext}"
+                # JPEG for both — B&W is high-contrast grayscale, not
+                # binarized, so JPEG quantization is safe.
+                cache_name = f"{qid}_{kind}_w{w_req}{bw_suffix}.jpg"
                 cache_path = os.path.join(cache_dir, cache_name)
                 src_mtime = os.path.getmtime(path)
                 if (not os.path.exists(cache_path)) or os.path.getmtime(cache_path) < src_mtime:
