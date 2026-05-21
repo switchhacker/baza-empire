@@ -5483,12 +5483,24 @@ def api_ahb_projects_list():
             params.append(request.args['status'])
         q += " ORDER BY created_at DESC"
         rows = conn.execute(q, params).fetchall()
+        # One-shot receipt totals so the projects table can show
+        # spend-per-project without an N+1 lookup per row.
+        rcpt_rows = conn.execute(
+            "SELECT project_id, COUNT(*) AS cnt, "
+            "       COALESCE(SUM(COALESCE(total, amount, 0)), 0) AS sum "
+            "FROM ahb_receipts WHERE project_id IS NOT NULL AND project_id != '' "
+            "GROUP BY project_id"
+        ).fetchall()
+        rcpt_map = {r['project_id']: (r['cnt'], r['sum']) for r in rcpt_rows}
         # Attach payment summary so the UI can flag Completed-but-unpaid projects
         # without an N+1 round-trip per row.
         result = []
         for r in rows:
             d = dict(r)
             d['_payment'] = _ahb_project_payment_summary(conn, d['id'])
+            cnt, total = rcpt_map.get(d['id'], (0, 0))
+            d['receipts_count'] = cnt
+            d['receipts_total'] = float(total or 0)
             result.append(d)
         conn.close()
         return jsonify(result)
@@ -9787,6 +9799,190 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
             response = make_response(html)
             response.headers['Content-Type'] = 'text/html; charset=utf-8'
             response.headers['Content-Disposition'] = f'inline; filename="invoice_{inv.get("invoice_number","")}.html"'
+            return response
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ahb/projects/<pid>/receipts-pdf', methods=['GET'])
+def api_ahb_project_receipts_pdf(pid):
+    """Bundle a project's receipts into a single PDF: cover page with project
+    header + per-receipt line items + grand total, then one page per receipt
+    image (full-bleed within page margins). Used for sharing/printing.
+    """
+    try:
+        import base64
+        from html import escape as _h
+
+        conn = _ahb_db()
+        proj = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (pid,)).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({'error': 'Project not found'}), 404
+        proj = dict(proj)
+        receipts = [dict(r) for r in conn.execute(
+            "SELECT * FROM ahb_receipts WHERE project_id = ? "
+            "ORDER BY receipt_date DESC, created_at DESC", (pid,)
+        ).fetchall()]
+        conn.close()
+
+        def _amt(r):
+            for k in ('total', 'amount'):
+                v = r.get(k)
+                if v is None or v == '':
+                    continue
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    pass
+            return 0.0
+
+        grand_total = sum(_amt(r) for r in receipts)
+
+        # Inline receipt images as data: URIs so the PDF is self-contained
+        # (weasyprint can read them straight off disk too, but data: URIs
+        # survive sharing/printing without a live server).
+        def _img_data_uri(path):
+            if not path or not os.path.exists(path):
+                return ''
+            try:
+                ext = os.path.splitext(path)[1].lower().lstrip('.')
+                if ext in ('jpg', 'jpeg'):
+                    mime = 'image/jpeg'
+                elif ext == 'png':
+                    mime = 'image/png'
+                elif ext == 'webp':
+                    mime = 'image/webp'
+                elif ext == 'heic':
+                    mime = 'image/heic'
+                else:
+                    mime = 'application/octet-stream'
+                with open(path, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode('ascii')
+                return f'data:{mime};base64,{b64}'
+            except Exception:
+                return ''
+
+        # Cover page: project header + line-by-line receipt table + grand total
+        proj_title = _h(proj.get('title') or 'Untitled Project')
+        proj_addr  = _h(proj.get('address') or '')
+        proj_client = _h(proj.get('client_name') or '')
+        proj_scope = _h(proj.get('scope') or '')
+        gen_date = datetime.datetime.now().strftime('%Y-%m-%d')
+
+        line_rows = []
+        for i, r in enumerate(receipts, 1):
+            date = _h((r.get('receipt_date') or '')[:10])
+            vendor = _h(r.get('store_name') or r.get('vendor') or 'Unknown')
+            loc = _h(r.get('store_location') or '')
+            cat = _h(r.get('category') or '')
+            pay = _h(r.get('payment_method') or '')
+            desc = _h((r.get('description') or '')[:80])
+            amt = _amt(r)
+            line_rows.append(
+                f'<tr>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;color:#555;font-size:11px">{i}</td>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:11px">{date}</td>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:11px"><b>{vendor}</b>'
+                + (f'<br><span style="color:#777;font-size:10px">{loc}</span>' if loc else '')
+                + '</td>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;color:#555">{cat}</td>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;color:#555">{pay}</td>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:10px;color:#888">{desc}</td>'
+                f'<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:11px;text-align:right;font-weight:600">${amt:,.2f}</td>'
+                f'</tr>'
+            )
+
+        # One full-page image per receipt
+        image_pages = []
+        for i, r in enumerate(receipts, 1):
+            uri = _img_data_uri(r.get('image_path') or '')
+            date = _h((r.get('receipt_date') or '')[:10])
+            vendor = _h(r.get('store_name') or r.get('vendor') or 'Unknown')
+            amt = _amt(r)
+            caption = f'#{i} · {vendor} · {date} · ${amt:,.2f}'
+            if uri:
+                image_pages.append(
+                    f'<div class="rcp-page">'
+                    f'<div class="rcp-caption">{_h(caption)}</div>'
+                    f'<div class="rcp-img-wrap"><img src="{uri}" /></div>'
+                    f'</div>'
+                )
+            else:
+                image_pages.append(
+                    f'<div class="rcp-page">'
+                    f'<div class="rcp-caption">{_h(caption)}</div>'
+                    f'<div class="rcp-img-wrap" style="display:flex;align-items:center;justify-content:center;color:#999;font-size:14px">(no image on file)</div>'
+                    f'</div>'
+                )
+
+        html = f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Receipts — {proj_title}</title>
+<style>
+  @page {{ size: Letter; margin: 0.5in; }}
+  body {{ font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color:#222; margin:0; }}
+  h1 {{ font-size: 22px; margin: 0 0 4px; }}
+  .header {{ border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 18px; }}
+  .meta {{ font-size: 12px; color: #555; line-height: 1.5; }}
+  table.rcp-table {{ width:100%; border-collapse: collapse; margin-top: 6px; }}
+  table.rcp-table th {{ background:#111; color:#fff; padding:7px 8px; font-size:11px; text-align:left; }}
+  table.rcp-table th.r {{ text-align:right; }}
+  .totals {{ margin-top: 14px; padding: 12px 14px; background:#f5f5f0; border:1px solid #ddd; border-radius:4px; display:flex; justify-content:space-between; align-items:center; }}
+  .totals .lbl {{ font-size: 13px; color:#444; }}
+  .totals .val {{ font-size: 20px; font-weight: 800; color:#111; }}
+  .rcp-page {{ page-break-before: always; height: 9.5in; display:flex; flex-direction:column; }}
+  .rcp-caption {{ font-size: 12px; color: #444; padding: 4px 0 8px; border-bottom: 1px solid #eee; margin-bottom: 8px; }}
+  .rcp-img-wrap {{ flex: 1; overflow: hidden; }}
+  .rcp-img-wrap img {{ max-width: 100%; max-height: 9in; display: block; margin: 0 auto; }}
+  .foot {{ font-size: 10px; color: #888; text-align: center; margin-top: 18px; }}
+</style></head><body>
+
+<div class="header">
+  <h1>{proj_title}</h1>
+  <div class="meta">
+    {'<div><b>Address:</b> ' + proj_addr + '</div>' if proj_addr else ''}
+    {'<div><b>Client:</b> ' + proj_client + '</div>' if proj_client else ''}
+    {'<div><b>Scope:</b> ' + proj_scope + '</div>' if proj_scope else ''}
+    <div><b>Receipts:</b> {len(receipts)} &middot; <b>Generated:</b> {gen_date}</div>
+  </div>
+</div>
+
+<table class="rcp-table">
+  <thead><tr>
+    <th>#</th><th>Date</th><th>Vendor</th><th>Category</th><th>Payment</th><th>Notes</th><th class="r">Amount</th>
+  </tr></thead>
+  <tbody>
+    {''.join(line_rows) if line_rows else '<tr><td colspan="7" style="padding:14px;text-align:center;color:#888;font-size:12px">No receipts linked to this project.</td></tr>'}
+  </tbody>
+</table>
+
+<div class="totals">
+  <div class="lbl">Total ({len(receipts)} receipt{'' if len(receipts) == 1 else 's'})</div>
+  <div class="val">${grand_total:,.2f}</div>
+</div>
+
+<div class="foot">All Home Building Co — generated {gen_date}</div>
+
+{''.join(image_pages)}
+
+</body></html>'''
+
+        download = request.args.get('download', '0') == '1'
+        safe_title = ''.join(c if c.isalnum() or c in '-_ ' else '_' for c in (proj.get('title') or 'project'))[:60].strip().replace(' ', '_')
+        filename = f"receipts_{safe_title}.pdf"
+        try:
+            from weasyprint import HTML as WeasyHTML
+            pdf_bytes = WeasyHTML(string=html).write_pdf()
+            response = make_response(pdf_bytes)
+            response.headers['Content-Type'] = 'application/pdf'
+            disposition = 'attachment' if download else 'inline'
+            response.headers['Content-Disposition'] = f'{disposition}; filename="{filename}"'
+            return response
+        except ImportError:
+            response = make_response(html)
+            response.headers['Content-Type'] = 'text/html; charset=utf-8'
+            response.headers['Content-Disposition'] = f'inline; filename="{filename[:-4]}.html"'
             return response
 
     except Exception as e:

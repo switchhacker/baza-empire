@@ -877,6 +877,7 @@
         <th>Client</th>
         <th>Scope</th>
         <th>Budget</th>
+        <th>Receipts</th>
         <th>Status</th>
         <th colspan="2">Timeframe</th>
         <th>Agents</th>
@@ -884,7 +885,7 @@
       </tr>
     </thead>
     <tbody id="projects-tbody">
-      <tr><td colspan="9" style="text-align:center;padding:40px;color:#333">Loading projects...</td></tr>
+      <tr><td colspan="10" style="text-align:center;padding:40px;color:#333">Loading projects...</td></tr>
     </tbody>
   </table>
   <div id="projects-kanban" style="display:none" class="kanban-board"></div>
@@ -1099,7 +1100,7 @@
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
-      <input type="text" id="rqe-search" placeholder="🔎 Search vendor, store, category, payment, notes, amount, date..." oninput="rqeFilter()"
+      <input type="text" id="rqe-search" placeholder="🔎 Search vendor, store, project, address, category, payment, notes, amount, date..." oninput="rqeFilter()"
              style="flex:1;min-width:240px;padding:8px 10px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px;color:#a7f3d0;font-size:12px">
       <button class="btn btn-sm btn-secondary" onclick="rqeClearSearch()" title="Clear search">✕ Clear</button>
       <span id="rqe-count-label" style="font-size:11px;color:#888;font-weight:700"></span>
@@ -5222,18 +5223,24 @@ function renderProjectStats(list){
 function renderProjects(projects){
   const tbody=document.getElementById('projects-tbody');
   if(!projects.length){
-    tbody.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">&#128194;</div><h3>No projects found</h3><p>Create your first project</p></div></td></tr>';
+    tbody.innerHTML='<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">&#128194;</div><h3>No projects found</h3><p>Create your first project</p></div></td></tr>';
     return;
   }
   projects = projects.slice().sort(_projectSortByStatusThenDate);
   tbody.innerHTML=projects.map(p=>{
     const due=_isBalanceDue(p);
+    const rcpCnt=p.receipts_count||0;
+    const rcpSum=p.receipts_total||0;
+    const rcpCell=rcpCnt
+      ? `<span title="${rcpCnt} receipt${rcpCnt===1?'':'s'} linked to this project — click to open PDF (cover + 1 image per page)" style="color:#a7f3d0;font-weight:700">${fmtCurrency(rcpSum)}</span><span style="color:#555;font-size:11px;margin-left:4px">×${rcpCnt}</span>`
+      : '<span style="color:#333">&mdash;</span>';
     return `
     <tr style="cursor:pointer${due?';background:#240b0b':''}" onclick="openProjectDetail('${p.id}')">
       <td style="font-weight:600;color:#ddd">${escHtml(p.title)}</td>
       <td style="font-size:12px;color:#888">${escHtml(p.client_name)||'&mdash;'}</td>
       <td style="font-size:12px;color:#666">${escHtml(p.scope)||'&mdash;'}</td>
       <td style="font-size:12px;color:#00d084">${p.value?fmtCurrency(p.value):(p.budget_high?fmtCurrency(p.budget_high):'&mdash;')}</td>
+      <td onclick="event.stopPropagation();${rcpCnt?`projectReceiptsPdf('${p.id}')`:`openProjectDetail('${p.id}')`}" style="font-size:12px;cursor:${rcpCnt?'pointer':'default'}">${rcpCell}</td>
       <td>
         <span class="badge badge-${(p.status||'').toLowerCase().replace(' ','_')}">${p.status}</span>
         ${due?`<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px" title="Project complete, ${fmtCurrency(p._payment.owed)} still owed">⚠ BALANCE DUE</span>`:''}
@@ -6208,6 +6215,28 @@ async function shareInvoice(id,invNum){
   }else{
     await navigator.clipboard.writeText(url);
     showToast('Invoice PDF link copied — share with client');
+  }
+}
+
+/* Project receipts PDF — cover page with project info + receipt list + total,
+   followed by one full-page receipt image per page. Same UX as invoice PDF:
+   inline open / download / share. */
+function projectReceiptsPdf(pid){
+  window.open('/api/ahb/projects/'+encodeURIComponent(pid)+'/receipts-pdf','_blank');
+}
+function projectReceiptsPdfDownload(pid){
+  const a=document.createElement('a');
+  a.href='/api/ahb/projects/'+encodeURIComponent(pid)+'/receipts-pdf?download=1';
+  a.download='receipts.pdf';
+  a.click();
+}
+async function projectReceiptsPdfShare(pid){
+  const url=window.location.origin+'/api/ahb/projects/'+encodeURIComponent(pid)+'/receipts-pdf';
+  if(navigator.share){
+    try{await navigator.share({title:'Receipts PDF',url:url});}catch(e){}
+  }else{
+    await navigator.clipboard.writeText(url);
+    showToast('Receipts PDF link copied');
   }
 }
 
@@ -12814,7 +12843,19 @@ async function openProjectDetail(pid){
     renderCuratedDocs(p.documents||[]);
     // Receipts — with explicit View (opens receipt image) + Edit (opens QuickRF detail) buttons
     const rcpEl=document.getElementById('pd-receipts');
-    rcpEl.innerHTML=(p.receipts||[]).length?(p.receipts).map(r=>{
+    const rcpList=p.receipts||[];
+    const rcpSum=rcpList.reduce((s,r)=>s+(parseFloat(r.total||r.amount||0)||0),0);
+    const rcpHeader=rcpList.length
+      ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;padding:8px 10px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px">
+           <div style="font-size:12px;color:#a7f3d0;font-weight:700">${rcpList.length} receipt${rcpList.length===1?'':'s'} · <span style="color:#00d084">${fmtCurrency(rcpSum)}</span> total</div>
+           <div style="display:flex;gap:6px">
+             <button class="btn btn-sm btn-secondary" onclick="projectReceiptsPdf('${pid}')" title="Open a printable PDF (cover page + sum + one image per page)" style="padding:5px 11px;font-size:11px">🖨 Print PDF</button>
+             <button class="btn btn-sm btn-secondary" onclick="projectReceiptsPdfDownload('${pid}')" title="Download the PDF" style="padding:5px 11px;font-size:11px">⤓ Download</button>
+             <button class="btn btn-sm btn-secondary" onclick="projectReceiptsPdfShare('${pid}')" title="Copy a shareable PDF link" style="padding:5px 11px;font-size:11px">🔗 Share</button>
+           </div>
+         </div>`
+      : '';
+    rcpEl.innerHTML=(rcpList.length?rcpHeader:'')+(rcpList.length?(rcpList).map(r=>{
       const hasImg=!!r.image_path;
       const imgUrl=hasImg ? '/api/ahb/receipts/image/'+r.id : '';
       const viewBtn = hasImg
@@ -12830,7 +12871,7 @@ async function openProjectDetail(pid){
           <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" title="Open in QuickRF for editing" onclick="event.stopPropagation();pdEditReceipt('${r.id}')">✎ Edit</button>
         </div>
       </div>`;
-    }).join(''):'<span style="color:#444">No receipts linked to this project</span>';
+    }).join(''):'<span style="color:#444">No receipts linked to this project</span>');
     // App Packages (DocPrep) for this project
     pdLoadPackages(pid);
     // Details (editable fields)
