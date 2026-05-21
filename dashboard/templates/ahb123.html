@@ -204,6 +204,8 @@
     .badge-tools{background:#001a3a;color:#4da6ff;border:1px solid #4da6ff}
     .badge-permits{background:#2a1a00;color:#f59e0b;border:1px solid #f59e0b}
     .badge-subcontractor{background:#001a10;color:#00d084;border:1px solid #00d084}
+    .badge-w2{background:#001a3a;color:#4da6ff;border:1px solid #4da6ff}
+    .badge-w9{background:#2a1a00;color:#f59e0b;border:1px solid #f59e0b}
     .badge-misc{background:#1a1a1a;color:#888;border:1px solid #444}
     .badge-escalated{background:#2a0808;color:#ff5555;border:1px solid #ff5555}
     .badge-resolved{background:#001a10;color:#00d084;border:1px solid #00d084}
@@ -1235,10 +1237,15 @@
         <option value="1">Active</option>
         <option value="0">Inactive</option>
       </select>
+      <select class="filter-select" id="emp-class-filter" onchange="filterEmployees()">
+        <option value="">All classifications</option>
+        <option value="W2">W-2 Employees</option>
+        <option value="W9">W-9 / 1099 Subs</option>
+      </select>
     </div>
     <table class="data-table">
-      <thead><tr><th>Name</th><th>Position</th><th>Rate</th><th>Pay Type</th><th>Phone</th><th>Email</th><th>Status</th><th style="width:100px">Actions</th></tr></thead>
-      <tbody id="emp-tbody"><tr><td colspan="8" style="text-align:center;padding:30px;color:#333">Loading...</td></tr></tbody>
+      <thead><tr><th>Name</th><th>Position</th><th>Class</th><th>Rate</th><th>Pay Type</th><th>Phone</th><th>Email</th><th>Status</th><th style="width:100px">Actions</th></tr></thead>
+      <tbody id="emp-tbody"><tr><td colspan="9" style="text-align:center;padding:30px;color:#333">Loading...</td></tr></tbody>
     </table>
   </div>
 
@@ -3709,23 +3716,45 @@
 <div class="modal-bg" id="employeeModal">
   <div class="modal">
     <h2 id="emp-modal-title">Add Employee</h2>
-    <div class="modal-sub">Add or edit a team member</div>
+    <div class="modal-sub">Add or edit a team member or W-9 subcontractor</div>
     <input type="hidden" id="edit-emp-id">
     <div class="form-row">
-      <div class="form-group"><label>Name</label><input type="text" id="emp-name" placeholder="Full name"></div>
-      <div class="form-group"><label>Position</label><input type="text" id="emp-position" placeholder="e.g. Carpenter, Foreman"></div>
+      <div class="form-group"><label>Name</label><input type="text" id="emp-name" placeholder="Full legal name"></div>
+      <div class="form-group"><label>Position</label><input type="text" id="emp-position" placeholder="e.g. Carpenter, Foreman, Electrician"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Hourly Rate</label><input type="number" id="emp-rate" step="0.01" placeholder="0.00"></div>
+      <div class="form-group"><label>Classification</label>
+        <select id="emp-class" onchange="toggleW9Fields()">
+          <option value="W2">W-2 Employee</option>
+          <option value="W9">W-9 / 1099 Subcontractor</option>
+        </select>
+      </div>
       <div class="form-group"><label>Pay Type</label>
         <select id="emp-pay-type"><option value="hourly">Hourly</option><option value="salary">Salary</option><option value="contract">Contract</option></select>
       </div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label id="emp-rate-label">Hourly Rate</label><input type="number" id="emp-rate" step="0.01" placeholder="0.00"></div>
       <div class="form-group"><label>Pay Method</label><input type="text" id="emp-pay-method" placeholder="e.g. Direct Deposit, Check"></div>
-      <div class="form-group"><label>Phone</label><input type="tel" id="emp-phone" placeholder="(555) 123-4567"></div>
     </div>
-    <div class="form-group"><label>Email</label><input type="email" id="emp-email" placeholder="email@example.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Phone</label><input type="tel" id="emp-phone" placeholder="(555) 123-4567"></div>
+      <div class="form-group"><label>Email</label><input type="email" id="emp-email" placeholder="email@example.com"></div>
+    </div>
+    <div id="emp-w9-block" style="display:none;border-top:1px solid #1a1a2e;margin-top:10px;padding-top:10px">
+      <div style="font-size:11px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">W-9 / 1099 details</div>
+      <div class="form-row">
+        <div class="form-group"><label>Business name (if any)</label><input type="text" id="emp-biz-name" placeholder="LLC / DBA / sole prop name"></div>
+        <div class="form-group"><label>Tax ID type</label>
+          <select id="emp-tax-id-type"><option value="SSN">SSN</option><option value="EIN">EIN</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Tax ID (SSN or EIN)</label><input type="text" id="emp-tax-id" placeholder="XXX-XX-XXXX or XX-XXXXXXX"></div>
+        <div class="form-group"><label>W-9 signed date</label><input type="date" id="emp-w9-date"></div>
+      </div>
+      <div class="form-group"><label>Mailing address (for 1099-NEC)</label><textarea id="emp-address" rows="2" placeholder="Street, City, State ZIP"></textarea></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="saveEmployee()">Save</button>
       <button class="btn-cancel" onclick="closeModal('employeeModal')">Cancel</button>
@@ -10331,11 +10360,18 @@ async function loadEmployees(){
 }
 function renderEmployees(list){
   const tb=document.getElementById('emp-tbody');
-  if(!list.length){tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">&#128101;</div><h3>No employees</h3></div></td></tr>';return;}
-  tb.innerHTML=list.map(e=>`<tr>
-    <td style="font-weight:600;color:#ddd">${escHtml(e.name)}</td>
+  if(!list.length){tb.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">&#128101;</div><h3>No employees</h3></div></td></tr>';return;}
+  tb.innerHTML=list.map(e=>{
+    const cls=(e.tax_classification||'W2').toUpperCase();
+    const clsBadge=cls==='W9'
+      ?'<span class="badge badge-w9" title="W-9 / 1099 subcontractor">W-9</span>'
+      :'<span class="badge badge-w2" title="W-2 employee">W-2</span>';
+    const rateLabel=e.hourly_rate?(fmtCurrency(e.hourly_rate)+(cls==='W9'?'':'/hr')):'&mdash;';
+    return `<tr>
+    <td style="font-weight:600;color:#ddd">${escHtml(e.name)}${e.business_name?'<div style="font-size:10px;color:#666">'+escHtml(e.business_name)+'</div>':''}</td>
     <td style="font-size:12px;color:#888">${escHtml(e.position)||'&mdash;'}</td>
-    <td style="color:#00d084">${e.hourly_rate?fmtCurrency(e.hourly_rate)+'/hr':'&mdash;'}</td>
+    <td>${clsBadge}</td>
+    <td style="color:#00d084">${rateLabel}</td>
     <td style="font-size:12px;color:#888">${escHtml(e.pay_type)||'&mdash;'}</td>
     <td style="font-size:12px;color:#888">${escHtml(e.phone)||'&mdash;'}</td>
     <td style="font-size:12px;color:#888">${escHtml(e.email)||'&mdash;'}</td>
@@ -10344,28 +10380,39 @@ function renderEmployees(list){
       <button class="btn-icon" onclick="editEmployee('${e.id}')" title="Edit">&#9998;</button>
       <button class="btn-icon del" onclick="deactivateEmployee('${e.id}')" title="Deactivate">&#10005;</button>
     </div></td>
-  </tr>`).join('');
+  </tr>`;}).join('');
 }
 function filterEmployees(){
   const q=document.getElementById('emp-search').value.toLowerCase();
   const a=document.getElementById('emp-active-filter').value;
+  const c=document.getElementById('emp-class-filter').value;
   renderEmployees(allEmployees.filter(e=>{
-    if(q&&!e.name.toLowerCase().includes(q)&&!(e.position||'').toLowerCase().includes(q)) return false;
+    if(q&&!e.name.toLowerCase().includes(q)&&!(e.position||'').toLowerCase().includes(q)&&!((e.business_name||'').toLowerCase().includes(q))) return false;
     if(a!==''&&String(e.active)!==a) return false;
+    if(c!==''&&(e.tax_classification||'W2').toUpperCase()!==c) return false;
     return true;
   }));
 }
+function toggleW9Fields(){
+  const cls=document.getElementById('emp-class').value;
+  document.getElementById('emp-w9-block').style.display=(cls==='W9')?'block':'none';
+  document.getElementById('emp-rate-label').textContent=(cls==='W9')?'Rate (hourly or per-job)':'Hourly Rate';
+}
 function openEmployeeModal(id){
   document.getElementById('edit-emp-id').value='';
-  document.getElementById('emp-modal-title').textContent='Add Employee';
-  ['emp-name','emp-position','emp-rate','emp-pay-method','emp-phone','emp-email'].forEach(f=>document.getElementById(f).value='');
+  document.getElementById('emp-modal-title').textContent='Add Employee or Subcontractor';
+  ['emp-name','emp-position','emp-rate','emp-pay-method','emp-phone','emp-email',
+   'emp-biz-name','emp-tax-id','emp-w9-date','emp-address'].forEach(f=>document.getElementById(f).value='');
   document.getElementById('emp-pay-type').value='hourly';
+  document.getElementById('emp-class').value='W2';
+  document.getElementById('emp-tax-id-type').value='SSN';
+  toggleW9Fields();
   document.getElementById('employeeModal').classList.add('open');
 }
 function editEmployee(id){
   const e=allEmployees.find(x=>x.id===id);if(!e)return;
   document.getElementById('edit-emp-id').value=id;
-  document.getElementById('emp-modal-title').textContent='Edit Employee';
+  document.getElementById('emp-modal-title').textContent='Edit Employee or Subcontractor';
   document.getElementById('emp-name').value=e.name||'';
   document.getElementById('emp-position').value=e.position||'';
   document.getElementById('emp-rate').value=e.hourly_rate||'';
@@ -10373,19 +10420,34 @@ function editEmployee(id){
   document.getElementById('emp-pay-method').value=e.pay_method||'';
   document.getElementById('emp-phone').value=e.phone||'';
   document.getElementById('emp-email').value=e.email||'';
+  document.getElementById('emp-class').value=(e.tax_classification||'W2').toUpperCase();
+  document.getElementById('emp-biz-name').value=e.business_name||'';
+  document.getElementById('emp-tax-id-type').value=(e.tax_id_type||'SSN').toUpperCase();
+  document.getElementById('emp-tax-id').value=e.tax_id||'';
+  document.getElementById('emp-w9-date').value=e.w9_signed_date||'';
+  document.getElementById('emp-address').value=e.address||'';
+  toggleW9Fields();
   document.getElementById('employeeModal').classList.add('open');
 }
 async function saveEmployee(){
   const id=document.getElementById('edit-emp-id').value;
+  const cls=document.getElementById('emp-class').value;
   const data={name:document.getElementById('emp-name').value.trim(),position:document.getElementById('emp-position').value.trim(),
     hourly_rate:parseFloat(document.getElementById('emp-rate').value)||0,pay_type:document.getElementById('emp-pay-type').value,
     pay_method:document.getElementById('emp-pay-method').value.trim(),phone:document.getElementById('emp-phone').value.trim(),
-    email:document.getElementById('emp-email').value.trim(),active:true};
+    email:document.getElementById('emp-email').value.trim(),active:true,
+    tax_classification:cls,
+    business_name:document.getElementById('emp-biz-name').value.trim(),
+    tax_id_type:document.getElementById('emp-tax-id-type').value,
+    tax_id:document.getElementById('emp-tax-id').value.trim(),
+    w9_signed_date:document.getElementById('emp-w9-date').value,
+    address:document.getElementById('emp-address').value.trim()};
   if(!data.name){showToast('Name is required','error');return;}
+  if(cls==='W9'&&!data.tax_id&&!confirm('No Tax ID entered for this W-9 subcontractor. Save anyway?')) return;
   try{
     const url=id?'/api/ahb/employees/'+id:'/api/ahb/employees';
     await fetch(url,{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    closeModal('employeeModal');showToast(id?'Employee updated':'Employee added');loadEmployees();
+    closeModal('employeeModal');showToast(id?'Saved':'Added');loadEmployees();
   }catch(e){showToast('Error: '+e.message,'error');}
 }
 async function deactivateEmployee(id){

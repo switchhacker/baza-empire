@@ -8199,14 +8199,23 @@ def api_ahb_employees_list():
 def api_ahb_employees_create():
     try:
         data = request.json or {}
+        cls = (data.get('tax_classification') or 'W2').upper()
+        if cls not in ('W2', 'W9'):
+            cls = 'W2'
         conn = _ahb_db()
         eid = str(uuid.uuid4())
         conn.execute(
-            """INSERT INTO ahb_employees (id, name, position, hourly_rate, pay_type, pay_method, phone, email, active)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO ahb_employees
+                 (id, name, position, hourly_rate, pay_type, pay_method, phone, email, active,
+                  tax_classification, business_name, tax_id, tax_id_type, address,
+                  w9_doc_id, w9_signed_date)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (eid, data.get('name',''), data.get('position',''), data.get('hourly_rate',0),
              data.get('pay_type','hourly'), data.get('pay_method',''), data.get('phone',''),
-             data.get('email',''), 1 if data.get('active', True) else 0))
+             data.get('email',''), 1 if data.get('active', True) else 0,
+             cls, data.get('business_name',''), data.get('tax_id',''),
+             (data.get('tax_id_type') or '').upper(), data.get('address',''),
+             data.get('w9_doc_id') or None, data.get('w9_signed_date','')))
         conn.commit(); conn.close()
         return jsonify({'success': True, 'id': eid})
     except Exception as e:
@@ -8218,8 +8227,14 @@ def api_ahb_employees_update(eid):
         data = request.json or {}
         conn = _ahb_db()
         fields, vals = [], []
-        for k in ['name','position','hourly_rate','pay_type','pay_method','phone','email']:
+        for k in ['name','position','hourly_rate','pay_type','pay_method','phone','email',
+                  'business_name','tax_id','address','w9_signed_date','w9_doc_id']:
             if k in data: fields.append(f"{k} = ?"); vals.append(data[k])
+        if 'tax_classification' in data:
+            cls = (data['tax_classification'] or 'W2').upper()
+            fields.append("tax_classification = ?"); vals.append(cls if cls in ('W2','W9') else 'W2')
+        if 'tax_id_type' in data:
+            fields.append("tax_id_type = ?"); vals.append((data['tax_id_type'] or '').upper())
         if 'active' in data: fields.append("active = ?"); vals.append(1 if data['active'] else 0)
         if fields:
             fields.append("updated_at = datetime('now')")
@@ -13433,6 +13448,13 @@ def _ensure_docprep_tables():
         ("ahb_app_packages","approved_at TEXT"),
         ("ahb_app_packages","permit_number TEXT"),
         ("ahb_app_packages","last_reminder_at TEXT"),
+        ("ahb_employees",   "tax_classification TEXT DEFAULT 'W2'"),
+        ("ahb_employees",   "business_name TEXT"),
+        ("ahb_employees",   "tax_id TEXT"),
+        ("ahb_employees",   "tax_id_type TEXT"),
+        ("ahb_employees",   "address TEXT"),
+        ("ahb_employees",   "w9_doc_id INTEGER"),
+        ("ahb_employees",   "w9_signed_date TEXT"),
     ]:
         table, col = col_def
         col_name = col.split()[0]
