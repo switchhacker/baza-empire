@@ -23,6 +23,9 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-20 Sam Axe photo bursts — investigation, no drops on Sam side
+- 2026-05-20 Sam Axe bursts — conclusion: ~3 bursts dropped upstream of bot
+- 2026-05-20 Data Hub — video thumbnails + click-to-play
 - 2026-05-17 Sam — drop_pending_updates flipped True → False
 - 2026-05-17 Receipt OCR — investigate inaccurate dates; user says queue images are low-quality vs high-quality…
 - 2026-05-17 Receipt OCR — date accuracy fix: upscale 480px→1800px + tightened prompt
@@ -35,9 +38,6 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - 2026-05-17 Data Hub — newest-first sort + MD family chips
 - 2026-05-17 QuickRF Analyzed bin restyled + project picker reorder
 - 2026-05-17 QuickRF Analyzed — fixed flickering broken row at top
-- 2026-05-17 Scout Reeves — Super Mode rewrite
-- 2026-05-17 Receipt preview — progressive Lanczos tiers + LOCAL-ONLY policy
-- 2026-05-17 Editor — zoom-expand + drag-to-pan + cv2 enhancement pipeline
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
