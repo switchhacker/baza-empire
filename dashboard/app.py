@@ -10281,7 +10281,9 @@ def api_ahb_receipts_process():
     try:
         files = request.files.getlist('files') or [request.files.get('file')]
         files = [f for f in files if f]
-        if not files:
+        pick_tokens_raw = request.form.get('pick_tokens') or ''
+        pick_tokens = [t.strip() for t in pick_tokens_raw.split(',') if t.strip()]
+        if not files and not pick_tokens:
             return jsonify({'success': False, 'error': 'No files uploaded'}), 400
 
         stage_raw = (request.form.get('stage') or request.args.get('stage') or '').strip().lower()
@@ -10302,6 +10304,30 @@ def api_ahb_receipts_process():
                     "VALUES (?, '', 'bulk-error', 'error', ?)",
                     (qid, f"upload failed: {str(_e)[:200]}"))
                 queue_ids.append(qid)
+        if pick_tokens:
+            from werkzeug.datastructures import FileStorage
+            for tok in pick_tokens:
+                src = _pick_decode_token(tok)
+                if not src:
+                    qid = str(uuid.uuid4())
+                    conn.execute(
+                        "INSERT INTO ahb_receipt_queue (id, image_path, mode, status, error) "
+                        "VALUES (?, '', 'bulk-error', 'error', ?)",
+                        (qid, f"invalid pick_token: {tok[:12]}…"))
+                    queue_ids.append(qid)
+                    continue
+                try:
+                    fs = FileStorage(stream=open(src, 'rb'),
+                                     filename=os.path.basename(src),
+                                     content_type='image/jpeg')
+                    queue_ids.extend(_detect_and_queue(fs, conn, queue_dir, status=initial_status))
+                except Exception as _e:
+                    qid = str(uuid.uuid4())
+                    conn.execute(
+                        "INSERT INTO ahb_receipt_queue (id, image_path, mode, status, error) "
+                        "VALUES (?, '', 'bulk-error', 'error', ?)",
+                        (qid, f"pick failed: {str(_e)[:200]}"))
+                    queue_ids.append(qid)
         conn.commit()
         conn.close()
         if not stage_mode:

@@ -982,10 +982,13 @@
         <div style="font-size:11px;color:#888;margin-bottom:10px">
           1-up portrait or 2-up landscape — auto-detect &amp; crop. Toggle Auto-OCR above to gate processing.
         </div>
-        <label class="btn btn-primary" style="cursor:pointer">
-          Select Images
-          <input type="file" accept="image/*" multiple style="display:none" onchange="submitReceiptsToQueue(this.files)">
-        </label>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <label class="btn btn-primary" style="cursor:pointer">
+            Select Images
+            <input type="file" accept="image/*" multiple style="display:none" onchange="submitReceiptsToQueue(this.files)">
+          </label>
+          <button class="btn btn-secondary" onclick="pickReceiptsToQueueFromBaza()" title="Pick images from Baza Data Hub (incl. Sam's Telegram drops) and queue them for OCR" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed">📂 Baza</button>
+        </div>
       </div>
       <!-- Re-Scan Existing -->
       <div style="flex:1;min-width:200px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:10px;padding:16px;text-align:center">
@@ -13832,6 +13835,33 @@ async function pickReceiptFromBaza(){
       }
     }catch(e){showToast('Error: '+e.message,'error');}
   },{title:'📂 Pick a receipt image from Baza',multiple:false});
+}
+
+async function pickReceiptsToQueueFromBaza(){
+  openBazaPicker(async(items)=>{
+    if(!items.length) return;
+    const auto=rqAutoOcrEnabled();
+    const fd=new FormData();
+    fd.append('pick_tokens',items.map(i=>i.token).join(','));
+    if(!auto) fd.append('stage','1');
+    try{
+      showToast(`Queueing ${items.length} image(s) from Baza${auto?'':' (staged)'}...`);
+      const res=await fetch('/api/ahb/receipts/process',{method:'POST',body:fd});
+      const data=await res.json();
+      if(data.success){
+        showToast(auto
+          ? `${data.count} receipt(s) queued from Baza — OCR running`
+          : `${data.count} receipt(s) staged from Baza — Send to OCR when ready`);
+        if(!allProjects.length){
+          try{ allProjects=await fetch('/api/ahb/projects').then(r=>r.json()); }catch(e){}
+        }
+        loadReceiptQueue();
+        if(auto) _rqStartPolling();
+      } else {
+        showToast(data.error||'Queue failed','error');
+      }
+    }catch(e){showToast('Error: '+e.message,'error');}
+  },{title:'📂 Pick receipt images from Baza',subtitle:'Selected images go straight to the QuickRF queue (auto-OCR follows your toggle)'});
 }
 
 async function pickMediaFromBaza(){
