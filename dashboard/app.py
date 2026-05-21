@@ -6956,7 +6956,13 @@ def api_ahb_receipts_upload():
 
 @app.route('/api/ahb/receipts/image/<rid>', methods=['GET'])
 def api_ahb_receipt_image(rid):
-    """Serve a receipt image by receipt ID."""
+    """Serve a receipt image by receipt ID.
+      ?w=<int>   — Lanczos-upscaled tier (same pipeline as the queue
+                   image endpoint) so the lightbox can pinch/wheel-zoom
+                   into a real-pixel high tier instead of browser bicubic
+                   on a 480x640 Telegram source.
+      ?bw=1      — high-contrast grayscale (CLAHE + percentile stretch)
+    """
     try:
         conn = _ahb_db()
         row = conn.execute("SELECT image_path FROM ahb_receipts WHERE id = ?", (rid,)).fetchone()
@@ -6966,6 +6972,28 @@ def api_ahb_receipt_image(rid):
         img_path = row['image_path']
         if not os.path.exists(img_path):
             return 'Image file not found', 404
+
+        try:
+            w_req = int(request.args.get('w', '0') or 0)
+        except (TypeError, ValueError):
+            w_req = 0
+        w_req = max(0, min(4000, w_req))
+        bw_req = request.args.get('bw') in ('1', 'true', 'yes')
+
+        if w_req > 0:
+            try:
+                cache_dir = os.path.join(os.path.dirname(img_path), '_hi')
+                os.makedirs(cache_dir, exist_ok=True)
+                bw_suffix = '_bw' if bw_req else ''
+                cache_name = f"rcp_{rid}_w{w_req}{bw_suffix}.jpg"
+                cache_path = os.path.join(cache_dir, cache_name)
+                src_mtime = os.path.getmtime(img_path)
+                if (not os.path.exists(cache_path)) or os.path.getmtime(cache_path) < src_mtime:
+                    _enhance_receipt_image(img_path, cache_path, w_req, bw=bw_req)
+                return send_from_directory(cache_dir, cache_name)
+            except Exception:
+                pass
+
         return send_from_directory(os.path.dirname(img_path), os.path.basename(img_path))
     except Exception as e:
         return str(e), 500

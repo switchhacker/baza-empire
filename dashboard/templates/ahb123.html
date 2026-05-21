@@ -1104,17 +1104,30 @@
              style="flex:1;min-width:240px;padding:8px 10px;background:#0a0a18;border:1px solid #1a2e1a;border-radius:6px;color:#a7f3d0;font-size:12px">
       <button class="btn btn-sm btn-secondary" onclick="rqeClearSearch()" title="Clear search">✕ Clear</button>
       <span id="rqe-count-label" style="font-size:11px;color:#888;font-weight:700"></span>
+      <span style="flex:1"></span>
+      <span id="rqe-check-counter" title="Receipts you've marked reviewed in this session (visual only, persists in this browser)" style="font-size:11px;color:#10b981;font-weight:700">0 / 0 checked</span>
+      <button class="btn btn-sm btn-secondary" onclick="rqeClearChecks()" title="Uncheck all green checkmarks (does not delete or change any receipts)" style="font-size:11px">↺ Clear ✓</button>
     </div>
     <div id="rqe-rows-host" style="overflow-x:auto">
       <div style="text-align:center;padding:30px;color:#444;font-size:12px">Loading recent receipts…</div>
     </div>
   </div>
 
-  <!-- Receipt image preview modal (lightbox) -->
-  <div id="rqe-img-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;padding:20px" onclick="rqeCloseImg(event)">
-    <div style="position:relative;max-width:95vw;max-height:95vh">
-      <button onclick="rqeCloseImg()" style="position:absolute;top:-40px;right:0;background:#2a0a14;color:#ff8a8a;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer">✕ Close</button>
-      <img id="rqe-img-modal-img" src="" style="max-width:95vw;max-height:90vh;border-radius:8px;border:1px solid #2a2a4a;background:#000">
+  <!-- Receipt image preview modal — zoom-capable lightbox (pinch / wheel /
+       drag) backed by the same progressive Lanczos tier pipeline used in
+       the OCR queue editor. Controls float top-right over the image; image
+       is centered in the stage at all zoom levels (margins collapse to 0
+       when zoomed past the fit so the stage scrolls normally). -->
+  <div id="rqe-img-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.94);z-index:9999;padding:0">
+    <div id="rqe-zoom-stage" style="position:absolute;inset:0;overflow:auto;background:#000;cursor:grab">
+      <img id="rqe-img-modal-img" src="" style="display:block;user-select:none;-webkit-user-drag:none;will-change:margin">
+    </div>
+    <!-- Floating control bar — top-right, above the image, doesn't take stage space -->
+    <div style="position:absolute;top:12px;right:12px;display:flex;gap:8px;align-items:center;z-index:10">
+      <span id="rqe-zoom-title" style="background:rgba(10,10,24,0.85);border:1px solid #1a1a2e;color:#a7f3d0;border-radius:5px;padding:5px 10px;font-size:12px;font-weight:700;max-width:50vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Receipt</span>
+      <button onclick="rqeZoomFit()" title="Fit to window (press 0 or F)" style="background:rgba(26,26,46,0.85);border:1px solid #2a2a4a;color:#a7f3d0;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer">⤢ Fit</button>
+      <button id="rqe-zoom-bw" onclick="rqeZoomToggleBw()" title="Toggle B&W (high-contrast grayscale)" style="background:rgba(26,26,46,0.85);border:1px solid #2a2a4a;color:#a7f3d0;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer">B&amp;W</button>
+      <button onclick="rqeCloseImg()" title="Close (Esc)" style="background:rgba(42,10,20,0.95);color:#ff8a8a;border:1px solid #ff5555;border-radius:5px;padding:5px 12px;font-weight:700;cursor:pointer;font-size:13px">✕ Close</button>
     </div>
   </div>
 
@@ -6868,11 +6881,58 @@ let receiptViewMode='kanban';
 const RQE_CATEGORIES = ['Materials','Tools','Fuel','Food','Office supplies','Clothes','Other'];
 const RQE_PAYMENTS   = ['', 'Cash','Credit','Debit','Check','ACH','Other'];
 const _rqeSaveTimers = {};
-const RQE_GRID_COLS = '54px 1.4fr 1.3fr 105px 100px 105px 1.2fr 1.2fr 32px';
+const RQE_GRID_COLS = '28px 54px 1.4fr 1.3fr 105px 100px 105px 1.2fr 1.2fr 32px';
 let _rqeAllRows = [];
 let _rqeProjects = [];          // sorted list: in-progress first, then recent
 let _rqeProjectsLoaded = false;
 let _rqeOpenPickerId = null;    // row id whose project picker is open
+
+/* Manual "I've reviewed this one" checkmark column. Pure visual — flipping
+   it does NOT change the receipt record, only a localStorage-backed Set
+   keyed by receipt id. Serge uses this to track which receipts he's already
+   reviewed vs still need attention while filing a stack. State survives
+   reload + the 3s poll re-render. */
+const RQE_CHECKED_KEY = 'rqe_checked_ids_v1';
+let _rqeChecked = (function(){
+  try{ return new Set(JSON.parse(localStorage.getItem(RQE_CHECKED_KEY)||'[]')); }
+  catch(e){ return new Set(); }
+})();
+function _rqeSaveChecked(){
+  try{ localStorage.setItem(RQE_CHECKED_KEY, JSON.stringify([..._rqeChecked])); }catch(e){}
+}
+function rqeToggleCheck(id, ev){
+  if(ev){ ev.stopPropagation(); }
+  if(_rqeChecked.has(id)) _rqeChecked.delete(id);
+  else _rqeChecked.add(id);
+  _rqeSaveChecked();
+  // Repaint just this one cell — avoid re-rendering the whole list so
+  // open inputs / pickers stay intact.
+  const cell = document.querySelector(`.rqe-row[data-id="${id}"] .rqe-chk`);
+  if(cell) cell.innerHTML = _rqeCheckCellInner(id);
+  _rqeUpdateCheckCounter();
+}
+function _rqeCheckCellInner(id){
+  const on = _rqeChecked.has(id);
+  return on
+    ? '<span title="Reviewed — click to unmark" style="display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:5px;background:#0e3a26;border:1px solid #10b981;color:#10b981;font-weight:900;font-size:13px">&#10003;</span>'
+    : '<span title="Click to mark this receipt as reviewed (visual only)" style="display:inline-block;width:20px;height:20px;border-radius:5px;background:#0a0a18;border:1px solid #2a2a4a"></span>';
+}
+function _rqeUpdateCheckCounter(){
+  const el = document.getElementById('rqe-check-counter');
+  if(!el) return;
+  // Count against the currently-loaded rows (intersection with the
+  // localStorage set), so the counter reflects the visible session.
+  let n = 0;
+  for(const r of _rqeAllRows){ if(_rqeChecked.has(r.id)) n++; }
+  el.textContent = `${n} / ${_rqeAllRows.length} checked`;
+}
+function rqeClearChecks(){
+  if(!_rqeChecked.size){ showToast('Nothing to clear'); return; }
+  if(!confirm(`Uncheck all ${_rqeChecked.size} marked receipts? (No data is deleted — only the green checkmarks.)`)) return;
+  _rqeChecked.clear();
+  _rqeSaveChecked();
+  rqeFilter();
+}
 
 function rqeSetCount(n){
   const el = document.getElementById('rqe-count');
@@ -6916,12 +6976,14 @@ function _rqeRenderRows(rows, q){
     return;
   }
   host.innerHTML = `
-    <div style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e;min-width:1180px">
+    <div style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;padding:6px 4px;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a1a2e;min-width:1208px">
+      <div title="Manual reviewed-checkmark (visual only)" style="text-align:center">✓</div>
       <div>Preview</div><div>Vendor</div><div>Store · Address</div><div>Date</div><div>Amount</div><div>Category</div><div>Payment · Notes</div><div>Project</div><div></div>
     </div>
-    <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:1180px">
+    <div id="rqe-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:1208px">
       ${rows.map(r=>_rqeRowHtml(r)).join('')}
     </div>`;
+  _rqeUpdateCheckCounter();
 }
 async function rqeLoad(){
   const host = document.getElementById('rqe-rows-host');
@@ -6958,9 +7020,10 @@ function _rqeRowHtml(r){
   const payOptions = RQE_PAYMENTS.map(p=>`<option value="${escHtml(p)}"${p===pay?' selected':''}>${p?escHtml(p):'—'}</option>`).join('');
   const thumbUrl = '/api/ahb/receipts/image/' + r.id;
   return `<div class="rqe-row" data-id="${r.id}" style="display:grid;grid-template-columns:${RQE_GRID_COLS};gap:6px;align-items:center;padding:4px 4px;border-bottom:1px solid #0e0e1e;position:relative">
+    <div class="rqe-chk" onclick="rqeToggleCheck('${r.id}', event)" style="display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none">${_rqeCheckCellInner(r.id)}</div>
     <img src="${thumbUrl}" alt="" loading="lazy"
          style="width:48px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #1a1a2e;background:#0a0a18;cursor:zoom-in"
-         onclick="rqeOpenImg('${r.id}', event)"
+         onclick="rqeOpenZoomEditor('${r.id}', event)"
          onerror="this.style.display='none'; this.insertAdjacentHTML('afterend','<div style=\\'width:48px;height:60px;border:1px dashed #1a1a2e;border-radius:4px;color:#333;font-size:9px;display:flex;align-items:center;justify-content:center;text-align:center\\'>no<br>image</div>');">
     <input style="${inputBase}" data-f="vendor" data-orig="${escHtml(r._orig_vendor != null ? r._orig_vendor : vendor)}" value="${escHtml(vendor)}" placeholder="Vendor" oninput="rqeQueueSave('${r.id}')" onblur="rqeCheckBulkRename('${r.id}')">
     <div style="display:flex;flex-direction:column;gap:3px">
@@ -6979,14 +7042,198 @@ function _rqeRowHtml(r){
     <span class="rqe-saved" id="rqe-saved-${r.id}" style="position:absolute;right:46px;top:8px;font-size:9px;color:#10b981;opacity:0;transition:opacity .3s;font-weight:700;letter-spacing:.5px;text-transform:uppercase">saved</span>
   </div>`;
 }
-function rqeOpenImg(id, ev){
+/* Zoom-capable lightbox for filed receipts — same UX as the OCR queue
+   editor (pinch / wheel / drag), backed by the server's Lanczos+unsharp
+   tier pipeline so high zoom levels read real pixels instead of bicubic
+   on a 480x640 source. */
+const _rqeZoom = {
+  id:null, bw:false, zoom:1, fitScale:1,
+  imageW:0, imageH:0,
+  loadedTier:0,
+  tiers:[1600, 2400, 3200, 4000],
+  loading:false,
+  panX:0, panY:0,
+  isDown:false, lastX:0, lastY:0,
+  // pinch
+  pinchDist0:0, pinchScale0:1, pinchMid:{x:0,y:0},
+  installed:false,
+};
+function _rqeZoomTierFor(z){
+  const t=_rqeZoom.tiers;
+  if(z>=6) return t[3];
+  if(z>=4) return t[2];
+  if(z>=2.5) return t[1];
+  return t[0];
+}
+function _rqeZoomImgSrc(w){
+  const bw = _rqeZoom.bw ? '&bw=1' : '';
+  return '/api/ahb/receipts/image/' + _rqeZoom.id + '?w=' + w + bw + '&t=' + Date.now();
+}
+function _rqeZoomApply(){
+  const img = document.getElementById('rqe-img-modal-img');
+  const stage = document.getElementById('rqe-zoom-stage');
+  if(!img || !stage) return;
+  const s = _rqeZoom.fitScale * _rqeZoom.zoom;
+  const w = _rqeZoom.imageW * s;
+  const h = _rqeZoom.imageH * s;
+  img.style.width = w + 'px';
+  img.style.height = h + 'px';
+  // Center the image in the stage when smaller than the stage; collapse
+  // margins to 0 when zoomed past so the stage scrolls normally.
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  img.style.marginLeft = Math.max(0, (sw - w) / 2) + 'px';
+  img.style.marginTop  = Math.max(0, (sh - h) / 2) + 'px';
+}
+function rqeZoomFit(){
+  const stage = document.getElementById('rqe-zoom-stage');
+  if(!stage || !_rqeZoom.imageW) return;
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  _rqeZoom.fitScale = Math.min(sw / _rqeZoom.imageW, sh / _rqeZoom.imageH, 1);
+  _rqeZoom.zoom = 1;
+  _rqeZoomApply();
+  stage.scrollLeft = 0; stage.scrollTop = 0;
+}
+function rqeZoomToggleBw(){
+  _rqeZoom.bw = !_rqeZoom.bw;
+  const btn = document.getElementById('rqe-zoom-bw');
+  if(btn){
+    btn.style.background = _rqeZoom.bw ? '#7c3aed33' : '#1a1a2e';
+    btn.style.borderColor = _rqeZoom.bw ? '#7c3aed' : '#2a2a4a';
+  }
+  _rqeZoomLoad(_rqeZoom.loadedTier || _rqeZoom.tiers[0]);
+}
+function _rqeZoomLoad(w){
+  if(_rqeZoom.loading) return;
+  const img = document.getElementById('rqe-img-modal-img');
+  if(!img) return;
+  _rqeZoom.loading = true;
+  const ghost = new Image();
+  ghost.onload = function(){
+    img.src = ghost.src;
+    _rqeZoom.imageW = ghost.naturalWidth;
+    _rqeZoom.imageH = ghost.naturalHeight;
+    _rqeZoom.loadedTier = w;
+    _rqeZoom.loading = false;
+    if(_rqeZoom.fitScale === 1 && _rqeZoom.zoom === 1) rqeZoomFit();
+    else _rqeZoomApply();
+  };
+  ghost.onerror = function(){ _rqeZoom.loading = false; };
+  ghost.src = _rqeZoomImgSrc(w);
+}
+function _rqeZoomMaybeUpgrade(){
+  const want = _rqeZoomTierFor(_rqeZoom.zoom);
+  if(want > _rqeZoom.loadedTier) _rqeZoomLoad(want);
+}
+function _rqeZoomAround(stage, cx, cy, oldZ, newZ){
+  // Account for the centering margin: when the image is smaller than the
+  // stage, its left edge sits at marginLeft (not 0), so the cursor's
+  // position in image-content coordinates is cx - rect.left - marginLeft
+  // (+ scroll). Without this correction the zoom anchor drifts whenever
+  // the image transitions through fit-size.
+  const img = document.getElementById('rqe-img-modal-img');
+  const ratio = newZ / oldZ;
+  const ml = parseFloat(img.style.marginLeft) || 0;
+  const mt = parseFloat(img.style.marginTop)  || 0;
+  const sx = stage.scrollLeft, sy = stage.scrollTop;
+  const rect = stage.getBoundingClientRect();
+  const px = cx - rect.left - ml + sx;
+  const py = cy - rect.top  - mt + sy;
+  _rqeZoomApply();
+  const ml2 = parseFloat(img.style.marginLeft) || 0;
+  const mt2 = parseFloat(img.style.marginTop)  || 0;
+  stage.scrollLeft = px * ratio - (cx - rect.left - ml2);
+  stage.scrollTop  = py * ratio - (cy - rect.top  - mt2);
+}
+function _rqeZoomInstall(){
+  if(_rqeZoom.installed) return;
+  const stage = document.getElementById('rqe-zoom-stage');
+  if(!stage) return;
+  stage.addEventListener('wheel', function(ev){
+    if(!_rqeZoom.imageW) return;
+    ev.preventDefault();
+    const factor = ev.deltaY > 0 ? (1/1.18) : 1.18;
+    const oldZ = _rqeZoom.zoom;
+    _rqeZoom.zoom = Math.max(0.25, Math.min(8, oldZ * factor));
+    _rqeZoomAround(stage, ev.clientX, ev.clientY, oldZ, _rqeZoom.zoom);
+    _rqeZoomMaybeUpgrade();
+  }, {passive:false});
+  stage.addEventListener('mousedown', function(ev){
+    if(ev.button !== 0) return;
+    _rqeZoom.isDown = true;
+    _rqeZoom.lastX = ev.clientX; _rqeZoom.lastY = ev.clientY;
+    stage.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', function(ev){
+    if(!_rqeZoom.isDown) return;
+    stage.scrollLeft -= (ev.clientX - _rqeZoom.lastX);
+    stage.scrollTop  -= (ev.clientY - _rqeZoom.lastY);
+    _rqeZoom.lastX = ev.clientX; _rqeZoom.lastY = ev.clientY;
+  });
+  window.addEventListener('mouseup', function(){
+    _rqeZoom.isDown = false;
+    if(stage) stage.style.cursor = 'grab';
+  });
+  // Pinch zoom
+  stage.addEventListener('touchstart', function(ev){
+    if(ev.touches.length !== 2) return;
+    const a = ev.touches[0], b = ev.touches[1];
+    _rqeZoom.pinchDist0 = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    _rqeZoom.pinchScale0 = _rqeZoom.zoom;
+    _rqeZoom.pinchMid = {x:(a.clientX + b.clientX)/2, y:(a.clientY + b.clientY)/2};
+  }, {passive:true});
+  stage.addEventListener('touchmove', function(ev){
+    if(ev.touches.length !== 2 || !_rqeZoom.pinchDist0) return;
+    ev.preventDefault();
+    const a = ev.touches[0], b = ev.touches[1];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const oldZ = _rqeZoom.zoom;
+    _rqeZoom.zoom = Math.max(0.25, Math.min(8, _rqeZoom.pinchScale0 * (d / _rqeZoom.pinchDist0)));
+    _rqeZoomAround(stage, _rqeZoom.pinchMid.x, _rqeZoom.pinchMid.y, oldZ, _rqeZoom.zoom);
+    _rqeZoomMaybeUpgrade();
+  }, {passive:false});
+  stage.addEventListener('touchend', function(ev){
+    if(ev.touches.length < 2) _rqeZoom.pinchDist0 = 0;
+  });
+  document.addEventListener('keydown', function(ev){
+    const modal = document.getElementById('rqe-img-modal');
+    if(!modal || modal.style.display !== 'flex') return;
+    if(ev.key === 'Escape') rqeCloseImg();
+    else if(ev.key === '0' || ev.key === 'f') rqeZoomFit();
+  });
+  _rqeZoom.installed = true;
+}
+function rqeOpenZoomEditor(id, ev){
   if(ev){ ev.stopPropagation(); ev.preventDefault(); }
   const modal = document.getElementById('rqe-img-modal');
-  const img = document.getElementById('rqe-img-modal-img');
-  if(!modal || !img) return;
-  img.src = '/api/ahb/receipts/image/' + id + '?t=' + Date.now();
+  if(!modal) return;
+  // Find row info for the title
+  const r = _rqeAllRows.find(x => x.id === id);
+  const title = document.getElementById('rqe-zoom-title');
+  if(title){
+    const vendor = (r && (r.store_name || r.vendor)) || 'Receipt';
+    const date = r && r.receipt_date ? (' · ' + r.receipt_date.slice(0,10)) : '';
+    const amt  = r && (r.total!=null||r.amount!=null) ? (' · $'+Number(r.total!=null?r.total:r.amount).toFixed(2)) : '';
+    title.textContent = vendor + date + amt;
+  }
+  _rqeZoom.id = id;
+  _rqeZoom.zoom = 1;
+  _rqeZoom.loadedTier = 0;
+  _rqeZoom.imageW = 0; _rqeZoom.imageH = 0;
+  _rqeZoom.fitScale = 1;
+  // Reset B&W button visual to OFF on open; the field state below remains
+  // whatever the user last picked.
+  const btn = document.getElementById('rqe-zoom-bw');
+  if(btn){
+    btn.style.background = _rqeZoom.bw ? '#7c3aed33' : '#1a1a2e';
+    btn.style.borderColor = _rqeZoom.bw ? '#7c3aed' : '#2a2a4a';
+  }
   modal.style.display = 'flex';
+  _rqeZoomInstall();
+  // First tier = 1600. Higher tiers fetched as the user zooms.
+  _rqeZoomLoad(_rqeZoom.tiers[0]);
 }
+// Keep the old name working for any in-flight handlers.
+function rqeOpenImg(id, ev){ return rqeOpenZoomEditor(id, ev); }
 function rqeCloseImg(ev){
   if(ev && ev.target && ev.target.tagName === 'IMG') return;
   const modal = document.getElementById('rqe-img-modal');
