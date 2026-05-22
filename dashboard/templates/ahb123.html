@@ -17633,6 +17633,15 @@ SocialStudio.modules.composer = (function(){
     return '/api/cloud/media/serve/' + encodeURIComponent(subPath);
   }
 
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function renderSourceGrid() {
     const grid = document.getElementById('ss-source-grid');
     if (!grid) return;
@@ -17642,7 +17651,7 @@ SocialStudio.modules.composer = (function(){
              src="${thumbUrl(s.sub_path)}"
              onerror="this.style.opacity='0.3'"
              loading="lazy" onclick="SocialStudio.modules.composer.toggle(${s.id})">
-        <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.caption||s.sub_path||'').slice(0,40)}</div>
+        <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((s.caption||s.sub_path||'').slice(0,40))}</div>
       </div>
     `).join('');
   }
