@@ -1,0 +1,9 @@
+[Unit]
+Description=Baza Social Auto-Pilot tick (hourly)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -fsS -X POST http://127.0.0.1:8888/api/ahb/social/autopilot/tick
+StandardOutput=journal
+StandardError=journal

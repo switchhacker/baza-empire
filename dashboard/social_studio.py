@@ -851,3 +851,257 @@ def social_brand_put():
     b.update({k: v for k, v in data.items() if k in b})
     _settings.save_brand_kit(b)
     return jsonify({"ok": True, "brand_kit": b})
+
+
+# ---------------------------------------------------------------------------
+# Auto-Pilot helpers
+# ---------------------------------------------------------------------------
+from datetime import timedelta
+
+
+def _today_iso() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _count_posts_today(con, preset_id=None) -> int:
+    if preset_id is not None:
+        return con.execute(
+            "SELECT COUNT(*) FROM ahb_social_posts WHERE date(created_at)=? AND preset_id=?",
+            (_today_iso(), preset_id),
+        ).fetchone()[0]
+    return con.execute(
+        "SELECT COUNT(*) FROM ahb_social_posts WHERE date(created_at)=?",
+        (_today_iso(),),
+    ).fetchone()[0]
+
+
+def _next_run_from_cadence(cadence: str, n_per_week: int) -> str:
+    now = datetime.utcnow()
+    if cadence == "daily":
+        return (now + timedelta(days=1)).isoformat(timespec="seconds")
+    if cadence == "n_per_week" and n_per_week > 0:
+        gap_hours = max(1, int(7 * 24 / n_per_week))
+        return (now + timedelta(hours=gap_hours)).isoformat(timespec="seconds")
+    if cadence == "on_trigger":
+        return ""
+    return ""
+
+
+def _pick_sources_for_preset(con, source_filter: dict, cool_down_days: int) -> list:
+    """Return a list of image_captions.id matching the preset's filter,
+    excluding any used by a post within cool_down_days."""
+    args = []
+    sql = "SELECT id FROM image_captions WHERE 1=1"
+    pids = source_filter.get("project_ids") or []
+    if pids:
+        placeholders = ",".join("?" * len(pids))
+        sql += f" AND project_id IN ({placeholders})"
+        args.extend(pids)
+    sql += " ORDER BY indexed_at DESC LIMIT 12"
+    try:
+        candidates = [r[0] for r in con.execute(sql, args).fetchall()]
+    except sqlite3.OperationalError:
+        return []
+    if candidates:
+        used_rows = con.execute(
+            "SELECT source_media_ids FROM ahb_social_posts "
+            "WHERE created_at >= datetime('now', ?)",
+            (f"-{int(cool_down_days)} days",),
+        ).fetchall()
+        used = set()
+        for r in used_rows:
+            try:
+                used.update(json.loads(r[0] or "[]"))
+            except Exception:
+                pass
+        candidates = [c for c in candidates if c not in used]
+    return candidates
+
+
+@social_bp.route("/api/ahb/social/autopilot/status", methods=["GET"])
+def autopilot_status():
+    s = _settings.load_settings()
+    con = _conn()
+    try:
+        drafts_today = _count_posts_today(con)
+    finally:
+        con.close()
+    return jsonify({
+        "master": bool(s.get("autopilot_master")),
+        "drafts_today": drafts_today,
+        "daily_cap": s.get("daily_post_cap"),
+    })
+
+
+@social_bp.route("/api/ahb/social/autopilot/toggle", methods=["POST"])
+def autopilot_toggle():
+    on = bool((request.get_json(silent=True) or {}).get("on"))
+    s = _settings.load_settings()
+    s["autopilot_master"] = on
+    _settings.save_settings(s)
+    return jsonify({"ok": True, "master": on})
+
+
+def _generate_one_post_from_preset(preset: dict, source_ids: list):
+    """Build caption + hashtags + score for the preset using local Ollama,
+    insert a row into ahb_social_posts, return the new post id."""
+    platform = (preset.get("platform_targets") or ["ig_feed_square"])[0]
+    sys_prompt = _settings.load_prompt("caption_system")
+    summary = _sources_summary(source_ids)
+    user = (
+        f"Platform: {platform}\nTone: {preset.get('tone','pro')}\n"
+        f"Length: {preset.get('length','medium')}\nStyle: {preset.get('style','trade')}\n"
+        f"Source media:\n{summary}\n"
+    )
+    model = _pick_copy_model()
+    caption = _call_ollama_chat(model, sys_prompt, user).strip()
+    brand = _settings.load_brand_kit()
+    raw = _call_ollama_chat(
+        model, _settings.load_prompt("hashtag_system"),
+        f"Caption: {caption}\nPlatform: {platform}\nFloor: {brand.get('hashtag_floor') or []}\n",
+        temperature=0.4,
+    )
+    tags = _extract_json_array(raw)
+    for f in (brand.get("hashtag_floor") or []):
+        if f not in tags:
+            tags.append(f)
+    raw_s = _call_ollama_chat(
+        model, _settings.load_prompt("score_system"),
+        f"Platform: {platform}\nCaption:\n{caption}\nHashtags: {' '.join(tags)}\n",
+        temperature=0.2,
+    )
+    score_obj = _extract_json_obj(raw_s)
+    score = int(score_obj.get("score") or 0)
+    status = "pending_review"
+    if preset.get("auto_approve") and score >= int(preset.get("score_threshold") or 75):
+        status = "approved"
+    con = _conn()
+    try:
+        cur = con.execute(
+            """INSERT INTO ahb_social_posts
+            (preset_id, source_media_ids, platform, variant, caption, hashtags,
+             first_comment, status, score, ai_meta)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (preset["id"], json.dumps(source_ids), platform, platform,
+             caption, " ".join(tags),
+             brand.get("first_comment_floor") or "",
+             status, score,
+             json.dumps({"model": model, "notes": score_obj.get("notes", "")})),
+        )
+        con.commit()
+        return cur.lastrowid
+    finally:
+        con.close()
+
+
+@social_bp.route("/api/ahb/social/autopilot/tick", methods=["POST"])
+def autopilot_tick():
+    s = _settings.load_settings()
+    if not s.get("autopilot_master"):
+        return jsonify({"ran": 0, "reason": "master off"})
+    daily_cap = int(s.get("daily_post_cap") or 4)
+    cool_days = int(s.get("cool_down_days") or 14)
+    now_iso = datetime.utcnow().isoformat(timespec="seconds")
+    con = _conn()
+    try:
+        drafts_today = _count_posts_today(con)
+        if drafts_today >= daily_cap:
+            return jsonify({"ran": 0, "reason": "daily cap"})
+        due = con.execute(
+            "SELECT * FROM ahb_social_presets WHERE active=1 AND cadence != 'off' "
+            "AND (next_run_at IS NULL OR next_run_at = '' OR next_run_at <= ?) "
+            "ORDER BY next_run_at",
+            (now_iso,),
+        ).fetchall()
+        ran = []
+        for r in due:
+            if drafts_today >= daily_cap:
+                break
+            preset = _row_to_preset(r)
+            if _count_posts_today(con, preset_id=preset["id"]) >= int(preset.get("max_per_day") or 1):
+                continue
+            try:
+                source_filter = preset.get("source_filter") or {}
+                if isinstance(source_filter, str):
+                    source_filter = json.loads(source_filter or "{}")
+            except Exception:
+                source_filter = {}
+            sources = _pick_sources_for_preset(con, source_filter, cool_days)
+            if not sources:
+                continue
+            try:
+                pid = _generate_one_post_from_preset(preset, sources)
+                ran.append(pid)
+                drafts_today += 1
+                con.execute(
+                    "UPDATE ahb_social_presets SET last_run_at=?, next_run_at=?, updated_at=? WHERE id=?",
+                    (now_iso,
+                     _next_run_from_cadence(preset["cadence"], int(preset.get("n_per_week") or 0)),
+                     now_iso, preset["id"]),
+                )
+                con.commit()
+            except Exception as e:
+                print(f"[autopilot] preset {preset['id']} failed: {e}", flush=True)
+    finally:
+        con.close()
+    return jsonify({"ran": len(ran), "post_ids": ran})
+
+
+@social_bp.route("/api/ahb/social/presets/<int:pid>/run", methods=["POST"])
+def social_preset_run(pid: int):
+    con = _conn()
+    try:
+        r = con.execute("SELECT * FROM ahb_social_presets WHERE id=?", (pid,)).fetchone()
+        if not r:
+            return jsonify({"error": "not found"}), 404
+        preset = _row_to_preset(r)
+        cool_days = int(_settings.load_settings().get("cool_down_days") or 14)
+        try:
+            source_filter = preset.get("source_filter") or {}
+            if isinstance(source_filter, str):
+                source_filter = json.loads(source_filter or "{}")
+        except Exception:
+            source_filter = {}
+        sources = _pick_sources_for_preset(con, source_filter, cool_days)
+    finally:
+        con.close()
+    if not sources:
+        return jsonify({"error": "no eligible sources"}), 400
+    new_pid = _generate_one_post_from_preset(preset, sources)
+    return jsonify({"post_id": new_pid})
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/telegram", methods=["POST"])
+def social_post_telegram(pid: int):
+    """Drop the bundle (or caption + cover) to Serge's Telegram via the
+    Specter bridge /notify endpoint."""
+    con = _conn()
+    try:
+        r = con.execute("SELECT * FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    finally:
+        con.close()
+    if not r:
+        return jsonify({"error": "not found"}), 404
+    post = _row_to_post(r)
+    payload = {
+        "kind": "social_draft",
+        "post_id": pid,
+        "platform": post["platform"],
+        "caption": post.get("caption") or "",
+        "hashtags": post.get("hashtags") or "",
+        "cover_path": post.get("cover_path"),
+        "asset_path": post.get("asset_path"),
+        "score": post.get("score"),
+        "status": post.get("status"),
+    }
+    bridge = os.environ.get("BAZA_SPECTER_BRIDGE", "http://127.0.0.1:8765")
+    try:
+        req = urllib.request.Request(
+            f"{bridge}/notify", data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            ok = resp.status == 200
+    except Exception as e:
+        return jsonify({"error": f"bridge unavailable: {e}"}), 502
+    return jsonify({"ok": ok})
