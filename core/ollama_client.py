@@ -6,6 +6,7 @@ from core.gpu_pool import gpu_pool, GPUSlot
 
 OLLAMA_AMD_URL  = "http://127.0.0.1:11434"   # AMD RX 6700 XT (Vulkan)
 OLLAMA_NV_URL   = "http://127.0.0.1:11435"   # NVIDIA RTX 3070 (CUDA)
+OLLAMA_DUAL_URL = "http://127.0.0.1:11438"   # Both GPUs, Vulkan tensor-split (~20GB)
 LITELLM_URL     = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000")  # Cloud proxy
 LITELLM_KEY     = os.environ.get("LITELLM_MASTER_KEY", "baza-litellm-internal")
 TIMEOUT_SECONDS = 300  # 5 minutes for large models
@@ -14,6 +15,14 @@ TIMEOUT_SECONDS = 300  # 5 minutes for large models
 CLOUD_MODEL_PREFIXES = (
     "gpt-", "claude-", "gemini-", "grok-", "mistral-large", "codestral",
     "groq-", "o1", "o3-", "local/"
+)
+
+# Models that exceed any single GPU's VRAM and must run on the dual-GPU
+# Vulkan instance (port 11438). Routing here bypasses gpu_pool, since the
+# pool slots only represent single GPUs.
+DUAL_GPU_MODEL_PREFIXES = (
+    "supergemma4:",
+    "hf.co/Jiunsong/supergemma4-",
 )
 
 
@@ -25,6 +34,11 @@ def is_cloud_model(model: str) -> bool:
 def is_ollama_cloud_model(model: str) -> bool:
     """Check if model is an Ollama cloud model (runs via local Ollama proxy to Ollama cloud)."""
     return model.endswith(":cloud")
+
+
+def is_dual_gpu_model(model: str) -> bool:
+    """Check if model must run on the dual-GPU Ollama instance (port 11438)."""
+    return any(model.startswith(p) for p in DUAL_GPU_MODEL_PREFIXES)
 
 
 def chat_stream_cloud(model: str, messages: list, system_prompt: str = None,
@@ -190,6 +204,11 @@ def _route_stream(model: str, messages: list, system_prompt, agent_id: str, on_c
     if is_ollama_cloud_model(model):
         ollama_url = os.environ.get("OLLAMA_URL", OLLAMA_AMD_URL)
         yield from chat_stream(model, messages, system_prompt, base_url=ollama_url, on_complete=on_complete)
+        return
+    if is_dual_gpu_model(model):
+        # Bypass gpu_pool — model is too large for any single slot. The dual
+        # Ollama instance owns both GPUs via Vulkan and handles tensor-split.
+        yield from chat_stream(model, messages, system_prompt, base_url=OLLAMA_DUAL_URL, on_complete=on_complete)
         return
     slot: Optional[GPUSlot] = gpu_pool.acquire(agent_id, timeout=120.0, model=model)
     if slot is None:

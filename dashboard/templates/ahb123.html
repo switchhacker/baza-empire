@@ -685,6 +685,32 @@
     left:auto;right:5px;transform:none;
   }
   </style>
+<style>
+  .ss-sub { padding-top: 12px; }
+  .ss-subnav { font-weight: 600; }
+  .ss-subnav.active { background:#10b981; color:#0a0a18; border-color:#10b981; }
+  .ss-grid { display:grid; grid-template-columns: 320px 1fr 340px; gap: 12px; }
+  @media (max-width: 1200px) { .ss-grid { grid-template-columns: 1fr; } }
+  .ss-card { background:#0e0e1e; border:1px solid #1a1a2e; border-radius:12px; padding:12px; }
+  .ss-thumb { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:8px; cursor:pointer; }
+  .ss-thumb.selected { outline:3px solid #10b981; }
+  .ss-platform-tabs { display:flex; gap:6px; margin-bottom:8px; }
+  .ss-platform-tab { padding:6px 10px; border:1px solid #1a1a2e; border-radius:6px; font-size:11px; cursor:pointer; color:#aaa; background:#070712; }
+  .ss-platform-tab.active { background:#10b981; color:#0a0a18; border-color:#10b981; }
+  .ss-preview-shell { background:#000; border-radius:18px; margin:0 auto; max-width:380px; position:relative; overflow:hidden; }
+  .ss-preview-shell.tiktok, .ss-preview-shell.ig_reel, .ss-preview-shell.ig_story { aspect-ratio: 9/16; }
+  .ss-preview-shell.ig_feed_square { aspect-ratio: 1/1; }
+  .ss-preview-shell.ig_feed_portrait { aspect-ratio: 4/5; }
+  .ss-preview-shell canvas, .ss-preview-shell video, .ss-preview-shell img { width:100%; height:100%; object-fit:cover; display:block; }
+  .ss-status-pill { padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; text-transform:uppercase; }
+  .ss-pill-draft { background:#1f2937; color:#9ca3af; }
+  .ss-pill-pending_review { background:#7c2d12; color:#fdba74; }
+  .ss-pill-approved { background:#064e3b; color:#10b981; }
+  .ss-pill-scheduled { background:#1e3a8a; color:#60a5fa; }
+  .ss-pill-posted { background:#064e3b; color:#a7f3d0; }
+  .ss-pill-rejected { background:#7f1d1d; color:#fca5a5; }
+  .ss-pill-failed { background:#7f1d1d; color:#fca5a5; }
+</style>
 </head>
 <body>
 
@@ -703,6 +729,7 @@
   <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
   <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
   <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">🎥</span> Media</div>
+  <div class="sub-tab" data-tab="social" onclick="switchTab('social')"><span class="sub-tab-icon">📣</span> Social</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
 </div>
 <!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
@@ -2953,6 +2980,28 @@
   </div>
 </div>
 
+<div class="tab-pane" id="tab-social">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📣 Social Media Studio</div>
+      <div class="page-sub">Make TikTok + Instagram content from your project media. Local AI. Presets. Auto-pilot.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-secondary ss-subnav" data-sub="composer">Composer</button>
+      <button class="btn-secondary ss-subnav" data-sub="library">Library</button>
+      <button class="btn-secondary ss-subnav" data-sub="scheduler">Scheduler</button>
+      <button class="btn-secondary ss-subnav" data-sub="presets">Presets</button>
+      <button class="btn-secondary ss-subnav" data-sub="autopilot">Auto-Pilot</button>
+      <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
+    </div>
+  </div>
+  <div id="ss-sub-composer" class="ss-sub"></div>
+  <div id="ss-sub-library" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-scheduler" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-presets" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-autopilot" class="ss-sub" style="display:none"></div>
+</div>
+
 <!-- ============================ DOCPREP / DOCUMENT STATION ============================ -->
 <div class="tab-pane" id="tab-docprep">
   <div class="page-header">
@@ -4441,6 +4490,14 @@
     </div>
   </div>
 </div>
+
+<!-- Social Studio body-level modals (per ahb123 modal-ancestor rule) -->
+<div id="socialPresetEditor" class="modal-bg" style="display:none"></div>
+<div id="socialBrandKit"     class="modal-bg" style="display:none"></div>
+<div id="socialImageGen"     class="modal-bg" style="display:none"></div>
+<div id="socialVoiceover"    class="modal-bg" style="display:none"></div>
+<div id="socialSettings"     class="modal-bg" style="display:none"></div>
+<div id="socialPostDetail"   class="modal-bg" style="display:none"></div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -17509,6 +17566,809 @@ async function bpLoadRenders(){
   </div>
 </div>
 
+<script>
+window.SocialStudio = window.SocialStudio || {
+  state: {
+    activeSub: 'composer',
+    activePlatform: 'tiktok',
+    sources: [],
+    shotList: [],
+    platforms: { tiktok:true, ig_reel:true, ig_feed_square:true, ig_feed_portrait:false, ig_story:false },
+    variants: {},
+    settings: null,
+    brandKit: null,
+  },
+  modules: {},
+  init() {
+    if (this._inited) return;
+    this._inited = true;
+    document.querySelectorAll('#tab-social .ss-subnav').forEach(b => {
+      b.addEventListener('click', () => this.switchSub(b.dataset.sub));
+    });
+    this.switchSub('composer');
+  },
+  switchSub(name) {
+    this.state.activeSub = name;
+    document.querySelectorAll('#tab-social .ss-subnav').forEach(b => {
+      b.classList.toggle('active', b.dataset.sub === name);
+    });
+    document.querySelectorAll('#tab-social .ss-sub').forEach(d => {
+      d.style.display = d.id === ('ss-sub-' + name) ? '' : 'none';
+    });
+    const mod = this.modules[name];
+    if (mod && typeof mod.render === 'function') mod.render();
+  },
+  openSettings() { if (this.modules.settings) this.modules.settings.open(); },
+};
+
+// Hook into existing switchTab() so SocialStudio.init() runs when tab opens
+(function(){
+  const orig = window.switchTab;
+  window.switchTab = function(name) {
+    const r = orig ? orig.apply(this, arguments) : undefined;
+    if (name === 'social') SocialStudio.init();
+    return r;
+  };
+})();
+
+SocialStudio.modules.composer = (function(){
+  const root = () => document.getElementById('ss-sub-composer');
+  const state = SocialStudio.state;
+
+  async function loadSources(projectId, type, q) {
+    const url = new URL('/api/ahb/social/sources', location.origin);
+    if (projectId) url.searchParams.set('project_id', projectId);
+    if (type) url.searchParams.set('type', type);
+    if (q) url.searchParams.set('q', q);
+    const r = await fetch(url);
+    state.sources = (await r.json()).items || [];
+    renderSourceGrid();
+  }
+
+  function thumbUrl(subPath) {
+    return '/api/cloud/thumb/' + encodeURIComponent(subPath) + '?size=300';
+  }
+
+  function serveUrl(subPath) {
+    return '/api/cloud/media/serve/' + encodeURIComponent(subPath);
+  }
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderSourceGrid() {
+    const grid = document.getElementById('ss-source-grid');
+    if (!grid) return;
+    grid.innerHTML = state.sources.map(s => `
+      <div class="ss-source-item" data-id="${s.id}">
+        <img class="ss-thumb${state.shotList.includes(s.id) ? ' selected' : ''}"
+             src="${thumbUrl(s.sub_path)}"
+             onerror="this.style.opacity='0.3'"
+             loading="lazy" onclick="SocialStudio.modules.composer.toggle(${s.id})">
+        <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((s.caption||s.sub_path||'').slice(0,40))}</div>
+      </div>
+    `).join('');
+  }
+
+  function toggle(id) {
+    const i = state.shotList.indexOf(id);
+    if (i === -1) state.shotList.push(id); else state.shotList.splice(i, 1);
+    renderSourceGrid();
+    renderPreview();
+  }
+
+  function renderPreview() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    shell.className = 'ss-preview-shell ' + state.activePlatform;
+    const firstId = state.shotList[0];
+    const src = state.sources.find(s => s.id === firstId);
+    if (!src) {
+      shell.innerHTML = '<div style="color:#444;padding:80px 12px;text-align:center;font-size:12px">Pick media at left</div>';
+      return;
+    }
+    const ext = (src.sub_path || '').toLowerCase().split('.').pop();
+    if (['mp4','mov','webm','mkv'].includes(ext)) {
+      shell.innerHTML = `<video src="${serveUrl(src.sub_path)}" muted autoplay playsinline loop></video>`;
+    } else {
+      shell.innerHTML = `<img src="${serveUrl(src.sub_path)}">`;
+    }
+    const hookInput = document.getElementById('ss-hook-input');
+    const hook = hookInput && hookInput.value;
+    if (hook) {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:absolute;top:8%;left:8%;right:8%;text-align:center;font-weight:800;color:white;text-shadow:0 2px 6px black;font-size:24px;line-height:1.1;pointer-events:none';
+      overlay.textContent = hook;
+      shell.appendChild(overlay);
+    }
+  }
+
+  function setPlatform(p) {
+    state.activePlatform = p;
+    document.querySelectorAll('#ss-platform-tabs .ss-platform-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.platform === p);
+    });
+    document.querySelectorAll('[data-platform-block]').forEach(d => {
+      d.style.display = d.dataset.platformBlock === p ? '' : 'none';
+    });
+    renderPreview();
+  }
+
+  async function aiCaption() {
+    const r = await fetch('/api/ahb/social/ai/caption', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        source_ids: state.shotList, platform: state.activePlatform,
+        tone: document.getElementById('ss-tone').value,
+        length: document.getElementById('ss-length').value,
+        style: document.getElementById('ss-style').value,
+      }),
+    });
+    const j = await r.json();
+    document.getElementById('ss-caption-' + state.activePlatform).value = j.caption || '';
+  }
+
+  async function aiHashtags() {
+    const r = await fetch('/api/ahb/social/ai/hashtags', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+        platform: state.activePlatform,
+        count: 18,
+      }),
+    });
+    const j = await r.json();
+    document.getElementById('ss-hashtags-' + state.activePlatform).value = (j.hashtags || []).join(' ');
+  }
+
+  async function aiHooks() {
+    const r = await fetch('/api/ahb/social/ai/hooks', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ source_ids: state.shotList, n: 3 }),
+    });
+    const j = await r.json();
+    if (!j.hooks || !j.hooks.length) { alert('No hooks returned'); return; }
+    const pick = window.prompt('Pick a hook:\n\n' + j.hooks.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
+    const idx = (parseInt(pick, 10) || 1) - 1;
+    if (j.hooks[idx]) {
+      document.getElementById('ss-hook-input').value = j.hooks[idx];
+      renderPreview();
+    }
+  }
+
+  async function aiScore() {
+    const r = await fetch('/api/ahb/social/ai/score', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+        hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
+        platform: state.activePlatform,
+      }),
+    });
+    const j = await r.json();
+    alert(`Score: ${j.score}/100\n\n${j.notes}`);
+  }
+
+  async function renderPackage() {
+    if (!state.shotList.length) { alert('Pick at least one source.'); return; }
+    const post = await fetch('/api/ahb/social/posts', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        platform: state.activePlatform, variant: state.activePlatform,
+        source_media_ids: state.shotList,
+        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+        hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
+      }),
+    }).then(r => r.json());
+    const ren = await fetch(`/api/ahb/social/posts/${post.id}/render`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ hook_text: document.getElementById('ss-hook-input').value || null }),
+    }).then(r => r.json());
+    if (ren.error) { alert('Render failed: ' + ren.error); return; }
+    alert('Rendered: ' + ren.asset_path);
+    SocialStudio.switchSub('library');
+  }
+
+  function render() {
+    root().innerHTML = `
+      <div class="ss-grid">
+        <div class="ss-card">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Sources</div>
+          <select id="ss-source-project" class="filter-select" style="width:100%;margin-bottom:6px" onchange="SocialStudio.modules.composer._reload()">
+            <option value="">All projects</option>
+          </select>
+          <input id="ss-source-q" class="search-box" placeholder="Search caption/tags" style="width:100%;margin-bottom:6px" oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>SocialStudio.modules.composer._reload(),300)">
+          <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:520px;overflow-y:auto"></div>
+        </div>
+        <div class="ss-card">
+          <div id="ss-platform-tabs" class="ss-platform-tabs">
+            <div class="ss-platform-tab active" data-platform="tiktok"   onclick="SocialStudio.modules.composer.setPlatform('tiktok')">TikTok 9:16</div>
+            <div class="ss-platform-tab" data-platform="ig_reel"          onclick="SocialStudio.modules.composer.setPlatform('ig_reel')">IG Reel 9:16</div>
+            <div class="ss-platform-tab" data-platform="ig_feed_square"   onclick="SocialStudio.modules.composer.setPlatform('ig_feed_square')">IG Feed 1:1</div>
+            <div class="ss-platform-tab" data-platform="ig_feed_portrait" onclick="SocialStudio.modules.composer.setPlatform('ig_feed_portrait')">IG Feed 4:5</div>
+            <div class="ss-platform-tab" data-platform="ig_story"         onclick="SocialStudio.modules.composer.setPlatform('ig_story')">IG Story 9:16</div>
+          </div>
+          <div id="ss-preview-shell" class="ss-preview-shell tiktok"></div>
+          <input id="ss-hook-input" placeholder="Hook overlay text (≤ 60 chars)" maxlength="60" style="width:100%;margin-top:8px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" oninput="SocialStudio.modules.composer.renderPreview()">
+        </div>
+        <div class="ss-card" id="ss-variant-panel">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Copy</div>
+          <select id="ss-tone" class="filter-select" style="width:100%;margin-bottom:4px">
+            <option value="pro">Pro</option><option value="hype">Hype</option>
+            <option value="casual">Casual</option><option value="educational">Educational</option>
+            <option value="trade">Trade</option><option value="funny">Funny</option>
+          </select>
+          <select id="ss-length" class="filter-select" style="width:100%;margin-bottom:4px">
+            <option value="short">Short</option><option value="medium" selected>Medium</option><option value="long">Long</option>
+          </select>
+          <select id="ss-style" class="filter-select" style="width:100%;margin-bottom:8px">
+            <option value="trade">Trade</option><option value="lifestyle">Lifestyle</option>
+            <option value="behind">Behind-the-scenes</option><option value="tutorial">Tutorial</option>
+            <option value="showcase">Showcase</option>
+          </select>
+          ${['tiktok','ig_reel','ig_feed_square','ig_feed_portrait','ig_story'].map(p => `
+            <div data-platform-block="${p}" style="${p==='tiktok'?'':'display:none'};margin-bottom:6px">
+              <textarea id="ss-caption-${p}" placeholder="${p} caption" style="width:100%;height:80px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px"></textarea>
+              <input id="ss-hashtags-${p}" placeholder="#hashtag #pool" style="width:100%;margin-top:4px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px">
+            </div>
+          `).join('')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
+          </div>
+          <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render package</button>
+        </div>
+      </div>
+    `;
+    loadSources();
+  }
+
+  function _reload() {
+    const p = document.getElementById('ss-source-project').value || null;
+    const q = document.getElementById('ss-source-q').value || null;
+    loadSources(p, null, q);
+  }
+
+  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderPreview, _reload };
+})();
+
+SocialStudio.modules.library = (function(){
+  const root = () => document.getElementById('ss-sub-library');
+  let items = [];
+  let f = { status: '', platform: '', q: '' };
+  let _t = null;
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    const url = new URL('/api/ahb/social/posts', location.origin);
+    if (f.status) url.searchParams.set('status', f.status);
+    if (f.platform) url.searchParams.set('platform', f.platform);
+    if (f.q) url.searchParams.set('q', f.q);
+    const r = await fetch(url);
+    items = (await r.json()).items || [];
+    paint();
+  }
+
+  function paint() {
+    const grid = items.map(p => `
+      <div class="ss-card" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <img src="${p.cover_path ? '/api/ahb/social/posts/' + p.id + '/cover' : ''}"
+             style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:6px;background:#070712;cursor:pointer"
+             onerror="this.style.opacity='0.2'"
+             onclick="SocialStudio.modules.postdetail.open(${p.id})">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <span class="ss-status-pill ss-pill-${_esc(p.status)}">${_esc(p.status)}</span>
+            <span style="color:#888;font-size:11px">${_esc(p.platform)}</span>
+            ${p.score != null ? `<span style="color:#10b981;font-size:11px">${_esc(p.score)}/100</span>` : ''}
+          </div>
+          <div style="color:#ddd;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((p.caption||'').slice(0,160))}</div>
+          <div style="color:#666;font-size:11px;margin-top:2px">${_esc((p.hashtags||'').slice(0,120))}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${p.status === 'pending_review' ? `
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.setStatus(${p.id},'approved')">&#x2705;</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.setStatus(${p.id},'rejected')">&#x274C;</button>
+          ` : ''}
+          <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.telegram(${p.id})">&#x1F4F2;</button>
+        </div>
+      </div>
+    `).join('');
+    root().innerHTML = `
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <select onchange="SocialStudio.modules.library.setFilter('status', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="pending_review">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="posted">Posted</option>
+          <option value="rejected">Rejected</option>
+          <option value="failed">Failed</option>
+        </select>
+        <select onchange="SocialStudio.modules.library.setFilter('platform', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+          <option value="">All platforms</option>
+          <option value="tiktok">TikTok</option>
+          <option value="ig_reel">IG Reel</option>
+          <option value="ig_feed_square">IG Feed 1:1</option>
+          <option value="ig_feed_portrait">IG Feed 4:5</option>
+          <option value="ig_story">IG Story</option>
+        </select>
+        <input placeholder="Search caption/hashtags" oninput="SocialStudio.modules.library.setFilter('q', this.value)" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+      </div>
+      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet.</div>'}</div>
+    `;
+  }
+
+  function setFilter(k, v) {
+    f[k] = v;
+    if (_t) clearTimeout(_t);
+    _t = setTimeout(load, 250);
+  }
+
+  async function setStatus(id, status) {
+    await fetch('/api/ahb/social/posts/' + id, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status }),
+    });
+    load();
+  }
+
+  async function telegram(id) {
+    const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
+    if (r.ok) alert('Sent to Telegram');
+    else alert('Telegram bridge unavailable');
+  }
+
+  return { render: load, setFilter, setStatus, telegram };
+})();
+
+SocialStudio.modules.postdetail = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function open(id) {
+    // Fetch the post via the list endpoint (no per-ID GET -- N is small)
+    const list = await fetch('/api/ahb/social/posts').then(x => x.json());
+    const p = (list.items || []).find(x => x.id === id);
+    if (!p) { alert('Not found'); return; }
+    const m = document.getElementById('socialPostDetail');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:700px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">${_esc(p.platform)} &middot; #${_esc(p.id)}</div>
+          <button onclick="document.getElementById('socialPostDetail').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <textarea id="pd-caption" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.caption || '')}</textarea>
+        <input id="pd-hashtags" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" value="${_esc(p.hashtags || '')}">
+        <textarea id="pd-firstcomment" style="width:100%;height:60px;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" placeholder="First comment (IG convention)">${_esc(p.first_comment || '')}</textarea>
+        <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
+          <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
+        </div>
+      </div>
+    `;
+  }
+  async function save(id) {
+    await fetch('/api/ahb/social/posts/' + id, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        caption: document.getElementById('pd-caption').value,
+        hashtags: document.getElementById('pd-hashtags').value,
+        first_comment: document.getElementById('pd-firstcomment').value,
+      }),
+    });
+    document.getElementById('socialPostDetail').style.display = 'none';
+    if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+  }
+  function bundle(id) { window.open('/api/ahb/social/posts/' + id + '/bundle', '_blank'); }
+  async function telegram(id) {
+    const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
+    if (r.ok) alert('Sent.');
+    else alert('Telegram bridge unavailable');
+  }
+  return { open, save, bundle, telegram };
+})();
+
+SocialStudio.modules.presets = (function(){
+  const root = () => document.getElementById('ss-sub-presets');
+  let items = [];
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    items = (await fetch('/api/ahb/social/presets').then(r => r.json())).items || [];
+    paint();
+  }
+
+  function paint() {
+    const list = items.map(p => `
+      <div class="ss-card" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="min-width:0">
+            <div style="font-weight:700">${_esc(p.name)} ${p.is_seed ? '<span style="color:#666;font-size:10px;">(seed)</span>' : ''}</div>
+            <div style="color:#888;font-size:11px">${_esc(p.description || '')}</div>
+            <div style="color:#666;font-size:10px;margin-top:2px">cadence: ${_esc(p.cadence)} &middot; max/day: ${_esc(p.max_per_day)} &middot; ${p.active ? 'ACTIVE' : 'paused'}</div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.presets.edit(${p.id})">&#x270F;&#xFE0F;</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.presets.runOnce(${p.id})">&#x25B6;&#xFE0F; Test</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.presets.toggle(${p.id}, ${p.active ? 1 : 0})">${p.active ? '&#x23F8;' : '&#x25B6;'}</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    root().innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:13px;color:#aaa">${items.length} presets</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-secondary" onclick="SocialStudio.modules.presets.installSeeds()">Install seed presets</button>
+          <button class="btn-primary" onclick="SocialStudio.modules.presets.edit(null)">+ New</button>
+        </div>
+      </div>
+      <div>${list || '<div style="color:#444;padding:40px;text-align:center">No presets. Click &quot;Install seed presets&quot;.</div>'}</div>
+    `;
+  }
+
+  async function installSeeds() {
+    const r = await fetch('/api/ahb/social/presets/install-seeds', { method: 'POST' });
+    const j = await r.json();
+    alert('Installed ' + (j.installed || []).length + ' preset(s).');
+    load();
+  }
+
+  function edit(id) {
+    const p = id ? items.find(x => x.id === id) : { name: '', description: '', tone: 'pro',
+        length: 'medium', style: 'trade', cadence: 'off', max_per_day: 1,
+        auto_approve: 0, score_threshold: 75, active: 1 };
+    const m = document.getElementById('socialPresetEditor');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">${id ? 'Edit' : 'New'} preset</div>
+          <button onclick="document.getElementById('socialPresetEditor').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <input id="pe-name" placeholder="Name" value="${_esc(p.name || '')}" style="width:100%;margin-bottom:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">
+        <textarea id="pe-desc" placeholder="Description" style="width:100%;height:60px;margin-bottom:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.description || '')}</textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+          <select id="pe-tone" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"><option value="pro">Pro</option><option value="hype">Hype</option><option value="casual">Casual</option><option value="educational">Educational</option><option value="trade">Trade</option><option value="funny">Funny</option></select>
+          <select id="pe-length" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"><option value="short">Short</option><option value="medium">Medium</option><option value="long">Long</option></select>
+          <select id="pe-cadence" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"><option value="off">Off</option><option value="daily">Daily</option><option value="n_per_week">N/week</option><option value="on_trigger">On trigger</option></select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+          <label style="font-size:12px;color:#aaa">Max/day <input id="pe-max" type="number" min="0" value="${_esc(p.max_per_day || 1)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"></label>
+          <label style="font-size:12px;color:#aaa">Score &ge; <input id="pe-threshold" type="number" min="0" max="100" value="${_esc(p.score_threshold || 75)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"></label>
+        </div>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:6px">
+          <input id="pe-autoapprove" type="checkbox" ${p.auto_approve ? 'checked' : ''}> Auto-approve when score &ge; threshold
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:10px">
+          <input id="pe-active" type="checkbox" ${p.active ? 'checked' : ''}> Active
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px">
+          <button class="btn-primary" onclick="SocialStudio.modules.presets.save(${id || 'null'})">Save</button>
+        </div>
+      </div>
+    `;
+    // Pre-select the dropdowns to the current values
+    setTimeout(() => {
+      const t = document.getElementById('pe-tone'); if (t) t.value = p.tone || 'pro';
+      const l = document.getElementById('pe-length'); if (l) l.value = p.length || 'medium';
+      const c = document.getElementById('pe-cadence'); if (c) c.value = p.cadence || 'off';
+    }, 0);
+  }
+
+  async function save(id) {
+    const body = {
+      name: document.getElementById('pe-name').value,
+      description: document.getElementById('pe-desc').value,
+      tone: document.getElementById('pe-tone').value,
+      length: document.getElementById('pe-length').value,
+      cadence: document.getElementById('pe-cadence').value,
+      max_per_day: parseInt(document.getElementById('pe-max').value, 10) || 1,
+      score_threshold: parseInt(document.getElementById('pe-threshold').value, 10) || 75,
+      auto_approve: document.getElementById('pe-autoapprove').checked ? 1 : 0,
+      active: document.getElementById('pe-active').checked ? 1 : 0,
+    };
+    const r = id
+      ? await fetch('/api/ahb/social/presets/' + id, {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        })
+      : await fetch('/api/ahb/social/presets', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+    if (!r.ok) { alert('Save failed'); return; }
+    document.getElementById('socialPresetEditor').style.display = 'none';
+    load();
+  }
+
+  async function runOnce(id) {
+    const r = await fetch('/api/ahb/social/presets/' + id + '/run', { method: 'POST' });
+    const j = await r.json();
+    alert('Test run: ' + (j.post_id ? '#' + j.post_id : j.error || 'see logs'));
+  }
+
+  async function toggle(id, currentActive) {
+    await fetch('/api/ahb/social/presets/' + id, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ active: currentActive ? 0 : 1 }),
+    });
+    load();
+  }
+
+  return { render: load, edit, save, runOnce, toggle, installSeeds };
+})();
+
+SocialStudio.modules.settings = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function open() {
+    const s = await fetch('/api/ahb/social/settings').then(r => r.json());
+    const m = document.getElementById('socialSettings');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">&#x2699;&#xFE0F; Social Studio Settings</div>
+          <button onclick="document.getElementById('socialSettings').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Default copy model
+          <input id="ss-set-model" value="${_esc(s.default_copy_model || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Daily post cap
+          <input id="ss-set-cap" type="number" min="0" value="${_esc(s.daily_post_cap || 4)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Cool-down days (don't reuse media within N days)
+          <input id="ss-set-cooldown" type="number" min="0" value="${_esc(s.cool_down_days || 14)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">
+          <input id="ss-set-cloud" type="checkbox" ${s.cloud_models_enabled ? 'checked' : ''}> Enable cloud models (off by default; HARD RULE)
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">
+          <input id="ss-set-autopilot" type="checkbox" ${s.autopilot_master ? 'checked' : ''}> Auto-Pilot master ON
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
+          <button class="btn-secondary" onclick="SocialStudio.modules.brandkit && SocialStudio.modules.brandkit.open()">Edit Brand Kit</button>
+          <button class="btn-primary" onclick="SocialStudio.modules.settings.save()">Save</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function save() {
+    const body = {
+      default_copy_model: document.getElementById('ss-set-model').value,
+      daily_post_cap: parseInt(document.getElementById('ss-set-cap').value, 10) || 4,
+      cool_down_days: parseInt(document.getElementById('ss-set-cooldown').value, 10) || 14,
+      cloud_models_enabled: document.getElementById('ss-set-cloud').checked,
+      autopilot_master: document.getElementById('ss-set-autopilot').checked,
+    };
+    await fetch('/api/ahb/social/settings', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    document.getElementById('socialSettings').style.display = 'none';
+  }
+  return { open, save };
+})();
+
+SocialStudio.modules.brandkit = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function open() {
+    const b = await fetch('/api/ahb/social/brand-kit').then(r => r.json());
+    const m = document.getElementById('socialBrandKit');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🎨 Brand Kit</div>
+          <button onclick="document.getElementById('socialBrandKit').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Primary color
+          <input id="bk-primary" value="${_esc(b.primary_color || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Secondary color
+          <input id="bk-secondary" value="${_esc(b.secondary_color || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Hashtag floor (space-separated)
+          <input id="bk-floor" value="${_esc((b.hashtag_floor||[]).join(' '))}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">First-comment floor
+          <textarea id="bk-comment" style="width:100%;height:60px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">${_esc(b.first_comment_floor || '')}</textarea>
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">HIC #
+          <input id="bk-hic" value="${_esc(b.hic_number || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Founded year
+          <input id="bk-year" value="${_esc(b.founded_year || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
+          <button class="btn-primary" onclick="SocialStudio.modules.brandkit.save()">Save</button>
+        </div>
+      </div>
+    `;
+  }
+  async function save() {
+    const body = {
+      primary_color: document.getElementById('bk-primary').value,
+      secondary_color: document.getElementById('bk-secondary').value,
+      hashtag_floor: document.getElementById('bk-floor').value.split(/\s+/).filter(Boolean),
+      first_comment_floor: document.getElementById('bk-comment').value,
+      hic_number: document.getElementById('bk-hic').value,
+      founded_year: document.getElementById('bk-year').value,
+    };
+    await fetch('/api/ahb/social/brand-kit', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    document.getElementById('socialBrandKit').style.display = 'none';
+  }
+  return { open, save };
+})();
+
+SocialStudio.modules.scheduler = (function(){
+  const root = () => document.getElementById('ss-sub-scheduler');
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    let items = [];
+    try {
+      const r = await fetch('/api/ahb/social/posts?status=scheduled');
+      if (r.ok) items = (await r.json()).items || [];
+    } catch (e) {}
+    const days = {};
+    items.forEach(p => {
+      const d = (p.scheduled_at || '').slice(0, 10) || 'unscheduled';
+      (days[d] = days[d] || []).push(p);
+    });
+    const sortedKeys = Object.keys(days).sort();
+    const html = sortedKeys.map(d => `
+      <div class="ss-card" style="margin-bottom:8px">
+        <div style="font-weight:700;color:#10b981;margin-bottom:6px">${_esc(d)}</div>
+        ${days[d].map(p => `
+          <div style="display:flex;gap:8px;padding:4px 0;border-top:1px solid #1a1a2e">
+            <div style="color:#aaa;font-size:12px;min-width:120px">${_esc(p.platform)}</div>
+            <div style="flex:1;color:#ddd;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((p.caption||'').slice(0,140))}</div>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">No scheduled posts.</div>';
+  }
+  return { render: load };
+})();
+
+SocialStudio.modules.autopilot = (function(){
+  const root = () => document.getElementById('ss-sub-autopilot');
+  let _t = null;
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    // Auto-Pilot status endpoint added in Task 13; gracefully degrade if absent
+    let status = { master: false, drafts_today: 0, daily_cap: 0 };
+    try {
+      const r = await fetch('/api/ahb/social/autopilot/status');
+      if (r.ok) status = await r.json();
+    } catch (e) {}
+    let presets = [];
+    try {
+      const r = await fetch('/api/ahb/social/presets');
+      if (r.ok) presets = (await r.json()).items || [];
+    } catch (e) {}
+    const presetRows = presets.filter(p => p.active && p.cadence !== 'off').map(p => `
+      <tr>
+        <td>${_esc(p.name)}</td>
+        <td>${_esc(p.cadence)}</td>
+        <td>${_esc(p.last_run_at || '—')}</td>
+        <td>${_esc(p.next_run_at || '—')}</td>
+      </tr>
+    `).join('');
+    root().innerHTML = `
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div class="ss-card" style="flex:1;min-width:160px">
+          <div style="color:#aaa;font-size:11px;text-transform:uppercase">Master switch</div>
+          <label style="display:inline-flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
+            <input id="ap-master" type="checkbox" ${status.master ? 'checked' : ''} onchange="SocialStudio.modules.autopilot.toggleMaster(this.checked)">
+            <span>${status.master ? 'ON' : 'OFF'}</span>
+          </label>
+        </div>
+        <div class="ss-card" style="flex:1;min-width:140px">
+          <div style="color:#aaa;font-size:11px;text-transform:uppercase">Drafts today</div>
+          <div style="font-size:24px;font-weight:800;color:#10b981">${_esc(status.drafts_today != null ? status.drafts_today : '—')}</div>
+        </div>
+        <div class="ss-card" style="flex:1;min-width:140px">
+          <div style="color:#aaa;font-size:11px;text-transform:uppercase">Daily cap</div>
+          <div style="font-size:24px;font-weight:800">${_esc(status.daily_cap || '—')}</div>
+        </div>
+      </div>
+      <div class="ss-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-weight:700">Active scheduled presets</div>
+          <button class="btn-secondary" onclick="SocialStudio.modules.autopilot.runTickNow()">Run tick now</button>
+        </div>
+        <table class="data-table" style="width:100%">
+          <thead><tr><th>Name</th><th>Cadence</th><th>Last run</th><th>Next run</th></tr></thead>
+          <tbody>${presetRows || '<tr><td colspan="4" style="color:#666;text-align:center;padding:12px">No active scheduled presets.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function toggleMaster(on) {
+    try {
+      const r = await fetch('/api/ahb/social/autopilot/toggle', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ on: !!on }),
+      });
+      if (!r.ok) alert('Auto-Pilot endpoint not ready (Task 13)');
+    } catch (e) {
+      alert('Auto-Pilot endpoint not reachable');
+    }
+    load();
+  }
+
+  async function runTickNow() {
+    try {
+      const r = await fetch('/api/ahb/social/autopilot/tick', { method: 'POST' });
+      if (r.ok) {
+        const j = await r.json();
+        alert('Tick: ' + JSON.stringify(j));
+      } else {
+        alert('Auto-Pilot endpoint not ready (Task 13)');
+      }
+    } catch (e) {
+      alert('Auto-Pilot endpoint not reachable');
+    }
+    load();
+  }
+
+  return { render: load, toggleMaster, runTickNow };
+})();
+</script>
 
 </body>
 </html>

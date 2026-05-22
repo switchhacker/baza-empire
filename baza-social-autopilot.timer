@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly tick for Baza Social Auto-Pilot
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

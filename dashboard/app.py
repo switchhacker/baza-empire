@@ -1221,6 +1221,7 @@ def agent_detail(agent_id):
 
     amd_models  = _fetch_ollama_models(11434)
     cuda_models = _fetch_ollama_models(11435)
+    dual_models = _fetch_ollama_models(11438)
     cloud_models = _fetch_litellm_models()
 
     # Fallback so current model always appears even if Ollama is briefly offline
@@ -1229,10 +1230,11 @@ def agent_detail(agent_id):
         if current_model.startswith(("gpt-","claude-","gemini-","grok-","groq-","mistral-large","codestral","o1","o3")):
             if current_model not in cloud_models:
                 cloud_models.insert(0, current_model)
-        elif current_model not in amd_models and current_model not in cuda_models:
+        elif current_model not in amd_models and current_model not in cuda_models and current_model not in dual_models:
             amd_models.insert(0, current_model)
 
     available_models = {
+        "Local — Dual-GPU AMD+NVIDIA (11438)": dual_models or ["(offline)"],
         "Local — AMD GPU (11434)":   amd_models  or ["(offline)"],
         "Local — CUDA GPU (11435)":  cuda_models or ["(offline)"],
         "Cloud via LiteLLM (4000)":  cloud_models or ["(offline)"],
@@ -1618,8 +1620,54 @@ def settings_page():
     secrets = load_secrets()
     # Mask secret values
     masked = {k: ('●'*8 if v else '') for k, v in secrets.items()}
+
+    def _fetch_ollama_models(port):
+        try:
+            import json as _j
+            r = subprocess.run(['curl','-s',f'http://localhost:{port}/api/tags'],
+                               capture_output=True, text=True, timeout=3)
+            return sorted([m["name"] for m in _j.loads(r.stdout).get("models",[])])
+        except Exception:
+            return []
+
+    def _fetch_litellm_models():
+        try:
+            import json as _j
+            r = subprocess.run([
+                'curl','-s','-H','Authorization: Bearer baza-litellm-internal',
+                'http://localhost:4000/v1/models'
+            ], capture_output=True, text=True, timeout=3)
+            return sorted([m["id"] for m in _j.loads(r.stdout).get("data",[])])
+        except Exception:
+            return []
+
+    amd_models   = _fetch_ollama_models(11434)
+    cuda_models  = _fetch_ollama_models(11435)
+    dual_models  = _fetch_ollama_models(11438)
+    cloud_models = _fetch_litellm_models()
+
+    # Make sure every agent's currently-configured model is in the list even if
+    # the underlying Ollama is offline at render time.
+    for _aid, _ac in config.get('agents', {}).items():
+        cm = (_ac.get('model') or '').strip()
+        if not cm:
+            continue
+        if cm.startswith(("gpt-","claude-","gemini-","grok-","groq-","mistral-large","codestral","o1","o3")):
+            if cm not in cloud_models:
+                cloud_models.insert(0, cm)
+        elif cm not in amd_models and cm not in cuda_models and cm not in dual_models:
+            amd_models.insert(0, cm)
+
+    available_models = {
+        "Local — Dual-GPU AMD+NVIDIA (11438)": dual_models or ["(offline)"],
+        "Local — AMD GPU (11434)":  amd_models  or ["(offline)"],
+        "Local — CUDA GPU (11435)": cuda_models or ["(offline)"],
+        "Cloud via LiteLLM (4000)": cloud_models or ["(offline)"],
+    }
+
     return render_template('settings.html', config=config, secrets=masked,
-                           secret_keys=list(secrets.keys()))
+                           secret_keys=list(secrets.keys()),
+                           available_models=available_models)
 
 # ── Routes — Agent API ────────────────────────────────────────────────────────
 
@@ -13717,6 +13765,13 @@ def _ensure_docprep_tables():
    except sqlite3.OperationalError as e:
     print(f"[startup] _ensure_docprep_tables deferred — DB busy: {e}", flush=True)
 _ensure_docprep_tables()
+
+try:
+    from dashboard.social_studio import _ensure_social_tables, social_bp as _social_bp
+except ImportError:
+    from social_studio import _ensure_social_tables, social_bp as _social_bp
+_ensure_social_tables()
+app.register_blueprint(_social_bp)
 
 
 @app.route('/api/ahb/documents', methods=['GET'])

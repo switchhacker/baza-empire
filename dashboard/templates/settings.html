@@ -126,10 +126,13 @@
           </div>
           <select class="model-select" id="model-{{ agent_id }}">
             {% set current_model = agent_data.get('model', '') %}
-            {% for m in ['mistral-small:22b','qwen2.5:14b','deepseek-coder-v2:16b','nemotron-3-nano:latest','llama3.1:8b','codellama:13b'] %}
-            <option value="{{ m }}" {% if m == current_model %}selected{% endif %}>{{ m }}</option>
+            {% for group, models in available_models.items() %}
+            <optgroup label="{{ group }}">
+              {% for m in models %}
+              <option value="{{ m }}" {% if m == current_model %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
+            </optgroup>
             {% endfor %}
-            <option value="{{ current_model }}" {% if current_model not in ['mistral-small:22b','qwen2.5:14b','deepseek-coder-v2:16b','nemotron-3-nano:latest','llama3.1:8b','codellama:13b'] %}selected{% endif %}>{{ current_model }} (current)</option>
           </select>
           <button class="btn-save-agent" onclick="saveAgentModel('{{ agent_id }}')">Save Model</button>
         </div>
