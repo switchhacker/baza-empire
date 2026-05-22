@@ -100,4 +100,135 @@ def _ensure_social_tables(db_path: Optional[str] = None) -> None:
 social_bp = Blueprint("social_studio", __name__)
 
 
-# Routes are added in later tasks.
+import json
+from datetime import datetime
+from flask import jsonify, request
+
+try:
+    from dashboard import social_settings as _settings
+except ImportError:
+    import social_settings as _settings
+
+
+def _conn():
+    con = sqlite3.connect(_db_path(), timeout=8.0)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA busy_timeout = 8000")
+    return con
+
+
+def _row_to_preset(r: sqlite3.Row) -> dict:
+    d = dict(r)
+    for k in ("platform_targets", "source_filter"):
+        try:
+            d[k] = json.loads(d[k]) if d.get(k) else []
+        except Exception:
+            d[k] = []
+    return d
+
+
+PRESET_WRITABLE = {
+    "name", "description", "platform_targets", "prompt_template",
+    "hashtag_pool", "tone", "length", "style", "music_style",
+    "voiceover_style", "source_filter", "cadence", "n_per_week",
+    "max_per_day", "auto_approve", "score_threshold", "active",
+}
+
+
+@social_bp.route("/api/ahb/social/presets", methods=["GET"])
+def social_presets_list():
+    con = _conn()
+    try:
+        rows = con.execute("SELECT * FROM ahb_social_presets ORDER BY id DESC").fetchall()
+    finally:
+        con.close()
+    return jsonify({"items": [_row_to_preset(r) for r in rows]})
+
+
+@social_bp.route("/api/ahb/social/presets", methods=["POST"])
+def social_presets_create():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    cols, vals = ["name"], [name]
+    for k, v in data.items():
+        if k == "name" or k not in PRESET_WRITABLE:
+            continue
+        cols.append(k)
+        vals.append(json.dumps(v) if isinstance(v, (list, dict)) else v)
+    con = _conn()
+    try:
+        cur = con.execute(
+            f"INSERT INTO ahb_social_presets ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+            vals,
+        )
+        con.commit()
+        pid = cur.lastrowid
+    finally:
+        con.close()
+    return jsonify({"id": pid})
+
+
+@social_bp.route("/api/ahb/social/presets/<int:pid>", methods=["PUT"])
+def social_presets_update(pid: int):
+    data = request.get_json(silent=True) or {}
+    sets, vals = [], []
+    for k, v in data.items():
+        if k not in PRESET_WRITABLE:
+            continue
+        sets.append(f"{k}=?")
+        vals.append(json.dumps(v) if isinstance(v, (list, dict)) else v)
+    if not sets:
+        return jsonify({"error": "no writable fields"}), 400
+    sets.append("updated_at=?")
+    vals.append(datetime.utcnow().isoformat(timespec="seconds"))
+    vals.append(pid)
+    con = _conn()
+    try:
+        con.execute(f"UPDATE ahb_social_presets SET {','.join(sets)} WHERE id=?", vals)
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True})
+
+
+@social_bp.route("/api/ahb/social/presets/<int:pid>", methods=["DELETE"])
+def social_presets_delete(pid: int):
+    con = _conn()
+    try:
+        con.execute("DELETE FROM ahb_social_presets WHERE id=?", (pid,))
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True})
+
+
+@social_bp.route("/api/ahb/social/sources", methods=["GET"])
+def social_sources():
+    project_id = request.args.get("project_id", type=int)
+    media_type = request.args.get("type")  # 'photo' | 'video' | None
+    q = (request.args.get("q") or "").strip().lower()
+    days = request.args.get("days", type=int)
+    limit = min(request.args.get("limit", default=200, type=int), 500)
+    sql = "SELECT id, project_id, sub_path, caption, tags, indexed_at FROM image_captions WHERE 1=1"
+    args = []
+    if project_id is not None:
+        sql += " AND project_id=?"; args.append(project_id)
+    if q:
+        sql += " AND (LOWER(caption) LIKE ? OR LOWER(tags) LIKE ?)"
+        args += [f"%{q}%", f"%{q}%"]
+    if days:
+        sql += " AND date(indexed_at) >= date('now', ?)"; args.append(f"-{int(days)} days")
+    if media_type == "video":
+        sql += " AND (LOWER(sub_path) LIKE '%.mp4' OR LOWER(sub_path) LIKE '%.mov' OR LOWER(sub_path) LIKE '%.webm')"
+    elif media_type == "photo":
+        sql += " AND (LOWER(sub_path) LIKE '%.jpg' OR LOWER(sub_path) LIKE '%.jpeg' OR LOWER(sub_path) LIKE '%.png' OR LOWER(sub_path) LIKE '%.heic')"
+    sql += " ORDER BY indexed_at DESC LIMIT ?"
+    args.append(limit)
+    con = _conn()
+    try:
+        rows = con.execute(sql, args).fetchall()
+    finally:
+        con.close()
+    return jsonify({"items": [dict(r) for r in rows]})
