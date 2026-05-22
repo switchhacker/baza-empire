@@ -2766,3 +2766,560 @@ for manual exercising.
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
 
+
+---
+
+## Task 13: Auto-Pilot tick logic + Telegram drop + preset run endpoint
+
+**Files:**
+- Modify: `dashboard/social_studio.py` — autopilot tick + `/posts/<id>/telegram` + `/presets/<id>/run`
+- Create: `baza-social-autopilot.service`
+- Create: `baza-social-autopilot.timer`
+- Test: `tests/test_social_autopilot.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/test_social_autopilot.py`:
+
+```python
+import os
+import sqlite3
+import sys
+import tempfile
+import json
+from datetime import datetime, timedelta
+
+import pytest
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    d = tempfile.mkdtemp(prefix="ap_")
+    db = os.path.join(d, "baza_projects.db")
+    monkeypatch.setenv("BAZA_DASHBOARD_DB", db)
+    monkeypatch.setenv("BAZA_SOCIAL_SETTINGS_DIR", d)
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "dashboard"))
+    for m in ("social_studio", "social_settings", "social_render"):
+        if m in sys.modules:
+            del sys.modules[m]
+    import social_studio
+    social_studio._ensure_social_tables(db)
+    con = sqlite3.connect(db)
+    con.execute("""CREATE TABLE image_captions (
+        id INTEGER PRIMARY KEY, project_id INTEGER, sub_path TEXT,
+        caption TEXT, tags TEXT, status TEXT, indexed_at TEXT
+    )""")
+    con.execute("INSERT INTO image_captions VALUES (1,42,'a.jpg','wall','work','ok',?)",
+                (datetime.utcnow().isoformat(),))
+    con.commit(); con.close()
+    from flask import Flask
+    app = Flask(__name__)
+    app.register_blueprint(social_studio.social_bp)
+    return app.test_client(), social_studio
+
+
+def test_autopilot_tick_master_off_is_noop(client):
+    c, ss = client
+    # Settings default has autopilot_master = False
+    r = c.post("/api/ahb/social/autopilot/tick")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ran"] == 0
+
+
+def test_autopilot_tick_with_master_on_and_due_preset(client, monkeypatch):
+    c, ss = client
+    # Turn master on
+    c.put("/api/ahb/social/settings", json={"autopilot_master": True})
+    # Insert a due preset
+    con = sqlite3.connect(os.environ["BAZA_DASHBOARD_DB"])
+    con.execute("""INSERT INTO ahb_social_presets
+        (name, cadence, active, max_per_day, next_run_at, platform_targets, source_filter)
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        ("T", "daily", 1, 5, (datetime.utcnow() - timedelta(hours=1)).isoformat(),
+         json.dumps(["ig_feed_square"]), json.dumps({"project_ids": [42]})))
+    con.commit(); con.close()
+    # Stub the AI calls + render so we don't actually invoke ffmpeg/LLM
+    monkeypatch.setattr(ss, "_call_ollama_chat", lambda *a, **kw: "test caption")
+    monkeypatch.setattr(ss, "_resolve_media_paths", lambda ids: [])
+    r = c.post("/api/ahb/social/autopilot/tick")
+    j = r.get_json()
+    assert j["ran"] >= 1
+    posts = c.get("/api/ahb/social/posts").get_json()["items"]
+    assert len(posts) >= 1
+    assert posts[0]["status"] == "pending_review"
+
+
+def test_autopilot_toggle_persists(client):
+    c, ss = client
+    c.post("/api/ahb/social/autopilot/toggle", json={"on": True})
+    r = c.get("/api/ahb/social/autopilot/status").get_json()
+    assert r["master"] is True
+```
+
+Run: FAIL.
+
+- [ ] **Step 2: Implement autopilot routes + Telegram drop + preset run**
+
+Append to `dashboard/social_studio.py`:
+
+```python
+import time
+from datetime import timedelta
+
+
+def _today_iso() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def _count_posts_today(con, preset_id=None) -> int:
+    if preset_id is not None:
+        return con.execute(
+            "SELECT COUNT(*) FROM ahb_social_posts WHERE date(created_at)=? AND preset_id=?",
+            (_today_iso(), preset_id),
+        ).fetchone()[0]
+    return con.execute(
+        "SELECT COUNT(*) FROM ahb_social_posts WHERE date(created_at)=?",
+        (_today_iso(),),
+    ).fetchone()[0]
+
+
+def _next_run_from_cadence(cadence: str, n_per_week: int) -> str:
+    now = datetime.utcnow()
+    if cadence == "daily":
+        return (now + timedelta(days=1)).isoformat(timespec="seconds")
+    if cadence == "n_per_week" and n_per_week > 0:
+        gap_hours = max(1, int(7 * 24 / n_per_week))
+        return (now + timedelta(hours=gap_hours)).isoformat(timespec="seconds")
+    if cadence == "on_trigger":
+        return ""
+    return ""
+
+
+def _pick_sources_for_preset(con, source_filter: dict, cool_down_days: int) -> list:
+    """Return a list of image_captions.id rows matching the preset's filter,
+    excluding any used by a post within cool_down_days."""
+    args = []
+    sql = "SELECT id FROM image_captions WHERE 1=1"
+    pids = source_filter.get("project_ids") or []
+    if pids:
+        placeholders = ",".join("?" * len(pids))
+        sql += f" AND project_id IN ({placeholders})"
+        args.extend(pids)
+    sql += " ORDER BY indexed_at DESC LIMIT 12"
+    candidates = [r[0] for r in con.execute(sql, args).fetchall()]
+    # Exclude recent uses
+    if candidates:
+        used_rows = con.execute(
+            f"SELECT source_media_ids FROM ahb_social_posts "
+            f"WHERE created_at >= datetime('now', ?)",
+            (f"-{int(cool_down_days)} days",),
+        ).fetchall()
+        used = set()
+        for r in used_rows:
+            try:
+                used.update(json.loads(r[0] or "[]"))
+            except Exception:
+                pass
+        candidates = [c for c in candidates if c not in used]
+    return candidates
+
+
+@social_bp.route("/api/ahb/social/autopilot/status", methods=["GET"])
+def autopilot_status():
+    s = _settings.load_settings()
+    con = _conn()
+    drafts_today = _count_posts_today(con)
+    con.close()
+    return jsonify({
+        "master": bool(s.get("autopilot_master")),
+        "drafts_today": drafts_today,
+        "daily_cap": s.get("daily_post_cap"),
+    })
+
+
+@social_bp.route("/api/ahb/social/autopilot/toggle", methods=["POST"])
+def autopilot_toggle():
+    on = bool((request.get_json(silent=True) or {}).get("on"))
+    s = _settings.load_settings()
+    s["autopilot_master"] = on
+    _settings.save_settings(s)
+    return jsonify({"ok": True, "master": on})
+
+
+def _generate_one_post_from_preset(preset: dict, source_ids: list) -> Optional[int]:
+    """Run the same chain a manual user would: caption → hashtags → score →
+    insert with status=pending_review (or approved if auto_approve and score)."""
+    platform = (preset.get("platform_targets") or ["ig_feed_square"])[0]
+    sys_prompt = _settings.load_prompt("caption_system")
+    summary = _sources_summary(source_ids)
+    user = (
+        f"Platform: {platform}\nTone: {preset.get('tone','pro')}\n"
+        f"Length: {preset.get('length','medium')}\nStyle: {preset.get('style','trade')}\n"
+        f"Source media:\n{summary}\n"
+    )
+    model = _pick_copy_model()
+    caption = _call_ollama_chat(model, sys_prompt, user).strip()
+    # Hashtags
+    brand = _settings.load_brand_kit()
+    raw = _call_ollama_chat(
+        model, _settings.load_prompt("hashtag_system"),
+        f"Caption: {caption}\nPlatform: {platform}\nFloor: {brand.get('hashtag_floor') or []}\n",
+        temperature=0.4,
+    )
+    tags = _extract_json_array(raw)
+    for f in (brand.get("hashtag_floor") or []):
+        if f not in tags:
+            tags.append(f)
+    # Score
+    raw_s = _call_ollama_chat(
+        model, _settings.load_prompt("score_system"),
+        f"Platform: {platform}\nCaption:\n{caption}\nHashtags: {' '.join(tags)}\n",
+        temperature=0.2,
+    )
+    score_obj = _extract_json_obj(raw_s)
+    score = int(score_obj.get("score") or 0)
+    status = "pending_review"
+    if preset.get("auto_approve") and score >= int(preset.get("score_threshold") or 75):
+        status = "approved"
+    con = _conn()
+    cur = con.execute(
+        """INSERT INTO ahb_social_posts
+        (preset_id, source_media_ids, platform, variant, caption, hashtags,
+         first_comment, status, score, ai_meta)
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (preset["id"], json.dumps(source_ids), platform, platform,
+         caption, " ".join(tags),
+         brand.get("first_comment_floor") or "",
+         status, score,
+         json.dumps({"model": model, "notes": score_obj.get("notes", "")})),
+    )
+    con.commit()
+    pid = cur.lastrowid
+    con.close()
+    return pid
+
+
+@social_bp.route("/api/ahb/social/autopilot/tick", methods=["POST"])
+def autopilot_tick():
+    s = _settings.load_settings()
+    if not s.get("autopilot_master"):
+        return jsonify({"ran": 0, "reason": "master off"})
+    daily_cap = int(s.get("daily_post_cap") or 4)
+    cool_days = int(s.get("cool_down_days") or 14)
+    con = _conn()
+    drafts_today = _count_posts_today(con)
+    if drafts_today >= daily_cap:
+        con.close()
+        return jsonify({"ran": 0, "reason": "daily cap"})
+    now_iso = datetime.utcnow().isoformat(timespec="seconds")
+    due = con.execute(
+        "SELECT * FROM ahb_social_presets WHERE active=1 AND cadence != 'off' "
+        "AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY next_run_at",
+        (now_iso,),
+    ).fetchall()
+    ran = []
+    for r in due:
+        if drafts_today >= daily_cap:
+            break
+        preset = _row_to_preset(r)
+        if _count_posts_today(con, preset_id=preset["id"]) >= int(preset.get("max_per_day") or 1):
+            continue
+        try:
+            source_filter = preset.get("source_filter") or {}
+            if isinstance(source_filter, str):
+                source_filter = json.loads(source_filter or "{}")
+        except Exception:
+            source_filter = {}
+        sources = _pick_sources_for_preset(con, source_filter, cool_days)
+        if not sources:
+            continue
+        try:
+            pid = _generate_one_post_from_preset(preset, sources)
+            ran.append(pid)
+            drafts_today += 1
+            con.execute(
+                "UPDATE ahb_social_presets SET last_run_at=?, next_run_at=?, updated_at=? WHERE id=?",
+                (now_iso,
+                 _next_run_from_cadence(preset["cadence"], int(preset.get("n_per_week") or 0)),
+                 now_iso, preset["id"]),
+            )
+            con.commit()
+        except Exception as e:
+            print(f"[autopilot] preset {preset['id']} failed: {e}", flush=True)
+    con.close()
+    return jsonify({"ran": len(ran), "post_ids": ran})
+
+
+@social_bp.route("/api/ahb/social/presets/<int:pid>/run", methods=["POST"])
+def social_preset_run(pid: int):
+    con = _conn()
+    r = con.execute("SELECT * FROM ahb_social_presets WHERE id=?", (pid,)).fetchone()
+    if not r:
+        con.close()
+        return jsonify({"error": "not found"}), 404
+    preset = _row_to_preset(r)
+    cool_days = int(_settings.load_settings().get("cool_down_days") or 14)
+    try:
+        source_filter = preset.get("source_filter") or {}
+        if isinstance(source_filter, str):
+            source_filter = json.loads(source_filter or "{}")
+    except Exception:
+        source_filter = {}
+    sources = _pick_sources_for_preset(con, source_filter, cool_days)
+    con.close()
+    if not sources:
+        return jsonify({"error": "no eligible sources"}), 400
+    new_pid = _generate_one_post_from_preset(preset, sources)
+    return jsonify({"post_id": new_pid})
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/telegram", methods=["POST"])
+def social_post_telegram(pid: int):
+    """Drop the bundle (or just the caption + cover) to Serge's Telegram via
+    the existing Specter bridge `/notify` endpoint."""
+    con = _conn()
+    r = con.execute("SELECT * FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    con.close()
+    if not r:
+        return jsonify({"error": "not found"}), 404
+    post = _row_to_post(r)
+    payload = {
+        "kind": "social_draft",
+        "post_id": pid,
+        "platform": post["platform"],
+        "caption": post.get("caption") or "",
+        "hashtags": post.get("hashtags") or "",
+        "cover_path": post.get("cover_path"),
+        "asset_path": post.get("asset_path"),
+        "score": post.get("score"),
+        "status": post.get("status"),
+    }
+    bridge = os.environ.get("BAZA_SPECTER_BRIDGE", "http://127.0.0.1:8765")
+    try:
+        req = urllib.request.Request(
+            f"{bridge}/notify", data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            ok = resp.status == 200
+    except Exception as e:
+        return jsonify({"error": f"bridge unavailable: {e}"}), 502
+    return jsonify({"ok": ok})
+```
+
+- [ ] **Step 3: Add systemd user units**
+
+`baza-social-autopilot.service` (repo root):
+
+```ini
+[Unit]
+Description=Baza Social Auto-Pilot tick (hourly)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -fsS -X POST http://127.0.0.1:8888/api/ahb/social/autopilot/tick
+StandardOutput=journal
+StandardError=journal
+```
+
+`baza-social-autopilot.timer` (repo root):
+
+```ini
+[Unit]
+Description=Hourly tick for Baza Social Auto-Pilot
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
+```
+
+Install instructions (in commit message; user runs these once):
+
+```
+mkdir -p ~/.config/systemd/user/
+cp baza-social-autopilot.service baza-social-autopilot.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now baza-social-autopilot.timer
+systemctl --user list-timers | grep social-autopilot
+```
+
+- [ ] **Step 4: Run tests + restart**
+
+```
+pytest tests/test_social_autopilot.py -v
+sudo systemctl restart baza-dashboard
+```
+
+Expected: 3 passed.
+
+- [ ] **Step 5: Manual smoke**
+
+1. Enable Auto-Pilot master (Settings drawer)
+2. Create a preset with cadence=daily and a project filter that matches existing media
+3. Auto-Pilot tab → "Run tick now" → see Drafts today increment
+4. Library → see new row with status=pending_review
+5. Click 📲 on the row → confirm Specter bridge call (200) — or 502 if bridge isn't running, which is fine for first smoke
+
+- [ ] **Step 6: Commit**
+
+```
+git add dashboard/social_studio.py baza-social-autopilot.service baza-social-autopilot.timer tests/test_social_autopilot.py
+git commit -m "social: Auto-Pilot tick + preset run + Telegram drop + systemd units
+
+Hourly cron via baza-social-autopilot.timer walks due active presets,
+respects per-preset max_per_day + global daily_post_cap + master kill
+switch + cool_down_days media reuse window. Score >= score_threshold +
+auto_approve flips status to approved; otherwise pending_review.
+/posts/<id>/telegram POSTs to the existing Specter bridge /notify.
+
+Install once: cp baza-social-autopilot.{service,timer} ~/.config/systemd/user/
+             && systemctl --user enable --now baza-social-autopilot.timer
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+## Task 14: End-to-end smoke + verification + session-log entry
+
+This task does NOT add functional code. It verifies and documents.
+
+**Files touched (verification only):**
+- Read: `dashboard/social_studio.py`, `dashboard/social_render.py`, `dashboard/templates/ahb123.html`
+- Append: `~/Desktop/baza-session-log.md` (existing session continuity log)
+
+- [ ] **Step 1: Full pytest run**
+
+```
+cd /home/switchhacker/baza-empire/agent-framework-v3
+source venv/bin/activate
+pytest tests/test_social_*.py -v
+```
+
+Expected: all tests in `test_social_db.py`, `test_social_settings.py`, `test_social_blueprint.py`, `test_social_render.py`, `test_social_autopilot.py` pass.
+
+- [ ] **Step 2: Run the spec's §19 acceptance checklist**
+
+For each of the 15 items in `docs/superpowers/specs/2026-05-22-ahb123-social-media-design.md` §19 ("Acceptance test plan"), execute and check ✅. If any item fails, file a new task and pause this one until fixed.
+
+Specifically these are the highest-signal checks — do them in order, and bail to a bug-fix task if anything trips:
+
+1. Restart dashboard, navigate to `/ahb123`, confirm 📣 Social tab present
+2. Pick 4 photos + 1 video from a real project, see them in source grid + first one in preview
+3. Toggle the four default platform variants — preview aspect updates each time
+4. Click ✨ Caption × 4 platforms; each completes in < 10s with distinct copy
+5. Click # Tags × 4 platforms; brand-floor tags present in each
+6. Click 🪝 Hooks; pick one; overlay text appears in preview
+7. Click 🎯 Score; receive 0–100 + paragraph
+8. Click ▶️ Render package; within 90s the artifacts dir contains the .mp4 + .jpg + manifest.json
+9. Switch to Library; new row present in `draft` status
+10. PATCH to `approved`; 📲 Send to phone; Telegram delivery
+11. Create preset (cadence=daily, auto_approve=off); manually `/autopilot/tick`; new draft in `pending_review`; Telegram card arrives
+12. Flip Auto-Pilot master OFF; `/autopilot/tick` → `ran: 0`
+13. `sudo systemctl restart baza-dashboard`; settings, presets, posts all persist
+14. Open Brand Kit modal from any sub-sub-tab (e.g., from Auto-Pilot tab) — modal opens (proves body-level mounting)
+15. SD off path: click ➕ AI image → graceful "SD offline" banner; ▶️ Render package still succeeds for non-SD sources
+
+- [ ] **Step 3: Append session log**
+
+Append to `~/Desktop/baza-session-log.md`:
+
+```
+### <YYYY-MM-DD HH:MM> | Social Media Studio — shipped
+
+Shipped the new 📣 Social sub-tab in ahb123:
+- Composer + Library + Scheduler + Presets + Auto-Pilot
+- 3 new tables (ahb_social_presets/posts/jobs)
+- /api/ahb/social/* Blueprint at dashboard/social_studio.py
+- Render pipeline at dashboard/social_render.py (ffmpeg, target dims per platform, smart-crop or blurred-bg fill, cover-frame extract)
+- 8 seed presets, hourly autopilot timer (baza-social-autopilot.timer), Telegram drop via Specter bridge
+- HARD RULES honored: body-level modals, local-first AI, dashboard restart after template edits
+- Phase 2 deferred: direct TikTok / IG Graph API publishing
+```
+
+Get timestamp via:
+
+```
+date '+%Y-%m-%d %H:%M'
+```
+
+- [ ] **Step 4: Final commit**
+
+```
+git add docs/superpowers/specs/2026-05-22-ahb123-social-media-design.md docs/superpowers/plans/2026-05-22-ahb123-social-media-plan.md
+git commit --allow-empty -m "social: smoke verified — Social Studio Phase 1 complete
+
+15-item acceptance checklist from spec §19 passed. Auto-Pilot tick
+verified with both master-off and master-on paths. Telegram bridge
+deliveries confirmed.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
+## Plan self-review checklist (for the writer, completed inline)
+
+**1. Spec coverage:**
+- §3 Composer → Task 8
+- §4 AI matrix → Task 5 (caption/hashtags/hooks/score/translate); cover-pick + voiceover deferred to Phase 1.5 (cover-pick is implicit in Task 6 via `extract_cover` at t=0.5s — vision-driven cover is a Phase 1.5 polish item, noted here so it isn't lost: TODO move into Task 6 when qwen3-vl per-frame eval is wanted)
+- §5 Presets → Task 10
+- §6 Auto-Pilot → Task 13
+- §7 Bundle output → Task 9 (bundle endpoint) + Task 13 (telegram drop)
+- §8 Data model → Task 1
+- §9 API surface → Tasks 3, 4, 5, 6, 9, 10, 11, 13
+- §10 Render pipeline → Task 6 (subtitle burn-in, music bed, voiceover mixing are Phase 1.5 polish — flagged below)
+- §11 Frontend modules → Tasks 7, 8, 9, 10, 11, 12
+- §12 Brand kit → Task 11
+- §13 Settings → Task 10
+- §14 Risks → addressed by tests (autopilot toggle off path), graceful 502 on bridge missing
+- §15 Prompts → Task 2
+- §16 Telegram → Task 13
+- §17 Build order → mirrored as Tasks 1–14
+- §18 Out of scope → not implemented (correct)
+- §19 Acceptance tests → Task 14
+
+**Coverage gaps explicitly carried forward as Phase 1.5 polish (NOT in this plan):**
+- Vision-driven cover-pick (use qwen3-vl to evaluate N candidate frames). Currently picks frame at t=0.5s.
+- Subtitle burn-in via whisper.cpp (currently no subtitles step).
+- Music bed mixing with sidechain ducking (currently no music in render).
+- Voiceover via piper (currently no voiceover in render).
+- A/B caption variation button (composer has button slot left for future).
+- Translate UI button (endpoint exists; composer doesn't expose it yet).
+
+These are acceptable carve-outs because:
+- Spec §1 success criteria require platform-correct render + captions; we ship that.
+- §14 explicitly lists "gracefully skip until installed" for whisper / piper.
+- The render pipeline is structured so these slot in cleanly (concat → filter_graph → encode); adding music/subs/voice = adding to the filter graph + audio mux.
+
+If the user wants these in Phase 1 instead of 1.5, add a follow-up plan or extend Task 6.
+
+**2. Placeholder scan:** Searched for "TBD", "TODO", "implement later", "fill in" — only "TODO" reference is the explicit Phase 1.5 marker in the self-review section above, intentional.
+
+**3. Type consistency:**
+- `ALLOWED_PLATFORMS` (Task 4) matches `DIMS` keys (Task 6).
+- `ALLOWED_STATUSES` (Task 4) matches CSS `.ss-pill-<status>` classes (Task 9).
+- `_call_ollama_chat` signature is consistent across Task 5, 6, 13.
+- `_resolve_media_paths` defined Task 6, used Task 6, 13.
+- `_row_to_preset` / `_row_to_post` defined and reused consistently.
+- `_settings` module alias consistent across all tasks.
+
+No issues found.
+
+---
+
+## Execution
+
+**Plan complete and saved to `docs/superpowers/plans/2026-05-22-ahb123-social-media-plan.md`.**
+
+This plan spans 14 tasks across DB → backend → render → UI → automation. Two execution options:
+
+1. **Subagent-Driven (recommended)** — fresh subagent per task, two-stage review between tasks, fast iteration on issues. Best for a 14-task plan where bugs in early tasks shouldn't bleed into later ones.
+2. **Inline Execution** — execute tasks in this session using executing-plans, batch with checkpoints. Faster if you can babysit the run.
+
