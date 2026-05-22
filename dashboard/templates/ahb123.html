@@ -17626,12 +17626,11 @@ SocialStudio.modules.composer = (function(){
   }
 
   function thumbUrl(subPath) {
-    // Try existing ahb123 media-thumb endpoint; fall back to media-serve if needed.
-    return '/api/ahb/media-thumb?path=' + encodeURIComponent(subPath);
+    return '/api/cloud/thumb/' + encodeURIComponent(subPath) + '?size=300';
   }
 
   function serveUrl(subPath) {
-    return '/api/ahb/media-serve?path=' + encodeURIComponent(subPath);
+    return '/api/cloud/media/serve/' + encodeURIComponent(subPath);
   }
 
   function renderSourceGrid() {
