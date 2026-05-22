@@ -13718,6 +13718,13 @@ def _ensure_docprep_tables():
     print(f"[startup] _ensure_docprep_tables deferred — DB busy: {e}", flush=True)
 _ensure_docprep_tables()
 
+try:
+    from dashboard.social_studio import _ensure_social_tables, social_bp as _social_bp
+except ImportError:
+    from social_studio import _ensure_social_tables, social_bp as _social_bp
+_ensure_social_tables()
+app.register_blueprint(_social_bp)
+
 
 @app.route('/api/ahb/documents', methods=['GET'])
 def api_ahb_documents_list():
