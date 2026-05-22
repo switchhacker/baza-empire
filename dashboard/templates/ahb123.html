@@ -685,6 +685,32 @@
     left:auto;right:5px;transform:none;
   }
   </style>
+<style>
+  .ss-sub { padding-top: 12px; }
+  .ss-subnav { font-weight: 600; }
+  .ss-subnav.active { background:#10b981; color:#0a0a18; border-color:#10b981; }
+  .ss-grid { display:grid; grid-template-columns: 320px 1fr 340px; gap: 12px; }
+  @media (max-width: 1200px) { .ss-grid { grid-template-columns: 1fr; } }
+  .ss-card { background:#0e0e1e; border:1px solid #1a1a2e; border-radius:12px; padding:12px; }
+  .ss-thumb { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:8px; cursor:pointer; }
+  .ss-thumb.selected { outline:3px solid #10b981; }
+  .ss-platform-tabs { display:flex; gap:6px; margin-bottom:8px; }
+  .ss-platform-tab { padding:6px 10px; border:1px solid #1a1a2e; border-radius:6px; font-size:11px; cursor:pointer; color:#aaa; background:#070712; }
+  .ss-platform-tab.active { background:#10b981; color:#0a0a18; border-color:#10b981; }
+  .ss-preview-shell { background:#000; border-radius:18px; margin:0 auto; max-width:380px; position:relative; overflow:hidden; }
+  .ss-preview-shell.tiktok, .ss-preview-shell.ig_reel, .ss-preview-shell.ig_story { aspect-ratio: 9/16; }
+  .ss-preview-shell.ig_feed_square { aspect-ratio: 1/1; }
+  .ss-preview-shell.ig_feed_portrait { aspect-ratio: 4/5; }
+  .ss-preview-shell canvas, .ss-preview-shell video, .ss-preview-shell img { width:100%; height:100%; object-fit:cover; display:block; }
+  .ss-status-pill { padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; text-transform:uppercase; }
+  .ss-pill-draft { background:#1f2937; color:#9ca3af; }
+  .ss-pill-pending_review { background:#7c2d12; color:#fdba74; }
+  .ss-pill-approved { background:#064e3b; color:#10b981; }
+  .ss-pill-scheduled { background:#1e3a8a; color:#60a5fa; }
+  .ss-pill-posted { background:#064e3b; color:#a7f3d0; }
+  .ss-pill-rejected { background:#7f1d1d; color:#fca5a5; }
+  .ss-pill-failed { background:#7f1d1d; color:#fca5a5; }
+</style>
 </head>
 <body>
 
@@ -703,6 +729,7 @@
   <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
   <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
   <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">🎥</span> Media</div>
+  <div class="sub-tab" data-tab="social" onclick="switchTab('social')"><span class="sub-tab-icon">📣</span> Social</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
 </div>
 <!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
@@ -2953,6 +2980,28 @@
   </div>
 </div>
 
+<div class="tab-pane" id="tab-social">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📣 Social Media Studio</div>
+      <div class="page-sub">Make TikTok + Instagram content from your project media. Local AI. Presets. Auto-pilot.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-secondary ss-subnav" data-sub="composer">Composer</button>
+      <button class="btn-secondary ss-subnav" data-sub="library">Library</button>
+      <button class="btn-secondary ss-subnav" data-sub="scheduler">Scheduler</button>
+      <button class="btn-secondary ss-subnav" data-sub="presets">Presets</button>
+      <button class="btn-secondary ss-subnav" data-sub="autopilot">Auto-Pilot</button>
+      <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
+    </div>
+  </div>
+  <div id="ss-sub-composer" class="ss-sub"></div>
+  <div id="ss-sub-library" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-scheduler" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-presets" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-autopilot" class="ss-sub" style="display:none"></div>
+</div>
+
 <!-- ============================ DOCPREP / DOCUMENT STATION ============================ -->
 <div class="tab-pane" id="tab-docprep">
   <div class="page-header">
@@ -4441,6 +4490,14 @@
     </div>
   </div>
 </div>
+
+<!-- Social Studio body-level modals (per ahb123 modal-ancestor rule) -->
+<div id="socialPresetEditor" class="modal-bg" style="display:none"></div>
+<div id="socialBrandKit"     class="modal-bg" style="display:none"></div>
+<div id="socialImageGen"     class="modal-bg" style="display:none"></div>
+<div id="socialVoiceover"    class="modal-bg" style="display:none"></div>
+<div id="socialSettings"     class="modal-bg" style="display:none"></div>
+<div id="socialPostDetail"   class="modal-bg" style="display:none"></div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -17509,6 +17566,51 @@ async function bpLoadRenders(){
   </div>
 </div>
 
+<script>
+window.SocialStudio = window.SocialStudio || {
+  state: {
+    activeSub: 'composer',
+    activePlatform: 'tiktok',
+    sources: [],
+    shotList: [],
+    platforms: { tiktok:true, ig_reel:true, ig_feed_square:true, ig_feed_portrait:false, ig_story:false },
+    variants: {},
+    settings: null,
+    brandKit: null,
+  },
+  modules: {},
+  init() {
+    if (this._inited) return;
+    this._inited = true;
+    document.querySelectorAll('#tab-social .ss-subnav').forEach(b => {
+      b.addEventListener('click', () => this.switchSub(b.dataset.sub));
+    });
+    this.switchSub('composer');
+  },
+  switchSub(name) {
+    this.state.activeSub = name;
+    document.querySelectorAll('#tab-social .ss-subnav').forEach(b => {
+      b.classList.toggle('active', b.dataset.sub === name);
+    });
+    document.querySelectorAll('#tab-social .ss-sub').forEach(d => {
+      d.style.display = d.id === ('ss-sub-' + name) ? '' : 'none';
+    });
+    const mod = this.modules[name];
+    if (mod && typeof mod.render === 'function') mod.render();
+  },
+  openSettings() { if (this.modules.settings) this.modules.settings.open(); },
+};
+
+// Hook into existing switchTab() so SocialStudio.init() runs when tab opens
+(function(){
+  const orig = window.switchTab;
+  window.switchTab = function(name) {
+    const r = orig ? orig.apply(this, arguments) : undefined;
+    if (name === 'social') SocialStudio.init();
+    return r;
+  };
+})();
+</script>
 
 </body>
 </html>
