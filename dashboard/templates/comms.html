@@ -250,6 +250,17 @@
 
     <div class="agent-picker" id="agent-picker"></div>
 
+    <!-- John Doe model tester — picker bar visible only when John Doe is the active agent -->
+    <div id="john-doe-bar" style="display:none;padding:10px 24px;border-bottom:1px solid #1a1a2e;background:linear-gradient(90deg,#0a0a18 0%,#16093a 100%);gap:10px;align-items:center;flex-wrap:wrap;flex-shrink:0">
+      <span style="font-size:11px;font-weight:700;color:#c4b5fd;text-transform:uppercase;letter-spacing:1.2px">🧪 Model under test</span>
+      <select id="jd-model" onchange="jdSetModel(this.value)"
+              style="flex:1;min-width:260px;background:#0a0a18;border:1px solid #7c3aed;border-radius:6px;padding:8px 10px;color:#e0d4ff;font-size:12px;font-weight:600">
+        <option value="">— pick a model —</option>
+      </select>
+      <button class="head-btn" onclick="jdRefreshModels()" title="Re-fetch model list from all backends" style="background:#16093a;border:1px solid #7c3aed;color:#c4b5fd;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer">↻ Refresh</button>
+      <span id="jd-current" style="font-size:11px;color:#666;margin-left:auto"></span>
+    </div>
+
     <div class="messages" id="messages">
       <div class="empty-state">
         <div class="ico">💬</div>
@@ -346,21 +357,27 @@ let SHELL_HIST_IDX = 0;
 
 function init(){
   renderAgentPicker();
+  jdToggleBar();
   loadSessions();
 }
 
 function renderAgentPicker(){
   const c = document.getElementById('agent-picker');
-  c.innerHTML = AGENTS.map(a => `
-    <div class="agent-pill ${a.id===CURRENT_AGENT?'active':''}" onclick="pickAgent('${a.id}')">
-      <span class="pill-dot"></span>${a.name}
-    </div>
-  `).join('');
+  c.innerHTML = AGENTS.map(a => {
+    const isJD = a.id === 'john_doe';
+    const icon = isJD ? '🧪 ' : '';
+    const extra = isJD ? 'style="background:#16093a;border-color:#7c3aed;color:#c4b5fd"' : '';
+    const activeExtra = (a.id===CURRENT_AGENT && isJD) ? 'style="background:linear-gradient(135deg,#7c3aed,#e94560);color:#fff;border-color:transparent"' : '';
+    return `<div class="agent-pill ${a.id===CURRENT_AGENT?'active':''}" ${a.id===CURRENT_AGENT?activeExtra:extra} onclick="pickAgent('${a.id}')">
+      <span class="pill-dot"></span>${icon}${a.name}
+    </div>`;
+  }).join('');
 }
 
 function pickAgent(id){
   CURRENT_AGENT = id;
   renderAgentPicker();
+  jdToggleBar();
   if(CURRENT){
     fetch(`/api/comms/sessions/${CURRENT}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent_id:id})})
       .then(()=>{loadSessions();updateHead()});
@@ -374,7 +391,74 @@ function updateHead(){
   if(!a) return;
   document.getElementById('head-avatar').textContent = a.name.split(' ').map(s=>s[0]).join('').toUpperCase().slice(0,2);
   document.getElementById('head-name').textContent = a.name;
-  document.getElementById('head-meta').textContent = `${a.company_title || a.role || ''} · ${a.model || ''}`;
+  const modelLabel = (a.id === 'john_doe')
+    ? (JD_SESSION_MODEL ? JD_SESSION_MODEL : '(pick a model below)')
+    : (a.model || '');
+  document.getElementById('head-meta').textContent = `${a.company_title || a.role || ''} · ${modelLabel}`;
+}
+
+/* ===== John Doe — model tester ===== */
+let JD_MODELS_CACHE = null;       // [{label, port, models:[...]}, ...]
+let JD_SESSION_MODEL = '';        // model_override for the currently-open session
+
+function jdToggleBar(){
+  document.getElementById('john-doe-bar').style.display =
+    (CURRENT_AGENT === 'john_doe') ? 'flex' : 'none';
+  if(CURRENT_AGENT === 'john_doe' && !JD_MODELS_CACHE) jdRefreshModels();
+  jdRenderSelect();
+}
+
+async function jdRefreshModels(){
+  try{
+    const r = await fetch('/api/comms/models');
+    const j = await r.json();
+    JD_MODELS_CACHE = j.groups || [];
+    jdRenderSelect();
+  }catch(e){
+    document.getElementById('jd-current').textContent = 'Error loading models: ' + e.message;
+  }
+}
+
+function jdRenderSelect(){
+  const sel = document.getElementById('jd-model');
+  if(!sel) return;
+  if(!JD_MODELS_CACHE){
+    sel.innerHTML = '<option value="">Loading…</option>';
+    return;
+  }
+  let html = '<option value="">— pick a model —</option>';
+  for(const g of JD_MODELS_CACHE){
+    if(!g.models || !g.models.length) continue;
+    html += `<optgroup label="${escapeHtml(g.label)}">`;
+    for(const m of g.models){
+      const sel = m === JD_SESSION_MODEL ? ' selected' : '';
+      html += `<option value="${escapeHtml(m)}"${sel}>${escapeHtml(m)}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  sel.innerHTML = html;
+  document.getElementById('jd-current').textContent = JD_SESSION_MODEL ? ('Active: ' + JD_SESSION_MODEL) : '';
+}
+
+async function jdSetModel(model){
+  JD_SESSION_MODEL = model || '';
+  if(!CURRENT){
+    // Create a session on the fly so the override has somewhere to live
+    const r = await fetch('/api/comms/sessions',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({agent_id:'john_doe', title:'JD test: ' + (model||'(no model)')})
+    });
+    const s = await r.json();
+    CURRENT = s.id;
+    await loadSessions();
+  }
+  await fetch(`/api/comms/sessions/${CURRENT}`,{
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model_override: JD_SESSION_MODEL})
+  });
+  document.getElementById('jd-current').textContent = JD_SESSION_MODEL ? ('Active: ' + JD_SESSION_MODEL) : '';
+  updateHead();
+  loadSessions();
 }
 
 async function loadSessions(){
@@ -422,7 +506,9 @@ async function openSession(id){
   const r = await fetch(`/api/comms/sessions/${id}`);
   const data = await r.json();
   CURRENT_AGENT = data.agent_id;
+  JD_SESSION_MODEL = data.model_override || '';
   renderAgentPicker();
+  jdToggleBar();
   updateHead();
   renderSessions();
   renderMessages(data.messages || []);
@@ -639,6 +725,17 @@ async function sendMessage(){
         if(!line.startsWith('data: ')) continue;
         try {
           const obj = JSON.parse(line.slice(6));
+          if(obj.meta && obj.meta.model){
+            // Pin the actual model used into the bubble (especially helpful for John Doe)
+            const bubble = document.getElementById(respId)?.closest('.msg-bubble');
+            if(bubble && !bubble.querySelector('.model-badge')){
+              const b = document.createElement('div');
+              b.className = 'model-badge';
+              b.style.cssText = 'font-size:10px;color:#7c3aed;background:#16093a;border:1px solid #7c3aed;border-radius:10px;padding:2px 8px;display:inline-block;margin-bottom:6px;font-weight:700;letter-spacing:0.3px';
+              b.textContent = '🤖 ' + obj.meta.model;
+              bubble.insertBefore(b, bubble.firstChild);
+            }
+          }
           if(obj.token){
             full += obj.token;
             const el = document.getElementById(respId);

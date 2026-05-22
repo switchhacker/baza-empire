@@ -15636,9 +15636,31 @@ def _comms_init():
         );
         CREATE INDEX IF NOT EXISTS idx_comms_msgs_sess ON comms_messages(session_id);
     """)
+    # Idempotent migration: model_override lets John Doe (model tester) pin a
+    # specific model per session, overriding the agent's configured default.
+    try:
+        c.execute("ALTER TABLE comms_sessions ADD COLUMN model_override TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 _comms_init()
+
+# John Doe — synthetic "agent" for model testing. Not in agents.yaml; injected
+# at /comms render time. Sessions tied to him use sess.model_override as the
+# model and a neutral system prompt.
+JOHN_DOE_AGENT = {
+    'id': 'john_doe',
+    'name': 'John Doe',
+    'role': 'Model Tester',
+    'model': '',  # filled by per-session model_override
+    'company_title': 'QA · pick any local or cloud model',
+}
+JOHN_DOE_SYSTEM_PROMPT = (
+    "You are a model under evaluation. Respond directly and concisely to the "
+    "user's prompts. Do not roleplay as a named persona; answer as the model "
+    "itself so the tester can compare capabilities across models."
+)
 
 def _comms_db():
     conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
@@ -15658,7 +15680,37 @@ def comms_page():
             'model': ac.get('model', ''),
             'company_title': ac.get('company_title', ''),
         })
+    agent_list.append(JOHN_DOE_AGENT)
     return render_template('comms.html', agents=agent_list)
+
+
+@app.route('/api/comms/models', methods=['GET'])
+def api_comms_models():
+    """Full model list for the John Doe tester: all Ollama instances + LiteLLM cloud."""
+    import requests as _r
+    def _ollama(port):
+        try:
+            r = _r.get(f"http://127.0.0.1:{port}/api/tags", timeout=2)
+            return sorted([m['name'] for m in r.json().get('models', [])]) if r.ok else []
+        except Exception:
+            return []
+    def _litellm():
+        try:
+            r = _r.get("http://127.0.0.1:4000/v1/models",
+                       headers={"Authorization": "Bearer baza-litellm-internal"},
+                       timeout=2)
+            return sorted([m['id'] for m in r.json().get('data', [])]) if r.ok else []
+        except Exception:
+            return []
+    return jsonify({
+        'groups': [
+            {'label': 'Dual-GPU AMD+NVIDIA (11438)',     'port': 11438, 'models': _ollama(11438)},
+            {'label': 'AMD GPU (11434)',                 'port': 11434, 'models': _ollama(11434)},
+            {'label': 'NVIDIA CUDA (11435)',             'port': 11435, 'models': _ollama(11435)},
+            {'label': 'CPU big-model fallback (11436)',  'port': 11436, 'models': _ollama(11436)},
+            {'label': 'Cloud via LiteLLM (4000)',        'port': 4000,  'models': _litellm()},
+        ]
+    })
 
 @app.route('/api/comms/sessions', methods=['GET', 'POST'])
 def api_comms_sessions():
@@ -15699,6 +15751,10 @@ def api_comms_session(sid):
         if 'agent_id' in data:
             c.execute("UPDATE comms_sessions SET agent_id=?, updated_at=datetime('now') WHERE id=?",
                       (data['agent_id'], sid))
+        if 'model_override' in data:
+            mo = (data.get('model_override') or '').strip() or None
+            c.execute("UPDATE comms_sessions SET model_override=?, updated_at=datetime('now') WHERE id=?",
+                      (mo, sid))
         conn.commit()
     sess = c.execute("SELECT * FROM comms_sessions WHERE id=?", (sid,)).fetchone()
     if not sess:
@@ -15710,10 +15766,29 @@ def api_comms_session(sid):
     out['messages'] = [dict(m) for m in msgs]
     return jsonify(out)
 
+_COMMS_CLOUD_PREFIXES = (
+    'gpt-', 'claude-', 'gemini-', 'grok-', 'mistral-large', 'codestral',
+    'groq-', 'o1', 'o3-',
+)
+_COMMS_DUAL_PREFIXES = ('supergemma4:', 'hf.co/Jiunsong/supergemma4-')
+
+
+def _comms_is_cloud_model(model: str) -> bool:
+    return any(model.startswith(p) for p in _COMMS_CLOUD_PREFIXES)
+
+
+def _comms_is_dual_model(model: str) -> bool:
+    return any(model.startswith(p) for p in _COMMS_DUAL_PREFIXES)
+
+
 def _comms_ollama_url(model):
-    """Pick which Ollama instance hosts a model. Try AMD first, then NVIDIA."""
+    """Pick which Ollama instance hosts a model. Big models that need both GPUs
+    short-circuit to 11438; otherwise scan AMD → NVIDIA → dual for a tag match.
+    Cloud-prefixed models are handled separately by the send loop (LiteLLM)."""
     import requests as _r
-    for url in ('http://127.0.0.1:11434', 'http://127.0.0.1:11435'):
+    if _comms_is_dual_model(model):
+        return 'http://127.0.0.1:11438'
+    for url in ('http://127.0.0.1:11434', 'http://127.0.0.1:11435', 'http://127.0.0.1:11438'):
         try:
             r = _r.get(f"{url}/api/tags", timeout=2)
             if r.ok:
@@ -15754,11 +15829,19 @@ def api_comms_send():
     c.execute("UPDATE comms_sessions SET updated_at=datetime('now') WHERE id=?", (sid,))
     conn.commit()
 
-    # Build LLM context
-    config = load_config()
-    agent_cfg = (config.get('agents') or {}).get(agent_id, {})
-    model = agent_cfg.get('model', 'mistral-small:22b')
-    system_prompt = agent_cfg.get('system_prompt', f'You are {agent_cfg.get("name", agent_id)}.')
+    # Build LLM context — John Doe uses a neutral prompt + session.model_override,
+    # everyone else uses their agents.yaml model + system prompt.
+    model_override = (sess.get('model_override') or '').strip()
+    if agent_id == 'john_doe':
+        model = model_override or 'mistral-small:22b'
+        system_prompt = JOHN_DOE_SYSTEM_PROMPT
+        agent_name = 'Model under test'
+    else:
+        config = load_config()
+        agent_cfg = (config.get('agents') or {}).get(agent_id, {})
+        model = model_override or agent_cfg.get('model', 'mistral-small:22b')
+        system_prompt = agent_cfg.get('system_prompt', f'You are {agent_cfg.get("name", agent_id)}.')
+        agent_name = agent_cfg.get('name', agent_id)
 
     history = c.execute(
         "SELECT role, content FROM comms_messages WHERE session_id=? ORDER BY id ASC", (sid,)
@@ -15773,23 +15856,59 @@ def api_comms_send():
 
     def generate():
         full_response = ''
+        # Emit a marker token so the UI can show which model actually answered
+        # — useful when John Doe tests across many.
+        yield f"data: {json.dumps({'meta': {'model': model}})}\n\n"
         try:
-            url = _comms_ollama_url(model)
-            payload = {"model": model, "messages": messages, "stream": True}
-            with _r.post(f"{url}/api/chat", json=payload, stream=True, timeout=300) as resp:
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
-                    try:
-                        chunk = json.loads(line.decode('utf-8'))
-                    except Exception:
-                        continue
-                    tok = (chunk.get('message') or {}).get('content', '')
-                    if tok:
-                        full_response += tok
-                        yield f"data: {json.dumps({'token': tok})}\n\n"
-                    if chunk.get('done'):
-                        break
+            if _comms_is_cloud_model(model):
+                # LiteLLM OpenAI-compatible stream
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "stream": True,
+                    "stream_options": {"include_usage": False},
+                    "max_tokens": 2000,
+                    "temperature": 0.7,
+                }
+                headers = {
+                    "Authorization": "Bearer baza-litellm-internal",
+                    "Content-Type": "application/json",
+                }
+                with _r.post("http://127.0.0.1:4000/v1/chat/completions",
+                             json=payload, headers=headers, stream=True, timeout=300) as resp:
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        text = line.decode('utf-8') if isinstance(line, bytes) else line
+                        if text.startswith('data: '):
+                            text = text[6:]
+                        if text == '[DONE]':
+                            break
+                        try:
+                            data = json.loads(text)
+                            tok = (data.get('choices') or [{}])[0].get('delta', {}).get('content', '')
+                            if tok:
+                                full_response += tok
+                                yield f"data: {json.dumps({'token': tok})}\n\n"
+                        except Exception:
+                            continue
+            else:
+                url = _comms_ollama_url(model)
+                payload = {"model": model, "messages": messages, "stream": True}
+                with _r.post(f"{url}/api/chat", json=payload, stream=True, timeout=300) as resp:
+                    for line in resp.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line.decode('utf-8'))
+                        except Exception:
+                            continue
+                        tok = (chunk.get('message') or {}).get('content', '')
+                        if tok:
+                            full_response += tok
+                            yield f"data: {json.dumps({'token': tok})}\n\n"
+                        if chunk.get('done'):
+                            break
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         # Persist assistant message
