@@ -18239,6 +18239,135 @@ SocialStudio.modules.brandkit = (function(){
   }
   return { open, save };
 })();
+
+SocialStudio.modules.scheduler = (function(){
+  const root = () => document.getElementById('ss-sub-scheduler');
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    let items = [];
+    try {
+      const r = await fetch('/api/ahb/social/posts?status=scheduled');
+      if (r.ok) items = (await r.json()).items || [];
+    } catch (e) {}
+    const days = {};
+    items.forEach(p => {
+      const d = (p.scheduled_at || '').slice(0, 10) || 'unscheduled';
+      (days[d] = days[d] || []).push(p);
+    });
+    const sortedKeys = Object.keys(days).sort();
+    const html = sortedKeys.map(d => `
+      <div class="ss-card" style="margin-bottom:8px">
+        <div style="font-weight:700;color:#10b981;margin-bottom:6px">${_esc(d)}</div>
+        ${days[d].map(p => `
+          <div style="display:flex;gap:8px;padding:4px 0;border-top:1px solid #1a1a2e">
+            <div style="color:#aaa;font-size:12px;min-width:120px">${_esc(p.platform)}</div>
+            <div style="flex:1;color:#ddd;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((p.caption||'').slice(0,140))}</div>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">No scheduled posts.</div>';
+  }
+  return { render: load };
+})();
+
+SocialStudio.modules.autopilot = (function(){
+  const root = () => document.getElementById('ss-sub-autopilot');
+  let _t = null;
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    // Auto-Pilot status endpoint added in Task 13; gracefully degrade if absent
+    let status = { master: false, drafts_today: 0, daily_cap: 0 };
+    try {
+      const r = await fetch('/api/ahb/social/autopilot/status');
+      if (r.ok) status = await r.json();
+    } catch (e) {}
+    let presets = [];
+    try {
+      const r = await fetch('/api/ahb/social/presets');
+      if (r.ok) presets = (await r.json()).items || [];
+    } catch (e) {}
+    const presetRows = presets.filter(p => p.active && p.cadence !== 'off').map(p => `
+      <tr>
+        <td>${_esc(p.name)}</td>
+        <td>${_esc(p.cadence)}</td>
+        <td>${_esc(p.last_run_at || '—')}</td>
+        <td>${_esc(p.next_run_at || '—')}</td>
+      </tr>
+    `).join('');
+    root().innerHTML = `
+      <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div class="ss-card" style="flex:1;min-width:160px">
+          <div style="color:#aaa;font-size:11px;text-transform:uppercase">Master switch</div>
+          <label style="display:inline-flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
+            <input id="ap-master" type="checkbox" ${status.master ? 'checked' : ''} onchange="SocialStudio.modules.autopilot.toggleMaster(this.checked)">
+            <span>${status.master ? 'ON' : 'OFF'}</span>
+          </label>
+        </div>
+        <div class="ss-card" style="flex:1;min-width:140px">
+          <div style="color:#aaa;font-size:11px;text-transform:uppercase">Drafts today</div>
+          <div style="font-size:24px;font-weight:800;color:#10b981">${_esc(status.drafts_today != null ? status.drafts_today : '—')}</div>
+        </div>
+        <div class="ss-card" style="flex:1;min-width:140px">
+          <div style="color:#aaa;font-size:11px;text-transform:uppercase">Daily cap</div>
+          <div style="font-size:24px;font-weight:800">${_esc(status.daily_cap || '—')}</div>
+        </div>
+      </div>
+      <div class="ss-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-weight:700">Active scheduled presets</div>
+          <button class="btn-secondary" onclick="SocialStudio.modules.autopilot.runTickNow()">Run tick now</button>
+        </div>
+        <table class="data-table" style="width:100%">
+          <thead><tr><th>Name</th><th>Cadence</th><th>Last run</th><th>Next run</th></tr></thead>
+          <tbody>${presetRows || '<tr><td colspan="4" style="color:#666;text-align:center;padding:12px">No active scheduled presets.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function toggleMaster(on) {
+    try {
+      const r = await fetch('/api/ahb/social/autopilot/toggle', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ on: !!on }),
+      });
+      if (!r.ok) alert('Auto-Pilot endpoint not ready (Task 13)');
+    } catch (e) {
+      alert('Auto-Pilot endpoint not reachable');
+    }
+    load();
+  }
+
+  async function runTickNow() {
+    try {
+      const r = await fetch('/api/ahb/social/autopilot/tick', { method: 'POST' });
+      if (r.ok) {
+        const j = await r.json();
+        alert('Tick: ' + JSON.stringify(j));
+      } else {
+        alert('Auto-Pilot endpoint not ready (Task 13)');
+      }
+    } catch (e) {
+      alert('Auto-Pilot endpoint not reachable');
+    }
+    load();
+  }
+
+  return { render: load, toggleMaster, runTickNow };
+})();
 </script>
 
 </body>
