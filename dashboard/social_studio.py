@@ -760,3 +760,82 @@ def social_post_bundle(pid: int):
     buf.seek(0)
     return send_file(buf, mimetype="application/zip",
                      as_attachment=True, download_name=f"social_{pid}.zip")
+
+
+SEED_PRESETS = [
+    {"name": "Project Showcase", "tone": "pro", "length": "medium", "style": "showcase",
+     "platform_targets": ["ig_feed_square", "ig_reel"], "is_seed": 1,
+     "description": "6-10 best photos from one project as carousel + Reel."},
+    {"name": "Before / After Reel", "tone": "hype", "length": "short", "style": "showcase",
+     "platform_targets": ["tiktok", "ig_reel"], "is_seed": 1,
+     "description": "Split-screen first vs final phase, 15s, hype tone."},
+    {"name": "Heavy Equipment Spotlight", "tone": "educational", "length": "medium", "style": "showcase",
+     "platform_targets": ["tiktok", "ig_reel"], "is_seed": 1,
+     "description": "Single video, slow-mo intro, gear specs overlay."},
+    {"name": "Process Explainer", "tone": "educational", "length": "medium", "style": "tutorial",
+     "platform_targets": ["tiktok", "ig_reel"], "is_seed": 1,
+     "description": "30-60s how-we-do-it w/ voiceover."},
+    {"name": "Customer Testimonial", "tone": "pro", "length": "medium", "style": "showcase",
+     "platform_targets": ["ig_reel", "ig_feed_square"], "is_seed": 1,
+     "description": "Quote pulled from Reviews + branded card."},
+    {"name": "Day-in-the-Life", "tone": "casual", "length": "medium", "style": "behind",
+     "platform_targets": ["tiktok", "ig_reel"], "is_seed": 1,
+     "description": "Montage from one day's media, music-led."},
+    {"name": "Quick Tip", "tone": "educational", "length": "short", "style": "tutorial",
+     "platform_targets": ["tiktok", "ig_story"], "is_seed": 1,
+     "description": "Single still + bold text overlay, 5-10 word hook."},
+    {"name": "Sub / Trade Shout-out", "tone": "casual", "length": "short", "style": "behind",
+     "platform_targets": ["ig_feed_square", "ig_story"], "is_seed": 1,
+     "description": "Tag a sub w/ photo of their work."},
+]
+
+
+@social_bp.route("/api/ahb/social/presets/install-seeds", methods=["POST"])
+def social_presets_install_seeds():
+    con = _conn()
+    try:
+        existing = {r[0] for r in con.execute(
+            "SELECT name FROM ahb_social_presets WHERE is_seed=1")}
+        inserted = []
+        for sp in SEED_PRESETS:
+            if sp["name"] in existing:
+                continue
+            cols = list(sp.keys())
+            vals = [json.dumps(v) if isinstance(v, (list, dict)) else v for v in sp.values()]
+            cur = con.execute(
+                f"INSERT INTO ahb_social_presets ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})",
+                vals,
+            )
+            inserted.append(cur.lastrowid)
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"installed": inserted})
+
+
+@social_bp.route("/api/ahb/social/settings", methods=["GET"])
+def social_settings_get():
+    return jsonify(_settings.load_settings())
+
+
+@social_bp.route("/api/ahb/social/settings", methods=["PUT"])
+def social_settings_put():
+    data = request.get_json(silent=True) or {}
+    s = _settings.load_settings()
+    s.update({k: v for k, v in data.items() if k in s})
+    _settings.save_settings(s)
+    return jsonify({"ok": True, "settings": s})
+
+
+@social_bp.route("/api/ahb/social/brand-kit", methods=["GET"])
+def social_brand_get():
+    return jsonify(_settings.load_brand_kit())
+
+
+@social_bp.route("/api/ahb/social/brand-kit", methods=["PUT"])
+def social_brand_put():
+    data = request.get_json(silent=True) or {}
+    b = _settings.load_brand_kit()
+    b.update({k: v for k, v in data.items() if k in b})
+    _settings.save_brand_kit(b)
+    return jsonify({"ok": True, "brand_kit": b})

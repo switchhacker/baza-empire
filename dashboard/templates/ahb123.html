@@ -17987,6 +17987,199 @@ SocialStudio.modules.postdetail = (function(){
   }
   return { open, save, bundle, telegram };
 })();
+
+SocialStudio.modules.presets = (function(){
+  const root = () => document.getElementById('ss-sub-presets');
+  let items = [];
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    items = (await fetch('/api/ahb/social/presets').then(r => r.json())).items || [];
+    paint();
+  }
+
+  function paint() {
+    const list = items.map(p => `
+      <div class="ss-card" style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="min-width:0">
+            <div style="font-weight:700">${_esc(p.name)} ${p.is_seed ? '<span style="color:#666;font-size:10px;">(seed)</span>' : ''}</div>
+            <div style="color:#888;font-size:11px">${_esc(p.description || '')}</div>
+            <div style="color:#666;font-size:10px;margin-top:2px">cadence: ${_esc(p.cadence)} &middot; max/day: ${_esc(p.max_per_day)} &middot; ${p.active ? 'ACTIVE' : 'paused'}</div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.presets.edit(${p.id})">&#x270F;&#xFE0F;</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.presets.runOnce(${p.id})">&#x25B6;&#xFE0F; Test</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.presets.toggle(${p.id}, ${p.active ? 1 : 0})">${p.active ? '&#x23F8;' : '&#x25B6;'}</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    root().innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:13px;color:#aaa">${items.length} presets</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-secondary" onclick="SocialStudio.modules.presets.installSeeds()">Install seed presets</button>
+          <button class="btn-primary" onclick="SocialStudio.modules.presets.edit(null)">+ New</button>
+        </div>
+      </div>
+      <div>${list || '<div style="color:#444;padding:40px;text-align:center">No presets. Click &quot;Install seed presets&quot;.</div>'}</div>
+    `;
+  }
+
+  async function installSeeds() {
+    const r = await fetch('/api/ahb/social/presets/install-seeds', { method: 'POST' });
+    const j = await r.json();
+    alert('Installed ' + (j.installed || []).length + ' preset(s).');
+    load();
+  }
+
+  function edit(id) {
+    const p = id ? items.find(x => x.id === id) : { name: '', description: '', tone: 'pro',
+        length: 'medium', style: 'trade', cadence: 'off', max_per_day: 1,
+        auto_approve: 0, score_threshold: 75, active: 1 };
+    const m = document.getElementById('socialPresetEditor');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">${id ? 'Edit' : 'New'} preset</div>
+          <button onclick="document.getElementById('socialPresetEditor').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <input id="pe-name" placeholder="Name" value="${_esc(p.name || '')}" style="width:100%;margin-bottom:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">
+        <textarea id="pe-desc" placeholder="Description" style="width:100%;height:60px;margin-bottom:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.description || '')}</textarea>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+          <select id="pe-tone" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"><option value="pro">Pro</option><option value="hype">Hype</option><option value="casual">Casual</option><option value="educational">Educational</option><option value="trade">Trade</option><option value="funny">Funny</option></select>
+          <select id="pe-length" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"><option value="short">Short</option><option value="medium">Medium</option><option value="long">Long</option></select>
+          <select id="pe-cadence" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"><option value="off">Off</option><option value="daily">Daily</option><option value="n_per_week">N/week</option><option value="on_trigger">On trigger</option></select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+          <label style="font-size:12px;color:#aaa">Max/day <input id="pe-max" type="number" min="0" value="${_esc(p.max_per_day || 1)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"></label>
+          <label style="font-size:12px;color:#aaa">Score &ge; <input id="pe-threshold" type="number" min="0" max="100" value="${_esc(p.score_threshold || 75)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff"></label>
+        </div>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:6px">
+          <input id="pe-autoapprove" type="checkbox" ${p.auto_approve ? 'checked' : ''}> Auto-approve when score &ge; threshold
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:10px">
+          <input id="pe-active" type="checkbox" ${p.active ? 'checked' : ''}> Active
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px">
+          <button class="btn-primary" onclick="SocialStudio.modules.presets.save(${id || 'null'})">Save</button>
+        </div>
+      </div>
+    `;
+    // Pre-select the dropdowns to the current values
+    setTimeout(() => {
+      const t = document.getElementById('pe-tone'); if (t) t.value = p.tone || 'pro';
+      const l = document.getElementById('pe-length'); if (l) l.value = p.length || 'medium';
+      const c = document.getElementById('pe-cadence'); if (c) c.value = p.cadence || 'off';
+    }, 0);
+  }
+
+  async function save(id) {
+    const body = {
+      name: document.getElementById('pe-name').value,
+      description: document.getElementById('pe-desc').value,
+      tone: document.getElementById('pe-tone').value,
+      length: document.getElementById('pe-length').value,
+      cadence: document.getElementById('pe-cadence').value,
+      max_per_day: parseInt(document.getElementById('pe-max').value, 10) || 1,
+      score_threshold: parseInt(document.getElementById('pe-threshold').value, 10) || 75,
+      auto_approve: document.getElementById('pe-autoapprove').checked ? 1 : 0,
+      active: document.getElementById('pe-active').checked ? 1 : 0,
+    };
+    const r = id
+      ? await fetch('/api/ahb/social/presets/' + id, {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        })
+      : await fetch('/api/ahb/social/presets', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+    if (!r.ok) { alert('Save failed'); return; }
+    document.getElementById('socialPresetEditor').style.display = 'none';
+    load();
+  }
+
+  async function runOnce(id) {
+    const r = await fetch('/api/ahb/social/presets/' + id + '/run', { method: 'POST' });
+    const j = await r.json();
+    alert('Test run: ' + (j.post_id ? '#' + j.post_id : j.error || 'see logs'));
+  }
+
+  async function toggle(id, currentActive) {
+    await fetch('/api/ahb/social/presets/' + id, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ active: currentActive ? 0 : 1 }),
+    });
+    load();
+  }
+
+  return { render: load, edit, save, runOnce, toggle, installSeeds };
+})();
+
+SocialStudio.modules.settings = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function open() {
+    const s = await fetch('/api/ahb/social/settings').then(r => r.json());
+    const m = document.getElementById('socialSettings');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">&#x2699;&#xFE0F; Social Studio Settings</div>
+          <button onclick="document.getElementById('socialSettings').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Default copy model
+          <input id="ss-set-model" value="${_esc(s.default_copy_model || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Daily post cap
+          <input id="ss-set-cap" type="number" min="0" value="${_esc(s.daily_post_cap || 4)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Cool-down days (don't reuse media within N days)
+          <input id="ss-set-cooldown" type="number" min="0" value="${_esc(s.cool_down_days || 14)}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">
+          <input id="ss-set-cloud" type="checkbox" ${s.cloud_models_enabled ? 'checked' : ''}> Enable cloud models (off by default; HARD RULE)
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">
+          <input id="ss-set-autopilot" type="checkbox" ${s.autopilot_master ? 'checked' : ''}> Auto-Pilot master ON
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
+          <button class="btn-secondary" onclick="SocialStudio.modules.brandkit && SocialStudio.modules.brandkit.open()">Edit Brand Kit</button>
+          <button class="btn-primary" onclick="SocialStudio.modules.settings.save()">Save</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function save() {
+    const body = {
+      default_copy_model: document.getElementById('ss-set-model').value,
+      daily_post_cap: parseInt(document.getElementById('ss-set-cap').value, 10) || 4,
+      cool_down_days: parseInt(document.getElementById('ss-set-cooldown').value, 10) || 14,
+      cloud_models_enabled: document.getElementById('ss-set-cloud').checked,
+      autopilot_master: document.getElementById('ss-set-autopilot').checked,
+    };
+    await fetch('/api/ahb/social/settings', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    document.getElementById('socialSettings').style.display = 'none';
+  }
+  return { open, save };
+})();
 </script>
 
 </body>

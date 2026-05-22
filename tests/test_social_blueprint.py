@@ -290,3 +290,38 @@ def test_post_bundle_returns_zip(client, tmp_path):
 def test_post_cover_404(client):
     r = client.get("/api/ahb/social/posts/999999/cover")
     assert r.status_code == 404
+
+
+def test_install_seeds_inserts_8(client):
+    r = client.post("/api/ahb/social/presets/install-seeds")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert len(j["installed"]) == 8
+    items = client.get("/api/ahb/social/presets").get_json()["items"]
+    assert sum(1 for p in items if p.get("is_seed")) >= 8
+
+
+def test_install_seeds_idempotent(client):
+    client.post("/api/ahb/social/presets/install-seeds")
+    r2 = client.post("/api/ahb/social/presets/install-seeds")
+    j = r2.get_json()
+    assert j["installed"] == []  # already installed
+
+
+def test_settings_get_returns_defaults(client):
+    r = client.get("/api/ahb/social/settings")
+    s = r.get_json()
+    assert s["default_copy_model"]
+    assert s["autopilot_master"] is False
+
+
+def test_settings_put_round_trip(client):
+    client.put("/api/ahb/social/settings", json={"daily_post_cap": 9})
+    r = client.get("/api/ahb/social/settings")
+    assert r.get_json()["daily_post_cap"] == 9
+
+
+def test_brand_kit_get_put(client):
+    client.put("/api/ahb/social/brand-kit", json={"primary_color": "#abc123"})
+    r = client.get("/api/ahb/social/brand-kit")
+    assert r.get_json()["primary_color"] == "#abc123"
