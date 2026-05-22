@@ -166,3 +166,35 @@ def test_ai_score_returns_score_and_notes(client, monkeypatch):
     assert r.status_code == 200
     j = r.get_json()
     assert j["score"] == 82 and "CTA" in j["notes"]
+
+
+def test_extract_json_array_handles_nested(client):
+    import social_studio
+    assert social_studio._extract_json_array('[["a","b"],["c"]]') == [["a","b"],["c"]]
+
+
+def test_extract_json_array_handles_code_fence(client):
+    import social_studio
+    assert social_studio._extract_json_array('```json\n["x","y"]\n```') == ["x", "y"]
+
+
+def test_ai_caption_returns_empty_on_ollama_failure(client, monkeypatch):
+    import social_studio
+    def boom(*a, **kw):
+        raise ConnectionError("Ollama down")
+    # Replace the inner urlopen call by patching the wrapper itself
+    monkeypatch.setattr(social_studio.urllib.request, "urlopen", boom)
+    r = client.post("/api/ahb/social/ai/caption", json={"source_ids": [], "platform": "ig_reel"})
+    assert r.status_code == 200
+    assert r.get_json()["caption"] == ""
+
+
+def test_ai_hashtags_dedupes(client, monkeypatch):
+    import social_studio
+    monkeypatch.setattr(social_studio, "_call_ollama_chat",
+                        lambda *a, **kw: '["#ahbco", "#ahbco", "#renovation"]')
+    r = client.post("/api/ahb/social/ai/hashtags",
+                    json={"caption": "x", "platform": "ig_reel"})
+    tags = r.get_json()["hashtags"]
+    assert tags.count("#ahbco") == 1
+    assert "#renovation" in tags

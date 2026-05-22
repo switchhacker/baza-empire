@@ -396,7 +396,7 @@ OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 
 def _call_ollama_chat(model: str, system: str, user: str,
                       temperature: float = 0.7, timeout: int = 60) -> str:
-    """Minimal /api/chat call. Returns the assistant text content."""
+    """Minimal /api/chat call. Returns the assistant text content, or "" on failure."""
     body = json.dumps({
         "model": model,
         "stream": False,
@@ -410,9 +410,13 @@ def _call_ollama_chat(model: str, system: str, user: str,
         f"{OLLAMA_BASE}/api/chat", data=body,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode())
-    return (data.get("message") or {}).get("content", "")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+        return (data.get("message") or {}).get("content", "")
+    except Exception as e:
+        print(f"[social] ollama call failed ({model}): {e}", flush=True)
+        return ""
 
 
 def _pick_copy_model() -> str:
@@ -421,26 +425,90 @@ def _pick_copy_model() -> str:
 
 
 def _extract_json_array(text: str) -> list:
-    """Pull the first JSON array out of model output, tolerating code fences."""
-    m = re.search(r"\[\s*(?:.|\n)*?\s*\]", text)
-    if not m:
+    """Pull the first JSON array out of model output, tolerating code fences
+    and nested arrays/objects via depth counting."""
+    if not text:
         return []
+    cleaned = re.sub(r"```(?:json)?", "", text).strip()
     try:
-        v = json.loads(m.group(0))
-        return v if isinstance(v, list) else []
+        v = json.loads(cleaned)
+        if isinstance(v, list):
+            return v
     except Exception:
+        pass
+    start = cleaned.find("[")
+    if start < 0:
         return []
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(cleaned)):
+        c = cleaned[i]
+        if esc:
+            esc = False
+            continue
+        if c == "\\":
+            esc = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    v = json.loads(cleaned[start:i + 1])
+                    return v if isinstance(v, list) else []
+                except Exception:
+                    return []
+    return []
 
 
 def _extract_json_obj(text: str) -> dict:
-    m = re.search(r"\{\s*(?:.|\n)*?\s*\}", text)
-    if not m:
+    """Pull the first JSON object out of model output, tolerating code fences."""
+    if not text:
         return {}
+    cleaned = re.sub(r"```(?:json)?", "", text).strip()
     try:
-        v = json.loads(m.group(0))
-        return v if isinstance(v, dict) else {}
+        v = json.loads(cleaned)
+        if isinstance(v, dict):
+            return v
     except Exception:
+        pass
+    start = cleaned.find("{")
+    if start < 0:
         return {}
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(cleaned)):
+        c = cleaned[i]
+        if esc:
+            esc = False
+            continue
+        if c == "\\":
+            esc = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    v = json.loads(cleaned[start:i + 1])
+                    return v if isinstance(v, dict) else {}
+                except Exception:
+                    return {}
+    return {}
 
 
 def _sources_summary(source_ids: list) -> str:
@@ -450,10 +518,13 @@ def _sources_summary(source_ids: list) -> str:
     placeholders = ",".join("?" * len(source_ids))
     con = _conn()
     try:
-        rows = con.execute(
-            f"SELECT id, sub_path, caption, tags FROM image_captions WHERE id IN ({placeholders})",
-            source_ids,
-        ).fetchall()
+        try:
+            rows = con.execute(
+                f"SELECT id, sub_path, caption, tags FROM image_captions WHERE id IN ({placeholders})",
+                source_ids,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return "(no captions available)"
     finally:
         con.close()
     parts = []
@@ -495,10 +566,12 @@ def ai_hashtags():
     model = data.get("model") or _pick_copy_model()
     raw = _call_ollama_chat(model, sys_prompt, user, temperature=0.4)
     tags = _extract_json_array(raw)
-    # Ensure brand floor present
     for f in floor:
         if f not in tags:
             tags.append(f)
+    # Deduplicate while preserving order
+    seen = set()
+    tags = [t for t in tags if not (t in seen or seen.add(t))]
     return jsonify({"hashtags": tags, "model": model})
 
 
