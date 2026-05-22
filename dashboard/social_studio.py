@@ -26,6 +26,7 @@ def _db_path() -> str:
 def _ensure_social_tables(db_path: Optional[str] = None) -> None:
     """Create ahb_social_* tables and indexes. Idempotent."""
     path = db_path or _db_path()
+    con = None
     try:
         con = sqlite3.connect(path, timeout=8.0)
         con.execute("PRAGMA busy_timeout = 8000")
@@ -95,9 +96,11 @@ def _ensure_social_tables(db_path: Optional[str] = None) -> None:
         )""")
         con.execute("CREATE INDEX IF NOT EXISTS idx_social_jobs_status ON ahb_social_jobs(status)")
         con.commit()
-        con.close()
     except sqlite3.OperationalError as e:
         print(f"[startup] _ensure_social_tables deferred — DB busy: {e}", flush=True)
+    finally:
+        if con is not None:
+            con.close()
 
 
 social_bp = Blueprint("social_studio", __name__)
@@ -715,14 +718,17 @@ def social_render_post(pid: int):
         else:
             _render.render_still(paths[0], out_path, platform, hook_text=hook, fill_mode=fill)
             cover_path = out_path
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, ValueError, OSError) as e:
         con = _conn()
         try:
             con.execute("UPDATE ahb_social_posts SET status='failed' WHERE id=?", (pid,))
             con.commit()
         finally:
             con.close()
-        return jsonify({"error": "render failed", "detail": e.stderr.decode(errors='ignore')[-500:]}), 500
+        detail = (e.stderr.decode(errors='ignore')[-500:]
+                  if isinstance(e, subprocess.CalledProcessError) and e.stderr
+                  else str(e))
+        return jsonify({"error": "render failed", "detail": detail}), 500
     con = _conn()
     try:
         con.execute(

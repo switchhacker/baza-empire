@@ -84,8 +84,11 @@ def save_brand_kit(b: Dict[str, Any]) -> None:
 
 def load_prompt(name: str) -> str:
     path = os.path.join(_prompts_dir(), f"{name}.md")
-    with open(path) as f:
-        return f.read()
+    try:
+        with open(path) as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"[Prompt '{name}' not found at {path}]"
 
 
 import re

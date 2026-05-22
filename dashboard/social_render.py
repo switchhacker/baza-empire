@@ -82,8 +82,13 @@ def _ffprobe(path: str) -> Tuple[int, int]:
          "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", path],
         capture_output=True, text=True, check=True,
     )
-    w, h = r.stdout.strip().split("x")
-    return int(w), int(h)
+    parts = r.stdout.strip().split("x")
+    if len(parts) != 2:
+        raise ValueError(f"ffprobe returned unexpected dimensions for {path}: {r.stdout!r}")
+    try:
+        return int(parts[0]), int(parts[1])
+    except ValueError:
+        raise ValueError(f"ffprobe dimensions not numeric for {path}: {r.stdout!r}")
 
 
 def render_still(src: str, out: str, platform: str,
