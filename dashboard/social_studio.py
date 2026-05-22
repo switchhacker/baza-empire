@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import subprocess
 from typing import Optional
 
 from flask import Blueprint
@@ -621,3 +622,95 @@ def ai_translate():
     model = data.get("model") or _pick_copy_model()
     out = _call_ollama_chat(model, sys_prompt, text, temperature=0.2)
     return jsonify({"text": out.strip(), "model": model})
+
+
+try:
+    from dashboard import social_render as _render
+except ImportError:
+    import social_render as _render
+
+
+def _resolve_media_paths(source_media_ids: list) -> list:
+    """Map image_captions.id → absolute file path. Joins sub_path under the
+    baza cloud root if not absolute."""
+    if not source_media_ids:
+        return []
+    placeholders = ",".join("?" * len(source_media_ids))
+    con = _conn()
+    try:
+        try:
+            rows = con.execute(
+                f"SELECT id, sub_path FROM image_captions WHERE id IN ({placeholders})",
+                source_media_ids,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    finally:
+        con.close()
+    cloud_root = os.environ.get(
+        "BAZA_CLOUD_ROOT",
+        "/home/switchhacker/baza-cloud",
+    )
+    paths = []
+    for r in rows:
+        p = r["sub_path"]
+        if not os.path.isabs(p):
+            p = os.path.join(cloud_root, p)
+        if os.path.exists(p):
+            paths.append(p)
+    return paths
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/render", methods=["POST"])
+def social_render_post(pid: int):
+    body = request.get_json(silent=True) or {}
+    con = _conn()
+    try:
+        row = con.execute("SELECT * FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    finally:
+        con.close()
+    if not row:
+        return jsonify({"error": "post not found"}), 404
+    post = _row_to_post(row)
+    paths = _resolve_media_paths(post["source_media_ids"])
+    if not paths:
+        return jsonify({"error": "no resolvable source media"}), 400
+    out_dir = os.path.join(
+        DASHBOARD_DIR, "artifacts", "social",
+        datetime.utcnow().strftime("%Y-%m-%d"), str(pid),
+    )
+    os.makedirs(out_dir, exist_ok=True)
+    is_video = any(
+        p.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) for p in paths
+    )
+    platform = post["platform"]
+    ext = ".mp4" if is_video else ".jpg"
+    out_path = os.path.join(out_dir, f"{platform}{ext}")
+    hook = body.get("hook_text")
+    fill = body.get("fill_mode", "blurred")
+    try:
+        if is_video:
+            _render.render_video(paths, out_path, platform, hook_text=hook, fill_mode=fill)
+            cover_path = os.path.join(out_dir, "cover.jpg")
+            _render.extract_cover(out_path, cover_path)
+        else:
+            _render.render_still(paths[0], out_path, platform, hook_text=hook, fill_mode=fill)
+            cover_path = out_path
+    except subprocess.CalledProcessError as e:
+        con = _conn()
+        try:
+            con.execute("UPDATE ahb_social_posts SET status='failed' WHERE id=?", (pid,))
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"error": "render failed", "detail": e.stderr.decode(errors='ignore')[-500:]}), 500
+    con = _conn()
+    try:
+        con.execute(
+            "UPDATE ahb_social_posts SET asset_path=?, cover_path=?, updated_at=? WHERE id=?",
+            (out_path, cover_path, datetime.utcnow().isoformat(timespec="seconds"), pid),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True, "asset_path": out_path, "cover_path": cover_path})
