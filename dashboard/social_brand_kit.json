@@ -1,0 +1,16 @@
+{
+  "logo_path": "static/social/brand/logo.png",
+  "primary_color": "#10b981",
+  "secondary_color": "#0e0e1e",
+  "font_default": "Inter-Bold",
+  "intro_clip_path": null,
+  "outro_clip_path": null,
+  "hashtag_floor": [
+    "#allhomebuilding",
+    "#ahbco",
+    "#newyorkhomes"
+  ],
+  "first_comment_floor": "\u2014\nDM for a free estimate.",
+  "hic_number": "",
+  "founded_year": ""
+}

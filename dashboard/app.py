@@ -1221,6 +1221,7 @@ def agent_detail(agent_id):
 
     amd_models  = _fetch_ollama_models(11434)
     cuda_models = _fetch_ollama_models(11435)
+    dual_models = _fetch_ollama_models(11438)
     cloud_models = _fetch_litellm_models()
 
     # Fallback so current model always appears even if Ollama is briefly offline
@@ -1229,10 +1230,11 @@ def agent_detail(agent_id):
         if current_model.startswith(("gpt-","claude-","gemini-","grok-","groq-","mistral-large","codestral","o1","o3")):
             if current_model not in cloud_models:
                 cloud_models.insert(0, current_model)
-        elif current_model not in amd_models and current_model not in cuda_models:
+        elif current_model not in amd_models and current_model not in cuda_models and current_model not in dual_models:
             amd_models.insert(0, current_model)
 
     available_models = {
+        "Local — Dual-GPU AMD+NVIDIA (11438)": dual_models or ["(offline)"],
         "Local — AMD GPU (11434)":   amd_models  or ["(offline)"],
         "Local — CUDA GPU (11435)":  cuda_models or ["(offline)"],
         "Cloud via LiteLLM (4000)":  cloud_models or ["(offline)"],
@@ -1641,6 +1643,7 @@ def settings_page():
 
     amd_models   = _fetch_ollama_models(11434)
     cuda_models  = _fetch_ollama_models(11435)
+    dual_models  = _fetch_ollama_models(11438)
     cloud_models = _fetch_litellm_models()
 
     # Make sure every agent's currently-configured model is in the list even if
@@ -1652,10 +1655,11 @@ def settings_page():
         if cm.startswith(("gpt-","claude-","gemini-","grok-","groq-","mistral-large","codestral","o1","o3")):
             if cm not in cloud_models:
                 cloud_models.insert(0, cm)
-        elif cm not in amd_models and cm not in cuda_models:
+        elif cm not in amd_models and cm not in cuda_models and cm not in dual_models:
             amd_models.insert(0, cm)
 
     available_models = {
+        "Local — Dual-GPU AMD+NVIDIA (11438)": dual_models or ["(offline)"],
         "Local — AMD GPU (11434)":  amd_models  or ["(offline)"],
         "Local — CUDA GPU (11435)": cuda_models or ["(offline)"],
         "Cloud via LiteLLM (4000)": cloud_models or ["(offline)"],
