@@ -651,13 +651,18 @@ def _resolve_media_paths(source_media_ids: list) -> list:
         "BAZA_CLOUD_ROOT",
         "/home/switchhacker/baza-cloud",
     )
+    cloud_root_abs = os.path.abspath(cloud_root)
     paths = []
     for r in rows:
         p = r["sub_path"]
         if not os.path.isabs(p):
             p = os.path.join(cloud_root, p)
-        if os.path.exists(p):
-            paths.append(p)
+        p_abs = os.path.abspath(p)
+        # Reject if path escapes the cloud root (path traversal defense)
+        if not p_abs.startswith(cloud_root_abs + os.sep) and p_abs != cloud_root_abs:
+            continue
+        if os.path.exists(p_abs):
+            paths.append(p_abs)
     return paths
 
 

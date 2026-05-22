@@ -198,3 +198,58 @@ def test_ai_hashtags_dedupes(client, monkeypatch):
     tags = r.get_json()["hashtags"]
     assert tags.count("#ahbco") == 1
     assert "#renovation" in tags
+
+
+def test_render_post_no_sources_returns_400(client):
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "tiktok", "variant": "9x16", "source_media_ids": []
+    }).get_json()["id"]
+    r = client.post(f"/api/ahb/social/posts/{pid}/render", json={})
+    assert r.status_code == 400
+
+
+def test_render_post_404_for_unknown(client):
+    r = client.post("/api/ahb/social/posts/999999/render", json={})
+    assert r.status_code == 404
+
+
+def test_render_post_invokes_still_for_image(client, monkeypatch, tmp_path):
+    import social_studio
+    # Stub resolve to return one fake jpg, stub render_still to record args
+    fake_src = str(tmp_path / "src.jpg")
+    open(fake_src, "w").write("")
+    monkeypatch.setattr(social_studio, "_resolve_media_paths", lambda ids: [fake_src])
+    calls = {}
+    def fake_still(src, out, platform, hook_text=None, brand_corner=False, fill_mode="blurred"):
+        calls["still"] = {"src": src, "out": out, "platform": platform, "hook": hook_text}
+        open(out, "w").write("ok")
+        return out
+    monkeypatch.setattr(social_studio._render, "render_still", fake_still)
+
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "ig_feed_square", "variant": "1x1", "source_media_ids": [1],
+    }).get_json()["id"]
+    r = client.post(f"/api/ahb/social/posts/{pid}/render",
+                    json={"hook_text": "test:hook,bad"})
+    assert r.status_code == 200
+    assert calls["still"]["platform"] == "ig_feed_square"
+    assert calls["still"]["hook"] == "test:hook,bad"
+
+
+def test_render_post_failed_marks_status(client, monkeypatch, tmp_path):
+    import social_studio
+    import subprocess as sp
+    fake_src = str(tmp_path / "src.jpg")
+    open(fake_src, "w").write("")
+    monkeypatch.setattr(social_studio, "_resolve_media_paths", lambda ids: [fake_src])
+    def boom(*a, **kw):
+        raise sp.CalledProcessError(1, ["ffmpeg"], stderr=b"fake err")
+    monkeypatch.setattr(social_studio._render, "render_still", boom)
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "ig_feed_square", "variant": "1x1", "source_media_ids": [1],
+    }).get_json()["id"]
+    r = client.post(f"/api/ahb/social/posts/{pid}/render", json={})
+    assert r.status_code == 500
+    # Verify status was flipped to 'failed'
+    items = client.get(f"/api/ahb/social/posts?status=failed").get_json()["items"]
+    assert any(p["id"] == pid for p in items)

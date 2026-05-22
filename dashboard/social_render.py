@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import tempfile
 from typing import List, Optional, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -55,7 +56,16 @@ def build_filter_graph(in_w: int, in_h: int, platform: str,
             f"crop={out_w}:{out_h}"
         )
     if hook_text:
-        safe = hook_text.replace("'", r"\\'")
+        # Strip drawtext expansion characters and escape filter-graph special chars.
+        # Order matters: backslash → quote → colon → comma → percent-brace.
+        safe = (
+            hook_text
+            .replace("\\", "\\\\")
+            .replace("'", r"\'")
+            .replace(":", r"\:")
+            .replace(",", r"\,")
+            .replace("%{", "%%{")  # neutralize drawtext format expansion
+        )
         parts.append(
             f"drawtext=fontfile={FONT_BOLD}:text='{safe}':"
             f"fontcolor=white:fontsize=72:line_spacing=10:"
@@ -98,21 +108,25 @@ def render_video(srcs: List[str], out: str, platform: str,
     w, h = _ffprobe(srcs[0])
     g = build_filter_graph(w, h, platform, fill_mode, hook_text, brand_corner)
     tmpdir = os.path.dirname(out) or "."
-    list_path = os.path.join(tmpdir, "concat.txt")
-    with open(list_path, "w") as f:
-        for s in srcs:
-            f.write(f"file {shlex.quote(os.path.abspath(s))}\n")
-    cmd = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
-        "-vf", g,
-        "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
-        "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "22",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
-        "-t", str(max_seconds),
-        out,
-    ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    fd, list_path = tempfile.mkstemp(suffix=".concat.txt", dir=tmpdir, text=True)
+    try:
+        with os.fdopen(fd, "w") as f:
+            for s in srcs:
+                f.write(f"file {shlex.quote(os.path.abspath(s))}\n")
+        cmd = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
+            "-vf", g,
+            "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
+            "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "22",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-t", str(max_seconds),
+            out,
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+    finally:
+        if os.path.exists(list_path):
+            os.remove(list_path)
     return out
 
 
