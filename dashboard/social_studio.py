@@ -232,3 +232,157 @@ def social_sources():
     finally:
         con.close()
     return jsonify({"items": [dict(r) for r in rows]})
+
+
+POST_WRITABLE = {
+    "preset_id", "project_id", "source_media_ids", "platform", "variant",
+    "asset_path", "cover_path", "caption", "hashtags", "first_comment",
+    "status", "score", "ai_meta", "render_params", "scheduled_at",
+    "posted_at", "posted_url",
+}
+
+ALLOWED_STATUSES = {
+    "draft", "pending_review", "approved", "scheduled", "posted",
+    "rejected", "failed",
+}
+
+ALLOWED_PLATFORMS = {
+    "tiktok", "ig_reel", "ig_feed_square", "ig_feed_portrait", "ig_story",
+}
+
+
+def _row_to_post(r: sqlite3.Row) -> dict:
+    d = dict(r)
+    for k in ("source_media_ids", "ai_meta", "render_params"):
+        try:
+            d[k] = json.loads(d[k]) if d.get(k) else ([] if k == "source_media_ids" else {})
+        except Exception:
+            d[k] = [] if k == "source_media_ids" else {}
+    return d
+
+
+@social_bp.route("/api/ahb/social/posts", methods=["GET"])
+def social_posts_list():
+    status = request.args.get("status")
+    platform = request.args.get("platform")
+    project_id = request.args.get("project_id", type=int)
+    q = (request.args.get("q") or "").strip().lower()
+    limit = min(request.args.get("limit", default=100, type=int), 500)
+    offset = max(0, request.args.get("offset", default=0, type=int))
+    if status and status not in ALLOWED_STATUSES:
+        return jsonify({"error": "invalid status"}), 400
+    if platform and platform not in ALLOWED_PLATFORMS:
+        return jsonify({"error": "invalid platform"}), 400
+    sql = "SELECT * FROM ahb_social_posts WHERE 1=1"
+    args = []
+    if status:
+        sql += " AND status=?"; args.append(status)
+    if platform:
+        sql += " AND platform=?"; args.append(platform)
+    if project_id is not None:
+        sql += " AND project_id=?"; args.append(project_id)
+    if q:
+        sql += " AND (LOWER(caption) LIKE ? OR LOWER(hashtags) LIKE ?)"
+        args += [f"%{q}%", f"%{q}%"]
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    args += [limit, offset]
+    con = _conn()
+    try:
+        rows = con.execute(sql, args).fetchall()
+    finally:
+        con.close()
+    return jsonify({"items": [_row_to_post(r) for r in rows]})
+
+
+@social_bp.route("/api/ahb/social/posts", methods=["POST"])
+def social_posts_create():
+    data = request.get_json(silent=True) or {}
+    if data.get("platform") and data["platform"] not in ALLOWED_PLATFORMS:
+        return jsonify({"error": "invalid platform"}), 400
+    cols, vals = [], []
+    for k, v in data.items():
+        if k not in POST_WRITABLE:
+            continue
+        cols.append(k)
+        vals.append(json.dumps(v) if isinstance(v, (list, dict)) else v)
+    if "platform" not in cols or "variant" not in cols:
+        return jsonify({"error": "platform and variant required"}), 400
+    con = _conn()
+    try:
+        cur = con.execute(
+            f"INSERT INTO ahb_social_posts ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})",
+            vals,
+        )
+        con.commit()
+        pid = cur.lastrowid
+    finally:
+        con.close()
+    return jsonify({"id": pid})
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>", methods=["PATCH"])
+def social_posts_patch(pid: int):
+    data = request.get_json(silent=True) or {}
+    if "status" in data and data["status"] not in ALLOWED_STATUSES:
+        return jsonify({"error": "invalid status"}), 400
+    if "platform" in data and data["platform"] not in ALLOWED_PLATFORMS:
+        return jsonify({"error": "invalid platform"}), 400
+    sets, vals = [], []
+    for k, v in data.items():
+        if k not in POST_WRITABLE:
+            continue
+        sets.append(f"{k}=?")
+        vals.append(json.dumps(v) if isinstance(v, (list, dict)) else v)
+    if not sets:
+        return jsonify({"error": "no writable fields"}), 400
+    sets.append("updated_at=?"); vals.append(datetime.utcnow().isoformat(timespec="seconds"))
+    vals.append(pid)
+    con = _conn()
+    try:
+        con.execute(f"UPDATE ahb_social_posts SET {','.join(sets)} WHERE id=?", vals)
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True})
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>", methods=["DELETE"])
+def social_posts_delete(pid: int):
+    con = _conn()
+    try:
+        con.execute("DELETE FROM ahb_social_posts WHERE id=?", (pid,))
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True})
+
+
+@social_bp.route("/api/ahb/social/jobs/<int:jid>", methods=["GET"])
+def social_jobs_get(jid: int):
+    con = _conn()
+    try:
+        r = con.execute("SELECT * FROM ahb_social_jobs WHERE id=?", (jid,)).fetchone()
+    finally:
+        con.close()
+    if not r:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(dict(r))
+
+
+@social_bp.route("/api/ahb/social/jobs", methods=["GET"])
+def social_jobs_list():
+    post_id = request.args.get("post_id", type=int)
+    status = request.args.get("status")
+    sql = "SELECT * FROM ahb_social_jobs WHERE 1=1"
+    args = []
+    if post_id is not None:
+        sql += " AND post_id=?"; args.append(post_id)
+    if status:
+        sql += " AND status=?"; args.append(status)
+    sql += " ORDER BY id DESC LIMIT 200"
+    con = _conn()
+    try:
+        rows = con.execute(sql, args).fetchall()
+    finally:
+        con.close()
+    return jsonify({"items": [dict(r) for r in rows]})

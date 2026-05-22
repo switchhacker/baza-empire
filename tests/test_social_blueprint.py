@@ -84,3 +84,41 @@ def test_preset_update_mixed_valid_invalid_fields(client):
     assert r.status_code == 200
     item = client.get("/api/ahb/social/presets").get_json()["items"]
     assert any(p["id"] == pid and p["tone"] == "hype" for p in item)
+
+
+def test_posts_create_and_list(client):
+    r = client.post("/api/ahb/social/posts", json={
+        "platform": "tiktok", "variant": "9x16",
+        "source_media_ids": [1], "caption": "hi"
+    })
+    assert r.status_code == 200
+    pid = r.get_json()["id"]
+    items = client.get("/api/ahb/social/posts").get_json()["items"]
+    assert any(p["id"] == pid and p["caption"] == "hi" for p in items)
+
+
+def test_posts_patch_status(client):
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "tiktok", "variant": "9x16", "source_media_ids": [1]
+    }).get_json()["id"]
+    r = client.patch(f"/api/ahb/social/posts/{pid}", json={"status": "approved"})
+    assert r.status_code == 200
+    items = client.get("/api/ahb/social/posts?status=approved").get_json()["items"]
+    assert any(p["id"] == pid for p in items)
+
+
+def test_posts_filter_invalid_status(client):
+    r = client.patch("/api/ahb/social/posts/9999", json={"status": "bogus"})
+    assert r.status_code == 400
+
+
+def test_jobs_get_404(client):
+    r = client.get("/api/ahb/social/jobs/9999")
+    assert r.status_code == 404
+
+
+def test_posts_create_invalid_platform(client):
+    r = client.post("/api/ahb/social/posts", json={
+        "platform": "invalid_platform", "variant": "9x16"
+    })
+    assert r.status_code == 400
