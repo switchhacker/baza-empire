@@ -122,3 +122,47 @@ def test_posts_create_invalid_platform(client):
         "platform": "invalid_platform", "variant": "9x16"
     })
     assert r.status_code == 400
+
+
+def test_ai_caption(client, monkeypatch):
+    import social_studio
+    monkeypatch.setattr(social_studio, "_call_ollama_chat",
+                        lambda *a, **kw: "Built like a tank.\nFraming this week. #ahbco")
+    r = client.post("/api/ahb/social/ai/caption", json={
+        "source_ids": [1], "platform": "ig_reel", "tone": "pro", "length": "short"
+    })
+    assert r.status_code == 200
+    assert "tank" in r.get_json()["caption"].lower()
+
+
+def test_ai_hashtags_parses_json_array(client, monkeypatch):
+    import social_studio
+    monkeypatch.setattr(social_studio, "_call_ollama_chat",
+                        lambda *a, **kw: '["#brooklyn", "#renovation", "#ahbco"]')
+    r = client.post("/api/ahb/social/ai/hashtags", json={
+        "caption": "framing day", "platform": "ig_reel"
+    })
+    assert r.status_code == 200
+    tags = r.get_json()["hashtags"]
+    assert "#renovation" in tags
+
+
+def test_ai_hooks_returns_3(client, monkeypatch):
+    import social_studio
+    monkeypatch.setattr(social_studio, "_call_ollama_chat",
+                        lambda *a, **kw: '["Hook A","Hook B","Hook C"]')
+    r = client.post("/api/ahb/social/ai/hooks", json={"source_ids": [1], "n": 3})
+    assert r.status_code == 200
+    assert len(r.get_json()["hooks"]) == 3
+
+
+def test_ai_score_returns_score_and_notes(client, monkeypatch):
+    import social_studio
+    monkeypatch.setattr(social_studio, "_call_ollama_chat",
+                        lambda *a, **kw: '{"score": 82, "notes": "Strong hook, weak CTA."}')
+    r = client.post("/api/ahb/social/ai/score", json={
+        "caption": "x", "hashtags": "#x", "platform": "ig_reel"
+    })
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["score"] == 82 and "CTA" in j["notes"]

@@ -386,3 +386,165 @@ def social_jobs_list():
     finally:
         con.close()
     return jsonify({"items": [dict(r) for r in rows]})
+
+
+import re
+import urllib.request
+
+OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+
+
+def _call_ollama_chat(model: str, system: str, user: str,
+                      temperature: float = 0.7, timeout: int = 60) -> str:
+    """Minimal /api/chat call. Returns the assistant text content."""
+    body = json.dumps({
+        "model": model,
+        "stream": False,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "options": {"temperature": temperature},
+    }).encode()
+    req = urllib.request.Request(
+        f"{OLLAMA_BASE}/api/chat", data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode())
+    return (data.get("message") or {}).get("content", "")
+
+
+def _pick_copy_model() -> str:
+    s = _settings.load_settings()
+    return s.get("default_copy_model") or "gpt-oss:20b"
+
+
+def _extract_json_array(text: str) -> list:
+    """Pull the first JSON array out of model output, tolerating code fences."""
+    m = re.search(r"\[\s*(?:.|\n)*?\s*\]", text)
+    if not m:
+        return []
+    try:
+        v = json.loads(m.group(0))
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+
+def _extract_json_obj(text: str) -> dict:
+    m = re.search(r"\{\s*(?:.|\n)*?\s*\}", text)
+    if not m:
+        return {}
+    try:
+        v = json.loads(m.group(0))
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
+def _sources_summary(source_ids: list) -> str:
+    """Build a 1-paragraph fact base from image_captions rows for the model."""
+    if not source_ids:
+        return ""
+    placeholders = ",".join("?" * len(source_ids))
+    con = _conn()
+    try:
+        rows = con.execute(
+            f"SELECT id, sub_path, caption, tags FROM image_captions WHERE id IN ({placeholders})",
+            source_ids,
+        ).fetchall()
+    finally:
+        con.close()
+    parts = []
+    for r in rows:
+        cap = (r["caption"] or "").strip()
+        tags = (r["tags"] or "").strip()
+        parts.append(f"- {r['sub_path']}: {cap} [{tags}]")
+    return "\n".join(parts) if parts else "(no captions available)"
+
+
+@social_bp.route("/api/ahb/social/ai/caption", methods=["POST"])
+def ai_caption():
+    data = request.get_json(silent=True) or {}
+    sys_prompt = _settings.load_prompt("caption_system")
+    user = (
+        f"Platform: {data.get('platform', 'ig_reel')}\n"
+        f"Tone: {data.get('tone', 'pro')}\n"
+        f"Length: {data.get('length', 'medium')}\n"
+        f"Style: {data.get('style', 'trade')}\n"
+        f"Source media:\n{_sources_summary(data.get('source_ids') or [])}\n"
+    )
+    model = data.get("model") or _pick_copy_model()
+    text = _call_ollama_chat(model, sys_prompt, user, temperature=0.7).strip()
+    return jsonify({"caption": text, "model": model})
+
+
+@social_bp.route("/api/ahb/social/ai/hashtags", methods=["POST"])
+def ai_hashtags():
+    data = request.get_json(silent=True) or {}
+    sys_prompt = _settings.load_prompt("hashtag_system")
+    brand = _settings.load_brand_kit()
+    floor = brand.get("hashtag_floor") or []
+    user = (
+        f"Caption: {data.get('caption', '')}\n"
+        f"Platform: {data.get('platform', 'ig_reel')}\n"
+        f"Branded floor (must include): {floor}\n"
+        f"Target count: {data.get('count', 18)}\n"
+    )
+    model = data.get("model") or _pick_copy_model()
+    raw = _call_ollama_chat(model, sys_prompt, user, temperature=0.4)
+    tags = _extract_json_array(raw)
+    # Ensure brand floor present
+    for f in floor:
+        if f not in tags:
+            tags.append(f)
+    return jsonify({"hashtags": tags, "model": model})
+
+
+@social_bp.route("/api/ahb/social/ai/hooks", methods=["POST"])
+def ai_hooks():
+    data = request.get_json(silent=True) or {}
+    n = int(data.get("n") or 3)
+    sys_prompt = _settings.load_prompt("hooks_system")
+    user = (
+        f"N: {n}\n"
+        f"Source media:\n{_sources_summary(data.get('source_ids') or [])}\n"
+    )
+    model = data.get("model") or _pick_copy_model()
+    raw = _call_ollama_chat(model, sys_prompt, user, temperature=0.9)
+    hooks = _extract_json_array(raw)[:n]
+    return jsonify({"hooks": hooks, "model": model})
+
+
+@social_bp.route("/api/ahb/social/ai/score", methods=["POST"])
+def ai_score():
+    data = request.get_json(silent=True) or {}
+    sys_prompt = _settings.load_prompt("score_system")
+    user = (
+        f"Platform: {data.get('platform', 'ig_reel')}\n"
+        f"Caption:\n{data.get('caption', '')}\n"
+        f"Hashtags: {data.get('hashtags', '')}\n"
+    )
+    model = data.get("model") or _pick_copy_model()
+    raw = _call_ollama_chat(model, sys_prompt, user, temperature=0.2)
+    obj = _extract_json_obj(raw)
+    return jsonify({
+        "score": int(obj.get("score") or 0),
+        "notes": str(obj.get("notes") or ""),
+        "model": model,
+    })
+
+
+@social_bp.route("/api/ahb/social/ai/translate", methods=["POST"])
+def ai_translate():
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "")
+    target = data.get("target_lang", "es")
+    sys_prompt = (
+        f"You are a translator. Translate the user's text into {target}. "
+        f"Output only the translation. Preserve hashtags and emoji."
+    )
+    model = data.get("model") or _pick_copy_model()
+    out = _call_ollama_chat(model, sys_prompt, text, temperature=0.2)
+    return jsonify({"text": out.strip(), "model": model})
