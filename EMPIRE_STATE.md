@@ -23,6 +23,11 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-21 AHB123 — W-9 / 1099 subcontractor support on employees
+- 2026-05-21 ahb123 receipts — address search, project sum, printable PDF
+- 2026-05-21 Recent Receipts — reviewed-checkmark column + zoom lightbox
+- 2026-05-21 Receipt zoom lightbox — center image + floating close button
+- 2026-05-21 QuickRF — add receipt images from Baza Data Hub
 - 2026-05-20 Sam Axe photo bursts — investigation, no drops on Sam side
 - 2026-05-20 Sam Axe bursts — conclusion: ~3 bursts dropped upstream of bot
 - 2026-05-20 Data Hub — video thumbnails + click-to-play
@@ -33,11 +38,6 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - 2026-05-17 QuickRF Analyzed bin — fix: typing in total/date/store fields gets eaten
 - 2026-05-17 QuickRF Analyzed bin — template cache made fix invisible until dashboard restart
 - 2026-05-17 QuickRF Analyzed bin — fix: edits revert to OCR value after blur
-- 2026-05-17 ahb123 Baza picker — real root cause: nested inside #tab-receptss
-- 2026-05-17 Saved session — Baza picker fix + lessons learned to memory
-- 2026-05-17 Data Hub — newest-first sort + MD family chips
-- 2026-05-17 QuickRF Analyzed bin restyled + project picker reorder
-- 2026-05-17 QuickRF Analyzed — fixed flickering broken row at top
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
