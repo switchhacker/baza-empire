@@ -17610,6 +17610,227 @@ window.SocialStudio = window.SocialStudio || {
     return r;
   };
 })();
+
+SocialStudio.modules.composer = (function(){
+  const root = () => document.getElementById('ss-sub-composer');
+  const state = SocialStudio.state;
+
+  async function loadSources(projectId, type, q) {
+    const url = new URL('/api/ahb/social/sources', location.origin);
+    if (projectId) url.searchParams.set('project_id', projectId);
+    if (type) url.searchParams.set('type', type);
+    if (q) url.searchParams.set('q', q);
+    const r = await fetch(url);
+    state.sources = (await r.json()).items || [];
+    renderSourceGrid();
+  }
+
+  function thumbUrl(subPath) {
+    // Try existing ahb123 media-thumb endpoint; fall back to media-serve if needed.
+    return '/api/ahb/media-thumb?path=' + encodeURIComponent(subPath);
+  }
+
+  function serveUrl(subPath) {
+    return '/api/ahb/media-serve?path=' + encodeURIComponent(subPath);
+  }
+
+  function renderSourceGrid() {
+    const grid = document.getElementById('ss-source-grid');
+    if (!grid) return;
+    grid.innerHTML = state.sources.map(s => `
+      <div class="ss-source-item" data-id="${s.id}">
+        <img class="ss-thumb${state.shotList.includes(s.id) ? ' selected' : ''}"
+             src="${thumbUrl(s.sub_path)}"
+             onerror="this.style.opacity='0.3'"
+             loading="lazy" onclick="SocialStudio.modules.composer.toggle(${s.id})">
+        <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(s.caption||s.sub_path||'').slice(0,40)}</div>
+      </div>
+    `).join('');
+  }
+
+  function toggle(id) {
+    const i = state.shotList.indexOf(id);
+    if (i === -1) state.shotList.push(id); else state.shotList.splice(i, 1);
+    renderSourceGrid();
+    renderPreview();
+  }
+
+  function renderPreview() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    shell.className = 'ss-preview-shell ' + state.activePlatform;
+    const firstId = state.shotList[0];
+    const src = state.sources.find(s => s.id === firstId);
+    if (!src) {
+      shell.innerHTML = '<div style="color:#444;padding:80px 12px;text-align:center;font-size:12px">Pick media at left</div>';
+      return;
+    }
+    const ext = (src.sub_path || '').toLowerCase().split('.').pop();
+    if (['mp4','mov','webm','mkv'].includes(ext)) {
+      shell.innerHTML = `<video src="${serveUrl(src.sub_path)}" muted autoplay playsinline loop></video>`;
+    } else {
+      shell.innerHTML = `<img src="${serveUrl(src.sub_path)}">`;
+    }
+    const hookInput = document.getElementById('ss-hook-input');
+    const hook = hookInput && hookInput.value;
+    if (hook) {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:absolute;top:8%;left:8%;right:8%;text-align:center;font-weight:800;color:white;text-shadow:0 2px 6px black;font-size:24px;line-height:1.1;pointer-events:none';
+      overlay.textContent = hook;
+      shell.appendChild(overlay);
+    }
+  }
+
+  function setPlatform(p) {
+    state.activePlatform = p;
+    document.querySelectorAll('#ss-platform-tabs .ss-platform-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.platform === p);
+    });
+    document.querySelectorAll('[data-platform-block]').forEach(d => {
+      d.style.display = d.dataset.platformBlock === p ? '' : 'none';
+    });
+    renderPreview();
+  }
+
+  async function aiCaption() {
+    const r = await fetch('/api/ahb/social/ai/caption', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        source_ids: state.shotList, platform: state.activePlatform,
+        tone: document.getElementById('ss-tone').value,
+        length: document.getElementById('ss-length').value,
+        style: document.getElementById('ss-style').value,
+      }),
+    });
+    const j = await r.json();
+    document.getElementById('ss-caption-' + state.activePlatform).value = j.caption || '';
+  }
+
+  async function aiHashtags() {
+    const r = await fetch('/api/ahb/social/ai/hashtags', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+        platform: state.activePlatform,
+        count: 18,
+      }),
+    });
+    const j = await r.json();
+    document.getElementById('ss-hashtags-' + state.activePlatform).value = (j.hashtags || []).join(' ');
+  }
+
+  async function aiHooks() {
+    const r = await fetch('/api/ahb/social/ai/hooks', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ source_ids: state.shotList, n: 3 }),
+    });
+    const j = await r.json();
+    if (!j.hooks || !j.hooks.length) { alert('No hooks returned'); return; }
+    const pick = window.prompt('Pick a hook:\n\n' + j.hooks.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
+    const idx = (parseInt(pick, 10) || 1) - 1;
+    if (j.hooks[idx]) {
+      document.getElementById('ss-hook-input').value = j.hooks[idx];
+      renderPreview();
+    }
+  }
+
+  async function aiScore() {
+    const r = await fetch('/api/ahb/social/ai/score', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+        hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
+        platform: state.activePlatform,
+      }),
+    });
+    const j = await r.json();
+    alert(`Score: ${j.score}/100\n\n${j.notes}`);
+  }
+
+  async function renderPackage() {
+    if (!state.shotList.length) { alert('Pick at least one source.'); return; }
+    const post = await fetch('/api/ahb/social/posts', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        platform: state.activePlatform, variant: state.activePlatform,
+        source_media_ids: state.shotList,
+        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+        hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
+      }),
+    }).then(r => r.json());
+    const ren = await fetch(`/api/ahb/social/posts/${post.id}/render`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ hook_text: document.getElementById('ss-hook-input').value || null }),
+    }).then(r => r.json());
+    if (ren.error) { alert('Render failed: ' + ren.error); return; }
+    alert('Rendered: ' + ren.asset_path);
+    SocialStudio.switchSub('library');
+  }
+
+  function render() {
+    root().innerHTML = `
+      <div class="ss-grid">
+        <div class="ss-card">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Sources</div>
+          <select id="ss-source-project" class="filter-select" style="width:100%;margin-bottom:6px" onchange="SocialStudio.modules.composer._reload()">
+            <option value="">All projects</option>
+          </select>
+          <input id="ss-source-q" class="search-box" placeholder="Search caption/tags" style="width:100%;margin-bottom:6px" oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>SocialStudio.modules.composer._reload(),300)">
+          <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:520px;overflow-y:auto"></div>
+        </div>
+        <div class="ss-card">
+          <div id="ss-platform-tabs" class="ss-platform-tabs">
+            <div class="ss-platform-tab active" data-platform="tiktok"   onclick="SocialStudio.modules.composer.setPlatform('tiktok')">TikTok 9:16</div>
+            <div class="ss-platform-tab" data-platform="ig_reel"          onclick="SocialStudio.modules.composer.setPlatform('ig_reel')">IG Reel 9:16</div>
+            <div class="ss-platform-tab" data-platform="ig_feed_square"   onclick="SocialStudio.modules.composer.setPlatform('ig_feed_square')">IG Feed 1:1</div>
+            <div class="ss-platform-tab" data-platform="ig_feed_portrait" onclick="SocialStudio.modules.composer.setPlatform('ig_feed_portrait')">IG Feed 4:5</div>
+            <div class="ss-platform-tab" data-platform="ig_story"         onclick="SocialStudio.modules.composer.setPlatform('ig_story')">IG Story 9:16</div>
+          </div>
+          <div id="ss-preview-shell" class="ss-preview-shell tiktok"></div>
+          <input id="ss-hook-input" placeholder="Hook overlay text (≤ 60 chars)" maxlength="60" style="width:100%;margin-top:8px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" oninput="SocialStudio.modules.composer.renderPreview()">
+        </div>
+        <div class="ss-card" id="ss-variant-panel">
+          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Copy</div>
+          <select id="ss-tone" class="filter-select" style="width:100%;margin-bottom:4px">
+            <option value="pro">Pro</option><option value="hype">Hype</option>
+            <option value="casual">Casual</option><option value="educational">Educational</option>
+            <option value="trade">Trade</option><option value="funny">Funny</option>
+          </select>
+          <select id="ss-length" class="filter-select" style="width:100%;margin-bottom:4px">
+            <option value="short">Short</option><option value="medium" selected>Medium</option><option value="long">Long</option>
+          </select>
+          <select id="ss-style" class="filter-select" style="width:100%;margin-bottom:8px">
+            <option value="trade">Trade</option><option value="lifestyle">Lifestyle</option>
+            <option value="behind">Behind-the-scenes</option><option value="tutorial">Tutorial</option>
+            <option value="showcase">Showcase</option>
+          </select>
+          ${['tiktok','ig_reel','ig_feed_square','ig_feed_portrait','ig_story'].map(p => `
+            <div data-platform-block="${p}" style="${p==='tiktok'?'':'display:none'};margin-bottom:6px">
+              <textarea id="ss-caption-${p}" placeholder="${p} caption" style="width:100%;height:80px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px"></textarea>
+              <input id="ss-hashtags-${p}" placeholder="#hashtag #pool" style="width:100%;margin-top:4px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px">
+            </div>
+          `).join('')}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
+          </div>
+          <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render package</button>
+        </div>
+      </div>
+    `;
+    loadSources();
+  }
+
+  function _reload() {
+    const p = document.getElementById('ss-source-project').value || null;
+    const q = document.getElementById('ss-source-q').value || null;
+    loadSources(p, null, q);
+  }
+
+  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderPreview, _reload };
+})();
 </script>
 
 </body>
