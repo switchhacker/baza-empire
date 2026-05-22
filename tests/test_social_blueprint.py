@@ -253,3 +253,40 @@ def test_render_post_failed_marks_status(client, monkeypatch, tmp_path):
     # Verify status was flipped to 'failed'
     items = client.get(f"/api/ahb/social/posts?status=failed").get_json()["items"]
     assert any(p["id"] == pid for p in items)
+
+
+def test_post_bundle_404_no_post(client):
+    r = client.get("/api/ahb/social/posts/999999/bundle")
+    assert r.status_code == 404
+
+
+def test_post_bundle_400_no_render(client):
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "ig_feed_square", "variant": "1x1", "source_media_ids": [1]
+    }).get_json()["id"]
+    r = client.get(f"/api/ahb/social/posts/{pid}/bundle")
+    assert r.status_code == 400
+
+
+def test_post_bundle_returns_zip(client, tmp_path):
+    asset = tmp_path / "asset.jpg"
+    asset.write_bytes(b"fake-jpg-bytes")
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "ig_feed_square", "variant": "1x1",
+        "source_media_ids": [1], "caption": "hello", "hashtags": "#world"
+    }).get_json()["id"]
+    client.patch(f"/api/ahb/social/posts/{pid}",
+                 json={"asset_path": str(asset)})
+    r = client.get(f"/api/ahb/social/posts/{pid}/bundle")
+    assert r.status_code == 200
+    assert r.mimetype == "application/zip"
+    import io, zipfile
+    z = zipfile.ZipFile(io.BytesIO(r.data))
+    names = z.namelist()
+    assert "manifest.json" in names
+    assert any(n.startswith("caption_") and n.endswith(".txt") for n in names)
+
+
+def test_post_cover_404(client):
+    r = client.get("/api/ahb/social/posts/999999/cover")
+    assert r.status_code == 404

@@ -17839,6 +17839,154 @@ SocialStudio.modules.composer = (function(){
 
   return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderPreview, _reload };
 })();
+
+SocialStudio.modules.library = (function(){
+  const root = () => document.getElementById('ss-sub-library');
+  let items = [];
+  let f = { status: '', platform: '', q: '' };
+  let _t = null;
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function load() {
+    const url = new URL('/api/ahb/social/posts', location.origin);
+    if (f.status) url.searchParams.set('status', f.status);
+    if (f.platform) url.searchParams.set('platform', f.platform);
+    if (f.q) url.searchParams.set('q', f.q);
+    const r = await fetch(url);
+    items = (await r.json()).items || [];
+    paint();
+  }
+
+  function paint() {
+    const grid = items.map(p => `
+      <div class="ss-card" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+        <img src="${p.cover_path ? '/api/ahb/social/posts/' + p.id + '/cover' : ''}"
+             style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:6px;background:#070712;cursor:pointer"
+             onerror="this.style.opacity='0.2'"
+             onclick="SocialStudio.modules.postdetail.open(${p.id})">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <span class="ss-status-pill ss-pill-${_esc(p.status)}">${_esc(p.status)}</span>
+            <span style="color:#888;font-size:11px">${_esc(p.platform)}</span>
+            ${p.score != null ? `<span style="color:#10b981;font-size:11px">${_esc(p.score)}/100</span>` : ''}
+          </div>
+          <div style="color:#ddd;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((p.caption||'').slice(0,160))}</div>
+          <div style="color:#666;font-size:11px;margin-top:2px">${_esc((p.hashtags||'').slice(0,120))}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          ${p.status === 'pending_review' ? `
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.setStatus(${p.id},'approved')">&#x2705;</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.setStatus(${p.id},'rejected')">&#x274C;</button>
+          ` : ''}
+          <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.telegram(${p.id})">&#x1F4F2;</button>
+        </div>
+      </div>
+    `).join('');
+    root().innerHTML = `
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <select onchange="SocialStudio.modules.library.setFilter('status', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="pending_review">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="posted">Posted</option>
+          <option value="rejected">Rejected</option>
+          <option value="failed">Failed</option>
+        </select>
+        <select onchange="SocialStudio.modules.library.setFilter('platform', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+          <option value="">All platforms</option>
+          <option value="tiktok">TikTok</option>
+          <option value="ig_reel">IG Reel</option>
+          <option value="ig_feed_square">IG Feed 1:1</option>
+          <option value="ig_feed_portrait">IG Feed 4:5</option>
+          <option value="ig_story">IG Story</option>
+        </select>
+        <input placeholder="Search caption/hashtags" oninput="SocialStudio.modules.library.setFilter('q', this.value)" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+      </div>
+      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet.</div>'}</div>
+    `;
+  }
+
+  function setFilter(k, v) {
+    f[k] = v;
+    if (_t) clearTimeout(_t);
+    _t = setTimeout(load, 250);
+  }
+
+  async function setStatus(id, status) {
+    await fetch('/api/ahb/social/posts/' + id, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status }),
+    });
+    load();
+  }
+
+  async function telegram(id) {
+    const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
+    if (r.ok) alert('Sent to Telegram');
+    else alert('Telegram bridge unavailable');
+  }
+
+  return { render: load, setFilter, setStatus, telegram };
+})();
+
+SocialStudio.modules.postdetail = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function open(id) {
+    // Fetch the post via the list endpoint (no per-ID GET -- N is small)
+    const list = await fetch('/api/ahb/social/posts').then(x => x.json());
+    const p = (list.items || []).find(x => x.id === id);
+    if (!p) { alert('Not found'); return; }
+    const m = document.getElementById('socialPostDetail');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:700px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">${_esc(p.platform)} &middot; #${_esc(p.id)}</div>
+          <button onclick="document.getElementById('socialPostDetail').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <textarea id="pd-caption" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.caption || '')}</textarea>
+        <input id="pd-hashtags" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" value="${_esc(p.hashtags || '')}">
+        <textarea id="pd-firstcomment" style="width:100%;height:60px;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" placeholder="First comment (IG convention)">${_esc(p.first_comment || '')}</textarea>
+        <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
+          <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
+        </div>
+      </div>
+    `;
+  }
+  async function save(id) {
+    await fetch('/api/ahb/social/posts/' + id, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        caption: document.getElementById('pd-caption').value,
+        hashtags: document.getElementById('pd-hashtags').value,
+        first_comment: document.getElementById('pd-firstcomment').value,
+      }),
+    });
+    document.getElementById('socialPostDetail').style.display = 'none';
+    if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+  }
+  function bundle(id) { window.open('/api/ahb/social/posts/' + id + '/bundle', '_blank'); }
+  async function telegram(id) {
+    const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
+    if (r.ok) alert('Sent.');
+    else alert('Telegram bridge unavailable');
+  }
+  return { open, save, bundle, telegram };
+})();
 </script>
 
 </body>

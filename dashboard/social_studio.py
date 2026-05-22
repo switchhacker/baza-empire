@@ -6,9 +6,11 @@ accessors live in social_settings.py.
 """
 from __future__ import annotations
 
+import io
 import os
 import sqlite3
 import subprocess
+import zipfile
 from typing import Optional
 
 from flask import Blueprint
@@ -103,7 +105,7 @@ social_bp = Blueprint("social_studio", __name__)
 
 import json
 from datetime import datetime
-from flask import jsonify, request
+from flask import jsonify, request, send_file
 
 try:
     from dashboard import social_settings as _settings
@@ -719,3 +721,42 @@ def social_render_post(pid: int):
     finally:
         con.close()
     return jsonify({"ok": True, "asset_path": out_path, "cover_path": cover_path})
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/cover", methods=["GET"])
+def social_post_cover(pid: int):
+    con = _conn()
+    try:
+        r = con.execute("SELECT cover_path FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    finally:
+        con.close()
+    if not r or not r["cover_path"] or not os.path.exists(r["cover_path"]):
+        return jsonify({"error": "no cover"}), 404
+    return send_file(r["cover_path"])
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/bundle", methods=["GET"])
+def social_post_bundle(pid: int):
+    con = _conn()
+    try:
+        r = con.execute("SELECT * FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    finally:
+        con.close()
+    if not r:
+        return jsonify({"error": "not found"}), 404
+    post = _row_to_post(r)
+    if not post.get("asset_path") or not os.path.exists(post["asset_path"]):
+        return jsonify({"error": "no rendered asset"}), 400
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(post["asset_path"], arcname=os.path.basename(post["asset_path"]))
+        if post.get("cover_path") and os.path.exists(post["cover_path"]):
+            z.write(post["cover_path"], arcname="cover.jpg")
+        caption_block = (post.get("caption") or "") + "\n\n" + (post.get("hashtags") or "")
+        if post.get("first_comment"):
+            caption_block += "\n\n---\n" + post["first_comment"]
+        z.writestr(f"caption_{post['platform']}.txt", caption_block)
+        z.writestr("manifest.json", json.dumps(post, default=str, indent=2))
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip",
+                     as_attachment=True, download_name=f"social_{pid}.zip")
