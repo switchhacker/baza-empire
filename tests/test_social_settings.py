@@ -45,3 +45,36 @@ def test_load_prompt_returns_content(tmp_settings):
     import social_settings
     p = social_settings.load_prompt("caption_system")
     assert isinstance(p, str) and len(p) > 20
+
+
+def test_bootstrap_brand_reads_sq_bundle(tmp_settings, tmp_path):
+    import social_settings
+    sq_dir = tmp_path / "sq_bundle"
+    sq_dir.mkdir()
+    (sq_dir / "index.html").write_text(
+        '<html><body>HIC# 1234567-DCA · Est. 2014 · All Home Building Co</body></html>'
+    )
+    b = social_settings.bootstrap_brand_from_sq_bundle(str(sq_dir))
+    assert b["hic_number"] == "1234567-DCA"
+    assert b["founded_year"] == "2014"
+
+
+def test_bootstrap_brand_no_dir_is_noop(tmp_settings, tmp_path):
+    import social_settings
+    b = social_settings.bootstrap_brand_from_sq_bundle(str(tmp_path / "does-not-exist"))
+    # Should return the (default) brand kit unchanged
+    assert b["hic_number"] == ""
+
+
+def test_bootstrap_brand_preserves_existing(tmp_settings, tmp_path):
+    import social_settings
+    # Pre-fill HIC #
+    b0 = social_settings.load_brand_kit()
+    b0["hic_number"] = "USER-OVERRIDE"
+    social_settings.save_brand_kit(b0)
+    # Now run bootstrap with a different value in HTML
+    sq_dir = tmp_path / "sq_bundle"
+    sq_dir.mkdir()
+    (sq_dir / "x.html").write_text("HIC# DIFFERENT-VAL")
+    b = social_settings.bootstrap_brand_from_sq_bundle(str(sq_dir))
+    assert b["hic_number"] == "USER-OVERRIDE"  # not clobbered

@@ -120,6 +120,18 @@ def _conn():
     return con
 
 
+# Best-effort brand-kit bootstrap (idempotent — does nothing on re-runs once filled)
+try:
+    _sq = os.environ.get(
+        "BAZA_SQ_BUNDLE",
+        "/home/switchhacker/baza-empire/agent-framework-v3/proj-ahb123/sq_bundle",
+    )
+    if os.path.isdir(_sq):
+        _settings.bootstrap_brand_from_sq_bundle(_sq)
+except Exception as _e:
+    print(f"[social] brand bootstrap skipped: {_e}", flush=True)
+
+
 def _row_to_preset(r: sqlite3.Row) -> dict:
     d = dict(r)
     for k in ("platform_targets", "source_filter"):

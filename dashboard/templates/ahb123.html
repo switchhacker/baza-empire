@@ -18180,6 +18180,65 @@ SocialStudio.modules.settings = (function(){
   }
   return { open, save };
 })();
+
+SocialStudio.modules.brandkit = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function open() {
+    const b = await fetch('/api/ahb/social/brand-kit').then(r => r.json());
+    const m = document.getElementById('socialBrandKit');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🎨 Brand Kit</div>
+          <button onclick="document.getElementById('socialBrandKit').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Primary color
+          <input id="bk-primary" value="${_esc(b.primary_color || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Secondary color
+          <input id="bk-secondary" value="${_esc(b.secondary_color || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Hashtag floor (space-separated)
+          <input id="bk-floor" value="${_esc((b.hashtag_floor||[]).join(' '))}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">First-comment floor
+          <textarea id="bk-comment" style="width:100%;height:60px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">${_esc(b.first_comment_floor || '')}</textarea>
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">HIC #
+          <input id="bk-hic" value="${_esc(b.hic_number || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Founded year
+          <input id="bk-year" value="${_esc(b.founded_year || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
+          <button class="btn-primary" onclick="SocialStudio.modules.brandkit.save()">Save</button>
+        </div>
+      </div>
+    `;
+  }
+  async function save() {
+    const body = {
+      primary_color: document.getElementById('bk-primary').value,
+      secondary_color: document.getElementById('bk-secondary').value,
+      hashtag_floor: document.getElementById('bk-floor').value.split(/\s+/).filter(Boolean),
+      first_comment_floor: document.getElementById('bk-comment').value,
+      hic_number: document.getElementById('bk-hic').value,
+      founded_year: document.getElementById('bk-year').value,
+    };
+    await fetch('/api/ahb/social/brand-kit', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    document.getElementById('socialBrandKit').style.display = 'none';
+  }
+  return { open, save };
+})();
 </script>
 
 </body>

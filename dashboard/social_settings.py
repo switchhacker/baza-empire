@@ -86,3 +86,35 @@ def load_prompt(name: str) -> str:
     path = os.path.join(_prompts_dir(), f"{name}.md")
     with open(path) as f:
         return f.read()
+
+
+import re
+
+
+def bootstrap_brand_from_sq_bundle(sq_dir: str) -> Dict[str, Any]:
+    """Read sq_bundle HTML files for HIC# + founding year. Idempotently
+    fills hic_number / founded_year on the brand kit when they are empty.
+    Returns the (possibly updated) brand kit. Skips if sq_dir doesn't exist."""
+    b = load_brand_kit()
+    if not os.path.isdir(sq_dir):
+        return b
+    text = ""
+    for fn in os.listdir(sq_dir):
+        if fn.endswith(".html"):
+            try:
+                with open(os.path.join(sq_dir, fn)) as f:
+                    text += "\n" + f.read()
+            except Exception:
+                continue
+    m_hic = re.search(r"HIC#?\s*([0-9A-Z-]+)", text, re.IGNORECASE)
+    m_year = re.search(r"(?:Est\.?|Founded|since)\s*(20\d{2}|19\d{2})", text, re.IGNORECASE)
+    changed = False
+    if m_hic and not b.get("hic_number"):
+        b["hic_number"] = m_hic.group(1)
+        changed = True
+    if m_year and not b.get("founded_year"):
+        b["founded_year"] = m_year.group(1)
+        changed = True
+    if changed:
+        save_brand_kit(b)
+    return b
