@@ -853,12 +853,32 @@ def _ensure_social_v2_tables(db_path: Optional[str] = None) -> None:
         con = sqlite3.connect(path, timeout=8.0)
         con.execute("PRAGMA busy_timeout = 8000")
         for table, col_def in [
-            ("ahb_social_jobs", "pid INTEGER"),
+            ("ahb_social_jobs",    "pid INTEGER"),
+            ("ahb_social_posts",   "translations TEXT DEFAULT '{}'"),
+            ("ahb_social_posts",   "music_id INTEGER"),
+            ("ahb_social_posts",   "voiceover_path TEXT"),
+            ("ahb_social_posts",   "subtitles_path TEXT"),
+            ("ahb_social_posts",   "lut_name TEXT"),
         ]:
             try:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
             except sqlite3.OperationalError:
-                pass  # column exists
+                pass
+        con.execute("""CREATE TABLE IF NOT EXISTS ahb_social_music_library (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            title TEXT,
+            artist TEXT,
+            license_url TEXT,
+            bpm INTEGER,
+            key_signature TEXT,
+            duration_seconds REAL,
+            mood TEXT,
+            tags TEXT,
+            indexed_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_music_library_mood ON ahb_social_music_library(mood)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_music_library_bpm ON ahb_social_music_library(bpm)")
         con.commit()
     except sqlite3.OperationalError as e:
         print(f"[startup] _ensure_social_v2_tables deferred: {e}", flush=True)
@@ -1304,3 +1324,14 @@ def social_post_telegram(pid: int):
     except Exception as e:
         return jsonify({"error": f"bridge unavailable: {e}"}), 502
     return jsonify({"ok": ok})
+
+
+try:
+    from dashboard import social_ai, social_audio, social_sources
+except ImportError:
+    import social_ai
+    import social_audio
+    import social_sources
+social_ai.register(social_bp)
+social_audio.register(social_bp)
+social_sources.register(social_bp)
