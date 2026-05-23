@@ -102,22 +102,37 @@ def render_still(src: str, out: str, platform: str,
     return out
 
 
-def render_video(srcs: List[str], out: str, platform: str,
+def render_video(srcs, out: str, platform: str,
                  hook_text: Optional[str] = None,
                  brand_corner: bool = False,
                  fill_mode: str = "blurred",
                  max_seconds: int = 60) -> str:
-    """Concat sources, re-encode to target dims, optional hook overlay."""
+    """Concat sources, re-encode to target dims, optional hook overlay.
+    srcs may be a list of paths (legacy) or a list of dicts
+    {path, in_seconds, out_seconds}. Trim values applied per-clip via
+    ffmpeg's concat demuxer with inpoint/outpoint directives."""
     if not srcs:
         raise ValueError("no sources")
-    w, h = _ffprobe(srcs[0])
+    clips = []
+    for s in srcs:
+        if isinstance(s, str):
+            clips.append({"path": s, "in_seconds": None, "out_seconds": None})
+        else:
+            clips.append(s)
+    if not clips:
+        raise ValueError("no sources")
+    w, h = _ffprobe(clips[0]["path"])
     g = build_filter_graph(w, h, platform, fill_mode, hook_text, brand_corner)
     tmpdir = os.path.dirname(out) or "."
     fd, list_path = tempfile.mkstemp(suffix=".concat.txt", dir=tmpdir, text=True)
     try:
         with os.fdopen(fd, "w") as f:
-            for s in srcs:
-                f.write(f"file {shlex.quote(os.path.abspath(s))}\n")
+            for c in clips:
+                f.write(f"file {shlex.quote(os.path.abspath(c['path']))}\n")
+                if c.get("in_seconds") is not None:
+                    f.write(f"inpoint {float(c['in_seconds'])}\n")
+                if c.get("out_seconds") is not None:
+                    f.write(f"outpoint {float(c['out_seconds'])}\n")
         cmd = [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
             "-vf", g,

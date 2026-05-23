@@ -118,3 +118,33 @@ def test_job_cancel_404_for_unknown(client):
     c, _ = client
     r = c.delete("/api/ahb/social/jobs/999999")
     assert r.status_code == 404
+
+
+def test_render_video_accepts_trim_dicts(monkeypatch):
+    sys.path.insert(0, os.path.join(REPO_ROOT, "dashboard"))
+    if "social_render" in sys.modules:
+        del sys.modules["social_render"]
+    import social_render
+    captured = {}
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        class R:
+            stdout = "1920x1080"
+            stderr = b""
+        if cmd[0] == "ffprobe":
+            return R()
+        # Write a dummy output file so the function returns successfully
+        if "-i" in cmd:
+            out = cmd[-1]
+            open(out, "w").write("fake")
+        return R()
+    monkeypatch.setattr(social_render.subprocess, "run", fake_run)
+    import tempfile
+    src = tempfile.mktemp(suffix=".mp4")
+    open(src, "w").write("fake")
+    out = tempfile.mktemp(suffix=".mp4")
+    social_render.render_video(
+        [{"path": src, "in_seconds": 1.5, "out_seconds": 3.0}],
+        out, "tiktok",
+    )
+    assert "-f" in captured["cmd"] and "concat" in captured["cmd"]

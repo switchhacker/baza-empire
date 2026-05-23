@@ -17778,13 +17778,62 @@ SocialStudio.modules.composer = (function(){
   }
 
   function shotTrim(idx) {
-    // Stub for v2.0 — full modal in Task 7
     const item = state.shotList[idx];
-    const inS = window.prompt('In (seconds, blank for 0):', item.in_seconds || '');
-    const outS = window.prompt('Out (seconds, blank for end):', item.out_seconds || '');
-    item.in_seconds = inS ? parseFloat(inS) : null;
-    item.out_seconds = outS ? parseFloat(outS) : null;
-    renderShotRail();
+    const src = state.sources.find(s => s.id === item.id);
+    if (!src) return;
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const isVideo = ['mp4','mov','webm','mkv'].includes((src.sub_path||'').toLowerCase().split('.').pop());
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">✂ Trim clip ${idx+1}</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        ${isVideo
+          ? `<video src="${serveUrl(src.sub_path)}" id="trim-video" controls style="width:100%;border-radius:8px;background:#000"></video>
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+               <label style="font-size:12px;color:#aaa">In (seconds)
+                 <input id="trim-in" type="number" min="0" step="0.1" value="${item.in_seconds||''}" placeholder="0" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+               </label>
+               <label style="font-size:12px;color:#aaa">Out (seconds)
+                 <input id="trim-out" type="number" min="0" step="0.1" value="${item.out_seconds||''}" placeholder="end" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+               </label>
+             </div>
+             <div style="display:flex;gap:6px;margin-top:8px">
+               <button class="btn-secondary" data-set-in style="font-size:11px">Use video time as In</button>
+               <button class="btn-secondary" data-set-out style="font-size:11px">Use video time as Out</button>
+             </div>`
+          : '<div style="color:#aaa;padding:24px;text-align:center">Stills don\'t have time — trim doesn\'t apply.</div>'}
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px">
+          <button class="btn-secondary" data-clear>Clear trim</button>
+          <button class="btn-primary" data-save>Save</button>
+        </div>
+      </div>
+    `;
+    const close = () => { document.body.removeChild(m); };
+    m.querySelector('[data-close]').addEventListener('click', close);
+    const inEl = m.querySelector('#trim-in');
+    const outEl = m.querySelector('#trim-out');
+    const video = m.querySelector('#trim-video');
+    if (m.querySelector('[data-set-in]')) {
+      m.querySelector('[data-set-in]').addEventListener('click', () => { inEl.value = video.currentTime.toFixed(1); });
+      m.querySelector('[data-set-out]').addEventListener('click', () => { outEl.value = video.currentTime.toFixed(1); });
+    }
+    m.querySelector('[data-clear]').addEventListener('click', () => {
+      item.in_seconds = null;
+      item.out_seconds = null;
+      renderShotRail();
+      close();
+    });
+    m.querySelector('[data-save]').addEventListener('click', () => {
+      item.in_seconds = inEl && inEl.value ? parseFloat(inEl.value) : null;
+      item.out_seconds = outEl && outEl.value ? parseFloat(outEl.value) : null;
+      renderShotRail();
+      close();
+    });
   }
 
   function setPlatform(p) {
@@ -17867,9 +17916,18 @@ SocialStudio.modules.composer = (function(){
         hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
       }),
     }).then(r => r.json());
+    const trims = {};
+    state.shotList.forEach(item => {
+      if (typeof item === 'object' && (item.in_seconds != null || item.out_seconds != null)) {
+        trims[String(item.id)] = { in_seconds: item.in_seconds, out_seconds: item.out_seconds };
+      }
+    });
     const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ hook_text: document.getElementById('ss-hook-input').value || null }),
+      body: JSON.stringify({
+        hook_text: document.getElementById('ss-hook-input').value || null,
+        trims: trims,
+      }),
     }).then(r => r.json());
     if (ren.error) { SocialStudio.modules.toast.error('Render failed: ' + ren.error); return; }
     SocialStudio.modules.progress.watch(ren.job_id, 'Rendering ' + state.activePlatform);

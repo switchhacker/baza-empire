@@ -918,9 +918,21 @@ def _kick_render_async(post_id: int, body: dict) -> int:
             out_path = os.path.join(out_dir, f"{platform}{ext}")
             hook = (body or {}).get("hook_text")
             fill = (body or {}).get("fill_mode", "blurred")
+            trims = (body or {}).get("trims") or {}
             try:
                 if is_video:
-                    _render.render_video(paths, out_path, platform, hook_text=hook, fill_mode=fill)
+                    if trims:
+                        clip_list = []
+                        for sid, p in zip(source_ids, paths):
+                            t = trims.get(str(sid)) or {}
+                            clip_list.append({
+                                "path": p,
+                                "in_seconds": t.get("in_seconds"),
+                                "out_seconds": t.get("out_seconds"),
+                            })
+                        _render.render_video(clip_list, out_path, platform, hook_text=hook, fill_mode=fill)
+                    else:
+                        _render.render_video(paths, out_path, platform, hook_text=hook, fill_mode=fill)
                     cover_path = os.path.join(out_dir, "cover.jpg")
                     _render.extract_cover(out_path, cover_path)
                 else:
