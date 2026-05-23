@@ -17809,9 +17809,13 @@ SocialStudio.modules.composer = (function(){
       const clickAttr = isComposer
         ? `onclick="SocialStudio.modules.composer.toggle(${s.id})"`
         : `onclick="SocialStudio.modules.composer.importAndToggle(${idx})"`;
+      const editBtn = isComposer
+        ? `<button class="ss-edit-btn" title="Edit (crop/rotate/adjust)" onclick="event.stopPropagation();SocialStudio.modules.imageEditor.open(${s.id})" style="position:absolute;top:2px;right:2px;background:rgba(7,7,18,0.85);border:1px solid #2a2a4a;color:#fff;font-size:10px;width:22px;height:22px;border-radius:4px;cursor:pointer;line-height:1">&#x270F;&#xFE0F;</button>`
+        : '';
       return `
         <div class="ss-source-item" data-idx="${idx}" style="position:relative">
           ${_originBadge(s.origin)}
+          ${editBtn}
           <img class="ss-thumb${selected ? ' selected' : ''}"
                src="${thumbUrl(_serveTokenFor(s))}"
                onerror="this.style.opacity='0.3'"
@@ -20125,6 +20129,287 @@ SocialStudio.modules.voiceover = (function(){
   }
 
   return { open, generate, generateScript };
+})();
+
+SocialStudio.modules.imageEditor = (function(){
+  // Per-source edits modal. Builds a sidecar JSON saved via
+  // /api/ahb/social/sources/<id>/edits. Live CSS preview of brightness/
+  // contrast/saturation/rotate before commit; crop is a center-crop with
+  // aspect-snap presets and X/Y/W/H number inputs for fine control.
+  let _state = null;  // { id, edits, naturalW, naturalH }
+
+  const FILTERS = [
+    {key:'none',       label:'None'},
+    {key:'cinematic',  label:'Cinematic'},
+    {key:'vibrant',    label:'Vibrant'},
+    {key:'moody',      label:'Moody'},
+    {key:'bw',         label:'B&W'},
+    {key:'warm',       label:'Warm'},
+  ];
+  const ASPECTS = [
+    {key:'free', label:'Free'},
+    {key:'1:1',  label:'1:1', w:1, h:1},
+    {key:'9:16', label:'9:16 (TikTok/Reels)', w:9, h:16},
+    {key:'4:5',  label:'4:5 (IG portrait)', w:4, h:5},
+    {key:'16:9', label:'16:9', w:16, h:9},
+  ];
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _previewCssFilter(e) {
+    const parts = [];
+    if (typeof e.brightness === 'number') parts.push('brightness(' + (1 + e.brightness) + ')');
+    if (typeof e.contrast === 'number')   parts.push('contrast(' + (1 + e.contrast) + ')');
+    if (typeof e.saturation === 'number') parts.push('saturate(' + (1 + e.saturation) + ')');
+    if (e.filter === 'bw') parts.push('grayscale(1)');
+    if (e.filter === 'cinematic') parts.push('contrast(1.1) saturate(0.85) hue-rotate(-5deg)');
+    if (e.filter === 'vibrant')   parts.push('saturate(1.35) contrast(1.05)');
+    if (e.filter === 'moody')     parts.push('saturate(0.7) contrast(1.15) brightness(0.92)');
+    if (e.filter === 'warm')      parts.push('sepia(0.2) saturate(1.1)');
+    return parts.join(' ');
+  }
+
+  function _previewCssTransform(e) {
+    if (typeof e.rotate === 'number' && Math.abs(e.rotate) > 0.01) {
+      return 'rotate(' + e.rotate + 'deg)';
+    }
+    return '';
+  }
+
+  function _centerCrop(natW, natH, aspectW, aspectH) {
+    const srcAr = natW / natH;
+    const tgtAr = aspectW / aspectH;
+    let cw, ch;
+    if (srcAr > tgtAr) {
+      ch = natH; cw = Math.round(ch * tgtAr);
+    } else {
+      cw = natW; ch = Math.round(cw / tgtAr);
+    }
+    return {
+      x: Math.round((natW - cw) / 2),
+      y: Math.round((natH - ch) / 2),
+      w: cw, h: ch,
+    };
+  }
+
+  async function open(sourceId) {
+    let row;
+    try {
+      const list = await fetch('/api/ahb/social/sources?origins=composer&limit=500').then(r => r.json());
+      row = (list.items || []).find(i => i.id === sourceId);
+    } catch (e) {}
+    if (!row) {
+      // Fallback — pull edits anyway; preview will be missing but save still works
+      row = { id: sourceId, sub_path: '' };
+    }
+    let edits = {};
+    try {
+      const er = await fetch('/api/ahb/social/sources/' + sourceId + '/edits');
+      edits = (await er.json()).edits || {};
+    } catch (e) {}
+    _state = { id: sourceId, edits: Object.assign({}, edits), row };
+
+    const m = document.createElement('div');
+    m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    const previewSrc = row.sub_path ? ('/api/cloud/media/serve/' + encodeURIComponent(row.sub_path)) : '';
+    m.innerHTML = `
+      <div class="modal" style="max-width:780px;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">&#x270F;&#xFE0F; Edit source #${sourceId}</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 280px;gap:12px">
+          <div style="background:#070712;border-radius:8px;padding:12px;text-align:center;min-height:300px;display:flex;align-items:center;justify-content:center;position:relative">
+            <img id="ie-preview" src="${_esc(previewSrc)}" style="max-width:100%;max-height:60vh;display:block" crossorigin="anonymous"
+                 onload="SocialStudio.modules.imageEditor._onPreviewLoad(this)">
+            <div id="ie-crop-overlay" style="position:absolute;border:2px dashed #10b981;pointer-events:none;display:none"></div>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin-bottom:6px">Rotation</div>
+            <div style="display:flex;gap:4px;margin-bottom:6px">
+              <button class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.rot(-90)">&#x21B6; 90&deg;</button>
+              <button class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.rot(90)">90&deg; &#x21B7;</button>
+              <button class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.rot(0,true)">Reset</button>
+            </div>
+            <input type="range" id="ie-rotate" min="-180" max="180" step="1" value="${edits.rotate || 0}" oninput="SocialStudio.modules.imageEditor._slider('rotate', parseFloat(this.value))" style="width:100%">
+
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Adjust</div>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Brightness <span id="ie-b-val" style="float:right;color:#10b981">${edits.brightness||0}</span>
+              <input type="range" id="ie-brightness" min="-1" max="1" step="0.05" value="${edits.brightness||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('brightness', parseFloat(this.value))">
+            </label>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Contrast <span id="ie-c-val" style="float:right;color:#10b981">${edits.contrast||0}</span>
+              <input type="range" id="ie-contrast" min="-1" max="1" step="0.05" value="${edits.contrast||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('contrast', parseFloat(this.value))">
+            </label>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Saturation <span id="ie-s-val" style="float:right;color:#10b981">${edits.saturation||0}</span>
+              <input type="range" id="ie-saturation" min="-1" max="1" step="0.05" value="${edits.saturation||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('saturation', parseFloat(this.value))">
+            </label>
+
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Filter preset</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              ${FILTERS.map(f => `<button class="ie-filter-chip" data-filter="${f.key}" style="font-size:11px;padding:3px 8px;background:${(edits.filter||'none')===f.key?'#2a2a4a':'transparent'};color:${(edits.filter||'none')===f.key?'#fff':'#aaa'};border:1px solid #2a2a4a;border-radius:12px;cursor:pointer" onclick="SocialStudio.modules.imageEditor._pickFilter('${f.key}')">${f.label}</button>`).join('')}
+            </div>
+
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Crop</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+              ${ASPECTS.map(a => `<button class="ie-aspect-chip" data-aspect="${a.key}" style="font-size:11px;padding:3px 8px;background:transparent;color:#aaa;border:1px solid #2a2a4a;border-radius:12px;cursor:pointer" onclick="SocialStudio.modules.imageEditor._pickAspect('${a.key}')">${a.label}</button>`).join('')}
+            </div>
+            <div id="ie-crop-info" style="font-size:11px;color:#666;font-family:monospace;background:#070712;padding:6px;border-radius:4px;margin-bottom:6px">${edits.crop ? `crop: ${edits.crop.w}x${edits.crop.h} +${edits.crop.x}+${edits.crop.y}` : 'no crop'}</div>
+            <button class="btn-secondary" style="font-size:11px;width:100%" onclick="SocialStudio.modules.imageEditor._clearCrop()">Clear crop</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:6px;margin-top:14px;border-top:1px solid #1a1a2e;padding-top:12px">
+          <button class="btn-secondary" onclick="SocialStudio.modules.imageEditor.revert()">↻ Revert all edits</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn-secondary" data-close>Cancel</button>
+            <button class="btn-primary" onclick="SocialStudio.modules.imageEditor.save()">Save</button>
+          </div>
+        </div>
+      </div>
+    `;
+    m.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => {
+      _state = null;
+      close();
+    }));
+    _state.close = close;
+    _applyPreview();
+  }
+
+  function _onPreviewLoad(img) {
+    if (!_state) return;
+    _state.naturalW = img.naturalWidth;
+    _state.naturalH = img.naturalHeight;
+    _applyPreview();
+  }
+
+  function _applyPreview() {
+    if (!_state) return;
+    const img = document.getElementById('ie-preview');
+    if (!img) return;
+    img.style.filter = _previewCssFilter(_state.edits);
+    img.style.transform = _previewCssTransform(_state.edits);
+    img.style.transition = 'filter 0.12s, transform 0.12s';
+    // Crop overlay — rectangle drawn over the displayed image, scaled to natural↔displayed
+    const ov = document.getElementById('ie-crop-overlay');
+    const crop = _state.edits.crop;
+    if (ov && crop && _state.naturalW && _state.naturalH) {
+      const rect = img.getBoundingClientRect();
+      const parentRect = img.parentElement.getBoundingClientRect();
+      const sx = rect.width / _state.naturalW;
+      const sy = rect.height / _state.naturalH;
+      ov.style.display = 'block';
+      ov.style.left = (rect.left - parentRect.left + crop.x * sx) + 'px';
+      ov.style.top = (rect.top - parentRect.top + crop.y * sy) + 'px';
+      ov.style.width = (crop.w * sx) + 'px';
+      ov.style.height = (crop.h * sy) + 'px';
+    } else if (ov) {
+      ov.style.display = 'none';
+    }
+    const info = document.getElementById('ie-crop-info');
+    if (info) {
+      info.textContent = crop ? `crop: ${crop.w}x${crop.h} +${crop.x}+${crop.y}` : 'no crop';
+    }
+    ['brightness','contrast','saturation'].forEach(k => {
+      const el = document.getElementById('ie-' + k[0] + '-val');
+      if (el) el.textContent = (_state.edits[k] || 0).toFixed(2);
+    });
+  }
+
+  function _slider(key, value) {
+    if (!_state) return;
+    if (Math.abs(value) < 0.001) delete _state.edits[key];
+    else _state.edits[key] = value;
+    _applyPreview();
+  }
+
+  function rot(amount, reset) {
+    if (!_state) return;
+    if (reset) {
+      delete _state.edits.rotate;
+    } else {
+      const cur = _state.edits.rotate || 0;
+      _state.edits.rotate = cur + amount;
+    }
+    const sl = document.getElementById('ie-rotate');
+    if (sl) sl.value = _state.edits.rotate || 0;
+    _applyPreview();
+  }
+
+  function _pickFilter(key) {
+    if (!_state) return;
+    if (key === 'none') delete _state.edits.filter;
+    else _state.edits.filter = key;
+    document.querySelectorAll('.ie-filter-chip').forEach(c => {
+      const on = c.dataset.filter === (_state.edits.filter || 'none');
+      c.style.background = on ? '#2a2a4a' : 'transparent';
+      c.style.color = on ? '#fff' : '#aaa';
+    });
+    _applyPreview();
+  }
+
+  function _pickAspect(key) {
+    if (!_state) return;
+    if (key === 'free') {
+      delete _state.edits.crop;
+    } else if (_state.naturalW && _state.naturalH) {
+      const spec = ASPECTS.find(a => a.key === key);
+      if (spec) _state.edits.crop = _centerCrop(_state.naturalW, _state.naturalH, spec.w, spec.h);
+    } else {
+      SocialStudio.modules.toast.info('Image not loaded yet');
+      return;
+    }
+    _applyPreview();
+  }
+
+  function _clearCrop() {
+    if (!_state) return;
+    delete _state.edits.crop;
+    _applyPreview();
+  }
+
+  async function save() {
+    if (!_state) return;
+    const tid = SocialStudio.modules.toast.progress('Saving edits…');
+    try {
+      const r = await fetch('/api/ahb/social/sources/' + _state.id + '/edits', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(_state.edits),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Save failed');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', 'Saved — applies on next render');
+      if (_state.close) _state.close();
+      _state = null;
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function revert() {
+    if (!_state) return;
+    if (!confirm('Discard all edits for source #' + _state.id + '?')) return;
+    const tid = SocialStudio.modules.toast.progress('Reverting…');
+    try {
+      const r = await fetch('/api/ahb/social/sources/' + _state.id + '/edits', { method: 'DELETE' });
+      const j = await r.json();
+      SocialStudio.modules.toast.resolve(tid, 'success',
+        j.reverted ? 'Edits cleared' : 'No edits to clear');
+      if (_state.close) _state.close();
+      _state = null;
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  return { open, save, revert, rot, _onPreviewLoad, _slider, _pickFilter, _pickAspect, _clearCrop };
 })();
 
 SocialStudio.modules.recorder = (function(){

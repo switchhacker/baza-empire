@@ -369,6 +369,116 @@ def social_sources():
     return jsonify({"items": items, "origins_returned": sorted(origins)})
 
 
+# ---------------------------------------------------------------------------
+# T16 — In-app image editor: per-source edits sidecar
+# ---------------------------------------------------------------------------
+def _edits_dir() -> str:
+    return os.environ.get(
+        "BAZA_SOCIAL_EDITS_DIR",
+        os.path.join(DASHBOARD_DIR, "artifacts", "social", "edits"),
+    )
+ALLOWED_FILTER_PRESETS = {"none", "cinematic", "vibrant", "moody", "bw", "warm"}
+
+
+def _edits_path(source_id: int) -> str:
+    return os.path.join(_edits_dir(), f"{source_id}.json")
+
+
+def _load_edits(source_id: int) -> dict:
+    """Return the sidecar dict or {} if no edits exist."""
+    path = _edits_path(source_id)
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _normalize_edits(raw: dict) -> dict:
+    """Sanity-clamp incoming edit values to defensible ranges."""
+    out = {}
+    crop = raw.get("crop") if isinstance(raw.get("crop"), dict) else None
+    if crop:
+        try:
+            cw = max(1, int(crop.get("w") or 0))
+            ch = max(1, int(crop.get("h") or 0))
+            cx = max(0, int(crop.get("x") or 0))
+            cy = max(0, int(crop.get("y") or 0))
+            out["crop"] = {"x": cx, "y": cy, "w": cw, "h": ch}
+        except (TypeError, ValueError):
+            pass
+    try:
+        rot = float(raw.get("rotate") or 0)
+        # Clamp to (-360, 360); pipeline emits transpose for ±90/180/270, rotate for free
+        rot = max(-359.99, min(rot, 359.99))
+        if abs(rot) > 0.01:
+            out["rotate"] = rot
+    except (TypeError, ValueError):
+        pass
+    for k, lo, hi in (("brightness", -1.0, 1.0),
+                       ("contrast",   -1.0, 1.0),
+                       ("saturation", -1.0, 1.0)):
+        v = raw.get(k)
+        if v is None:
+            continue
+        try:
+            fv = max(lo, min(float(v), hi))
+            if abs(fv) > 0.001:
+                out[k] = fv
+        except (TypeError, ValueError):
+            continue
+    f = raw.get("filter")
+    if f and f in ALLOWED_FILTER_PRESETS and f != "none":
+        out["filter"] = f
+    return out
+
+
+def _source_exists(source_id: int) -> bool:
+    con = _conn()
+    try:
+        try:
+            r = con.execute(
+                "SELECT 1 FROM image_captions WHERE id=?", (source_id,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return False
+    finally:
+        con.close()
+    return r is not None
+
+
+@social_bp.route("/api/ahb/social/sources/<int:sid>/edits", methods=["GET"])
+def social_source_edits_get(sid: int):
+    return jsonify({"id": sid, "edits": _load_edits(sid)})
+
+
+@social_bp.route("/api/ahb/social/sources/<int:sid>/edits", methods=["POST"])
+def social_source_edits_save(sid: int):
+    if not _source_exists(sid):
+        return jsonify({"error": "source not found"}), 404
+    raw = request.get_json(silent=True) or {}
+    edits = _normalize_edits(raw)
+    os.makedirs(_edits_dir(), exist_ok=True)
+    with open(_edits_path(sid), "w") as f:
+        json.dump(edits, f, indent=2)
+    return jsonify({"id": sid, "edits": edits, "applied": True})
+
+
+@social_bp.route("/api/ahb/social/sources/<int:sid>/edits", methods=["DELETE"])
+def social_source_edits_delete(sid: int):
+    path = _edits_path(sid)
+    existed = os.path.exists(path)
+    if existed:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return jsonify({"id": sid, "reverted": existed})
+
+
 @social_bp.route("/api/ahb/social/sources/import-by-path", methods=["POST"])
 def social_sources_import_by_path():
     """Materialize a Media-tab or Data-Hub entry into baza_projects.image_captions
@@ -817,9 +927,18 @@ except ImportError:
     import social_render as _render
 
 
-def _resolve_media_paths(source_media_ids: list) -> list:
+def _resolve_media_paths_with_ids(source_media_ids: list) -> list:
+    """Like _resolve_media_paths but returns [{id, path}] pairs in input order
+    (with unresolvable entries silently dropped). Used by render workers that
+    need to look up per-source sidecars."""
+    flat = _resolve_media_paths(source_media_ids, _return_pairs=True)
+    return flat
+
+
+def _resolve_media_paths(source_media_ids: list, _return_pairs: bool = False) -> list:
     """Map image_captions.id → absolute file path. Joins sub_path under the
-    baza cloud root if not absolute."""
+    baza cloud root if not absolute. When _return_pairs is True, returns
+    [{id, path}, ...] preserving input order; otherwise returns [path, ...]."""
     if not source_media_ids:
         return []
     placeholders = ",".join("?" * len(source_media_ids))
@@ -867,7 +986,14 @@ def _resolve_media_paths(source_media_ids: list) -> list:
         ):
             continue
         if os.path.exists(p_abs):
-            paths.append(p_abs)
+            if _return_pairs:
+                paths.append({"id": r["id"], "path": p_abs})
+            else:
+                paths.append(p_abs)
+    # Preserve caller's input order when pairs are requested
+    if _return_pairs:
+        order = {sid: idx for idx, sid in enumerate(source_media_ids)}
+        paths.sort(key=lambda d: order.get(d["id"], 1e9))
     return paths
 
 
@@ -882,14 +1008,22 @@ def social_render_post(pid: int):
     if not row:
         return jsonify({"error": "post not found"}), 404
     post = _row_to_post(row)
-    paths = _resolve_media_paths(post["source_media_ids"])
-    if not paths:
+    pairs = _resolve_media_paths_with_ids(post["source_media_ids"])
+    if not pairs:
         return jsonify({"error": "no resolvable source media"}), 400
     out_dir = os.path.join(
         DASHBOARD_DIR, "artifacts", "social",
         datetime.utcnow().strftime("%Y-%m-%d"), str(pid),
     )
     os.makedirs(out_dir, exist_ok=True)
+    # T16: per-source edits
+    edits_tmpdir = os.path.join(out_dir, "_edits")
+    os.makedirs(edits_tmpdir, exist_ok=True)
+    paths = []
+    for pair in pairs:
+        ed = _load_edits(pair["id"])
+        p = _render.preprocess_with_edits(pair["path"], ed, edits_tmpdir) if ed else pair["path"]
+        paths.append(p)
     is_video = any(
         p.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) for p in paths
     )
@@ -1117,8 +1251,8 @@ def _kick_render_async(post_id: int, body: dict) -> int:
             con.close()
         try:
             source_ids = _get_post_source_ids(post_id)
-            paths = _resolve_media_paths(source_ids)
-            if not paths:
+            pairs = _resolve_media_paths_with_ids(source_ids)
+            if not pairs:
                 _job_finish(job_id, "failed", error="no resolvable source media")
                 return
             out_dir = os.path.join(
@@ -1126,6 +1260,19 @@ def _kick_render_async(post_id: int, body: dict) -> int:
                 datetime.utcnow().strftime("%Y-%m-%d"), str(post_id),
             )
             os.makedirs(out_dir, exist_ok=True)
+            # T16: apply per-source edits (crop/rotate/eq/filter) before everything
+            edits_tmpdir = os.path.join(out_dir, "_edits")
+            os.makedirs(edits_tmpdir, exist_ok=True)
+            paths = []
+            source_ids = []  # rebuild in resolved order
+            for pair in pairs:
+                src_id = pair["id"]
+                src_path = pair["path"]
+                edits = _load_edits(src_id)
+                if edits:
+                    src_path = _render.preprocess_with_edits(src_path, edits, edits_tmpdir)
+                paths.append(src_path)
+                source_ids.append(src_id)
             is_video = any(
                 p.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) for p in paths
             )

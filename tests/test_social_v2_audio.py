@@ -15,6 +15,7 @@ def client(monkeypatch):
     db = os.path.join(d, "baza_projects.db")
     monkeypatch.setenv("BAZA_DASHBOARD_DB", db)
     monkeypatch.setenv("BAZA_SOCIAL_SETTINGS_DIR", d)
+    monkeypatch.setenv("BAZA_SOCIAL_EDITS_DIR", os.path.join(d, "edits"))
     sys.path.insert(0, os.path.join(REPO_ROOT, "dashboard"))
     for m in ("social_studio", "social_settings", "social_audio", "social_ai", "social_sources"):
         if m in sys.modules:
@@ -185,3 +186,119 @@ def test_bundle_includes_per_language_captions(client, tmp_path):
     assert "caption_tiktok.fr.txt" in names
     assert z.read("caption_tiktok.es.txt").decode().startswith("Hola")
     assert z.read("caption_tiktok.fr.txt").decode().startswith("Bonjour")
+
+
+def test_source_edits_save_get_delete(client, tmp_path):
+    c, ss = client
+    # First create an image_captions row so the source exists
+    con = ss._conn()
+    try:
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS image_captions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, sub_path TEXT NOT NULL UNIQUE,
+                caption TEXT, tags TEXT, indexed_at TEXT
+            )"""
+        )
+        f = tmp_path / "frame.jpg"
+        f.write_bytes(b"fake")
+        cur = con.execute(
+            "INSERT INTO image_captions (sub_path) VALUES (?)", (str(f),),
+        )
+        con.commit()
+        sid = cur.lastrowid
+    finally:
+        con.close()
+    # GET — empty
+    r = c.get(f"/api/ahb/social/sources/{sid}/edits")
+    assert r.status_code == 200
+    assert r.get_json()["edits"] == {}
+    # POST — save crop + rotate + brightness
+    r = c.post(
+        f"/api/ahb/social/sources/{sid}/edits",
+        json={
+            "crop": {"x": 10, "y": 20, "w": 800, "h": 600},
+            "rotate": 90,
+            "brightness": 0.2,
+            "contrast": 0.0,  # 0 should be dropped
+            "filter": "cinematic",
+        },
+    )
+    assert r.status_code == 200
+    saved = r.get_json()["edits"]
+    assert saved["crop"]["w"] == 800
+    assert saved["rotate"] == 90.0
+    assert saved["brightness"] == 0.2
+    assert "contrast" not in saved
+    assert saved["filter"] == "cinematic"
+    # GET — round-trip
+    r = c.get(f"/api/ahb/social/sources/{sid}/edits")
+    assert r.get_json()["edits"]["filter"] == "cinematic"
+    # DELETE — revert
+    r = c.delete(f"/api/ahb/social/sources/{sid}/edits")
+    assert r.status_code == 200
+    assert r.get_json()["reverted"] is True
+    # GET — empty again
+    r = c.get(f"/api/ahb/social/sources/{sid}/edits")
+    assert r.get_json()["edits"] == {}
+
+
+def test_source_edits_save_404_unknown_source(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/999999/edits", json={"brightness": 0.1})
+    assert r.status_code == 404
+
+
+def test_source_edits_filter_preset_whitelist(client, tmp_path):
+    c, ss = client
+    con = ss._conn()
+    try:
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS image_captions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, sub_path TEXT NOT NULL UNIQUE,
+                caption TEXT, tags TEXT, indexed_at TEXT
+            )"""
+        )
+        f = tmp_path / "frame.jpg"
+        f.write_bytes(b"fake")
+        cur = con.execute(
+            "INSERT INTO image_captions (sub_path) VALUES (?)", (str(f),),
+        )
+        con.commit()
+        sid = cur.lastrowid
+    finally:
+        con.close()
+    r = c.post(f"/api/ahb/social/sources/{sid}/edits",
+               json={"filter": "evil-filter"})
+    assert r.status_code == 200
+    # Unknown filter dropped
+    assert "filter" not in r.get_json()["edits"]
+
+
+def test_source_edits_clamps_brightness(client, tmp_path):
+    c, ss = client
+    con = ss._conn()
+    try:
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS image_captions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER, sub_path TEXT NOT NULL UNIQUE,
+                caption TEXT, tags TEXT, indexed_at TEXT
+            )"""
+        )
+        f = tmp_path / "frame.jpg"
+        f.write_bytes(b"fake")
+        cur = con.execute(
+            "INSERT INTO image_captions (sub_path) VALUES (?)", (str(f),),
+        )
+        con.commit()
+        sid = cur.lastrowid
+    finally:
+        con.close()
+    r = c.post(f"/api/ahb/social/sources/{sid}/edits",
+               json={"brightness": 99, "saturation": -99, "rotate": 9999})
+    saved = r.get_json()["edits"]
+    assert saved["brightness"] == 1.0
+    assert saved["saturation"] == -1.0
+    assert -360 < saved["rotate"] < 360

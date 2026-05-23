@@ -1,6 +1,7 @@
 """Render pipeline for social_studio. Pure functions, ffmpeg + PIL."""
 from __future__ import annotations
 
+import math
 import os
 import shlex
 import subprocess
@@ -123,6 +124,107 @@ def render_still(src: str, out: str, platform: str,
     cmd = ["ffmpeg", "-y", "-i", src, "-vf", g, "-q:v", "3", out]
     subprocess.run(cmd, check=True, capture_output=True)
     return out
+
+
+_LUT_DIR = os.path.join(HERE, "static", "social", "luts")
+
+
+def build_edits_filter_chain(edits: dict) -> str:
+    """Translate an edits dict (T16 sidecar) into an ffmpeg -vf chain. Returns
+    "" when no edits are configured. The chain is meant to be applied BEFORE
+    the platform-fit filters so downstream code keeps working unchanged.
+
+    Supported keys:
+      crop: {x, y, w, h}      → crop=W:H:X:Y
+      rotate: float degrees   → ±90/180/270 use transpose; other angles use rotate=
+      brightness/contrast/saturation: -1..1 → eq=brightness=:contrast=:saturation=
+      filter: cinematic/vibrant/moody/bw/warm → lut3d=<file>
+    """
+    if not edits:
+        return ""
+    parts = []
+    crop = edits.get("crop") if isinstance(edits.get("crop"), dict) else None
+    if crop:
+        try:
+            parts.append("crop={w}:{h}:{x}:{y}".format(
+                w=int(crop["w"]), h=int(crop["h"]),
+                x=int(crop.get("x", 0)), y=int(crop.get("y", 0)),
+            ))
+        except (KeyError, TypeError, ValueError):
+            pass
+    rot = edits.get("rotate")
+    if isinstance(rot, (int, float)) and abs(rot) > 0.01:
+        deg = float(rot) % 360
+        if abs(deg - 90) < 0.5:
+            parts.append("transpose=1")
+        elif abs(deg - 180) < 0.5:
+            parts.append("transpose=1,transpose=1")
+        elif abs(deg - 270) < 0.5:
+            parts.append("transpose=2")
+        else:
+            # Free rotation. Pad with black so corners don't get cropped to source size.
+            rad = math.radians(deg)
+            parts.append(
+                f"rotate={rad:.6f}:ow=rotw({rad:.6f}):oh=roth({rad:.6f}):c=black"
+            )
+    eq_parts = []
+    b = edits.get("brightness")
+    c = edits.get("contrast")
+    s = edits.get("saturation")
+    if isinstance(b, (int, float)) and abs(b) > 0.001:
+        # ffmpeg eq: brightness in [-1, 1]
+        eq_parts.append(f"brightness={float(b):.3f}")
+    if isinstance(c, (int, float)) and abs(c) > 0.001:
+        # contrast: 1.0 = unchanged; map [-1, 1] → [0, 2]
+        eq_parts.append(f"contrast={1.0 + float(c):.3f}")
+    if isinstance(s, (int, float)) and abs(s) > 0.001:
+        # saturation: 1.0 = unchanged; map [-1, 1] → [0, 2]
+        eq_parts.append(f"saturation={1.0 + float(s):.3f}")
+    if eq_parts:
+        parts.append("eq=" + ":".join(eq_parts))
+    f = edits.get("filter")
+    if f and f != "none":
+        lut_path = os.path.join(_LUT_DIR, f"{f}.cube")
+        if os.path.exists(lut_path):
+            parts.append(f"lut3d={shlex.quote(lut_path)}")
+    return ",".join(parts)
+
+
+def preprocess_with_edits(src_path: str, edits: dict,
+                          out_dir: Optional[str] = None) -> str:
+    """Apply edits to `src_path` and return the path to the processed file.
+    No-op (returns src_path) when edits is empty / produces an empty filter
+    chain. Output goes under `out_dir` (defaulted to a tempdir).
+    The processed file preserves the original codec family — video stays
+    video (h264/aac), images stay image."""
+    chain = build_edits_filter_chain(edits or {})
+    if not chain:
+        return src_path
+    out_dir = out_dir or tempfile.mkdtemp(prefix="edits_")
+    base = os.path.basename(src_path)
+    name, ext = os.path.splitext(base)
+    ext_low = ext.lower()
+    is_video = ext_low in (".mp4", ".mov", ".webm", ".mkv", ".m4v")
+    out_path = os.path.join(out_dir, f"{name}_edit{ext if is_video else '.jpg'}")
+    if is_video:
+        cmd = ["ffmpeg", "-y", "-i", src_path,
+               "-vf", chain,
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+               "-c:a", "copy",
+               out_path]
+    else:
+        cmd = ["ffmpeg", "-y", "-i", src_path,
+               "-vf", chain,
+               "-frames:v", "1", "-q:v", "2",
+               out_path]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print(f"[social_render] preprocess_with_edits failed for {src_path}: {e}", flush=True)
+        return src_path
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        return src_path
+    return out_path
 
 
 def _beat_timestamps(music_path: str) -> list:

@@ -74,3 +74,87 @@ def test_snap_outpoints_no_beats_is_noop(render_mod):
     clips = [{"path": "a.mp4", "in_seconds": 0, "out_seconds": 2.3}]
     out = render_mod._snap_outpoints_to_beats(clips, [])
     assert out[0]["out_seconds"] == 2.3
+
+
+def test_edits_filter_chain_empty(render_mod):
+    assert render_mod.build_edits_filter_chain({}) == ""
+    assert render_mod.build_edits_filter_chain(None) == ""
+
+
+def test_edits_filter_chain_crop(render_mod):
+    chain = render_mod.build_edits_filter_chain({"crop": {"x": 10, "y": 20, "w": 1080, "h": 1920}})
+    assert "crop=1080:1920:10:20" in chain
+
+
+def test_edits_filter_chain_rotate_90(render_mod):
+    chain = render_mod.build_edits_filter_chain({"rotate": 90})
+    assert "transpose=1" in chain
+    assert "rotate=" not in chain
+
+
+def test_edits_filter_chain_rotate_180(render_mod):
+    chain = render_mod.build_edits_filter_chain({"rotate": 180})
+    assert "transpose=1,transpose=1" in chain
+
+
+def test_edits_filter_chain_rotate_270(render_mod):
+    chain = render_mod.build_edits_filter_chain({"rotate": 270})
+    assert "transpose=2" in chain
+
+
+def test_edits_filter_chain_rotate_free(render_mod):
+    chain = render_mod.build_edits_filter_chain({"rotate": 12.5})
+    assert "rotate=" in chain
+    # ~12.5° in radians is ~0.218
+    assert "0.218" in chain or "0.217" in chain
+
+
+def test_edits_filter_chain_eq(render_mod):
+    chain = render_mod.build_edits_filter_chain({
+        "brightness": 0.1, "contrast": 0.2, "saturation": -0.3,
+    })
+    assert "eq=" in chain
+    assert "brightness=0.100" in chain
+    assert "contrast=1.200" in chain
+    assert "saturation=0.700" in chain
+
+
+def test_edits_filter_chain_skips_zero_eq(render_mod):
+    chain = render_mod.build_edits_filter_chain({"brightness": 0.0})
+    assert "eq=" not in chain
+
+
+def test_edits_filter_chain_filter_preset_to_lut(render_mod, tmp_path, monkeypatch):
+    # Build a fake LUT file so the chain includes lut3d=
+    lut_dir = tmp_path / "luts"
+    lut_dir.mkdir()
+    (lut_dir / "cinematic.cube").write_text("TITLE \"fake\"\n")
+    monkeypatch.setattr(render_mod, "_LUT_DIR", str(lut_dir))
+    chain = render_mod.build_edits_filter_chain({"filter": "cinematic"})
+    assert "lut3d=" in chain
+    assert "cinematic.cube" in chain
+
+
+def test_edits_filter_chain_filter_none_is_skipped(render_mod):
+    chain = render_mod.build_edits_filter_chain({"filter": "none"})
+    assert "lut3d=" not in chain
+
+
+def test_edits_filter_chain_combined_order(render_mod):
+    chain = render_mod.build_edits_filter_chain({
+        "crop": {"x": 0, "y": 0, "w": 100, "h": 100},
+        "rotate": 90,
+        "brightness": 0.1,
+    })
+    # Crop comes first, then rotate, then eq
+    crop_pos = chain.find("crop=")
+    rot_pos = chain.find("transpose=")
+    eq_pos = chain.find("eq=")
+    assert 0 <= crop_pos < rot_pos < eq_pos
+
+
+def test_preprocess_with_edits_noop_returns_source(render_mod, tmp_path):
+    src = tmp_path / "x.jpg"
+    src.write_bytes(b"fake")
+    out = render_mod.preprocess_with_edits(str(src), {})
+    assert out == str(src)
