@@ -222,13 +222,15 @@ def social_presets_delete(pid: int):
     return jsonify({"ok": True})
 
 
-@social_bp.route("/api/ahb/social/sources", methods=["GET"])
-def social_sources():
-    project_id = request.args.get("project_id", type=int)
-    media_type = request.args.get("type")  # 'photo' | 'video' | None
-    q = (request.args.get("q") or "").strip().lower()
-    days = request.args.get("days", type=int)
-    limit = min(request.args.get("limit", default=200, type=int), 500)
+def _media_captions_db_path() -> str:
+    """Media tab's image_captions.db (separate from baza_projects.db)."""
+    return os.environ.get(
+        "BAZA_MEDIA_CAPTIONS_DB",
+        os.path.join(DASHBOARD_DIR, "image_captions.db"),
+    )
+
+
+def _query_composer_sources(media_type, q, days, project_id, limit):
     sql = "SELECT id, project_id, sub_path, caption, tags, indexed_at FROM image_captions WHERE 1=1"
     args = []
     if project_id is not None:
@@ -247,9 +249,176 @@ def social_sources():
     con = _conn()
     try:
         rows = con.execute(sql, args).fetchall()
+    except sqlite3.OperationalError:
+        return []
     finally:
         con.close()
-    return jsonify({"items": [dict(r) for r in rows]})
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["origin"] = "composer"
+        out.append(d)
+    return out
+
+
+def _query_media_tab_sources(media_type, q, days, limit):
+    """Read the Media tab's separate image_captions.db. Returns rows with
+    origin='media', no integer id (abs_path is the de-facto key)."""
+    path = _media_captions_db_path()
+    if not os.path.exists(path):
+        return []
+    sql = ("SELECT abs_path, project_id, sub_path, caption, tags, indexed_at "
+           "FROM image_captions WHERE status='ok'")
+    args = []
+    if q:
+        sql += " AND (LOWER(caption) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(sub_path) LIKE ?)"
+        args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+    if days:
+        sql += " AND date(indexed_at) >= date('now', ?)"
+        args.append(f"-{int(days)} days")
+    if media_type == "video":
+        sql += " AND (LOWER(sub_path) LIKE '%.mp4' OR LOWER(sub_path) LIKE '%.mov' OR LOWER(sub_path) LIKE '%.webm')"
+    elif media_type == "photo":
+        sql += (" AND (LOWER(sub_path) LIKE '%.jpg' OR LOWER(sub_path) LIKE '%.jpeg' "
+                "OR LOWER(sub_path) LIKE '%.png' OR LOWER(sub_path) LIKE '%.heic')")
+    sql += " ORDER BY indexed_at DESC LIMIT ?"
+    args.append(limit)
+    con = sqlite3.connect(path, timeout=4.0)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(sql, args).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+    return [{
+        "id": None,
+        "abs_path": r["abs_path"],
+        "project_id": r["project_id"],
+        "sub_path": r["sub_path"],
+        "caption": r["caption"],
+        "tags": r["tags"],
+        "indexed_at": r["indexed_at"],
+        "origin": "media",
+    } for r in rows]
+
+
+def _query_data_hub_sources(media_type, q, limit):
+    """ahb_files rows (Data Hub). Filter to images/videos by file_type or
+    file extension."""
+    sql = ("SELECT id, name, file_path, file_type, tags, category, project_id, created_at "
+           "FROM ahb_files WHERE file_path IS NOT NULL AND file_path != ''")
+    args = []
+    if q:
+        sql += " AND (LOWER(name) LIKE ? OR LOWER(tags) LIKE ? OR LOWER(category) LIKE ?)"
+        args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+    if media_type == "video":
+        sql += " AND (LOWER(file_path) LIKE '%.mp4' OR LOWER(file_path) LIKE '%.mov' OR LOWER(file_path) LIKE '%.webm' OR LOWER(file_type)='video')"
+    elif media_type == "photo":
+        sql += (" AND (LOWER(file_path) LIKE '%.jpg' OR LOWER(file_path) LIKE '%.jpeg' "
+                "OR LOWER(file_path) LIKE '%.png' OR LOWER(file_path) LIKE '%.heic' "
+                "OR LOWER(file_type)='image')")
+    else:
+        sql += (" AND (LOWER(file_path) LIKE '%.jpg' OR LOWER(file_path) LIKE '%.jpeg' "
+                "OR LOWER(file_path) LIKE '%.png' OR LOWER(file_path) LIKE '%.heic' "
+                "OR LOWER(file_path) LIKE '%.mp4' OR LOWER(file_path) LIKE '%.mov' "
+                "OR LOWER(file_path) LIKE '%.webm' OR LOWER(file_type) IN ('image','video'))")
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    args.append(limit)
+    con = _conn()
+    try:
+        rows = con.execute(sql, args).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        con.close()
+    return [{
+        "id": None,
+        "abs_path": r["file_path"],
+        "project_id": r["project_id"],
+        "sub_path": r["name"] or r["file_path"],
+        "caption": r["name"] or "",
+        "tags": r["tags"] or r["category"] or "",
+        "indexed_at": r["created_at"],
+        "origin": "data-hub",
+        "data_hub_id": r["id"],
+    } for r in rows]
+
+
+@social_bp.route("/api/ahb/social/sources", methods=["GET"])
+def social_sources():
+    project_id = request.args.get("project_id", type=int)
+    media_type = request.args.get("type")  # 'photo' | 'video' | None
+    q = (request.args.get("q") or "").strip().lower()
+    days = request.args.get("days", type=int)
+    limit = min(request.args.get("limit", default=200, type=int), 500)
+    # v2.1 T-bridge: origins=composer,media,data-hub (CSV; default = all)
+    origins_raw = (request.args.get("origins") or "composer,media,data-hub").lower()
+    origins = {s.strip() for s in origins_raw.split(",") if s.strip()}
+    items = []
+    if "composer" in origins:
+        items.extend(_query_composer_sources(media_type, q, days, project_id, limit))
+    if "media" in origins:
+        items.extend(_query_media_tab_sources(media_type, q, days, limit))
+    if "data-hub" in origins:
+        items.extend(_query_data_hub_sources(media_type, q, limit))
+    # Cap the union; we sorted within each query, but re-sort the union by
+    # indexed_at desc so the freshest stuff floats to the top.
+    items.sort(key=lambda d: (d.get("indexed_at") or ""), reverse=True)
+    items = items[:limit]
+    return jsonify({"items": items, "origins_returned": sorted(origins)})
+
+
+@social_bp.route("/api/ahb/social/sources/import-by-path", methods=["POST"])
+def social_sources_import_by_path():
+    """Materialize a Media-tab or Data-Hub entry into baza_projects.image_captions
+    so the standard int-id flows (post creation → render) can use it.
+
+    Body: {abs_path, caption?, tags?, origin?}
+    Returns: {id, sub_path, ...}
+    """
+    data = request.get_json(silent=True) or {}
+    abs_path = (data.get("abs_path") or "").strip()
+    if not abs_path:
+        return jsonify({"error": "abs_path required"}), 400
+    if not os.path.exists(abs_path):
+        return jsonify({"error": "file not found", "path": abs_path}), 404
+    caption = (data.get("caption") or "").strip()
+    tags = (data.get("tags") or "").strip()
+    origin = (data.get("origin") or "imported").strip()
+    con = _conn()
+    try:
+        # Make sure the table exists (uploads route also creates it best-effort)
+        con.execute(
+            """CREATE TABLE IF NOT EXISTS image_captions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                sub_path TEXT NOT NULL UNIQUE,
+                caption TEXT,
+                tags TEXT,
+                indexed_at TEXT
+            )"""
+        )
+        # Reuse an existing row if the absolute path is already there
+        existing = con.execute(
+            "SELECT id, project_id, sub_path, caption, tags, indexed_at "
+            "FROM image_captions WHERE sub_path=?",
+            (abs_path,),
+        ).fetchone()
+        if existing:
+            return jsonify({"id": existing["id"], "sub_path": existing["sub_path"],
+                            "already_imported": True})
+        cur = con.execute(
+            "INSERT INTO image_captions (project_id, sub_path, caption, tags, indexed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (None, abs_path, caption or os.path.basename(abs_path),
+             tags or origin, datetime.utcnow().isoformat(timespec="seconds")),
+        )
+        con.commit()
+        new_id = cur.lastrowid
+    finally:
+        con.close()
+    return jsonify({"id": new_id, "sub_path": abs_path, "already_imported": False})
 
 
 POST_WRITABLE = {
@@ -674,7 +843,17 @@ def _resolve_media_paths(source_media_ids: list) -> list:
     uploads_root_abs = os.path.abspath(
         os.path.join(DASHBOARD_DIR, "uploads", "social")
     )
-    allowed_roots = (cloud_root_abs, uploads_root_abs)
+    # Data Hub uploads land here, and we accept imported references to them.
+    data_hub_root_abs = os.path.abspath(
+        os.path.join(DASHBOARD_DIR, "uploads", "ahb")
+    )
+    # Takeout/iCloud imports — index-only, abs paths under user home are
+    # trusted when materialized via /sources/import-by-path.
+    extra_root = os.environ.get("BAZA_MEDIA_EXTRA_ROOT")
+    allowed_roots = [cloud_root_abs, uploads_root_abs, data_hub_root_abs]
+    if extra_root:
+        allowed_roots.append(os.path.abspath(extra_root))
+    allowed_roots = tuple(allowed_roots)
     paths = []
     for r in rows:
         p = r["sub_path"]

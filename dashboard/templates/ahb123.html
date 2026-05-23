@@ -17757,11 +17757,12 @@ SocialStudio.modules.composer = (function(){
   const root = () => document.getElementById('ss-sub-composer');
   const state = SocialStudio.state;
 
-  async function loadSources(projectId, type, q) {
+  async function loadSources(projectId, type, q, origins) {
     const url = new URL('/api/ahb/social/sources', location.origin);
     if (projectId) url.searchParams.set('project_id', projectId);
     if (type) url.searchParams.set('type', type);
     if (q) url.searchParams.set('q', q);
+    if (origins) url.searchParams.set('origins', origins);
     const r = await fetch(url);
     state.sources = (await r.json()).items || [];
     renderSourceGrid();
@@ -17784,18 +17785,72 @@ SocialStudio.modules.composer = (function(){
       .replace(/'/g, '&#39;');
   }
 
+  function _originBadge(origin) {
+    if (origin === 'media')    return '<span style="position:absolute;top:2px;left:2px;background:rgba(16,185,129,0.85);color:#000;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:700">M</span>';
+    if (origin === 'data-hub') return '<span style="position:absolute;top:2px;left:2px;background:rgba(59,130,246,0.85);color:#fff;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:700">D</span>';
+    return '';
+  }
+
+  function _serveTokenFor(s) {
+    // composer + uploads: sub_path is the canonical key for /cloud/thumb.
+    // media/data-hub: thumbnail by abs_path (URL-encoded full path) — many
+    // installs accept absolute paths via the same thumb endpoint. Fallback
+    // is a generic icon if the thumb fetch errors.
+    return s.sub_path || s.abs_path || '';
+  }
+
   function renderSourceGrid() {
     const grid = document.getElementById('ss-source-grid');
     if (!grid) return;
-    grid.innerHTML = state.sources.map(s => `
-      <div class="ss-source-item" data-id="${s.id}">
-        <img class="ss-thumb${state.shotList.some(item => (typeof item === 'object' ? item.id : item) === s.id) ? ' selected' : ''}"
-             src="${thumbUrl(s.sub_path)}"
-             onerror="this.style.opacity='0.3'"
-             loading="lazy" onclick="SocialStudio.modules.composer.toggle(${s.id})">
-        <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((s.caption||s.sub_path||'').slice(0,40))}</div>
-      </div>
-    `).join('');
+    grid.innerHTML = state.sources.map((s, idx) => {
+      const isComposer = s.origin === 'composer' && s.id != null;
+      const selected = isComposer && state.shotList.some(item =>
+        (typeof item === 'object' ? item.id : item) === s.id);
+      const clickAttr = isComposer
+        ? `onclick="SocialStudio.modules.composer.toggle(${s.id})"`
+        : `onclick="SocialStudio.modules.composer.importAndToggle(${idx})"`;
+      return `
+        <div class="ss-source-item" data-idx="${idx}" style="position:relative">
+          ${_originBadge(s.origin)}
+          <img class="ss-thumb${selected ? ' selected' : ''}"
+               src="${thumbUrl(_serveTokenFor(s))}"
+               onerror="this.style.opacity='0.3'"
+               loading="lazy" ${clickAttr}>
+          <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((s.caption||s.sub_path||'').slice(0,40))}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function importAndToggle(idx) {
+    const s = state.sources[idx];
+    if (!s) return;
+    const tid = SocialStudio.modules.toast.progress('Importing ' + (s.origin || 'asset') + '…');
+    try {
+      const r = await fetch('/api/ahb/social/sources/import-by-path', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          abs_path: s.abs_path || s.sub_path,
+          caption: s.caption || '',
+          tags: s.tags || s.origin || '',
+          origin: s.origin || 'imported',
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Import failed');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success',
+        j.already_imported ? 'Already imported (#' + j.id + ')' : 'Imported as #' + j.id);
+      // Mutate the source in-place so subsequent clicks toggle without re-importing
+      s.origin = 'composer';
+      s.id = j.id;
+      s.sub_path = j.sub_path;
+      toggle(j.id);
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
   }
 
   function toggle(id) {
@@ -18570,6 +18625,12 @@ SocialStudio.modules.composer = (function(){
             <option value="">All projects</option>
           </select>
           <input id="ss-source-q" class="search-box" placeholder="Search caption/tags" style="width:100%;margin-bottom:6px" oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>SocialStudio.modules.composer._reload(),300)">
+          <select id="ss-source-origin" class="filter-select" style="width:100%;margin-bottom:6px" onchange="SocialStudio.modules.composer._reload()">
+            <option value="composer,media,data-hub">All sources</option>
+            <option value="composer">Studio only (uploads/SD/recordings)</option>
+            <option value="media">Media tab only</option>
+            <option value="data-hub">Data Hub only</option>
+          </select>
           <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">
             <button class="btn-secondary ss-tip" data-tip="Record from webcam (MediaRecorder)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openWebcam()">📹 Webcam</button>
             <button class="btn-secondary ss-tip" data-tip="Record your screen (getDisplayMedia)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openScreen()">🖥️ Screen</button>
@@ -18664,10 +18725,12 @@ SocialStudio.modules.composer = (function(){
   function _reload() {
     const p = document.getElementById('ss-source-project').value || null;
     const q = document.getElementById('ss-source-q').value || null;
-    loadSources(p, null, q);
+    const oEl = document.getElementById('ss-source-origin');
+    const origins = oEl ? oEl.value : 'composer,media,data-hub';
+    loadSources(p, null, q, origins);
   }
 
-  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiStoryboard, aiBroll, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
+  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiStoryboard, aiBroll, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic, importAndToggle };
 })();
 
 SocialStudio.modules.library = (function(){

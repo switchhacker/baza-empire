@@ -120,6 +120,123 @@ def test_upload_size_cap_rejects(client, monkeypatch):
     assert "exceeds" in r.get_json()["error"]
 
 
+def test_sources_union_includes_media_tab(client, tmp_path, monkeypatch):
+    """Media-tab DB rows (image_captions.db) should surface with origin='media'."""
+    c, _ = client
+    # Create a Media-tab-style image_captions.db
+    media_db = tmp_path / "image_captions.db"
+    con = sqlite3.connect(str(media_db))
+    con.execute(
+        """CREATE TABLE image_captions (
+            abs_path TEXT PRIMARY KEY, project_id TEXT, sub_path TEXT,
+            caption TEXT, tags TEXT, mtime REAL, indexed_at TEXT,
+            model TEXT, status TEXT, error TEXT
+        )"""
+    )
+    media_file = tmp_path / "from_media.jpg"
+    media_file.write_bytes(b"fake-jpg-data")
+    con.execute(
+        "INSERT INTO image_captions (abs_path, sub_path, caption, tags, status, indexed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (str(media_file), "from_media.jpg", "Bathroom remodel — tile closeup",
+         "tile,bathroom,trim", "ok", "2026-05-23T10:00:00"),
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setenv("BAZA_MEDIA_CAPTIONS_DB", str(media_db))
+
+    r = c.get("/api/ahb/social/sources?origins=media")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert any(i["origin"] == "media" for i in j["items"])
+    media_row = next(i for i in j["items"] if i["origin"] == "media")
+    assert media_row["abs_path"] == str(media_file)
+    assert "tile" in (media_row["tags"] or "")
+
+
+def test_sources_union_includes_data_hub(client, tmp_path):
+    """ahb_files rows should surface with origin='data-hub'."""
+    c, _ = client
+    con = sqlite3.connect(os.environ["BAZA_DASHBOARD_DB"])
+    # ahb_files schema (best-effort; matches dashboard/app.py)
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS ahb_files (
+            id TEXT PRIMARY KEY, name TEXT, file_type TEXT, file_path TEXT,
+            size INTEGER, tags TEXT, category TEXT, year TEXT,
+            project_id TEXT, created_at TEXT DEFAULT (datetime('now')),
+            photo_section TEXT, document_type TEXT
+        )"""
+    )
+    dh_file = tmp_path / "blueprint.jpg"
+    dh_file.write_bytes(b"fake-jpg")
+    con.execute(
+        "INSERT INTO ahb_files (id, name, file_type, file_path, tags, category) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("uuid-1", "blueprint.jpg", "Image", str(dh_file), "blueprint", "permit"),
+    )
+    con.commit()
+    con.close()
+
+    r = c.get("/api/ahb/social/sources?origins=data-hub")
+    assert r.status_code == 200
+    items = r.get_json()["items"]
+    assert any(i["origin"] == "data-hub" for i in items)
+    dh = next(i for i in items if i["origin"] == "data-hub")
+    assert dh["abs_path"] == str(dh_file)
+    assert dh["data_hub_id"] == "uuid-1"
+
+
+def test_sources_origins_filter(client):
+    c, _ = client
+    r_default = c.get("/api/ahb/social/sources")
+    assert "composer" in r_default.get_json()["origins_returned"]
+    r_composer = c.get("/api/ahb/social/sources?origins=composer")
+    assert r_composer.get_json()["origins_returned"] == ["composer"]
+
+
+def test_import_by_path_400_missing(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/import-by-path", json={})
+    assert r.status_code == 400
+
+
+def test_import_by_path_404_nonexistent(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/import-by-path",
+               json={"abs_path": "/tmp/no-such-file.jpg"})
+    assert r.status_code == 404
+
+
+def test_import_by_path_creates_row_and_is_idempotent(client, tmp_path):
+    c, _ = client
+    f = tmp_path / "shot.jpg"
+    f.write_bytes(b"fake")
+    r1 = c.post("/api/ahb/social/sources/import-by-path",
+                json={"abs_path": str(f), "caption": "test", "tags": "test"})
+    assert r1.status_code == 200
+    j1 = r1.get_json()
+    assert j1["id"] > 0
+    assert j1["already_imported"] is False
+    # Second call reuses the row
+    r2 = c.post("/api/ahb/social/sources/import-by-path", json={"abs_path": str(f)})
+    j2 = r2.get_json()
+    assert j2["id"] == j1["id"]
+    assert j2["already_imported"] is True
+
+
+def test_imported_abs_path_resolvable(client, tmp_path, monkeypatch):
+    # Allow this temp path as a media root
+    monkeypatch.setenv("BAZA_MEDIA_EXTRA_ROOT", str(tmp_path))
+    c, _ = client
+    f = tmp_path / "shot.jpg"
+    f.write_bytes(b"fake")
+    r = c.post("/api/ahb/social/sources/import-by-path", json={"abs_path": str(f)})
+    sid = r.get_json()["id"]
+    import social_studio as ss
+    paths = ss._resolve_media_paths([sid])
+    assert paths == [str(f)]
+
+
 def test_uploaded_path_resolvable_via_post_render(client):
     """An uploaded source must be usable in a post (path inside allowed roots)."""
     c, _ = client
