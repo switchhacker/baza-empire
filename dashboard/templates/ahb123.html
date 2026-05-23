@@ -17715,6 +17715,8 @@ window.SocialStudio = window.SocialStudio || {
     variants: {},
     settings: null,
     brandKit: null,
+    lutName: '',
+    lastTranslations: null,
   },
   modules: {},
   init() {
@@ -17952,6 +17954,16 @@ SocialStudio.modules.composer = (function(){
     renderPreview();
   }
 
+  function setLut(name) {
+    state.lutName = name || '';
+    document.querySelectorAll('#ss-lut-strip .ss-lut-chip').forEach(c => {
+      const on = (c.dataset.lut || '') === state.lutName;
+      c.style.background = on ? '#2a2a4a' : 'none';
+      c.style.color = on ? '#fff' : '#aaa';
+      c.classList.toggle('active', on);
+    });
+  }
+
   async function aiCaption() {
     const r = await fetch('/api/ahb/social/ai/caption', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -18082,6 +18094,49 @@ SocialStudio.modules.composer = (function(){
     }
   }
 
+  async function aiPredict() {
+    const platform = state.activePlatform;
+    const caption = document.getElementById('ss-caption-' + platform).value;
+    const hashtags = document.getElementById('ss-hashtags-' + platform).value;
+    const hook = document.getElementById('ss-hook-input').value;
+    const tid = SocialStudio.modules.toast.progress('Predicting…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/predict', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ caption, hashtags, hook, platform, source_ids: state.shotList }),
+      });
+      const j = await r.json();
+      if (!r.ok) { SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
+      SocialStudio.modules.toast.resolve(tid, 'success', j.confidence + ' confidence');
+      const m = document.createElement('div');
+      m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+      document.body.appendChild(m);
+      const close = () => document.body.removeChild(m);
+      const fmt = n => n.toLocaleString();
+      m.innerHTML = `
+        <div class="modal" style="max-width:560px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">🔮 Performance prediction</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="display:flex;justify-content:space-around;text-align:center;margin:14px 0;padding:14px;background:#070712;border-radius:8px">
+            <div><div style="color:#888;font-size:11px">Low</div><div style="font-size:18px;font-weight:700">${fmt(j.view_range.low)}</div></div>
+            <div><div style="color:#888;font-size:11px">Mid</div><div style="font-size:24px;font-weight:800;color:#10b981">${fmt(j.view_range.mid)}</div></div>
+            <div><div style="color:#888;font-size:11px">High</div><div style="font-size:18px;font-weight:700">${fmt(j.view_range.high)}</div></div>
+          </div>
+          <div style="color:#aaa;font-size:11px;margin-bottom:8px">Confidence: <span style="color:#fff">${j.confidence}</span></div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px">Improvements:</div>
+          <ul style="font-size:12px;color:#ccc;padding-left:20px;line-height:1.6">
+            ${j.improvements.map(i => `<li>${i.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+      m.querySelector('[data-close]').addEventListener('click', close);
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
   async function aiCommentBait() {
     const caption = document.getElementById('ss-caption-' + state.activePlatform).value;
     if (!caption.trim()) { SocialStudio.modules.toast.info('Generate a caption first'); return; }
@@ -18133,6 +18188,7 @@ SocialStudio.modules.composer = (function(){
         source_media_ids: state.shotList.map(item => typeof item === 'object' ? item.id : item),
         caption: document.getElementById('ss-caption-' + state.activePlatform).value,
         hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
+        lut_name: state.lutName || null,
       }),
     }).then(r => r.json());
     if (SocialStudio.state.musicTrack) {
@@ -18184,6 +18240,7 @@ SocialStudio.modules.composer = (function(){
           source_media_ids: state.shotList.map(i => typeof i === 'object' ? i.id : i),
           caption: (document.getElementById('ss-caption-' + platform) || {}).value || '',
           hashtags: (document.getElementById('ss-hashtags-' + platform) || {}).value || '',
+          lut_name: state.lutName || null,
         }),
       }).then(r => r.json());
       if (SocialStudio.state.musicTrack) {
@@ -18269,6 +18326,89 @@ SocialStudio.modules.composer = (function(){
     });
   }
 
+  const TRANSLATE_LANG_CHOICES = [
+    {code:'es', label:'Spanish'},
+    {code:'fr', label:'French'},
+    {code:'pt', label:'Portuguese'},
+    {code:'it', label:'Italian'},
+    {code:'de', label:'German'},
+    {code:'zh', label:'Chinese'},
+    {code:'ja', label:'Japanese'},
+  ];
+
+  async function aiTranslateAll() {
+    const platform = state.activePlatform;
+    const caption = document.getElementById('ss-caption-' + platform).value;
+    const hashtags = document.getElementById('ss-hashtags-' + platform).value;
+    if (!caption.trim()) { SocialStudio.modules.toast.info('Generate a caption first.'); return; }
+    const targets = await new Promise((resolve) => {
+      const m = document.createElement('div');
+      m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+      document.body.appendChild(m);
+      const close = (v) => { document.body.removeChild(m); resolve(v); };
+      m.innerHTML = `
+        <div class="modal" style="max-width:480px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">🌐 Translate to…</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+            ${TRANSLATE_LANG_CHOICES.map(l => `
+              <label style="display:flex;align-items:center;gap:4px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">
+                <input type="checkbox" value="${l.code}" ${l.code==='es'?'checked':''}> ${l.label}
+              </label>
+            `).join('')}
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn-secondary" data-cancel>Cancel</button>
+            <button class="btn-primary" data-go>Translate</button>
+          </div>
+        </div>
+      `;
+      m.querySelector('[data-close]').addEventListener('click', () => close(null));
+      m.querySelector('[data-cancel]').addEventListener('click', () => close(null));
+      m.querySelector('[data-go]').addEventListener('click', () => {
+        const codes = Array.from(m.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value);
+        close(codes.length ? codes : null);
+      });
+    });
+    if (!targets) return;
+    const tid = SocialStudio.modules.toast.progress('Translating to ' + targets.length + ' lang(s)…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/translate-all', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ caption, hashtags, targets, platform }),
+      });
+      const j = await r.json();
+      if (!r.ok) { SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
+      SocialStudio.modules.toast.resolve(tid, 'success', Object.keys(j.translations).join(', ') + ' done');
+      state.lastTranslations = j.translations;
+      const m = document.createElement('div');
+      m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+      document.body.appendChild(m);
+      const close = () => document.body.removeChild(m);
+      m.innerHTML = `
+        <div class="modal" style="max-width:680px;max-height:80vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">🌐 Translations</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          ${Object.entries(j.translations).map(([lang, payload]) => `
+            <div style="border:1px solid #1a1a2e;border-radius:6px;padding:8px;margin-bottom:8px">
+              <div style="font-size:13px;font-weight:700;color:#10b981;margin-bottom:4px">${lang.toUpperCase()}</div>
+              <div style="font-size:12px;color:#ccc;white-space:pre-wrap">${(payload.caption||'').replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</div>
+              ${payload.hashtags ? `<div style="font-size:11px;color:#888;margin-top:6px;white-space:pre-wrap">${(payload.hashtags||'').replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</div>` : ''}
+            </div>
+          `).join('')}
+          <div style="color:#666;font-size:11px;text-align:center;margin-top:6px">Translations are stored on the post on render and bundled as caption_&lt;platform&gt;.&lt;lang&gt;.txt</div>
+        </div>
+      `;
+      m.querySelector('[data-close]').addEventListener('click', close);
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
   async function aiTranslate() {
     const platform = state.activePlatform;
     const caption = document.getElementById('ss-caption-' + platform).value;
@@ -18333,6 +18473,15 @@ SocialStudio.modules.composer = (function(){
             <div class="ss-platform-tab" data-platform="ig_feed_portrait" onclick="SocialStudio.modules.composer.setPlatform('ig_feed_portrait')">IG Feed 4:5</div>
             <div class="ss-platform-tab" data-platform="ig_story"         onclick="SocialStudio.modules.composer.setPlatform('ig_story')">IG Story 9:16</div>
           </div>
+          <div id="ss-lut-strip" style="display:flex;gap:6px;margin:6px 0 8px;font-size:11px;flex-wrap:wrap">
+            <span style="color:#666;align-self:center;margin-right:4px">LUT:</span>
+            <button class="ss-lut-chip active" data-lut="" style="background:#2a2a4a;border:1px solid #2a2a4a;color:#fff;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('')">None</button>
+            <button class="ss-lut-chip" data-lut="cinematic" style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('cinematic')">Cinematic</button>
+            <button class="ss-lut-chip" data-lut="vibrant"   style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('vibrant')">Vibrant</button>
+            <button class="ss-lut-chip" data-lut="moody"     style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('moody')">Moody</button>
+            <button class="ss-lut-chip" data-lut="bw"        style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('bw')">B&amp;W</button>
+            <button class="ss-lut-chip" data-lut="warm"      style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('warm')">Warm</button>
+          </div>
           <div id="ss-preview-shell" class="ss-preview-shell tiktok"></div>
           <input id="ss-hook-input" placeholder="Hook overlay text (≤ 60 chars)" maxlength="60" style="width:100%;margin-top:8px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" oninput="SocialStudio.modules.composer.renderPreview()">
         </div>
@@ -18363,11 +18512,12 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="3 hook variants — pick a virality pattern" onclick="SocialStudio.modules.composer.aiHookPattern()">🪝 Hooks</button>
             <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 + critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
             <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
-            <button class="btn-secondary ss-tip" data-tip="Translate caption to Spanish" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
+            <button class="btn-secondary ss-tip" data-tip="Translate caption + hashtags to multiple languages" onclick="SocialStudio.modules.composer.aiTranslateAll()">🌐 Translate</button>
             <button class="btn-secondary ss-tip" data-tip="Pick a music bed for video posts" onclick="SocialStudio.modules.composer.pickMusic()">🎵 Music</button>
             <button class="btn-secondary ss-tip" data-tip="Generate voiceover from caption (piper TTS)" onclick="SocialStudio.modules.voiceover.open(null, document.getElementById('ss-caption-' + SocialStudio.state.activePlatform).value)">🔊 VO</button>
             <button class="btn-secondary ss-tip" data-tip="3 platform-tuned CTAs" onclick="SocialStudio.modules.composer.aiCta()">🎯 CTA</button>
             <button class="btn-secondary ss-tip" data-tip="3 comment-bait prompts" onclick="SocialStudio.modules.composer.aiCommentBait()">💬 Engage</button>
+            <button class="btn-secondary ss-tip" data-tip="Performance prediction + improvements" onclick="SocialStudio.modules.composer.aiPredict()">🔮 Predict</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
@@ -18384,7 +18534,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q);
   }
 
-  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
+  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
 })();
 
 SocialStudio.modules.library = (function(){

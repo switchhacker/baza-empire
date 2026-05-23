@@ -775,6 +775,18 @@ def social_post_bundle(pid: int):
         if post.get("first_comment"):
             caption_block += "\n\n---\n" + post["first_comment"]
         z.writestr(f"caption_{post['platform']}.txt", caption_block)
+        # v2.1: write per-language caption files when translations are present
+        translations_raw = post.get("translations") or "{}"
+        try:
+            tr = json.loads(translations_raw) if isinstance(translations_raw, str) else translations_raw
+        except Exception:
+            tr = {}
+        if isinstance(tr, dict):
+            for lang, payload in tr.items():
+                if not isinstance(payload, dict):
+                    continue
+                block = (payload.get("caption") or "") + "\n\n" + (payload.get("hashtags") or "")
+                z.writestr(f"caption_{post['platform']}.{lang}.txt", block)
         z.writestr("manifest.json", json.dumps(post, default=str, indent=2))
     buf.seek(0)
     return send_file(buf, mimetype="application/zip",

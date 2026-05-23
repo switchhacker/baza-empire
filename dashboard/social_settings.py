@@ -35,6 +35,7 @@ DEFAULTS_SETTINGS: Dict[str, Any] = {
     "daily_post_cap": 4,
     "cool_down_days": 14,
     "burn_in_subtitles_default": True,
+    "translation_targets": ["es"],
 }
 
 DEFAULTS_BRAND: Dict[str, Any] = {
