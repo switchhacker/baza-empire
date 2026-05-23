@@ -1241,10 +1241,24 @@ async function loadUnsub(){
     </div>`).join('');
 }
 
-async function doUnsub(gid){
-  const d = await api('/api/email2/cleanup/unsubscribe',{method:'POST',body:{gmail_id:gid}});
-  if(d.ok) toast('✓ Unsubscribed (status '+d.status+')');
-  else toast('Failed: '+(d.error||'?'), true);
+async function doUnsub(gid, preferMailto){
+  const d = await api('/api/email2/cleanup/unsubscribe',
+    {method:'POST', body:{gmail_id:gid, prefer_mailto: !!preferMailto}});
+  if(d.ok){
+    if(d.via === 'mailto') toast('✓ Sent unsubscribe email to ' + (d.to||'?'));
+    else toast('✓ Unsubscribed via HTTP (status ' + (d.status||'?') +
+               (d.fell_back ? ', SSL→HTTP fallback' : '') + ')');
+  } else {
+    // If http failed but a mailto exists, offer to retry with mailto
+    const hasMailto = d.mailto || (d.http_result && d.mailto);
+    const msg = (d.error||'?').slice(0,200);
+    if(hasMailto && confirm('HTTP unsubscribe failed:\n\n' + msg +
+                            '\n\nSend an unsubscribe email instead?')){
+      doUnsub(gid, true);
+    } else {
+      toast('Failed: '+msg, true);
+    }
+  }
 }
 
 async function loadLarge(){

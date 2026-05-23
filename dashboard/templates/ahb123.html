@@ -711,6 +711,126 @@
   .ss-pill-rejected { background:#7f1d1d; color:#fca5a5; }
   .ss-pill-failed { background:#7f1d1d; color:#fca5a5; }
 </style>
+<style>
+  .ss-toast { min-width:240px; max-width:380px; padding:10px 14px; border-radius:10px; font-size:13px; color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.5); pointer-events:auto; cursor:pointer; display:flex; align-items:center; gap:8px; animation:ss-toast-in .2s ease-out; }
+  .ss-toast-info { background:#1e3a8a; border-left:4px solid #60a5fa; }
+  .ss-toast-success { background:#064e3b; border-left:4px solid #10b981; }
+  .ss-toast-error { background:#7f1d1d; border-left:4px solid #fca5a5; }
+  .ss-toast-progress { background:#1e293b; border-left:4px solid #94a3b8; cursor:default; min-width:300px; }
+  .ss-toast-progress-bar { height:4px; background:#94a3b8; border-radius:2px; margin-top:6px; transition:width .3s ease; }
+  .ss-toast-icon { font-size:18px; line-height:1; }
+  .ss-toast-body { flex:1; }
+  .ss-toast-x { background:none; border:none; color:rgba(255,255,255,.6); cursor:pointer; font-size:18px; padding:0 4px; line-height:1; }
+  .ss-toast-x:hover { color:#fff; }
+  @keyframes ss-toast-in { from { transform:translateX(20px); opacity:0 } to { transform:translateX(0); opacity:1 } }
+  @keyframes ss-toast-out { to { transform:translateX(20px); opacity:0 } }
+  .ss-toast-leaving { animation:ss-toast-out .2s ease-out forwards; }
+</style>
+<style>
+  .ss-device-iphone, .ss-device-pixel {
+    position:relative; padding:14px; border-radius:38px;
+    background:linear-gradient(135deg,#1a1a2e,#0a0a18);
+    box-shadow:0 0 0 1px #2a2a4a, 0 12px 32px rgba(0,0,0,.6);
+  }
+  .ss-device-iphone::before {
+    content:''; position:absolute; top:6px; left:50%; transform:translateX(-50%);
+    width:120px; height:28px; background:#000; border-radius:0 0 18px 18px; z-index:2;
+  }
+  .ss-device-iphone::after {
+    content:''; position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    width:90px; height:14px; background:#000; border-radius:8px; z-index:3;
+  }
+  .ss-device-pixel::before {
+    content:''; position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    width:14px; height:14px; background:#000; border-radius:50%; z-index:3;
+  }
+  .ss-light-bg { background:#fafafa !important; }
+  .ss-light-bg .ss-preview-shell { box-shadow:0 0 0 1px #ddd; }
+  .ss-dpr-2 .ss-preview-shell img, .ss-dpr-2 .ss-preview-shell video { image-rendering:auto; }
+  .ss-dpr-1 .ss-preview-shell img, .ss-dpr-1 .ss-preview-shell video { image-rendering:pixelated; }
+  .ss-toolbar { display:flex; gap:6px; align-items:center; padding:6px 0; flex-wrap:wrap }
+  .ss-toolbar select, .ss-toolbar button { background:#070712; border:1px solid #2a2a4a; border-radius:6px; padding:4px 8px; color:#aaa; font-size:11px; cursor:pointer }
+  .ss-toolbar button.active { background:#10b981; color:#0a0a18; border-color:#10b981 }
+</style>
+<style>
+  .ss-overlay-rail { position:absolute; right:6px; bottom:80px; display:flex; flex-direction:column; gap:14px; pointer-events:none; z-index:5 }
+  .ss-overlay-rail .ss-or-icon { background:rgba(0,0,0,.4); color:#fff; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:18px; backdrop-filter:blur(8px) }
+  .ss-overlay-rail .ss-or-label { color:#fff; font-size:9px; text-align:center; margin-top:2px; text-shadow:0 1px 2px rgba(0,0,0,.8) }
+  .ss-overlay-caption { position:absolute; bottom:14px; left:14px; right:60px; color:#fff; font-size:11px; line-height:1.3; text-shadow:0 1px 2px rgba(0,0,0,.8); pointer-events:none; z-index:5; max-height:48px; overflow:hidden }
+  .ss-overlay-topbar { position:absolute; top:0; left:0; right:0; padding:8px 14px; color:rgba(255,255,255,.85); font-size:11px; background:linear-gradient(180deg,rgba(0,0,0,.4),transparent); pointer-events:none; z-index:5; display:flex; justify-content:space-between }
+  .ss-safe-zone { position:absolute; inset:0; pointer-events:none; z-index:6 }
+  .ss-safe-zone::before, .ss-safe-zone::after { content:''; position:absolute; left:0; right:0; background:rgba(248,113,113,.18); border:1px dashed rgba(248,113,113,.5) }
+  .ss-safe-zone::before { top:0; height:11%; }
+  .ss-safe-zone::after { bottom:0; height:17%; }
+  .ss-trunc-marker { position:absolute; left:14px; right:14px; bottom:78px; pointer-events:none; z-index:5; color:rgba(255,255,255,.7); font-size:9px; font-style:italic; text-align:right }
+</style>
+<style>
+  @media (max-width: 768px) {
+    #tab-social .ss-grid {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    #tab-social .ss-card { padding: 8px; }
+    #ss-source-grid {
+      grid-template-columns: repeat(4, 100px) !important;
+      grid-auto-flow: column;
+      overflow-x: auto;
+      max-height: 140px !important;
+      padding-bottom: 6px;
+    }
+    #ss-source-grid::-webkit-scrollbar { height: 4px; }
+    #ss-variant-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      max-height: 60vh;
+      overflow-y: auto;
+      background: #0a0a18;
+      border-top: 2px solid #10b981;
+      border-radius: 14px 14px 0 0;
+      z-index: 1000;
+      transform: translateY(calc(100% - 56px));
+      transition: transform .25s ease;
+      box-shadow: 0 -8px 24px rgba(0,0,0,.5);
+    }
+    #ss-variant-panel.open { transform: translateY(0); }
+    #ss-variant-panel::before {
+      content: 'Tap to ✏ edit copy ▲';
+      display: block;
+      text-align: center;
+      padding: 12px;
+      font-size: 13px;
+      color: #aaa;
+      cursor: pointer;
+    }
+    #tab-social button { min-height: 44px; }
+    #socialToastStack { bottom: 80px !important; }
+  }
+  .ss-tip { position: relative; }
+  .ss-tip:hover::after, .ss-tip:focus::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0a0a18;
+    border: 1px solid #2a2a4a;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #ddd;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 999;
+    pointer-events: none;
+  }
+  .ss-tour-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 99998;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ss-tour-card {
+    background: #0e0e1e; border: 1px solid #10b981; border-radius: 12px;
+    padding: 20px; max-width: 420px; color: #fff;
+  }
+</style>
 </head>
 <body>
 
@@ -4507,6 +4627,10 @@
 <div id="socialVoiceover"    class="modal-bg" style="display:none"></div>
 <div id="socialSettings"     class="modal-bg" style="display:none"></div>
 <div id="socialPostDetail"   class="modal-bg" style="display:none"></div>
+
+<!-- Social Studio toast stack (body-level, bottom-right) -->
+<div id="socialToastStack" style="position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none"></div>
+<div id="socialShortcutsHelp" class="modal-bg" style="display:none"></div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -17661,7 +17785,7 @@ SocialStudio.modules.composer = (function(){
     if (!grid) return;
     grid.innerHTML = state.sources.map(s => `
       <div class="ss-source-item" data-id="${s.id}">
-        <img class="ss-thumb${state.shotList.includes(s.id) ? ' selected' : ''}"
+        <img class="ss-thumb${state.shotList.some(item => (typeof item === 'object' ? item.id : item) === s.id) ? ' selected' : ''}"
              src="${thumbUrl(s.sub_path)}"
              onerror="this.style.opacity='0.3'"
              loading="lazy" onclick="SocialStudio.modules.composer.toggle(${s.id})">
@@ -17671,9 +17795,11 @@ SocialStudio.modules.composer = (function(){
   }
 
   function toggle(id) {
-    const i = state.shotList.indexOf(id);
-    if (i === -1) state.shotList.push(id); else state.shotList.splice(i, 1);
+    const existing = state.shotList.findIndex(item => (typeof item === 'object' ? item.id : item) === id);
+    if (existing === -1) state.shotList.push({ id });
+    else state.shotList.splice(existing, 1);
     renderSourceGrid();
+    renderShotRail();
     renderPreview();
   }
 
@@ -17681,7 +17807,8 @@ SocialStudio.modules.composer = (function(){
     const shell = document.getElementById('ss-preview-shell');
     if (!shell) return;
     shell.className = 'ss-preview-shell ' + state.activePlatform;
-    const firstId = state.shotList[0];
+    const firstItem = state.shotList[0];
+    const firstId = typeof firstItem === 'object' ? (firstItem && firstItem.id) : firstItem;
     const src = state.sources.find(s => s.id === firstId);
     if (!src) {
       shell.innerHTML = '<div style="color:#444;padding:80px 12px;text-align:center;font-size:12px">Pick media at left</div>';
@@ -17701,6 +17828,117 @@ SocialStudio.modules.composer = (function(){
       overlay.textContent = hook;
       shell.appendChild(overlay);
     }
+  }
+
+  function renderShotRail() {
+    const rail = document.getElementById('ss-shot-rail');
+    if (!rail) return;
+    if (!state.shotList.length) {
+      rail.innerHTML = '<div style="color:#444;font-size:11px;padding:8px;text-align:center">No clips picked yet.</div>';
+      return;
+    }
+    state.shotList = state.shotList.map(item => typeof item === 'object' ? item : { id: item });
+    rail.innerHTML = state.shotList.map((item, idx) => {
+      const src = state.sources.find(s => s.id === item.id) || {};
+      const trim = (item.in_seconds != null || item.out_seconds != null)
+        ? ` <span style="color:#10b981">[${item.in_seconds||0}s–${item.out_seconds||'end'}s]</span>` : '';
+      return `
+        <div class="ss-shot-item" draggable="true" data-idx="${idx}"
+             style="display:flex;align-items:center;gap:6px;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:4px;cursor:grab">
+          <span style="color:#10b981;font-weight:800;width:18px;text-align:center">${idx+1}</span>
+          <img src="${thumbUrl(src.sub_path || '')}" onerror="this.style.opacity='0.3'" style="width:36px;height:36px;object-fit:cover;border-radius:4px">
+          <div style="flex:1;font-size:11px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(src.sub_path || '?')}${trim}</div>
+          <button onclick="SocialStudio.modules.composer.shotTrim(${idx})" title="Trim" style="background:none;border:none;color:#aaa;cursor:pointer;padding:0 4px">✂</button>
+          <button onclick="SocialStudio.modules.composer.shotRemove(${idx})" title="Remove" style="background:none;border:none;color:#f87171;cursor:pointer;padding:0 4px">×</button>
+        </div>
+      `;
+    }).join('');
+    rail.querySelectorAll('.ss-shot-item').forEach(el => {
+      el.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', el.dataset.idx);
+        el.style.opacity = '0.5';
+      });
+      el.addEventListener('dragend', () => { el.style.opacity = '1'; });
+      el.addEventListener('dragover', (e) => { e.preventDefault(); el.style.borderColor = '#10b981'; });
+      el.addEventListener('dragleave', () => { el.style.borderColor = '#2a2a4a'; });
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        el.style.borderColor = '#2a2a4a';
+        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        const toIdx = parseInt(el.dataset.idx, 10);
+        if (fromIdx === toIdx) return;
+        const [moved] = state.shotList.splice(fromIdx, 1);
+        state.shotList.splice(toIdx, 0, moved);
+        renderShotRail();
+        renderPreview();
+      });
+    });
+  }
+
+  function shotRemove(idx) {
+    state.shotList.splice(idx, 1);
+    renderSourceGrid();
+    renderShotRail();
+    renderPreview();
+  }
+
+  function shotTrim(idx) {
+    const item = state.shotList[idx];
+    const src = state.sources.find(s => s.id === item.id);
+    if (!src) return;
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const isVideo = ['mp4','mov','webm','mkv'].includes((src.sub_path||'').toLowerCase().split('.').pop());
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">✂ Trim clip ${idx+1}</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        ${isVideo
+          ? `<video src="${serveUrl(src.sub_path)}" id="trim-video" controls style="width:100%;border-radius:8px;background:#000"></video>
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+               <label style="font-size:12px;color:#aaa">In (seconds)
+                 <input id="trim-in" type="number" min="0" step="0.1" value="${item.in_seconds||''}" placeholder="0" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+               </label>
+               <label style="font-size:12px;color:#aaa">Out (seconds)
+                 <input id="trim-out" type="number" min="0" step="0.1" value="${item.out_seconds||''}" placeholder="end" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+               </label>
+             </div>
+             <div style="display:flex;gap:6px;margin-top:8px">
+               <button class="btn-secondary" data-set-in style="font-size:11px">Use video time as In</button>
+               <button class="btn-secondary" data-set-out style="font-size:11px">Use video time as Out</button>
+             </div>`
+          : '<div style="color:#aaa;padding:24px;text-align:center">Stills don\'t have time — trim doesn\'t apply.</div>'}
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px">
+          <button class="btn-secondary" data-clear>Clear trim</button>
+          <button class="btn-primary" data-save>Save</button>
+        </div>
+      </div>
+    `;
+    const close = () => { document.body.removeChild(m); };
+    m.querySelector('[data-close]').addEventListener('click', close);
+    const inEl = m.querySelector('#trim-in');
+    const outEl = m.querySelector('#trim-out');
+    const video = m.querySelector('#trim-video');
+    if (m.querySelector('[data-set-in]')) {
+      m.querySelector('[data-set-in]').addEventListener('click', () => { inEl.value = video.currentTime.toFixed(1); });
+      m.querySelector('[data-set-out]').addEventListener('click', () => { outEl.value = video.currentTime.toFixed(1); });
+    }
+    m.querySelector('[data-clear]').addEventListener('click', () => {
+      item.in_seconds = null;
+      item.out_seconds = null;
+      renderShotRail();
+      close();
+    });
+    m.querySelector('[data-save]').addEventListener('click', () => {
+      item.in_seconds = inEl && inEl.value ? parseFloat(inEl.value) : null;
+      item.out_seconds = outEl && outEl.value ? parseFloat(outEl.value) : null;
+      renderShotRail();
+      close();
+    });
   }
 
   function setPlatform(p) {
@@ -17747,7 +17985,7 @@ SocialStudio.modules.composer = (function(){
       body: JSON.stringify({ source_ids: state.shotList, n: 3 }),
     });
     const j = await r.json();
-    if (!j.hooks || !j.hooks.length) { alert('No hooks returned'); return; }
+    if (!j.hooks || !j.hooks.length) { SocialStudio.modules.toast.error('No hooks returned'); return; }
     const pick = window.prompt('Pick a hook:\n\n' + j.hooks.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
     const idx = (parseInt(pick, 10) || 1) - 1;
     if (j.hooks[idx]) {
@@ -17770,23 +18008,171 @@ SocialStudio.modules.composer = (function(){
   }
 
   async function renderPackage() {
-    if (!state.shotList.length) { alert('Pick at least one source.'); return; }
+    if (!state.shotList.length) {
+      SocialStudio.modules.toast.info('Pick at least one source.');
+      return;
+    }
     const post = await fetch('/api/ahb/social/posts', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         platform: state.activePlatform, variant: state.activePlatform,
-        source_media_ids: state.shotList,
+        source_media_ids: state.shotList.map(item => typeof item === 'object' ? item.id : item),
         caption: document.getElementById('ss-caption-' + state.activePlatform).value,
         hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
       }),
     }).then(r => r.json());
-    const ren = await fetch(`/api/ahb/social/posts/${post.id}/render`, {
+    const trims = {};
+    state.shotList.forEach(item => {
+      if (typeof item === 'object' && (item.in_seconds != null || item.out_seconds != null)) {
+        trims[String(item.id)] = { in_seconds: item.in_seconds, out_seconds: item.out_seconds };
+      }
+    });
+    const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ hook_text: document.getElementById('ss-hook-input').value || null }),
+      body: JSON.stringify({
+        hook_text: document.getElementById('ss-hook-input').value || null,
+        trims: trims,
+      }),
     }).then(r => r.json());
-    if (ren.error) { alert('Render failed: ' + ren.error); return; }
-    alert('Rendered: ' + ren.asset_path);
-    SocialStudio.switchSub('library');
+    if (ren.error) { SocialStudio.modules.toast.error('Render failed: ' + ren.error); return; }
+    SocialStudio.modules.progress.watch(ren.job_id, 'Rendering ' + state.activePlatform);
+  }
+
+  async function renderAll() {
+    if (!state.shotList.length) {
+      SocialStudio.modules.toast.info('Pick at least one source.');
+      return;
+    }
+    const platforms = Object.entries(state.platforms).filter(([_, on]) => on).map(([p]) => p);
+    if (!platforms.length) {
+      SocialStudio.modules.toast.info('Toggle at least one platform on.');
+      return;
+    }
+    const batchToast = SocialStudio.modules.toast.progress('Rendering 0/' + platforms.length + ' platforms…');
+    let done = 0;
+    const trims = {};
+    state.shotList.forEach(item => {
+      if (typeof item === 'object' && (item.in_seconds != null || item.out_seconds != null)) {
+        trims[String(item.id)] = { in_seconds: item.in_seconds, out_seconds: item.out_seconds };
+      }
+    });
+    for (const platform of platforms) {
+      const post = await fetch('/api/ahb/social/posts', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          platform, variant: platform,
+          source_media_ids: state.shotList.map(i => typeof i === 'object' ? i.id : i),
+          caption: (document.getElementById('ss-caption-' + platform) || {}).value || '',
+          hashtags: (document.getElementById('ss-hashtags-' + platform) || {}).value || '',
+        }),
+      }).then(r => r.json());
+      const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          hook_text: document.getElementById('ss-hook-input').value || null,
+          trims: trims,
+        }),
+      }).then(r => r.json());
+      if (ren.error) {
+        SocialStudio.modules.toast.error(platform + ' failed: ' + ren.error);
+      }
+      done++;
+      SocialStudio.modules.toast.update(batchToast, {
+        percent: Math.round(done / platforms.length * 100),
+        msg: `Rendering ${done}/${platforms.length} platforms…`
+      });
+    }
+    SocialStudio.modules.toast.resolve(batchToast, 'success', `${done}/${platforms.length} renders queued`);
+    setTimeout(() => {
+      if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+    }, 1500);
+  }
+
+  async function aiAB() {
+    const platform = state.activePlatform;
+    const body = () => ({
+      source_ids: state.shotList.map(i => typeof i === 'object' ? i.id : i),
+      platform, tone: document.getElementById('ss-tone').value,
+      length: document.getElementById('ss-length').value,
+      style: document.getElementById('ss-style').value,
+    });
+    SocialStudio.modules.toast.info('Generating A/B variants…');
+    const [a, b] = await Promise.all([
+      fetch('/api/ahb/social/ai/caption', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body()),
+      }).then(r => r.json()),
+      fetch('/api/ahb/social/ai/caption', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body()),
+      }).then(r => r.json()),
+    ]);
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    m.innerHTML = `
+      <div class="modal" style="max-width:780px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🧪 A/B caption variations</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:12px">
+            <div style="font-weight:700;color:#10b981;margin-bottom:6px">Variant A</div>
+            <div style="white-space:pre-wrap;font-size:13px;color:#ddd;min-height:120px">${_esc(a.caption||'')}</div>
+            <button class="btn-primary" data-pick="A" style="width:100%;margin-top:10px">Use A</button>
+          </div>
+          <div style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:12px">
+            <div style="font-weight:700;color:#60a5fa;margin-bottom:6px">Variant B</div>
+            <div style="white-space:pre-wrap;font-size:13px;color:#ddd;min-height:120px">${_esc(b.caption||'')}</div>
+            <button class="btn-primary" data-pick="B" style="width:100%;margin-top:10px">Use B</button>
+          </div>
+        </div>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
+    m.querySelectorAll('[data-pick]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cap = btn.dataset.pick === 'A' ? a.caption : b.caption;
+        document.getElementById('ss-caption-' + platform).value = cap || '';
+        close();
+        SocialStudio.modules.toast.success('Variant ' + btn.dataset.pick + ' applied');
+      });
+    });
+  }
+
+  async function aiTranslate() {
+    const platform = state.activePlatform;
+    const caption = document.getElementById('ss-caption-' + platform).value;
+    if (!caption.trim()) {
+      SocialStudio.modules.toast.info('Generate a caption first.');
+      return;
+    }
+    const tid = SocialStudio.modules.toast.progress('Translating to ES…');
+    const r = await fetch('/api/ahb/social/ai/translate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text: caption, target_lang: 'es' }),
+    });
+    const j = await r.json();
+    SocialStudio.modules.toast.resolve(tid, 'success', 'Translated');
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🌐 Spanish translation</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <textarea style="width:100%;height:160px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-size:13px">${_esc(j.text||'')}</textarea>
+        <div style="font-size:11px;color:#666;margin-top:8px">Copy this manually for now — multi-language post storage lands in v2.1.</div>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
   }
 
   function render() {
@@ -17798,7 +18184,11 @@ SocialStudio.modules.composer = (function(){
             <option value="">All projects</option>
           </select>
           <input id="ss-source-q" class="search-box" placeholder="Search caption/tags" style="width:100%;margin-bottom:6px" oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>SocialStudio.modules.composer._reload(),300)">
-          <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:520px;overflow-y:auto"></div>
+          <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:280px;overflow-y:auto"></div>
+          <div style="margin-top:10px">
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin-bottom:6px">📋 Shot list (drag to reorder)</div>
+            <div id="ss-shot-rail" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;border:1px dashed #2a2a4a;border-radius:6px;padding:6px;min-height:60px"></div>
+          </div>
         </div>
         <div class="ss-card">
           <div id="ss-platform-tabs" class="ss-platform-tabs">
@@ -17833,16 +18223,20 @@ SocialStudio.modules.composer = (function(){
             </div>
           `).join('')}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
+            <button class="btn-secondary ss-tip" data-tip="Generate caption (local AI)" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
+            <button class="btn-secondary ss-tip" data-tip="Suggest hashtags (forces brand floor tags)" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
+            <button class="btn-secondary ss-tip" data-tip="3 hook variants — pattern-interrupt style" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
+            <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 + critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
+            <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
+            <button class="btn-secondary ss-tip" data-tip="Translate caption to Spanish" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
           </div>
-          <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render package</button>
+          <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
+          <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
         </div>
       </div>
     `;
     loadSources();
+    renderShotRail();
   }
 
   function _reload() {
@@ -17851,7 +18245,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q);
   }
 
-  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderPreview, _reload };
+  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload };
 })();
 
 SocialStudio.modules.library = (function(){
@@ -17923,7 +18317,7 @@ SocialStudio.modules.library = (function(){
         </select>
         <input placeholder="Search caption/hashtags" oninput="SocialStudio.modules.library.setFilter('q', this.value)" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
       </div>
-      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet.</div>'}</div>
+      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'composer\')">Pick media in Composer →</button></div>'}</div>
     `;
   }
 
@@ -17943,8 +18337,8 @@ SocialStudio.modules.library = (function(){
 
   async function telegram(id) {
     const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
-    if (r.ok) alert('Sent to Telegram');
-    else alert('Telegram bridge unavailable');
+    if (r.ok) SocialStudio.modules.toast.success('Sent to Telegram');
+    else SocialStudio.modules.toast.error('Telegram bridge unavailable');
   }
 
   return { render: load, setFilter, setStatus, telegram };
@@ -17961,7 +18355,7 @@ SocialStudio.modules.postdetail = (function(){
     // Fetch the post via the list endpoint (no per-ID GET -- N is small)
     const list = await fetch('/api/ahb/social/posts').then(x => x.json());
     const p = (list.items || []).find(x => x.id === id);
-    if (!p) { alert('Not found'); return; }
+    if (!p) { SocialStudio.modules.toast.error('Not found'); return; }
     const m = document.getElementById('socialPostDetail');
     m.style.display = 'flex';
     m.innerHTML = `
@@ -17996,8 +18390,8 @@ SocialStudio.modules.postdetail = (function(){
   function bundle(id) { window.open('/api/ahb/social/posts/' + id + '/bundle', '_blank'); }
   async function telegram(id) {
     const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
-    if (r.ok) alert('Sent.');
-    else alert('Telegram bridge unavailable');
+    if (r.ok) SocialStudio.modules.toast.success('Sent.');
+    else SocialStudio.modules.toast.error('Telegram bridge unavailable');
   }
   return { open, save, bundle, telegram };
 })();
@@ -18042,14 +18436,14 @@ SocialStudio.modules.presets = (function(){
           <button class="btn-primary" onclick="SocialStudio.modules.presets.edit(null)">+ New</button>
         </div>
       </div>
-      <div>${list || '<div style="color:#444;padding:40px;text-align:center">No presets. Click &quot;Install seed presets&quot;.</div>'}</div>
+      <div>${list || '<div style="color:#444;padding:40px;text-align:center">No presets. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.modules.presets.installSeeds()">Install 8 seed presets →</button></div>'}</div>
     `;
   }
 
   async function installSeeds() {
     const r = await fetch('/api/ahb/social/presets/install-seeds', { method: 'POST' });
     const j = await r.json();
-    alert('Installed ' + (j.installed || []).length + ' preset(s).');
+    SocialStudio.modules.toast.success('Installed ' + (j.installed || []).length + ' preset(s)');
     load();
   }
 
@@ -18116,7 +18510,7 @@ SocialStudio.modules.presets = (function(){
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify(body),
         });
-    if (!r.ok) { alert('Save failed'); return; }
+    if (!r.ok) { SocialStudio.modules.toast.error('Save failed'); return; }
     document.getElementById('socialPresetEditor').style.display = 'none';
     load();
   }
@@ -18124,7 +18518,7 @@ SocialStudio.modules.presets = (function(){
   async function runOnce(id) {
     const r = await fetch('/api/ahb/social/presets/' + id + '/run', { method: 'POST' });
     const j = await r.json();
-    alert('Test run: ' + (j.post_id ? '#' + j.post_id : j.error || 'see logs'));
+    SocialStudio.modules.toast.info('Test run: ' + (j.post_id ? '#' + j.post_id : j.error || 'see logs'));
   }
 
   async function toggle(id, currentActive) {
@@ -18286,7 +18680,7 @@ SocialStudio.modules.scheduler = (function(){
         `).join('')}
       </div>
     `).join('');
-    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">No scheduled posts.</div>';
+    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">Nothing scheduled. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'library\')">Pick from Library →</button></div>';
   }
   return { render: load };
 })();
@@ -18358,9 +18752,9 @@ SocialStudio.modules.autopilot = (function(){
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ on: !!on }),
       });
-      if (!r.ok) alert('Auto-Pilot endpoint not ready (Task 13)');
+      if (!r.ok) SocialStudio.modules.toast.error('Auto-Pilot endpoint not ready (Task 13)');
     } catch (e) {
-      alert('Auto-Pilot endpoint not reachable');
+      SocialStudio.modules.toast.error('Auto-Pilot endpoint not reachable');
     }
     load();
   }
@@ -18370,17 +18764,634 @@ SocialStudio.modules.autopilot = (function(){
       const r = await fetch('/api/ahb/social/autopilot/tick', { method: 'POST' });
       if (r.ok) {
         const j = await r.json();
-        alert('Tick: ' + JSON.stringify(j));
+        SocialStudio.modules.toast.info('Tick: ' + JSON.stringify(j));
       } else {
-        alert('Auto-Pilot endpoint not ready (Task 13)');
+        SocialStudio.modules.toast.error('Auto-Pilot endpoint not ready (Task 13)');
       }
     } catch (e) {
-      alert('Auto-Pilot endpoint not reachable');
+      SocialStudio.modules.toast.error('Auto-Pilot endpoint not reachable');
     }
     load();
   }
 
   return { render: load, toggleMaster, runTickNow };
+})();
+</script>
+
+<script>
+SocialStudio.modules.toast = (function(){
+  const stack = () => document.getElementById('socialToastStack');
+  let counter = 0;
+  const live = new Map();
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _make(kind, msg, opts) {
+    const id = ++counter;
+    const icon = ({ info: 'ℹ️', success: '✓', error: '⚠', progress: '⟳' })[kind] || '';
+    const el = document.createElement('div');
+    el.className = 'ss-toast ss-toast-' + kind;
+    el.dataset.toastId = id;
+    el.innerHTML = `
+      <span class="ss-toast-icon">${icon}</span>
+      <div class="ss-toast-body">${_esc(msg)}${kind === 'progress' ? '<div class="ss-toast-progress-bar" style="width:0%"></div>' : ''}</div>
+      <button class="ss-toast-x" aria-label="${kind === 'progress' ? 'Cancel' : 'Dismiss'}">×</button>
+    `;
+    el.querySelector('.ss-toast-x').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (kind === 'progress' && opts && opts.onCancel) opts.onCancel(id);
+      _dismiss(id);
+    });
+    el.addEventListener('click', () => { if (kind !== 'progress') _dismiss(id); });
+
+    const s = stack();
+    while (s.children.length >= 3) {
+      const oldId = parseInt(s.firstElementChild.dataset.toastId, 10);
+      _dismiss(oldId);
+    }
+    s.appendChild(el);
+    live.set(id, el);
+
+    if (kind !== 'progress') {
+      const ms = (opts && opts.ms) || (kind === 'error' ? 8000 : 5000);
+      setTimeout(() => _dismiss(id), ms);
+    }
+    return id;
+  }
+
+  function _dismiss(id) {
+    const el = live.get(id);
+    if (!el) return;
+    el.classList.add('ss-toast-leaving');
+    setTimeout(() => {
+      if (el.parentElement) el.parentElement.removeChild(el);
+      live.delete(id);
+    }, 200);
+  }
+
+  function update(id, opts) {
+    const el = live.get(id);
+    if (!el) return;
+    if (opts.msg) {
+      const body = el.querySelector('.ss-toast-body');
+      // Preserve progress bar child if it exists
+      const bar = body.querySelector('.ss-toast-progress-bar');
+      body.innerHTML = _esc(opts.msg);
+      if (bar) body.appendChild(bar);
+    }
+    if (typeof opts.percent === 'number') {
+      const bar = el.querySelector('.ss-toast-progress-bar');
+      if (bar) bar.style.width = Math.max(0, Math.min(100, opts.percent)) + '%';
+    }
+  }
+
+  function resolve(id, kind, msg) {
+    _dismiss(id);
+    return _make(kind, msg);
+  }
+
+  return {
+    info: (msg, opts) => _make('info', msg, opts),
+    success: (msg, opts) => _make('success', msg, opts),
+    error: (msg, opts) => _make('error', msg, opts),
+    progress: (msg, opts) => _make('progress', msg, opts),
+    update,
+    resolve,
+    dismiss: _dismiss,
+  };
+})();
+</script>
+
+<script>
+SocialStudio.modules.keymap = (function(){
+  const bindings = [
+    { key: '?', desc: 'Show this help', action: () => showHelp() },
+    { key: '/', desc: 'Focus search', action: () => focusSearch() },
+    { key: 'j', desc: 'Next item', action: () => navigate(1) },
+    { key: 'k', desc: 'Previous item', action: () => navigate(-1) },
+    { key: 'a', desc: 'Approve current Library item', action: () => approveFocused() },
+    { key: 'r', desc: 'Render current composer post', action: () => renderCurrent() },
+    { key: 'Escape', desc: 'Close modal / clear focus', action: () => closeAny() },
+  ];
+
+  let installed = false;
+
+  function _isEditable(el) {
+    if (!el) return false;
+    const tag = (el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+  }
+
+  function _onKey(e) {
+    const socialTab = document.getElementById('tab-social');
+    if (!socialTab || !socialTab.classList.contains('active')) return;
+    if (_isEditable(e.target)) return;
+    const b = bindings.find(b => b.key === e.key);
+    if (!b) return;
+    e.preventDefault();
+    b.action();
+  }
+
+  function install() {
+    if (installed) return;
+    installed = true;
+    document.addEventListener('keydown', _onKey);
+  }
+
+  function showHelp() {
+    const m = document.getElementById('socialShortcutsHelp');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:420px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">⌨ Keyboard shortcuts</div>
+          <button onclick="document.getElementById('socialShortcutsHelp').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <table style="width:100%;font-size:13px">
+          ${bindings.map(b => `<tr><td style="padding:6px 0"><kbd style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;padding:2px 8px;font-family:monospace">${b.key}</kbd></td><td style="padding:6px 12px;color:#aaa">${b.desc}</td></tr>`).join('')}
+        </table>
+        <div style="color:#666;font-size:11px;margin-top:14px">Shortcuts active only on the Social tab. Disabled when typing in inputs.</div>
+      </div>
+    `;
+  }
+
+  function focusSearch() {
+    const targets = ['#ss-sub-library input[placeholder*="Search"]', '#ss-source-q'];
+    for (const sel of targets) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) { el.focus(); el.select && el.select(); return; }
+    }
+  }
+
+  function navigate(dir) {
+    const cards = document.querySelectorAll('#ss-sub-library .ss-card');
+    if (!cards.length) return;
+    let idx = -1;
+    cards.forEach((c, i) => { if (c.dataset.focused === '1') idx = i; });
+    const next = Math.max(0, Math.min(cards.length - 1, idx + dir));
+    cards.forEach(c => { c.dataset.focused = ''; c.style.outline = ''; });
+    cards[next].dataset.focused = '1';
+    cards[next].style.outline = '2px solid #10b981';
+    cards[next].scrollIntoView({ block: 'nearest' });
+  }
+
+  function approveFocused() {
+    const focused = document.querySelector('#ss-sub-library .ss-card[data-focused="1"]');
+    if (!focused) { SocialStudio.modules.toast.info('Press j/k to focus a Library item first'); return; }
+    const approveBtn = focused.querySelector('button[onclick*="approved"]');
+    if (approveBtn) approveBtn.click();
+    else SocialStudio.modules.toast.info('No Approve action available (post not pending review)');
+  }
+
+  function renderCurrent() {
+    if (SocialStudio.state.activeSub !== 'composer') {
+      SocialStudio.modules.toast.info('Switch to Composer first');
+      return;
+    }
+    const btn = document.querySelector('#ss-variant-panel .btn-primary');
+    if (btn) btn.click();
+  }
+
+  function closeAny() {
+    document.querySelectorAll('.modal-bg').forEach(m => {
+      if (m.style.display !== 'none' && m.id.startsWith('social')) m.style.display = 'none';
+    });
+  }
+
+  const origInit = SocialStudio.init;
+  SocialStudio.init = function() {
+    const r = origInit.apply(this, arguments);
+    install();
+    return r;
+  };
+
+  return { install, showHelp, bindings };
+})();
+</script>
+
+<script>
+SocialStudio.modules.progress = (function(){
+  const POLL_MS = 1500;
+
+  async function watch(jobId, label) {
+    const toastId = SocialStudio.modules.toast.progress(label || 'Rendering…', {
+      onCancel: async () => {
+        await fetch('/api/ahb/social/jobs/' + jobId, { method: 'DELETE' });
+        SocialStudio.modules.toast.update(toastId, { msg: 'Cancelling…' });
+      },
+    });
+    let lastPct = 0;
+    const tick = async () => {
+      let job;
+      try {
+        const r = await fetch('/api/ahb/social/jobs/' + jobId);
+        if (!r.ok) {
+          SocialStudio.modules.toast.resolve(toastId, 'error', 'Job lookup failed');
+          return;
+        }
+        job = await r.json();
+      } catch (e) {
+        SocialStudio.modules.toast.resolve(toastId, 'error', 'Network error');
+        return;
+      }
+      lastPct = Math.min(95, lastPct + 5);
+      SocialStudio.modules.toast.update(toastId, { percent: lastPct });
+      if (job.status === 'done') {
+        SocialStudio.modules.toast.update(toastId, { percent: 100 });
+        setTimeout(() => SocialStudio.modules.toast.resolve(toastId, 'success', 'Render complete'), 200);
+        if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+      } else if (job.status === 'failed') {
+        SocialStudio.modules.toast.resolve(toastId, 'error', 'Render failed: ' + (job.error || 'unknown'));
+      } else if (job.status === 'cancelled') {
+        SocialStudio.modules.toast.resolve(toastId, 'info', 'Render cancelled');
+      } else {
+        setTimeout(tick, POLL_MS);
+      }
+    };
+    setTimeout(tick, POLL_MS);
+  }
+
+  return { watch };
+})();
+</script>
+<script>
+SocialStudio.modules.device = (function(){
+  function read(key, def) { return localStorage.getItem('ss_preview_' + key) || def; }
+  function write(key, val) { localStorage.setItem('ss_preview_' + key, val); }
+
+  function install() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    if (document.getElementById('ss-preview-toolbar')) return;
+    const tb = document.createElement('div');
+    tb.id = 'ss-preview-toolbar';
+    tb.className = 'ss-toolbar';
+    tb.innerHTML = `
+      <select id="ss-device-pick">
+        <option value="">No frame</option>
+        <option value="iphone">📱 iPhone</option>
+        <option value="pixel">📱 Pixel</option>
+      </select>
+      <button id="ss-light-toggle" title="Toggle light background">☀</button>
+      <button id="ss-dpr-toggle" title="Toggle @1× / @2×">@2×</button>
+    `;
+    shell.parentElement.insertBefore(tb, shell);
+    document.getElementById('ss-device-pick').value = read('device', '');
+    apply();
+    document.getElementById('ss-device-pick').addEventListener('change', (e) => {
+      write('device', e.target.value); apply();
+    });
+    document.getElementById('ss-light-toggle').addEventListener('click', () => {
+      const cur = read('light', '0');
+      write('light', cur === '0' ? '1' : '0'); apply();
+    });
+    document.getElementById('ss-dpr-toggle').addEventListener('click', () => {
+      const cur = read('dpr', '2');
+      write('dpr', cur === '2' ? '1' : '2'); apply();
+    });
+  }
+
+  function apply() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    const parent = shell.parentElement;
+    const device = read('device', '');
+    const light = read('light', '0') === '1';
+    const dpr = read('dpr', '2');
+    parent.classList.remove('ss-device-iphone', 'ss-device-pixel', 'ss-light-bg', 'ss-dpr-1', 'ss-dpr-2');
+    if (device === 'iphone') parent.classList.add('ss-device-iphone');
+    if (device === 'pixel') parent.classList.add('ss-device-pixel');
+    if (light) parent.classList.add('ss-light-bg');
+    parent.classList.add('ss-dpr-' + dpr);
+    const lb = document.getElementById('ss-light-toggle');
+    const db = document.getElementById('ss-dpr-toggle');
+    if (lb) lb.classList.toggle('active', light);
+    if (db) { db.classList.toggle('active', dpr === '1'); db.textContent = dpr === '2' ? '@2×' : '@1×'; }
+  }
+
+  if (SocialStudio.modules.composer) {
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+  }
+
+  return { install, apply };
+})();
+</script>
+
+<script>
+SocialStudio.modules.overlay = (function(){
+  function read(key, def) { return localStorage.getItem('ss_overlay_' + key) || def; }
+  function write(key, val) { localStorage.setItem('ss_overlay_' + key, val); }
+
+  function install() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell || document.getElementById('ss-overlay-toolbar')) return;
+    const tb = document.createElement('div');
+    tb.id = 'ss-overlay-toolbar';
+    tb.className = 'ss-toolbar';
+    tb.innerHTML = `
+      <button id="ss-overlay-ui" title="Show platform UI overlay">📱 UI</button>
+      <button id="ss-overlay-safe" title="Show safe zones">🛡 Safe</button>
+      <button id="ss-overlay-trunc" title="Show caption truncation marker">✂ Trunc</button>
+    `;
+    const preTb = document.getElementById('ss-preview-toolbar');
+    if (preTb) preTb.appendChild(tb);
+    else shell.parentElement.insertBefore(tb, shell);
+
+    document.getElementById('ss-overlay-ui').addEventListener('click', () => {
+      write('ui', read('ui', '0') === '0' ? '1' : '0'); apply();
+    });
+    document.getElementById('ss-overlay-safe').addEventListener('click', () => {
+      write('safe', read('safe', '0') === '0' ? '1' : '0'); apply();
+    });
+    document.getElementById('ss-overlay-trunc').addEventListener('click', () => {
+      write('trunc', read('trunc', '0') === '0' ? '1' : '0'); apply();
+    });
+    apply();
+  }
+
+  function _platformOverlayHTML(platform) {
+    if (platform === 'tiktok') {
+      return `
+        <div class="ss-overlay-topbar"><span>Following | <strong>For You</strong></span></div>
+        <div class="ss-overlay-rail">
+          <div><div class="ss-or-icon">♥</div><div class="ss-or-label">12.3K</div></div>
+          <div><div class="ss-or-icon">💬</div><div class="ss-or-label">421</div></div>
+          <div><div class="ss-or-icon">🔖</div><div class="ss-or-label">567</div></div>
+          <div><div class="ss-or-icon">↗</div><div class="ss-or-label">Share</div></div>
+        </div>
+        <div class="ss-overlay-caption">@allhomebuilding · <span style="opacity:.8">music — Original audio</span></div>
+      `;
+    }
+    if (platform === 'ig_reel') {
+      return `
+        <div class="ss-overlay-topbar"><span>Reels</span><span>📷</span></div>
+        <div class="ss-overlay-rail">
+          <div><div class="ss-or-icon">♥</div><div class="ss-or-label">8.7K</div></div>
+          <div><div class="ss-or-icon">💬</div><div class="ss-or-label">221</div></div>
+          <div><div class="ss-or-icon">↗</div><div class="ss-or-label">Send</div></div>
+          <div><div class="ss-or-icon">⋯</div></div>
+        </div>
+        <div class="ss-overlay-caption">@allhomebuilding · <span style="opacity:.8">3d</span></div>
+      `;
+    }
+    if (platform === 'ig_story') {
+      return `<div class="ss-overlay-topbar"><span>@allhomebuilding</span><span>×</span></div>`;
+    }
+    if (platform === 'ig_feed_square' || platform === 'ig_feed_portrait') {
+      return `
+        <div class="ss-overlay-topbar"><span>@allhomebuilding</span><span>⋯</span></div>
+        <div style="position:absolute;bottom:8px;left:8px;right:8px;color:#fff;font-size:10px;pointer-events:none;z-index:5;display:flex;gap:14px">
+          <span>♥</span><span>💬</span><span>↗</span>
+        </div>
+      `;
+    }
+    return '';
+  }
+
+  function apply() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    shell.querySelectorAll('.ss-overlay-rail, .ss-overlay-caption, .ss-overlay-topbar, .ss-safe-zone, .ss-trunc-marker').forEach(e => e.remove());
+    const ui = read('ui', '0') === '1';
+    const safe = read('safe', '0') === '1';
+    const trunc = read('trunc', '0') === '1';
+    if (ui) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = _platformOverlayHTML(SocialStudio.state.activePlatform);
+      while (tmp.firstChild) shell.appendChild(tmp.firstChild);
+    }
+    if (safe) {
+      const z = document.createElement('div');
+      z.className = 'ss-safe-zone';
+      shell.appendChild(z);
+    }
+    if (trunc) {
+      const tm = document.createElement('div');
+      tm.className = 'ss-trunc-marker';
+      tm.textContent = '… more (TikTok truncates here at ~120 chars)';
+      shell.appendChild(tm);
+    }
+    ['ui', 'safe', 'trunc'].forEach(k => {
+      const b = document.getElementById('ss-overlay-' + k);
+      if (b) b.classList.toggle('active', read(k, '0') === '1');
+    });
+  }
+
+  if (SocialStudio.modules.composer) {
+    const origSetPlatform = SocialStudio.modules.composer.setPlatform;
+    SocialStudio.modules.composer.setPlatform = function(p) {
+      const r = origSetPlatform.apply(this, arguments);
+      setTimeout(apply, 0);
+      return r;
+    };
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+  }
+
+  return { install, apply };
+})();
+</script>
+
+<script>
+SocialStudio.modules.gridpreview = (function(){
+  function install() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell || document.getElementById('ss-grid-preview')) return;
+    const wrap = shell.parentElement;
+    const tb = document.getElementById('ss-overlay-toolbar') || document.getElementById('ss-preview-toolbar');
+    if (tb) {
+      const btn = document.createElement('button');
+      btn.id = 'ss-grid-toggle';
+      btn.textContent = '⊞ Grid';
+      btn.title = 'Show IG 3x3 grid preview';
+      btn.addEventListener('click', toggle);
+      tb.appendChild(btn);
+    }
+    const gp = document.createElement('div');
+    gp.id = 'ss-grid-preview';
+    gp.style.cssText = 'display:none;margin-top:10px;background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px';
+    wrap.appendChild(gp);
+  }
+
+  let visible = false;
+  function toggle() {
+    visible = !visible;
+    const el = document.getElementById('ss-grid-preview');
+    if (!el) return;
+    el.style.display = visible ? 'block' : 'none';
+    document.getElementById('ss-grid-toggle').classList.toggle('active', visible);
+    if (visible) refresh();
+  }
+
+  async function refresh() {
+    const platform = SocialStudio.state.activePlatform;
+    if (!['ig_feed_square', 'ig_feed_portrait'].includes(platform)) {
+      document.getElementById('ss-grid-preview').innerHTML =
+        '<div style="color:#666;font-size:12px;text-align:center;padding:20px">Grid preview is only relevant for IG Feed.</div>';
+      return;
+    }
+    const r = await fetch('/api/ahb/social/posts?status=posted&platform=' + platform + '&limit=8');
+    const items = ((await r.json()).items || []);
+    const cells = [];
+    cells.push({ current: true });
+    items.forEach(p => cells.push({ id: p.id, cover: p.cover_path ? '/api/ahb/social/posts/' + p.id + '/cover' : '' }));
+    while (cells.length < 9) cells.push({ empty: true });
+    document.getElementById('ss-grid-preview').innerHTML = `
+      <div style="font-size:11px;color:#aaa;margin-bottom:8px">Your IG feed with this post at the top-left:</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px">
+        ${cells.slice(0, 9).map(c => {
+          if (c.current) {
+            const firstItem = SocialStudio.state.shotList[0];
+            const id = typeof firstItem === 'object' ? (firstItem && firstItem.id) : firstItem;
+            const src = SocialStudio.state.sources.find(s => s.id === id);
+            const url = src ? '/api/cloud/thumb/' + encodeURIComponent(src.sub_path) + '?size=300' : '';
+            return `<div style="aspect-ratio:1;background:#1a1a2e;border:2px solid #10b981;border-radius:4px;overflow:hidden"><img src="${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"></div>`;
+          }
+          if (c.empty) {
+            return `<div style="aspect-ratio:1;background:#1a1a2e;border-radius:4px"></div>`;
+          }
+          return `<div style="aspect-ratio:1;background:#1a1a2e;border-radius:4px;overflow:hidden"><img src="${c.cover}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"></div>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  if (SocialStudio.modules.composer) {
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+    const origToggle = SocialStudio.modules.composer.toggle;
+    SocialStudio.modules.composer.toggle = function() {
+      const r = origToggle.apply(this, arguments);
+      if (visible) setTimeout(refresh, 0);
+      return r;
+    };
+    const origSetPlatform = SocialStudio.modules.composer.setPlatform;
+    SocialStudio.modules.composer.setPlatform = function() {
+      const r = origSetPlatform.apply(this, arguments);
+      if (visible) setTimeout(refresh, 0);
+      return r;
+    };
+  }
+
+  return { install, toggle, refresh };
+})();
+</script>
+
+<script>
+SocialStudio.modules.mobile = (function(){
+  function install() {
+    if (window.matchMedia && window.matchMedia('(min-width: 769px)').matches) return;
+    const vp = document.getElementById('ss-variant-panel');
+    if (!vp || vp.dataset.mobileWired) return;
+    vp.dataset.mobileWired = '1';
+    vp.addEventListener('click', (e) => {
+      if (e.target === vp || (e.target.previousSibling === null && e.target.parentElement === vp)) {
+        vp.classList.toggle('open');
+      }
+    });
+  }
+  if (SocialStudio.modules.composer) {
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+  }
+  return { install };
+})();
+
+SocialStudio.modules.tour = (function(){
+  const STEPS = [
+    { text: '👋 Welcome to Social Studio. Make TikTok + Instagram content from your project media — all local AI.' },
+    { text: '🗂 Pick sources from your existing project media in the left column.' },
+    { text: '📱 Live preview shows exactly what your post will look like on each platform.' },
+    { text: '✨ AI tools: caption, hashtags, hooks, score, A/B, translate.' },
+    { text: '📚 Library tracks all drafts, scheduled, and posted content.' },
+    { text: '🤖 Auto-Pilot drafts posts on a schedule when you enable it.' },
+    { text: 'Press ? anytime to see keyboard shortcuts. Happy posting! 🚀' },
+  ];
+
+  function show(stepIdx) {
+    document.querySelectorAll('.ss-tour-overlay').forEach(e => e.remove());
+    if (stepIdx >= STEPS.length) {
+      localStorage.setItem('ss_tour_done', '1');
+      return;
+    }
+    const step = STEPS[stepIdx];
+    const o = document.createElement('div');
+    o.className = 'ss-tour-overlay';
+    o.innerHTML = `
+      <div class="ss-tour-card">
+        <div style="font-size:14px;line-height:1.4;color:#fff;margin-bottom:14px">${step.text}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <button class="btn-secondary" data-skip>Skip tour</button>
+          <div style="color:#aaa;font-size:11px">${stepIdx+1} / ${STEPS.length}</div>
+          <button class="btn-primary" data-next>${stepIdx === STEPS.length - 1 ? 'Done' : 'Next'}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(o);
+    o.querySelector('[data-skip]').addEventListener('click', () => {
+      o.remove(); localStorage.setItem('ss_tour_done', '1');
+    });
+    o.querySelector('[data-next]').addEventListener('click', () => {
+      o.remove(); show(stepIdx + 1);
+    });
+  }
+
+  function maybeStart() {
+    if (localStorage.getItem('ss_tour_done')) return;
+    if (!document.getElementById('tab-social').classList.contains('active')) return;
+    setTimeout(() => show(0), 400);
+  }
+
+  function force() { localStorage.removeItem('ss_tour_done'); show(0); }
+
+  const origInit = SocialStudio.init;
+  SocialStudio.init = function() { const r = origInit.apply(this, arguments); maybeStart(); return r; };
+  return { show, force };
+})();
+
+SocialStudio.modules.a11y = (function(){
+  function install() {
+    document.querySelectorAll('.modal-bg[id^="social"]').forEach(m => {
+      m.setAttribute('role', 'dialog');
+      m.setAttribute('aria-modal', 'true');
+    });
+    if (!document.body.dataset.ssEscWired) {
+      document.body.dataset.ssEscWired = '1';
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        document.querySelectorAll('.modal-bg[id^="social"]').forEach(m => {
+          if (m.style.display !== 'none') m.style.display = 'none';
+        });
+      });
+    }
+    document.querySelectorAll('#tab-social button').forEach(b => {
+      if (!b.getAttribute('aria-label')) b.setAttribute('aria-label', (b.textContent || '').trim() || 'button');
+    });
+  }
+  const origInit = SocialStudio.init;
+  SocialStudio.init = function() { const r = origInit.apply(this, arguments); install(); return r; };
+  return { install };
 })();
 </script>
 
