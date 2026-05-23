@@ -29,13 +29,18 @@ def target_dims(platform: str) -> Tuple[int, int]:
 def build_filter_graph(in_w: int, in_h: int, platform: str,
                        fill_mode: str = "blurred",
                        hook_text: Optional[str] = None,
-                       brand_corner: bool = False) -> str:
+                       brand_corner: bool = False,
+                       lut_path: Optional[str] = None,
+                       logo_path: Optional[str] = None,
+                       logo_position: str = "br",
+                       logo_opacity: float = 0.7,
+                       subtitles_path: Optional[str] = None,
+                       ken_burns: bool = False) -> str:
     out_w, out_h = target_dims(platform)
     src_aspect = in_w / max(in_h, 1)
     tgt_aspect = out_w / out_h
     parts = []
     if src_aspect > tgt_aspect:
-        # Wider than target → either crop or pad
         if fill_mode == "blurred":
             parts.append(
                 f"split=2[bg][fg];"
@@ -44,27 +49,45 @@ def build_filter_graph(in_w: int, in_h: int, platform: str,
                 f"[fg]scale={out_w}:-2[fgs];"
                 f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2"
             )
-        else:  # letterbox / brand color / crop
+        else:
             parts.append(
                 f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
                 f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2:color=black"
             )
     else:
-        # Taller or same → cover crop
         parts.append(
             f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
             f"crop={out_w}:{out_h}"
         )
+    if ken_burns:
+        parts.append("zoompan=z='min(zoom+0.0008,1.2)':d=125:s={}x{}".format(out_w, out_h))
+    if lut_path:
+        parts.append(f"lut3d={shlex.quote(lut_path)}")
+    if logo_path:
+        pos = {
+            "tl": "10:10",
+            "tr": "main_w-overlay_w-10:10",
+            "bl": "10:main_h-overlay_h-10",
+            "br": "main_w-overlay_w-10:main_h-overlay_h-10",
+        }.get(logo_position, "main_w-overlay_w-10:main_h-overlay_h-10")
+        parts.append(
+            f"movie={shlex.quote(logo_path)},format=rgba,colorchannelmixer=aa={logo_opacity}[logo];"
+            f"[in][logo]overlay={pos}"
+        )
+    if subtitles_path:
+        sub_safe = subtitles_path.replace(":", r"\:").replace(",", r"\,")
+        parts.append(
+            f"subtitles='{sub_safe}':force_style='Fontname=Inter,FontSize=18,PrimaryColour=&H00FFFFFF,"
+            f"BackColour=&H80000000,BorderStyle=4,Outline=1,Shadow=0,Alignment=2,MarginV=80'"
+        )
     if hook_text:
-        # Strip drawtext expansion characters and escape filter-graph special chars.
-        # Order matters: backslash → quote → colon → comma → percent-brace.
         safe = (
             hook_text
             .replace("\\", "\\\\")
             .replace("'", r"\'")
             .replace(":", r"\:")
             .replace(",", r"\,")
-            .replace("%{", "%%{")  # neutralize drawtext format expansion
+            .replace("%{", "%%{")
         )
         parts.append(
             f"drawtext=fontfile={FONT_BOLD}:text='{safe}':"
@@ -106,11 +129,18 @@ def render_video(srcs, out: str, platform: str,
                  hook_text: Optional[str] = None,
                  brand_corner: bool = False,
                  fill_mode: str = "blurred",
-                 max_seconds: int = 60) -> str:
-    """Concat sources, re-encode to target dims, optional hook overlay.
-    srcs may be a list of paths (legacy) or a list of dicts
-    {path, in_seconds, out_seconds}. Trim values applied per-clip via
-    ffmpeg's concat demuxer with inpoint/outpoint directives."""
+                 max_seconds: int = 60,
+                 lut_path: Optional[str] = None,
+                 logo_path: Optional[str] = None,
+                 logo_position: str = "br",
+                 logo_opacity: float = 0.7,
+                 subtitles_path: Optional[str] = None,
+                 music_path: Optional[str] = None,
+                 music_volume_db: float = -18.0,
+                 voiceover_path: Optional[str] = None,
+                 voiceover_volume_db: float = -14.0,
+                 intro_path: Optional[str] = None,
+                 outro_path: Optional[str] = None) -> str:
     if not srcs:
         raise ValueError("no sources")
     clips = []
@@ -121,8 +151,19 @@ def render_video(srcs, out: str, platform: str,
             clips.append(s)
     if not clips:
         raise ValueError("no sources")
+    if intro_path and os.path.exists(intro_path):
+        clips = [{"path": intro_path, "in_seconds": None, "out_seconds": None}] + clips
+    if outro_path and os.path.exists(outro_path):
+        clips = clips + [{"path": outro_path, "in_seconds": None, "out_seconds": None}]
+
     w, h = _ffprobe(clips[0]["path"])
-    g = build_filter_graph(w, h, platform, fill_mode, hook_text, brand_corner)
+    g = build_filter_graph(
+        w, h, platform, fill_mode, hook_text, brand_corner,
+        lut_path=lut_path, logo_path=logo_path,
+        logo_position=logo_position, logo_opacity=logo_opacity,
+        subtitles_path=subtitles_path,
+    )
+
     tmpdir = os.path.dirname(out) or "."
     fd, list_path = tempfile.mkstemp(suffix=".concat.txt", dir=tmpdir, text=True)
     try:
@@ -133,9 +174,47 @@ def render_video(srcs, out: str, platform: str,
                     f.write(f"inpoint {float(c['in_seconds'])}\n")
                 if c.get("out_seconds") is not None:
                     f.write(f"outpoint {float(c['out_seconds'])}\n")
+
         cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path,
-            "-vf", g,
+            "ffmpeg", "-y",
+            "-f", "concat", "-safe", "0", "-i", list_path,
+        ]
+        audio_inputs = []
+        if music_path and os.path.exists(music_path):
+            cmd += ["-stream_loop", "-1", "-i", music_path]
+            audio_inputs.append(("music", len(audio_inputs) + 1))
+        if voiceover_path and os.path.exists(voiceover_path):
+            cmd += ["-i", voiceover_path]
+            audio_inputs.append(("vo", len(audio_inputs) + 1))
+
+        if audio_inputs:
+            audio_parts = ["[0:a]volume=1.0[a0]"]
+            mix_inputs = ["[a0]"]
+            for label, idx in audio_inputs:
+                if label == "music":
+                    db = music_volume_db
+                    audio_parts.append(f"[{idx}:a]volume={10**(db/20):.4f}[am]")
+                    mix_inputs.append("[am]")
+                elif label == "vo":
+                    db = voiceover_volume_db
+                    audio_parts.append(f"[{idx}:a]volume={10**(db/20):.4f}[av]")
+                    mix_inputs.append("[av]")
+            has_music = any(l == "music" for l, _ in audio_inputs)
+            has_vo = any(l == "vo" for l, _ in audio_inputs)
+            if has_music and has_vo:
+                audio_parts.append("[am][av]sidechaincompress=threshold=0.05:ratio=8:attack=10:release=200[amd]")
+                mix_inputs = [x if x != "[am]" else "[amd]" for x in mix_inputs]
+            audio_parts.append(f"{''.join(mix_inputs)}amix=inputs={len(mix_inputs)}:duration=first:dropout_transition=2[aout]")
+            audio_parts.append("[aout]loudnorm=I=-14:LRA=11:TP=-1.0[afinal]")
+            audio_parts.append(f"[0:v]{g}[vfinal]")
+            cmd += [
+                "-filter_complex", ";".join(audio_parts),
+                "-map", "[vfinal]", "-map", "[afinal]",
+            ]
+        else:
+            cmd += ["-vf", g]
+
+        cmd += [
             "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
             "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "22",
             "-c:a", "aac", "-b:a", "192k",

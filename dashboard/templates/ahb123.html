@@ -18021,6 +18021,12 @@ SocialStudio.modules.composer = (function(){
         hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
       }),
     }).then(r => r.json());
+    if (SocialStudio.state.musicTrack) {
+      await fetch('/api/ahb/social/posts/' + post.id, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ music_id: SocialStudio.state.musicTrack.id }),
+      });
+    }
     const trims = {};
     state.shotList.forEach(item => {
       if (typeof item === 'object' && (item.in_seconds != null || item.out_seconds != null)) {
@@ -18066,6 +18072,12 @@ SocialStudio.modules.composer = (function(){
           hashtags: (document.getElementById('ss-hashtags-' + platform) || {}).value || '',
         }),
       }).then(r => r.json());
+      if (SocialStudio.state.musicTrack) {
+        await fetch('/api/ahb/social/posts/' + post.id, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ music_id: SocialStudio.state.musicTrack.id }),
+        });
+      }
       const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
@@ -18175,6 +18187,15 @@ SocialStudio.modules.composer = (function(){
     m.querySelector('[data-close]').addEventListener('click', close);
   }
 
+  function pickMusic() {
+    if (!SocialStudio.modules.music) { SocialStudio.modules.toast.error('Music module not loaded'); return; }
+    SocialStudio.modules.music.pick((track) => {
+      if (!track) return;
+      SocialStudio.state.musicTrack = track;
+      SocialStudio.modules.toast.success('Music: ' + track.title);
+    });
+  }
+
   function render() {
     root().innerHTML = `
       <div class="ss-grid">
@@ -18229,6 +18250,7 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 + critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
             <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
             <button class="btn-secondary ss-tip" data-tip="Translate caption to Spanish" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
+            <button class="btn-secondary ss-tip" data-tip="Pick a music bed for video posts" onclick="SocialStudio.modules.composer.pickMusic()">🎵 Music</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
@@ -18245,7 +18267,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q);
   }
 
-  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload };
+  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
 })();
 
 SocialStudio.modules.library = (function(){
@@ -19392,6 +19414,100 @@ SocialStudio.modules.a11y = (function(){
   const origInit = SocialStudio.init;
   SocialStudio.init = function() { const r = origInit.apply(this, arguments); install(); return r; };
   return { install };
+})();
+</script>
+
+<script>
+SocialStudio.modules.music = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  async function pick(callback) {
+    let items = [];
+    try {
+      const r = await fetch('/api/ahb/social/music');
+      items = (await r.json()).items || [];
+    } catch (e) {}
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    function _renderRows(list) {
+      return list.map(t => `
+        <tr style="border-bottom:1px solid #1a1a2e">
+          <td style="padding:8px"><audio controls src="/api/ahb/social/music/file/${t.id}" style="height:30px;max-width:200px"></audio></td>
+          <td style="padding:8px">${_esc(t.title)}</td>
+          <td style="padding:8px;color:#aaa;font-size:11px">${_esc(t.bpm)} BPM</td>
+          <td style="padding:8px;color:#aaa;font-size:11px">${_esc(t.mood||'-')}</td>
+          <td style="padding:8px;color:#aaa;font-size:11px">${_esc(Math.round(t.duration_seconds||0))}s</td>
+          <td style="padding:8px"><button class="btn-primary" data-pick="${t.id}" style="padding:4px 10px;font-size:11px">Use</button></td>
+        </tr>
+      `).join('');
+    }
+    m.innerHTML = `
+      <div class="modal" style="max-width:780px;max-height:80vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🎵 Music library</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <select id="mp-mood" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+            <option value="">All moods</option>
+            <option value="calm">Calm</option>
+            <option value="moderate">Moderate</option>
+            <option value="energetic">Energetic</option>
+          </select>
+          <input id="mp-q" placeholder="Search title…" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+          <button class="btn-secondary" onclick="SocialStudio.modules.music._reindex()">↻ Reindex</button>
+        </div>
+        <table style="width:100%;font-size:13px">
+          <thead><tr style="text-align:left;color:#aaa">
+            <th style="padding:6px">Preview</th><th style="padding:6px">Title</th>
+            <th style="padding:6px">BPM</th><th style="padding:6px">Mood</th>
+            <th style="padding:6px">Length</th><th></th>
+          </tr></thead>
+          <tbody id="mp-tbody">${_renderRows(items) || '<tr><td colspan="6" style="padding:24px;text-align:center;color:#666">No tracks indexed. Drop files into dashboard/static/social/music/free/ and click ↻ Reindex.</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
+    document.getElementById('mp-mood').addEventListener('change', async () => {
+      const mood = document.getElementById('mp-mood').value;
+      const q = document.getElementById('mp-q').value;
+      const url = new URL('/api/ahb/social/music', location.origin);
+      if (mood) url.searchParams.set('mood', mood);
+      if (q) url.searchParams.set('q', q);
+      const fresh = ((await (await fetch(url)).json()).items || []);
+      items = fresh;
+      document.getElementById('mp-tbody').innerHTML = _renderRows(fresh) || '<tr><td colspan="6" style="padding:24px;text-align:center;color:#666">No tracks match.</td></tr>';
+    });
+    let _t = null;
+    document.getElementById('mp-q').addEventListener('input', () => {
+      if (_t) clearTimeout(_t);
+      _t = setTimeout(() => document.getElementById('mp-mood').dispatchEvent(new Event('change')), 250);
+    });
+    m.addEventListener('click', (e) => {
+      if (e.target.dataset.pick) {
+        const id = parseInt(e.target.dataset.pick, 10);
+        const item = items.find(i => i.id === id);
+        callback(item);
+        close();
+      }
+    });
+  }
+
+  async function _reindex() {
+    SocialStudio.modules.toast.info('Reindexing…');
+    const r = await fetch('/api/ahb/social/music/reindex', { method: 'POST' });
+    const j = await r.json();
+    SocialStudio.modules.toast.success(`Indexed ${j.indexed} new, skipped ${j.skipped}`);
+  }
+
+  return { pick, _reindex };
 })();
 </script>
 

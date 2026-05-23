@@ -257,6 +257,7 @@ POST_WRITABLE = {
     "asset_path", "cover_path", "caption", "hashtags", "first_comment",
     "status", "score", "ai_meta", "render_params", "scheduled_at",
     "posted_at", "posted_url",
+    "music_id", "voiceover_path", "subtitles_path", "lut_name",
 }
 
 ALLOWED_STATUSES = {
@@ -853,12 +854,32 @@ def _ensure_social_v2_tables(db_path: Optional[str] = None) -> None:
         con = sqlite3.connect(path, timeout=8.0)
         con.execute("PRAGMA busy_timeout = 8000")
         for table, col_def in [
-            ("ahb_social_jobs", "pid INTEGER"),
+            ("ahb_social_jobs",    "pid INTEGER"),
+            ("ahb_social_posts",   "translations TEXT DEFAULT '{}'"),
+            ("ahb_social_posts",   "music_id INTEGER"),
+            ("ahb_social_posts",   "voiceover_path TEXT"),
+            ("ahb_social_posts",   "subtitles_path TEXT"),
+            ("ahb_social_posts",   "lut_name TEXT"),
         ]:
             try:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
             except sqlite3.OperationalError:
-                pass  # column exists
+                pass
+        con.execute("""CREATE TABLE IF NOT EXISTS ahb_social_music_library (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            title TEXT,
+            artist TEXT,
+            license_url TEXT,
+            bpm INTEGER,
+            key_signature TEXT,
+            duration_seconds REAL,
+            mood TEXT,
+            tags TEXT,
+            indexed_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_music_library_mood ON ahb_social_music_library(mood)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_music_library_bpm ON ahb_social_music_library(bpm)")
         con.commit()
     except sqlite3.OperationalError as e:
         print(f"[startup] _ensure_social_v2_tables deferred: {e}", flush=True)
@@ -921,6 +942,34 @@ def _kick_render_async(post_id: int, body: dict) -> int:
             trims = (body or {}).get("trims") or {}
             try:
                 if is_video:
+                    post_row = _get_post(post_id)
+                    music_id = post_row["music_id"] if post_row else None
+                    music_path = None
+                    if music_id:
+                        con2 = _conn()
+                        try:
+                            m = con2.execute("SELECT path FROM ahb_social_music_library WHERE id=?", (music_id,)).fetchone()
+                        finally:
+                            con2.close()
+                        if m and os.path.exists(m["path"]):
+                            music_path = m["path"]
+                    voiceover_path = post_row["voiceover_path"] if post_row and post_row["voiceover_path"] and os.path.exists(post_row["voiceover_path"]) else None
+                    subtitles_path = post_row["subtitles_path"] if post_row and post_row["subtitles_path"] and os.path.exists(post_row["subtitles_path"]) else None
+                    lut_name = post_row["lut_name"] if post_row else None
+                    lut_path = None
+                    if lut_name:
+                        candidate = os.path.join(DASHBOARD_DIR, "static", "social", "luts", f"{lut_name}.cube")
+                        if os.path.exists(candidate):
+                            lut_path = candidate
+                    brand = _settings.load_brand_kit()
+                    logo_path = None
+                    logo_rel = brand.get("logo_path")
+                    if logo_rel:
+                        full = os.path.join(DASHBOARD_DIR, logo_rel) if not os.path.isabs(logo_rel) else logo_rel
+                        if os.path.exists(full):
+                            logo_path = full
+                    intro_path = brand.get("intro_clip_path")
+                    outro_path = brand.get("outro_clip_path")
                     if trims:
                         clip_list = []
                         for sid, p in zip(source_ids, paths):
@@ -930,9 +979,21 @@ def _kick_render_async(post_id: int, body: dict) -> int:
                                 "in_seconds": t.get("in_seconds"),
                                 "out_seconds": t.get("out_seconds"),
                             })
-                        _render.render_video(clip_list, out_path, platform, hook_text=hook, fill_mode=fill)
+                        _render.render_video(clip_list, out_path, platform,
+                                             hook_text=hook, fill_mode=fill,
+                                             lut_path=lut_path, logo_path=logo_path,
+                                             subtitles_path=subtitles_path,
+                                             music_path=music_path,
+                                             voiceover_path=voiceover_path,
+                                             intro_path=intro_path, outro_path=outro_path)
                     else:
-                        _render.render_video(paths, out_path, platform, hook_text=hook, fill_mode=fill)
+                        _render.render_video(paths, out_path, platform,
+                                             hook_text=hook, fill_mode=fill,
+                                             lut_path=lut_path, logo_path=logo_path,
+                                             subtitles_path=subtitles_path,
+                                             music_path=music_path,
+                                             voiceover_path=voiceover_path,
+                                             intro_path=intro_path, outro_path=outro_path)
                     cover_path = os.path.join(out_dir, "cover.jpg")
                     _render.extract_cover(out_path, cover_path)
                 else:
@@ -1304,3 +1365,14 @@ def social_post_telegram(pid: int):
     except Exception as e:
         return jsonify({"error": f"bridge unavailable: {e}"}), 502
     return jsonify({"ok": ok})
+
+
+try:
+    from dashboard import social_ai, social_audio, social_sources
+except ImportError:
+    import social_ai
+    import social_audio
+    import social_sources
+social_ai.register(social_bp)
+social_audio.register(social_bp)
+social_sources.register(social_bp)
