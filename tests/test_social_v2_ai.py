@@ -149,3 +149,112 @@ def test_voiceover_script_returns_text(client, monkeypatch):
     j = r.get_json()
     assert "[emphasis:" in j["script"]
     assert "[pause]" in j["script"]
+
+
+def test_translate_all_400_no_caption(client):
+    r = client.post("/api/ahb/social/ai/translate-all", json={})
+    assert r.status_code == 400
+
+
+def test_translate_all_returns_per_lang(client, monkeypatch):
+    import social_studio as ss
+    calls = []
+
+    def fake_chat(model, system, user, temperature=0.7):
+        calls.append((system, user))
+        return f"<<{user[:40]}>>"
+
+    monkeypatch.setattr(ss, "_call_ollama_chat", fake_chat)
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post(
+        "/api/ahb/social/ai/translate-all",
+        json={"caption": "Hello world", "hashtags": "#tag", "targets": ["es", "fr"]},
+    )
+    assert r.status_code == 200
+    j = r.get_json()
+    assert set(j["translations"].keys()) == {"es", "fr"}
+    assert j["translations"]["es"]["caption"].startswith("<<")
+    assert j["translations"]["es"]["hashtags"].startswith("<<")
+    # 2 langs × (caption + hashtags) = 4 model calls
+    assert len(calls) == 4
+    # Confirm system prompt names the target language
+    assert any("into es" in c[0] for c in calls)
+    assert any("into fr" in c[0] for c in calls)
+
+
+def test_translate_all_caps_at_5(client, monkeypatch):
+    import social_studio as ss
+    monkeypatch.setattr(ss, "_call_ollama_chat", lambda *a, **k: "x")
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post(
+        "/api/ahb/social/ai/translate-all",
+        json={"caption": "hi", "targets": ["es", "fr", "de", "it", "pt", "zh", "ja"]},
+    )
+    assert r.status_code == 200
+    assert len(r.get_json()["targets"]) == 5
+
+
+def test_translate_all_defaults_from_settings(client, monkeypatch):
+    import sys
+    import social_studio as ss
+    # social_studio loads social_settings via `from dashboard import …` so the
+    # active module instance is registered under the qualified name. Patch
+    # whichever instance Python actually resolves to at call time.
+    settings_mod = sys.modules.get("dashboard.social_settings") or sys.modules.get("social_settings")
+    assert settings_mod is not None, "social_settings not loaded"
+    monkeypatch.setattr(settings_mod, "load_settings",
+                        lambda: {"translation_targets": ["fr", "de"]})
+    monkeypatch.setattr(ss, "_call_ollama_chat", lambda *a, **k: "x")
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post("/api/ahb/social/ai/translate-all", json={"caption": "hi"})
+    assert r.status_code == 200
+    assert r.get_json()["targets"] == ["fr", "de"]
+
+
+def test_predict_returns_view_range(client):
+    r = client.post(
+        "/api/ahb/social/ai/predict",
+        json={
+            "caption": "How to caulk tile cleanly in 30 seconds — step by step.",
+            "hashtags": "#tile #renovation #howto #home #diy #pro #ny #contractor",
+            "hook": "Stop using the wrong caulk.",
+            "platform": "tiktok",
+        },
+    )
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["view_range"]["low"] < j["view_range"]["mid"] < j["view_range"]["high"]
+    assert j["confidence"] in ("low", "medium", "high")
+    assert isinstance(j["improvements"], list) and len(j["improvements"]) <= 3
+
+
+def test_predict_flags_missing_hook(client):
+    r = client.post(
+        "/api/ahb/social/ai/predict",
+        json={
+            "caption": "Tile caulk tutorial.",
+            "hashtags": "#tile #diy",
+            "hook": "",  # missing
+            "platform": "ig_reel",
+        },
+    )
+    j = r.get_json()
+    assert any("hook" in i.lower() for i in j["improvements"])
+
+
+def test_best_times_industry_defaults(client):
+    r = client.get("/api/ahb/social/best-times?platform=tiktok")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["platform"] == "tiktok"
+    assert j["source"] == "industry_defaults"
+    assert len(j["slots"]) == 7  # 7-day grid
+    for s in j["slots"]:
+        assert 0 <= s["day_of_week"] <= 6
+        assert 0 <= s["hour"] <= 23
+
+
+def test_best_times_unknown_platform_falls_back(client):
+    r = client.get("/api/ahb/social/best-times?platform=mystery")
+    assert r.status_code == 200
+    assert len(r.get_json()["slots"]) == 7
