@@ -726,6 +726,32 @@
   @keyframes ss-toast-out { to { transform:translateX(20px); opacity:0 } }
   .ss-toast-leaving { animation:ss-toast-out .2s ease-out forwards; }
 </style>
+<style>
+  .ss-device-iphone, .ss-device-pixel {
+    position:relative; padding:14px; border-radius:38px;
+    background:linear-gradient(135deg,#1a1a2e,#0a0a18);
+    box-shadow:0 0 0 1px #2a2a4a, 0 12px 32px rgba(0,0,0,.6);
+  }
+  .ss-device-iphone::before {
+    content:''; position:absolute; top:6px; left:50%; transform:translateX(-50%);
+    width:120px; height:28px; background:#000; border-radius:0 0 18px 18px; z-index:2;
+  }
+  .ss-device-iphone::after {
+    content:''; position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    width:90px; height:14px; background:#000; border-radius:8px; z-index:3;
+  }
+  .ss-device-pixel::before {
+    content:''; position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    width:14px; height:14px; background:#000; border-radius:50%; z-index:3;
+  }
+  .ss-light-bg { background:#fafafa !important; }
+  .ss-light-bg .ss-preview-shell { box-shadow:0 0 0 1px #ddd; }
+  .ss-dpr-2 .ss-preview-shell img, .ss-dpr-2 .ss-preview-shell video { image-rendering:auto; }
+  .ss-dpr-1 .ss-preview-shell img, .ss-dpr-1 .ss-preview-shell video { image-rendering:pixelated; }
+  .ss-toolbar { display:flex; gap:6px; align-items:center; padding:6px 0; flex-wrap:wrap }
+  .ss-toolbar select, .ss-toolbar button { background:#070712; border:1px solid #2a2a4a; border-radius:6px; padding:4px 8px; color:#aaa; font-size:11px; cursor:pointer }
+  .ss-toolbar button.active { background:#10b981; color:#0a0a18; border-color:#10b981 }
+</style>
 </head>
 <body>
 
@@ -18911,6 +18937,72 @@ SocialStudio.modules.progress = (function(){
   }
 
   return { watch };
+})();
+<script>
+SocialStudio.modules.device = (function(){
+  function read(key, def) { return localStorage.getItem('ss_preview_' + key) || def; }
+  function write(key, val) { localStorage.setItem('ss_preview_' + key, val); }
+
+  function install() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    if (document.getElementById('ss-preview-toolbar')) return;
+    const tb = document.createElement('div');
+    tb.id = 'ss-preview-toolbar';
+    tb.className = 'ss-toolbar';
+    tb.innerHTML = `
+      <select id="ss-device-pick">
+        <option value="">No frame</option>
+        <option value="iphone">📱 iPhone</option>
+        <option value="pixel">📱 Pixel</option>
+      </select>
+      <button id="ss-light-toggle" title="Toggle light background">☀</button>
+      <button id="ss-dpr-toggle" title="Toggle @1× / @2×">@2×</button>
+    `;
+    shell.parentElement.insertBefore(tb, shell);
+    document.getElementById('ss-device-pick').value = read('device', '');
+    apply();
+    document.getElementById('ss-device-pick').addEventListener('change', (e) => {
+      write('device', e.target.value); apply();
+    });
+    document.getElementById('ss-light-toggle').addEventListener('click', () => {
+      const cur = read('light', '0');
+      write('light', cur === '0' ? '1' : '0'); apply();
+    });
+    document.getElementById('ss-dpr-toggle').addEventListener('click', () => {
+      const cur = read('dpr', '2');
+      write('dpr', cur === '2' ? '1' : '2'); apply();
+    });
+  }
+
+  function apply() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell) return;
+    const parent = shell.parentElement;
+    const device = read('device', '');
+    const light = read('light', '0') === '1';
+    const dpr = read('dpr', '2');
+    parent.classList.remove('ss-device-iphone', 'ss-device-pixel', 'ss-light-bg', 'ss-dpr-1', 'ss-dpr-2');
+    if (device === 'iphone') parent.classList.add('ss-device-iphone');
+    if (device === 'pixel') parent.classList.add('ss-device-pixel');
+    if (light) parent.classList.add('ss-light-bg');
+    parent.classList.add('ss-dpr-' + dpr);
+    const lb = document.getElementById('ss-light-toggle');
+    const db = document.getElementById('ss-dpr-toggle');
+    if (lb) lb.classList.toggle('active', light);
+    if (db) { db.classList.toggle('active', dpr === '1'); db.textContent = dpr === '2' ? '@2×' : '@1×'; }
+  }
+
+  if (SocialStudio.modules.composer) {
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+  }
+
+  return { install, apply };
 })();
 </script>
 
