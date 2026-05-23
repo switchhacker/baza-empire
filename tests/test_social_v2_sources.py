@@ -197,6 +197,37 @@ def test_voice_memo_400_bad_extension(client):
     assert r.status_code == 400
 
 
+def test_sd_status_returns_running_flag(client):
+    c, _ = client
+    r = c.get("/api/ahb/social/sources/sd-status")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert "running" in j and isinstance(j["running"], bool)
+
+
+def test_sd_generate_400_no_subject(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/sd-generate", json={})
+    assert r.status_code == 400
+    assert "subject required" in r.get_json()["error"]
+
+
+def test_sd_generate_503_when_sd_unreachable(client, monkeypatch):
+    c, _ = client
+    import requests
+    class FakeConnError(requests.exceptions.ConnectionError):
+        pass
+
+    def boom(*a, **k):
+        raise FakeConnError("refused")
+
+    monkeypatch.setattr(requests, "post", boom)
+    r = c.post("/api/ahb/social/sources/sd-generate",
+               json={"subject": "a contractor", "style": "photorealistic"})
+    assert r.status_code == 503
+    assert "not reachable" in r.get_json()["error"]
+
+
 def test_voice_memo_happy_path_with_mocked_whisper(client, monkeypatch):
     # Mock the whisper model so the test doesn't need real audio
     class FakeSegment:

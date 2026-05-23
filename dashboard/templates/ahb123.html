@@ -18576,6 +18576,10 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="Upload a file" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openFile()">📁 File</button>
             <button class="btn-secondary ss-tip" data-tip="Import a video from URL (yt-dlp)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openUrl()">🔗 URL</button>
             <button class="btn-secondary ss-tip" data-tip="Record a voice memo (auto-transcribed)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openVoiceMemo()">🎙️ Memo</button>
+            <button class="btn-secondary ss-tip" data-tip="Generate an image with Stable Diffusion" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openSdBuilder()">🎨 SD</button>
+          </div>
+          <div id="ss-drop-zone" style="border:1px dashed #2a2a4a;border-radius:6px;padding:8px;margin-bottom:6px;text-align:center;color:#666;font-size:11px;cursor:pointer">
+            Drop files here to upload (or click any button above)
           </div>
           <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:280px;overflow-y:auto"></div>
           <div style="margin-top:10px">
@@ -20364,7 +20368,150 @@ SocialStudio.modules.recorder = (function(){
     }
   }
 
-  return { openWebcam, openScreen, openFile, openUrl, openVoiceMemo };
+  async function _uploadOne(file, label) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('source', 'drop');
+    const r = await fetch('/api/ahb/social/sources/upload?source=drop', { method: 'POST', body: fd });
+    return { ok: r.ok, body: await r.json(), label };
+  }
+
+  async function uploadFiles(files) {
+    if (!files || !files.length) return;
+    const tid = SocialStudio.modules.toast.progress('Uploading 0/' + files.length + ' files…');
+    let done = 0; let failed = 0;
+    // Parallel uploads (up to 4 at a time)
+    const queue = Array.from(files);
+    async function worker() {
+      while (queue.length) {
+        const f = queue.shift();
+        try {
+          const res = await _uploadOne(f, f.name);
+          if (res.ok) done++; else failed++;
+        } catch (e) {
+          failed++;
+        }
+        SocialStudio.modules.toast.update(tid, {
+          percent: Math.round((done + failed) / files.length * 100),
+          msg: 'Uploaded ' + (done + failed) + '/' + files.length + ' files',
+        });
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    const kind = failed ? 'warning' : 'success';
+    SocialStudio.modules.toast.resolve(tid, kind,
+      done + ' uploaded' + (failed ? ', ' + failed + ' failed' : ''));
+    if (SocialStudio.modules.composer && SocialStudio.modules.composer._reload) {
+      SocialStudio.modules.composer._reload();
+    }
+  }
+
+  function initDropZone() {
+    // Idempotent — safe to call after every composer.render()
+    const zone = document.getElementById('ss-drop-zone');
+    if (!zone || zone._wired) return;
+    zone._wired = true;
+    const setHover = (on) => {
+      zone.style.background = on ? 'rgba(16,185,129,0.05)' : '';
+      zone.style.borderColor = on ? '#10b981' : '#2a2a4a';
+      zone.style.color = on ? '#10b981' : '#666';
+    };
+    ['dragenter', 'dragover'].forEach(ev => {
+      zone.addEventListener(ev, (e) => { e.preventDefault(); setHover(true); });
+    });
+    ['dragleave', 'drop'].forEach(ev => {
+      zone.addEventListener(ev, (e) => { e.preventDefault(); setHover(false); });
+    });
+    zone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length) uploadFiles(files);
+    });
+    zone.addEventListener('click', openFile);
+  }
+
+  // Re-wire the drop zone any time composer re-renders
+  document.addEventListener('click', (e) => {
+    setTimeout(initDropZone, 50);
+  }, true);
+
+  const SD_STYLES = [
+    {key:'photorealistic', label:'📷 Photo'},
+    {key:'illustration',   label:'🎨 Illustration'},
+    {key:'watercolor',     label:'🖌️ Watercolor'},
+    {key:'3d',             label:'🟦 3D'},
+    {key:'isometric',      label:'📐 Isometric'},
+    {key:'line-art',       label:'✒️ Line art'},
+  ];
+
+  async function openSdBuilder() {
+    let running = false;
+    try {
+      const sr = await fetch('/api/ahb/social/sources/sd-status');
+      const sj = await sr.json();
+      running = !!sj.running;
+    } catch (e) {}
+    const m = document.createElement('div');
+    m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    m.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🎨 Generate image (Stable Diffusion)</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        ${running ? '<div style="font-size:11px;color:#10b981;margin-bottom:8px">● SD WebUI is running</div>'
+                  : '<div style="font-size:11px;color:#f87171;margin-bottom:8px">⚠ SD WebUI not reachable — start baza-sd-webui.service first.</div>'}
+        <textarea id="sd-subject" placeholder="Describe what to generate (e.g. 'a contractor measuring a window frame at sunrise')" style="width:100%;height:80px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-size:13px"></textarea>
+        <div style="margin-top:8px;font-size:12px;color:#aaa">Style</div>
+        <div id="sd-styles" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          ${SD_STYLES.map((s, i) => `<button class="btn-secondary" data-style="${s.key}" style="font-size:11px${i===0?';background:#2a2a4a':''}">${s.label}</button>`).join('')}
+        </div>
+        <details style="margin-top:10px"><summary style="font-size:11px;color:#888;cursor:pointer">Advanced</summary>
+          <textarea id="sd-negative" placeholder="Negative prompt (optional)" style="width:100%;height:40px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:11px;margin-top:6px"></textarea>
+        </details>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px">
+          <button class="btn-primary" id="sd-go" ${running ? '' : 'disabled'}>🎨 Generate</button>
+        </div>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
+    let style = SD_STYLES[0].key;
+    m.querySelectorAll('[data-style]').forEach(b => {
+      b.addEventListener('click', () => {
+        style = b.dataset.style;
+        m.querySelectorAll('[data-style]').forEach(x => x.style.background = '');
+        b.style.background = '#2a2a4a';
+      });
+    });
+    document.getElementById('sd-go').addEventListener('click', async () => {
+      const subject = document.getElementById('sd-subject').value.trim();
+      if (!subject) { SocialStudio.modules.toast.info('Describe the image first'); return; }
+      const negative = document.getElementById('sd-negative').value.trim();
+      const tid = SocialStudio.modules.toast.progress('Generating image (SD)…');
+      try {
+        const r = await fetch('/api/ahb/social/sources/sd-generate', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ subject, style, negative_prompt: negative }),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          SocialStudio.modules.toast.resolve(tid, 'error',
+            j.error + (j.hint ? ' — ' + j.hint : ''));
+          return;
+        }
+        SocialStudio.modules.toast.resolve(tid, 'success', 'Added as source #' + j.id);
+        close();
+        if (SocialStudio.modules.composer && SocialStudio.modules.composer._reload) {
+          SocialStudio.modules.composer._reload();
+        }
+      } catch (e) {
+        SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+      }
+    });
+  }
+
+  return { openWebcam, openScreen, openFile, openUrl, openVoiceMemo, openSdBuilder, uploadFiles, initDropZone };
 })();
 </script>
 

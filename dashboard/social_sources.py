@@ -258,6 +258,101 @@ def register(bp):
             "source": "url-import",
         })
 
+    @bp.route("/api/ahb/social/sources/sd-status", methods=["GET"])
+    def social_sources_sd_status():
+        import socket as _socket
+        try:
+            s = _socket.create_connection(("localhost", 7860), timeout=1.5)
+            s.close()
+            return jsonify({"running": True})
+        except OSError:
+            return jsonify({"running": False})
+
+    @bp.route("/api/ahb/social/sources/sd-generate", methods=["POST"])
+    def social_sources_sd_generate():
+        try:
+            import requests as _requests
+        except ImportError:
+            return jsonify({"error": "requests not installed"}), 500
+        data = request.get_json(silent=True) or {}
+        subject = (data.get("subject") or "").strip()
+        if not subject:
+            return jsonify({"error": "subject required"}), 400
+        style = (data.get("style") or "photorealistic").strip()
+        negative = (data.get("negative_prompt") or "").strip()
+        # Build prompt
+        STYLE_TAGS = {
+            "photorealistic": "photorealistic, professional photography, dslr, natural lighting",
+            "illustration":   "digital illustration, clean lines, vibrant colors",
+            "watercolor":     "watercolor painting, soft edges, paper texture",
+            "3d":             "3D render, octane, soft shadows, studio lighting",
+            "isometric":      "isometric illustration, clean geometry, soft palette",
+            "line-art":       "line art, black ink, white background, minimal",
+        }
+        style_tag = STYLE_TAGS.get(style, STYLE_TAGS["photorealistic"])
+        prompt = f"{subject}, {style_tag}"
+        tool_server = os.environ.get("BAZA_TOOL_SERVER", "http://localhost:8000")
+        payload = {
+            "input": {
+                "prompt": prompt,
+                "negative_prompt": negative,
+                "width": 768, "height": 768,
+            }
+        }
+        try:
+            resp = _requests.post(
+                f"{tool_server}/tools/sam/generate-image",
+                json=payload, timeout=180,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except _requests.exceptions.ConnectionError:
+            return jsonify({
+                "error": "SD WebUI not reachable",
+                "hint": "Start baza-sd-webui.service",
+            }), 503
+        except _requests.RequestException as e:
+            return jsonify({"error": "SD call failed", "detail": str(e)[-200:]}), 500
+        if body.get("ok") is False:
+            return jsonify({"error": "SD generation failed", "detail": str(body)[:300]}), 500
+        # The sam_imaging endpoint saves the file under its own artifacts dir
+        # and returns its absolute path. Copy/link it into uploads/social so
+        # _resolve_media_paths accepts it as a source.
+        sd_path = (body.get("output") or {}).get("path") or body.get("path")
+        if not sd_path or not os.path.exists(sd_path):
+            return jsonify({"error": "SD response missing image path"}), 500
+        day = datetime.utcnow().strftime("%Y-%m-%d")
+        day_dir = os.path.join(UPLOADS_DIR, day)
+        os.makedirs(day_dir, exist_ok=True)
+        uid = uuid.uuid4().hex[:12]
+        dest = os.path.join(day_dir, f"sd_{uid}.png")
+        # Hardlink first (fast), fall back to copy
+        try:
+            os.link(sd_path, dest)
+        except OSError:
+            with open(sd_path, "rb") as src_f, open(dest, "wb") as dst_f:
+                dst_f.write(src_f.read())
+        con = _db()
+        try:
+            _ensure_image_captions_table(con)
+            cur = con.execute(
+                "INSERT INTO image_captions (project_id, sub_path, caption, tags, indexed_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (None, dest, prompt, "sd-generated",
+                 datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            con.commit()
+            new_id = cur.lastrowid
+        finally:
+            con.close()
+        return jsonify({
+            "ok": True,
+            "id": new_id,
+            "path": dest,
+            "prompt": prompt,
+            "style": style,
+        })
+
     @bp.route("/api/ahb/social/sources/voice-memo", methods=["POST"])
     def social_sources_voice_memo():
         file = request.files.get("file")
