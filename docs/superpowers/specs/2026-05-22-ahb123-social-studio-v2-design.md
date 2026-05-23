@@ -684,6 +684,9 @@ ALTER TABLE ahb_social_posts ADD COLUMN lut_name TEXT;
 ALTER TABLE ahb_social_presets ADD COLUMN requires_review INTEGER DEFAULT 0;
 ALTER TABLE ahb_social_presets ADD COLUMN schedule_dow TEXT;  -- "0,1,2,3,4,5,6"
 ALTER TABLE ahb_social_presets ADD COLUMN schedule_time TEXT;  -- "HH:MM"
+
+-- Phase 1's ahb_social_jobs needs a PID column so we can kill in-flight ffmpeg renders.
+ALTER TABLE ahb_social_jobs ADD COLUMN pid INTEGER;
 ```
 
 ---
@@ -694,8 +697,8 @@ All new routes mounted on the existing `social_bp` Blueprint:
 
 ```
 # Render pipeline async
-GET    /api/ahb/social/jobs/<id>                            (already exists; reused for async render)
-DELETE /api/ahb/social/jobs/<id>                            (cancel)
+GET    /api/ahb/social/jobs/<id>                            (already exists from Phase 1; reused for async render polling)
+DELETE /api/ahb/social/jobs/<id>                            (cancel: kills ffmpeg subprocess via stored PID, marks status='cancelled')
 POST   /api/ahb/social/posts/<id>/render-async              (returns job_id)
 POST   /api/ahb/social/posts/render-all                     (kicks N renders for N platforms)
 
@@ -854,7 +857,7 @@ Already installed (verified):
 
 No `rnnoise` needed — we use ffmpeg's `afftdn` filter for noise removal.
 
-Music files, SFX, and LUTs must be bundled with the install (or downloaded at first run from a public mirror — TBD per Bundle H). The deploy script `dashboard/social_install_assets.sh` will:
+Music files, SFX, and LUTs are downloaded at first run from public mirrors. The deploy script `dashboard/social_install_assets.sh` will:
 1. Pip-install the 3 packages above
 2. Download 4 Piper voice ONNX files into `dashboard/static/social/piper-voices/`
 3. Download real Inter fonts (replacing placeholders)
@@ -873,13 +876,13 @@ Failure of any non-essential step (e.g., piper voices) prints a warning but does
 | Whisper/Piper/yt-dlp install fragility on first-run | Each install step is idempotent + non-blocking; features gracefully degrade with install hints |
 | Faster-whisper memory pressure (CPU model = ~150MB; loaded per-request without caching = slow) | Cache the model in a process-global var, lazy-loaded on first use; tiny.en model = 75MB only |
 | yt-dlp can fetch copyrighted content | Add a usage notice in the URL Import modal; rate-limit to 5/hour; log every import to `task_journal` for audit |
-| Bundle E (publishing) absence means scheduled posts never auto-post | The Scheduler view shows "Scheduled for X — drop to phone manually until Phase 2 publishing lands" |
+| Bundle E (publishing) absence means scheduled posts never auto-post | The Scheduler view shows "Scheduled for X — drop to phone manually until Phase 2 publishing lands". Telegram drop endpoint (Phase 1) is the manual posting workflow until then. |
 | Calendar drag-to-reschedule UX is hard to do mobile-friendly | Provide a "tap to set date" fallback alongside drag |
-| Storage growth: many videos accumulate | Add a "Library cleanup" tool in v2.2 that lists posts with status='posted' > 90 days old and offers archive/delete |
+| Storage growth: many videos accumulate | Bundle K adds a "Library cleanup" admin view in the Stats sub-tab: lists posts with status='posted' older than a configurable window (default 90d) and offers archive (move file to `archive/`) or delete |
 | In-app image editor canvas may struggle with very large source images (24MP DSLR shots) | Downscale to max 2048px on the preview canvas; full-res only at render time |
 | Mobile touch-drag may conflict with browser swipe gestures | Use `touch-action: none` on drag handles; explicitly handle scrolling on non-handle areas |
 | Beat-sync cuts may produce awkward results with non-music content | Toggle is OFF by default; user opts in per render |
-| ARIA + tooltip + tour all need testing with actual screen readers | Out of scope for v2.0 acceptance; J.6/J.4 are best-effort, follow-up in v2.3 if needed |
+| ARIA + tooltip + tour need testing with real screen readers | We SHIP J.4 (tour) and J.6 (ARIA labels) in v2.0; formal screen-reader QA is best-effort during acceptance. Re-audit if accessibility complaints surface. |
 | FTS5 not always compiled into SQLite | Detect at startup; fall back to LIKE if FTS5 unavailable; log the limitation |
 | Webcam/screen capture only works on HTTPS or localhost | Dashboard runs on http://127.0.0.1:8888 — browsers treat localhost as secure context. Good. |
 | URL imports may fail for sites yt-dlp doesn't support | Catch yt-dlp errors gracefully; show clear error message with suggestion |
