@@ -711,6 +711,21 @@
   .ss-pill-rejected { background:#7f1d1d; color:#fca5a5; }
   .ss-pill-failed { background:#7f1d1d; color:#fca5a5; }
 </style>
+<style>
+  .ss-toast { min-width:240px; max-width:380px; padding:10px 14px; border-radius:10px; font-size:13px; color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.5); pointer-events:auto; cursor:pointer; display:flex; align-items:center; gap:8px; animation:ss-toast-in .2s ease-out; }
+  .ss-toast-info { background:#1e3a8a; border-left:4px solid #60a5fa; }
+  .ss-toast-success { background:#064e3b; border-left:4px solid #10b981; }
+  .ss-toast-error { background:#7f1d1d; border-left:4px solid #fca5a5; }
+  .ss-toast-progress { background:#1e293b; border-left:4px solid #94a3b8; cursor:default; min-width:300px; }
+  .ss-toast-progress-bar { height:4px; background:#94a3b8; border-radius:2px; margin-top:6px; transition:width .3s ease; }
+  .ss-toast-icon { font-size:18px; line-height:1; }
+  .ss-toast-body { flex:1; }
+  .ss-toast-x { background:none; border:none; color:rgba(255,255,255,.6); cursor:pointer; font-size:18px; padding:0 4px; line-height:1; }
+  .ss-toast-x:hover { color:#fff; }
+  @keyframes ss-toast-in { from { transform:translateX(20px); opacity:0 } to { transform:translateX(0); opacity:1 } }
+  @keyframes ss-toast-out { to { transform:translateX(20px); opacity:0 } }
+  .ss-toast-leaving { animation:ss-toast-out .2s ease-out forwards; }
+</style>
 </head>
 <body>
 
@@ -4507,6 +4522,9 @@
 <div id="socialVoiceover"    class="modal-bg" style="display:none"></div>
 <div id="socialSettings"     class="modal-bg" style="display:none"></div>
 <div id="socialPostDetail"   class="modal-bg" style="display:none"></div>
+
+<!-- Social Studio toast stack (body-level, bottom-right) -->
+<div id="socialToastStack" style="position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none"></div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -17747,7 +17765,7 @@ SocialStudio.modules.composer = (function(){
       body: JSON.stringify({ source_ids: state.shotList, n: 3 }),
     });
     const j = await r.json();
-    if (!j.hooks || !j.hooks.length) { alert('No hooks returned'); return; }
+    if (!j.hooks || !j.hooks.length) { SocialStudio.modules.toast.error('No hooks returned'); return; }
     const pick = window.prompt('Pick a hook:\n\n' + j.hooks.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
     const idx = (parseInt(pick, 10) || 1) - 1;
     if (j.hooks[idx]) {
@@ -17770,7 +17788,7 @@ SocialStudio.modules.composer = (function(){
   }
 
   async function renderPackage() {
-    if (!state.shotList.length) { alert('Pick at least one source.'); return; }
+    if (!state.shotList.length) { SocialStudio.modules.toast.info('Pick at least one source first.'); return; }
     const post = await fetch('/api/ahb/social/posts', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -17784,8 +17802,8 @@ SocialStudio.modules.composer = (function(){
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ hook_text: document.getElementById('ss-hook-input').value || null }),
     }).then(r => r.json());
-    if (ren.error) { alert('Render failed: ' + ren.error); return; }
-    alert('Rendered: ' + ren.asset_path);
+    if (ren.error) { SocialStudio.modules.toast.error('Render failed: ' + ren.error); return; }
+    SocialStudio.modules.toast.success('Rendered → Library');
     SocialStudio.switchSub('library');
   }
 
@@ -17943,8 +17961,8 @@ SocialStudio.modules.library = (function(){
 
   async function telegram(id) {
     const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
-    if (r.ok) alert('Sent to Telegram');
-    else alert('Telegram bridge unavailable');
+    if (r.ok) SocialStudio.modules.toast.success('Sent to Telegram');
+    else SocialStudio.modules.toast.error('Telegram bridge unavailable');
   }
 
   return { render: load, setFilter, setStatus, telegram };
@@ -17961,7 +17979,7 @@ SocialStudio.modules.postdetail = (function(){
     // Fetch the post via the list endpoint (no per-ID GET -- N is small)
     const list = await fetch('/api/ahb/social/posts').then(x => x.json());
     const p = (list.items || []).find(x => x.id === id);
-    if (!p) { alert('Not found'); return; }
+    if (!p) { SocialStudio.modules.toast.error('Not found'); return; }
     const m = document.getElementById('socialPostDetail');
     m.style.display = 'flex';
     m.innerHTML = `
@@ -17996,8 +18014,8 @@ SocialStudio.modules.postdetail = (function(){
   function bundle(id) { window.open('/api/ahb/social/posts/' + id + '/bundle', '_blank'); }
   async function telegram(id) {
     const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
-    if (r.ok) alert('Sent.');
-    else alert('Telegram bridge unavailable');
+    if (r.ok) SocialStudio.modules.toast.success('Sent.');
+    else SocialStudio.modules.toast.error('Telegram bridge unavailable');
   }
   return { open, save, bundle, telegram };
 })();
@@ -18049,7 +18067,7 @@ SocialStudio.modules.presets = (function(){
   async function installSeeds() {
     const r = await fetch('/api/ahb/social/presets/install-seeds', { method: 'POST' });
     const j = await r.json();
-    alert('Installed ' + (j.installed || []).length + ' preset(s).');
+    SocialStudio.modules.toast.success('Installed ' + (j.installed || []).length + ' preset(s)');
     load();
   }
 
@@ -18116,7 +18134,7 @@ SocialStudio.modules.presets = (function(){
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify(body),
         });
-    if (!r.ok) { alert('Save failed'); return; }
+    if (!r.ok) { SocialStudio.modules.toast.error('Save failed'); return; }
     document.getElementById('socialPresetEditor').style.display = 'none';
     load();
   }
@@ -18124,7 +18142,7 @@ SocialStudio.modules.presets = (function(){
   async function runOnce(id) {
     const r = await fetch('/api/ahb/social/presets/' + id + '/run', { method: 'POST' });
     const j = await r.json();
-    alert('Test run: ' + (j.post_id ? '#' + j.post_id : j.error || 'see logs'));
+    SocialStudio.modules.toast.info('Test run: ' + (j.post_id ? '#' + j.post_id : j.error || 'see logs'));
   }
 
   async function toggle(id, currentActive) {
@@ -18358,9 +18376,9 @@ SocialStudio.modules.autopilot = (function(){
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ on: !!on }),
       });
-      if (!r.ok) alert('Auto-Pilot endpoint not ready (Task 13)');
+      if (!r.ok) SocialStudio.modules.toast.error('Auto-Pilot endpoint not ready (Task 13)');
     } catch (e) {
-      alert('Auto-Pilot endpoint not reachable');
+      SocialStudio.modules.toast.error('Auto-Pilot endpoint not reachable');
     }
     load();
   }
@@ -18370,17 +18388,105 @@ SocialStudio.modules.autopilot = (function(){
       const r = await fetch('/api/ahb/social/autopilot/tick', { method: 'POST' });
       if (r.ok) {
         const j = await r.json();
-        alert('Tick: ' + JSON.stringify(j));
+        SocialStudio.modules.toast.info('Tick: ' + JSON.stringify(j));
       } else {
-        alert('Auto-Pilot endpoint not ready (Task 13)');
+        SocialStudio.modules.toast.error('Auto-Pilot endpoint not ready (Task 13)');
       }
     } catch (e) {
-      alert('Auto-Pilot endpoint not reachable');
+      SocialStudio.modules.toast.error('Auto-Pilot endpoint not reachable');
     }
     load();
   }
 
   return { render: load, toggleMaster, runTickNow };
+})();
+</script>
+
+<script>
+SocialStudio.modules.toast = (function(){
+  const stack = () => document.getElementById('socialToastStack');
+  let counter = 0;
+  const live = new Map();
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _make(kind, msg, opts) {
+    const id = ++counter;
+    const icon = ({ info: 'ℹ️', success: '✓', error: '⚠', progress: '⟳' })[kind] || '';
+    const el = document.createElement('div');
+    el.className = 'ss-toast ss-toast-' + kind;
+    el.dataset.toastId = id;
+    el.innerHTML = `
+      <span class="ss-toast-icon">${icon}</span>
+      <div class="ss-toast-body">${_esc(msg)}${kind === 'progress' ? '<div class="ss-toast-progress-bar" style="width:0%"></div>' : ''}</div>
+      <button class="ss-toast-x" aria-label="${kind === 'progress' ? 'Cancel' : 'Dismiss'}">×</button>
+    `;
+    el.querySelector('.ss-toast-x').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (kind === 'progress' && opts && opts.onCancel) opts.onCancel(id);
+      _dismiss(id);
+    });
+    el.addEventListener('click', () => { if (kind !== 'progress') _dismiss(id); });
+
+    const s = stack();
+    while (s.children.length >= 3) {
+      const oldId = parseInt(s.firstElementChild.dataset.toastId, 10);
+      _dismiss(oldId);
+    }
+    s.appendChild(el);
+    live.set(id, el);
+
+    if (kind !== 'progress') {
+      const ms = (opts && opts.ms) || (kind === 'error' ? 8000 : 5000);
+      setTimeout(() => _dismiss(id), ms);
+    }
+    return id;
+  }
+
+  function _dismiss(id) {
+    const el = live.get(id);
+    if (!el) return;
+    el.classList.add('ss-toast-leaving');
+    setTimeout(() => {
+      if (el.parentElement) el.parentElement.removeChild(el);
+      live.delete(id);
+    }, 200);
+  }
+
+  function update(id, opts) {
+    const el = live.get(id);
+    if (!el) return;
+    if (opts.msg) {
+      const body = el.querySelector('.ss-toast-body');
+      // Preserve progress bar child if it exists
+      const bar = body.querySelector('.ss-toast-progress-bar');
+      body.innerHTML = _esc(opts.msg);
+      if (bar) body.appendChild(bar);
+    }
+    if (typeof opts.percent === 'number') {
+      const bar = el.querySelector('.ss-toast-progress-bar');
+      if (bar) bar.style.width = Math.max(0, Math.min(100, opts.percent)) + '%';
+    }
+  }
+
+  function resolve(id, kind, msg) {
+    _dismiss(id);
+    return _make(kind, msg);
+  }
+
+  return {
+    info: (msg, opts) => _make('info', msg, opts),
+    success: (msg, opts) => _make('success', msg, opts),
+    error: (msg, opts) => _make('error', msg, opts),
+    progress: (msg, opts) => _make('progress', msg, opts),
+    update,
+    resolve,
+    dismiss: _dismiss,
+  };
 })();
 </script>
 
