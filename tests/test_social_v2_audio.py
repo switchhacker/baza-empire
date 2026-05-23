@@ -109,3 +109,41 @@ def test_voiceover_preview_rejects_traversal(client):
     c, _ = client
     r = c.get("/api/ahb/social/ai/voiceover/preview?path=/etc/passwd")
     assert r.status_code == 400
+
+
+def test_bundle_includes_per_language_captions(client, tmp_path):
+    c, ss = client
+    # Create a post with translations and a fake rendered asset
+    asset = tmp_path / "asset.mp4"
+    asset.write_bytes(b"fake-mp4-bytes")
+    pid = c.post("/api/ahb/social/posts", json={
+        "platform": "tiktok", "variant": "9x16",
+        "source_media_ids": [1], "caption": "Hello",
+        "hashtags": "#hi",
+    }).get_json()["id"]
+    import json as _json
+    con = ss._conn()
+    try:
+        con.execute(
+            "UPDATE ahb_social_posts SET asset_path=?, translations=? WHERE id=?",
+            (str(asset),
+             _json.dumps({
+                 "es": {"caption": "Hola", "hashtags": "#hola"},
+                 "fr": {"caption": "Bonjour", "hashtags": "#bonjour"},
+             }),
+             pid),
+        )
+        con.commit()
+    finally:
+        con.close()
+    r = c.get(f"/api/ahb/social/posts/{pid}/bundle")
+    assert r.status_code == 200
+    # The response is a zip; check its byte contents for the per-lang filenames
+    import io
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(r.data))
+    names = z.namelist()
+    assert "caption_tiktok.es.txt" in names
+    assert "caption_tiktok.fr.txt" in names
+    assert z.read("caption_tiktok.es.txt").decode().startswith("Hola")
+    assert z.read("caption_tiktok.fr.txt").decode().startswith("Bonjour")
