@@ -4525,6 +4525,7 @@
 
 <!-- Social Studio toast stack (body-level, bottom-right) -->
 <div id="socialToastStack" style="position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none"></div>
+<div id="socialShortcutsHelp" class="modal-bg" style="display:none"></div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -18487,6 +18488,113 @@ SocialStudio.modules.toast = (function(){
     resolve,
     dismiss: _dismiss,
   };
+})();
+</script>
+
+<script>
+SocialStudio.modules.keymap = (function(){
+  const bindings = [
+    { key: '?', desc: 'Show this help', action: () => showHelp() },
+    { key: '/', desc: 'Focus search', action: () => focusSearch() },
+    { key: 'j', desc: 'Next item', action: () => navigate(1) },
+    { key: 'k', desc: 'Previous item', action: () => navigate(-1) },
+    { key: 'a', desc: 'Approve current Library item', action: () => approveFocused() },
+    { key: 'r', desc: 'Render current composer post', action: () => renderCurrent() },
+    { key: 'Escape', desc: 'Close modal / clear focus', action: () => closeAny() },
+  ];
+
+  let installed = false;
+
+  function _isEditable(el) {
+    if (!el) return false;
+    const tag = (el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+  }
+
+  function _onKey(e) {
+    const socialTab = document.getElementById('tab-social');
+    if (!socialTab || !socialTab.classList.contains('active')) return;
+    if (_isEditable(e.target)) return;
+    const b = bindings.find(b => b.key === e.key);
+    if (!b) return;
+    e.preventDefault();
+    b.action();
+  }
+
+  function install() {
+    if (installed) return;
+    installed = true;
+    document.addEventListener('keydown', _onKey);
+  }
+
+  function showHelp() {
+    const m = document.getElementById('socialShortcutsHelp');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:420px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">⌨ Keyboard shortcuts</div>
+          <button onclick="document.getElementById('socialShortcutsHelp').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <table style="width:100%;font-size:13px">
+          ${bindings.map(b => `<tr><td style="padding:6px 0"><kbd style="background:#1a1a2e;border:1px solid #2a2a4a;border-radius:4px;padding:2px 8px;font-family:monospace">${b.key}</kbd></td><td style="padding:6px 12px;color:#aaa">${b.desc}</td></tr>`).join('')}
+        </table>
+        <div style="color:#666;font-size:11px;margin-top:14px">Shortcuts active only on the Social tab. Disabled when typing in inputs.</div>
+      </div>
+    `;
+  }
+
+  function focusSearch() {
+    const targets = ['#ss-sub-library input[placeholder*="Search"]', '#ss-source-q'];
+    for (const sel of targets) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) { el.focus(); el.select && el.select(); return; }
+    }
+  }
+
+  function navigate(dir) {
+    const cards = document.querySelectorAll('#ss-sub-library .ss-card');
+    if (!cards.length) return;
+    let idx = -1;
+    cards.forEach((c, i) => { if (c.dataset.focused === '1') idx = i; });
+    const next = Math.max(0, Math.min(cards.length - 1, idx + dir));
+    cards.forEach(c => { c.dataset.focused = ''; c.style.outline = ''; });
+    cards[next].dataset.focused = '1';
+    cards[next].style.outline = '2px solid #10b981';
+    cards[next].scrollIntoView({ block: 'nearest' });
+  }
+
+  function approveFocused() {
+    const focused = document.querySelector('#ss-sub-library .ss-card[data-focused="1"]');
+    if (!focused) { SocialStudio.modules.toast.info('Press j/k to focus a Library item first'); return; }
+    const approveBtn = focused.querySelector('button[onclick*="approved"]');
+    if (approveBtn) approveBtn.click();
+    else SocialStudio.modules.toast.info('No Approve action available (post not pending review)');
+  }
+
+  function renderCurrent() {
+    if (SocialStudio.state.activeSub !== 'composer') {
+      SocialStudio.modules.toast.info('Switch to Composer first');
+      return;
+    }
+    const btn = document.querySelector('#ss-variant-panel .btn-primary');
+    if (btn) btn.click();
+  }
+
+  function closeAny() {
+    document.querySelectorAll('.modal-bg').forEach(m => {
+      if (m.style.display !== 'none' && m.id.startsWith('social')) m.style.display = 'none';
+    });
+  }
+
+  const origInit = SocialStudio.init;
+  SocialStudio.init = function() {
+    const r = origInit.apply(this, arguments);
+    install();
+    return r;
+  };
+
+  return { install, showHelp, bindings };
 })();
 </script>
 
