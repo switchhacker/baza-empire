@@ -18021,6 +18021,12 @@ SocialStudio.modules.composer = (function(){
         hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
       }),
     }).then(r => r.json());
+    if (SocialStudio.state.musicTrack) {
+      await fetch('/api/ahb/social/posts/' + post.id, {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ music_id: SocialStudio.state.musicTrack.id }),
+      });
+    }
     const trims = {};
     state.shotList.forEach(item => {
       if (typeof item === 'object' && (item.in_seconds != null || item.out_seconds != null)) {
@@ -18066,6 +18072,12 @@ SocialStudio.modules.composer = (function(){
           hashtags: (document.getElementById('ss-hashtags-' + platform) || {}).value || '',
         }),
       }).then(r => r.json());
+      if (SocialStudio.state.musicTrack) {
+        await fetch('/api/ahb/social/posts/' + post.id, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ music_id: SocialStudio.state.musicTrack.id }),
+        });
+      }
       const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({

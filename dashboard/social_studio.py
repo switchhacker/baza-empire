@@ -257,6 +257,7 @@ POST_WRITABLE = {
     "asset_path", "cover_path", "caption", "hashtags", "first_comment",
     "status", "score", "ai_meta", "render_params", "scheduled_at",
     "posted_at", "posted_url",
+    "music_id", "voiceover_path", "subtitles_path", "lut_name",
 }
 
 ALLOWED_STATUSES = {
@@ -941,6 +942,34 @@ def _kick_render_async(post_id: int, body: dict) -> int:
             trims = (body or {}).get("trims") or {}
             try:
                 if is_video:
+                    post_row = _get_post(post_id)
+                    music_id = post_row["music_id"] if post_row else None
+                    music_path = None
+                    if music_id:
+                        con2 = _conn()
+                        try:
+                            m = con2.execute("SELECT path FROM ahb_social_music_library WHERE id=?", (music_id,)).fetchone()
+                        finally:
+                            con2.close()
+                        if m and os.path.exists(m["path"]):
+                            music_path = m["path"]
+                    voiceover_path = post_row["voiceover_path"] if post_row and post_row["voiceover_path"] and os.path.exists(post_row["voiceover_path"]) else None
+                    subtitles_path = post_row["subtitles_path"] if post_row and post_row["subtitles_path"] and os.path.exists(post_row["subtitles_path"]) else None
+                    lut_name = post_row["lut_name"] if post_row else None
+                    lut_path = None
+                    if lut_name:
+                        candidate = os.path.join(DASHBOARD_DIR, "static", "social", "luts", f"{lut_name}.cube")
+                        if os.path.exists(candidate):
+                            lut_path = candidate
+                    brand = _settings.load_brand_kit()
+                    logo_path = None
+                    logo_rel = brand.get("logo_path")
+                    if logo_rel:
+                        full = os.path.join(DASHBOARD_DIR, logo_rel) if not os.path.isabs(logo_rel) else logo_rel
+                        if os.path.exists(full):
+                            logo_path = full
+                    intro_path = brand.get("intro_clip_path")
+                    outro_path = brand.get("outro_clip_path")
                     if trims:
                         clip_list = []
                         for sid, p in zip(source_ids, paths):
@@ -950,9 +979,21 @@ def _kick_render_async(post_id: int, body: dict) -> int:
                                 "in_seconds": t.get("in_seconds"),
                                 "out_seconds": t.get("out_seconds"),
                             })
-                        _render.render_video(clip_list, out_path, platform, hook_text=hook, fill_mode=fill)
+                        _render.render_video(clip_list, out_path, platform,
+                                             hook_text=hook, fill_mode=fill,
+                                             lut_path=lut_path, logo_path=logo_path,
+                                             subtitles_path=subtitles_path,
+                                             music_path=music_path,
+                                             voiceover_path=voiceover_path,
+                                             intro_path=intro_path, outro_path=outro_path)
                     else:
-                        _render.render_video(paths, out_path, platform, hook_text=hook, fill_mode=fill)
+                        _render.render_video(paths, out_path, platform,
+                                             hook_text=hook, fill_mode=fill,
+                                             lut_path=lut_path, logo_path=logo_path,
+                                             subtitles_path=subtitles_path,
+                                             music_path=music_path,
+                                             voiceover_path=voiceover_path,
+                                             intro_path=intro_path, outro_path=outro_path)
                     cover_path = os.path.join(out_dir, "cover.jpg")
                     _render.extract_cover(out_path, cover_path)
                 else:
