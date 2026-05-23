@@ -28,3 +28,4 @@ dashboard/artifacts/.vision-crops/
 venv
 dashboard/static/social/piper-voices/*.onnx
 dashboard/static/social/piper-voices/*.onnx.json
+dashboard/artifacts/social/voiceover/

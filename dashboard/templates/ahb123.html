@@ -18251,6 +18251,7 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
             <button class="btn-secondary ss-tip" data-tip="Translate caption to Spanish" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
             <button class="btn-secondary ss-tip" data-tip="Pick a music bed for video posts" onclick="SocialStudio.modules.composer.pickMusic()">🎵 Music</button>
+            <button class="btn-secondary ss-tip" data-tip="Generate voiceover from caption (piper TTS)" onclick="SocialStudio.modules.voiceover.open(null, document.getElementById('ss-caption-' + SocialStudio.state.activePlatform).value)">🔊 VO</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
@@ -18389,7 +18390,9 @@ SocialStudio.modules.postdetail = (function(){
         <textarea id="pd-caption" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.caption || '')}</textarea>
         <input id="pd-hashtags" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" value="${_esc(p.hashtags || '')}">
         <textarea id="pd-firstcomment" style="width:100%;height:60px;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" placeholder="First comment (IG convention)">${_esc(p.first_comment || '')}</textarea>
-        <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+        <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.subtitles(${p.id})">&#x1F4DD; Subtitles</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.voiceover && SocialStudio.modules.voiceover.open(${p.id}, document.getElementById('pd-caption').value)">&#x1F50A; VO</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
           <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
@@ -18415,7 +18418,18 @@ SocialStudio.modules.postdetail = (function(){
     if (r.ok) SocialStudio.modules.toast.success('Sent.');
     else SocialStudio.modules.toast.error('Telegram bridge unavailable');
   }
-  return { open, save, bundle, telegram };
+  async function subtitles(id) {
+    const tid = SocialStudio.modules.toast.progress('Transcribing… (whisper tiny.en)');
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id + '/subtitles', { method: 'POST' });
+      const j = await r.json();
+      if (r.ok) SocialStudio.modules.toast.resolve(tid, 'success', 'Subtitles saved');
+      else SocialStudio.modules.toast.resolve(tid, 'error', 'Failed: ' + (j.error || 'unknown'));
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+  return { open, save, bundle, telegram, subtitles };
 })();
 
 SocialStudio.modules.presets = (function(){
@@ -19508,6 +19522,63 @@ SocialStudio.modules.music = (function(){
   }
 
   return { pick, _reindex };
+})();
+
+SocialStudio.modules.voiceover = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function open(postId, defaultText) {
+    const m = document.getElementById('socialVoiceover');
+    m.style.display = 'flex';
+    m.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🔊 Voiceover</div>
+          <button onclick="document.getElementById('socialVoiceover').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <textarea id="vo-text" placeholder="What should the voiceover say?" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-size:13px">${_esc(defaultText || '')}</textarea>
+        <label style="display:block;font-size:12px;color:#aaa;margin-top:8px">Voice
+          <select id="vo-voice" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+            <option value="en_US-amy-medium">Amy (US female, friendly)</option>
+            <option value="en_US-ryan-high">Ryan (US male, professional)</option>
+            <option value="en_GB-jenny_dioco-medium">Jenny (UK female)</option>
+            <option value="en_US-lessac-medium">Lessac (US male, narrator)</option>
+          </select>
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px">
+          <button class="btn-primary" id="vo-go">🎤 Generate</button>
+        </div>
+        <div id="vo-preview" style="margin-top:14px"></div>
+      </div>
+    `;
+    document.getElementById('vo-go').addEventListener('click', () => generate(postId));
+  }
+
+  async function generate(postId) {
+    const text = (document.getElementById('vo-text').value || '').trim();
+    const voice = document.getElementById('vo-voice').value;
+    if (!text) { SocialStudio.modules.toast.info('Enter voiceover text first'); return; }
+    const tid = SocialStudio.modules.toast.progress('Synthesizing…');
+    try {
+      const url = '/api/ahb/social/ai/voiceover' + (postId ? '?post_id=' + postId : '');
+      const r = await fetch(url, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ text, voice }),
+      });
+      const j = await r.json();
+      if (!r.ok) { SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
+      SocialStudio.modules.toast.resolve(tid, 'success', 'Voiceover ready');
+      document.getElementById('vo-preview').innerHTML = `<audio controls src="${j.url}" style="width:100%"></audio>`;
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  return { open, generate };
 })();
 </script>
 

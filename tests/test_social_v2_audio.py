@@ -60,3 +60,52 @@ def test_music_reindex_endpoint_exists(client, monkeypatch):
     monkeypatch.setattr(social_audio, "_index_music_dir", lambda d: {"indexed": 0, "skipped": 0})
     r = c.post("/api/ahb/social/music/reindex")
     assert r.status_code == 200
+
+
+def test_subtitles_400_no_asset(client):
+    c, _ = client
+    pid = c.post(
+        "/api/ahb/social/posts",
+        json={"platform": "tiktok", "variant": "9x16", "source_media_ids": [1]},
+    ).get_json()["id"]
+    r = c.post(f"/api/ahb/social/posts/{pid}/subtitles")
+    assert r.status_code == 400
+    assert "no rendered asset" in r.get_json()["error"]
+
+
+def test_subtitles_400_unknown_post(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/posts/999999/subtitles")
+    assert r.status_code == 400
+
+
+def test_voiceover_400_missing_text(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/ai/voiceover", json={})
+    assert r.status_code == 400
+    assert "text required" in r.get_json()["error"]
+
+
+def test_voiceover_400_invalid_voice_name(client):
+    c, _ = client
+    r = c.post(
+        "/api/ahb/social/ai/voiceover",
+        json={"text": "hello", "voice": "../../etc/passwd"},
+    )
+    assert r.status_code == 400
+
+
+def test_voiceover_400_unknown_voice(client):
+    c, _ = client
+    r = c.post(
+        "/api/ahb/social/ai/voiceover",
+        json={"text": "hello", "voice": "nonexistent-voice"},
+    )
+    assert r.status_code == 400
+    assert "voice not installed" in r.get_json()["error"]
+
+
+def test_voiceover_preview_rejects_traversal(client):
+    c, _ = client
+    r = c.get("/api/ahb/social/ai/voiceover/preview?path=/etc/passwd")
+    assert r.status_code == 400
