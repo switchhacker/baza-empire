@@ -3944,7 +3944,8 @@ def api_edge_frame(node_id):
 
 @app.route('/email')
 def email_page():
-    return render_template('email.html')
+    embed = request.args.get('embed') in ('1', 'true', 'yes')
+    return render_template('email.html', embed=embed)
 
 @app.route('/api/email/queue')
 def api_email_queue():

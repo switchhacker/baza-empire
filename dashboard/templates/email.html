@@ -26,6 +26,7 @@
 
     /* 3-pane layout */
     .mail-shell{display:grid;grid-template-columns:240px 400px 1fr;height:calc(100vh - 52px);overflow:hidden}
+    .mail-shell.embed{height:100vh}
     .pane{display:flex;flex-direction:column;border-right:1px solid #14142a;min-height:0;overflow:hidden}
     .pane:last-child{border-right:none}
 
@@ -258,10 +259,12 @@
 </head>
 <body>
 
+{% if not embed %}
 {% set nav_active = 'email' %}
 {% include "_nav.html" %}
+{% endif %}
 
-<div class="mail-shell" id="mailShell">
+<div class="mail-shell {% if embed %}embed{% endif %}" id="mailShell">
 
   <!-- Sidebar: labels -->
   <aside class="pane sidebar">

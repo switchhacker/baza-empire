@@ -728,6 +728,7 @@
   <div class="sub-tab" data-tab="noted" onclick="switchTab('noted')"><span class="sub-tab-icon">📌</span> Sticky Pad</div>
   <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
   <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
+  <div class="sub-tab" data-tab="email" onclick="switchTab('email')"><span class="sub-tab-icon">📧</span> Email</div>
   <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">🎥</span> Media</div>
   <div class="sub-tab" data-tab="social" onclick="switchTab('social')"><span class="sub-tab-icon">📣</span> Social</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
@@ -3002,6 +3003,14 @@
   <div id="ss-sub-autopilot" class="ss-sub" style="display:none"></div>
 </div>
 
+<!-- ============================ EMAIL ============================ -->
+<div class="tab-pane" id="tab-email">
+  <iframe id="emailFrame" src="about:blank"
+          data-src="/email?embed=1"
+          style="width:100%;height:calc(100vh - 110px);min-height:600px;border:1px solid #1a1a3a;border-radius:10px;background:#07070f"
+          loading="lazy"></iframe>
+</div>
+
 <!-- ============================ DOCPREP / DOCUMENT STATION ============================ -->
 <div class="tab-pane" id="tab-docprep">
   <div class="page-header">
@@ -4641,6 +4650,11 @@ function switchTab(tabName){
     architect: loadArchGallery,
     voice: function(){ loadVoicePresets(); loadVoiceLogs(); loadVoiceStats(); },
     chatdept: function(){ loadChats(); loadChatStats(); },
+    email: function(){
+      var f = document.getElementById('emailFrame');
+      if(f && f.src && !f.src.includes('about:blank')) return;
+      if(f) f.src = f.dataset.src || '/email?embed=1';
+    },
     photos: loadPhotos,
     docprep: loadDocPrep,
     reviews: loadReviews
