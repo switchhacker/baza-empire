@@ -134,3 +134,99 @@ def test_uploaded_path_resolvable_via_post_render(client):
     import social_studio as ss
     paths = ss._resolve_media_paths([sid])
     assert paths == [upload_path]  # path is inside DASHBOARD_DIR/uploads/social
+
+
+def test_url_import_400_no_url(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/url-import", json={})
+    assert r.status_code == 400
+
+
+def test_url_import_400_bad_scheme(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/url-import", json={"url": "ftp://example.com/x"})
+    assert r.status_code == 400
+    assert "http://" in r.get_json()["error"]
+
+
+def test_url_import_rate_limit(client, monkeypatch):
+    sources_mod = (sys.modules.get("dashboard.social_sources")
+                   or sys.modules.get("social_sources"))
+    # Reset timestamps & lower the limit so we can fill it predictably
+    monkeypatch.setattr(sources_mod, "URL_IMPORT_RATE_LIMIT", 2)
+    sources_mod._URL_IMPORT_TIMESTAMPS.clear()
+    c, _ = client
+
+    # Force yt-dlp to fail fast so we don't actually fetch — the rate limit
+    # still increments BEFORE the download attempt.
+    class FakeError(Exception):
+        pass
+
+    def _fail(*a, **k):
+        raise FakeError("no network in tests")
+
+    import yt_dlp
+    monkeypatch.setattr(yt_dlp.YoutubeDL, "extract_info", _fail)
+    for i in range(2):
+        r = c.post("/api/ahb/social/sources/url-import",
+                   json={"url": "https://example.com/v" + str(i)})
+        # 500 (yt-dlp error) is fine — the rate counter still ticked
+        assert r.status_code in (200, 400, 500)
+    # Third should be rate-limited (429)
+    r = c.post("/api/ahb/social/sources/url-import",
+               json={"url": "https://example.com/v3"})
+    assert r.status_code == 429
+    j = r.get_json()
+    assert j["limit"] == 2
+    assert j["retry_after_seconds"] > 0
+
+
+def test_voice_memo_400_no_file(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/sources/voice-memo")
+    assert r.status_code == 400
+
+
+def test_voice_memo_400_bad_extension(client):
+    c, _ = client
+    r = c.post(
+        "/api/ahb/social/sources/voice-memo",
+        data={"file": (io.BytesIO(b"x"), "x.mp4")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+
+
+def test_voice_memo_happy_path_with_mocked_whisper(client, monkeypatch):
+    # Mock the whisper model so the test doesn't need real audio
+    class FakeSegment:
+        def __init__(self, text):
+            self.text = text
+
+    class FakeModel:
+        def transcribe(self, path, beam_size=1):
+            return ([FakeSegment("hello world from the test")], None)
+
+    audio_mod = (sys.modules.get("dashboard.social_audio")
+                 or sys.modules.get("social_audio"))
+    monkeypatch.setattr(audio_mod, "_get_whisper", lambda: FakeModel())
+    c, _ = client
+    r = c.post(
+        "/api/ahb/social/sources/voice-memo",
+        data={"file": (io.BytesIO(b"fake-webm-bytes"), "memo.webm")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ok"] is True
+    assert j["transcript"] == "hello world from the test"
+    assert j["transcribe_error"] is None
+    # Row inserted in image_captions with the transcript as caption
+    con = sqlite3.connect(os.environ["BAZA_DASHBOARD_DB"])
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT * FROM image_captions WHERE id=?", (j["id"],)).fetchone()
+    finally:
+        con.close()
+    assert "hello world" in row["caption"]
+    assert row["tags"] == "voice-memo"

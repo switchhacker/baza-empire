@@ -15,6 +15,8 @@ from __future__ import annotations
 import os
 import sqlite3
 import subprocess
+import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -42,6 +44,27 @@ _ACCEPTED = {
 
 # Cap a single upload at 200MB (raw bytes); recorders typically max out around 50-80MB
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+# URL-import rate limit (per-process): 5 imports per hour.
+_URL_IMPORT_RATE_LOCK = threading.Lock()
+_URL_IMPORT_TIMESTAMPS: list = []
+URL_IMPORT_RATE_LIMIT = 5
+URL_IMPORT_WINDOW_SECONDS = 3600
+
+
+def _url_import_allowed() -> tuple:
+    """Returns (allowed: bool, retry_after_seconds: int)."""
+    now = time.time()
+    with _URL_IMPORT_RATE_LOCK:
+        # Drop timestamps older than the window
+        cutoff = now - URL_IMPORT_WINDOW_SECONDS
+        _URL_IMPORT_TIMESTAMPS[:] = [t for t in _URL_IMPORT_TIMESTAMPS if t > cutoff]
+        if len(_URL_IMPORT_TIMESTAMPS) >= URL_IMPORT_RATE_LIMIT:
+            oldest = _URL_IMPORT_TIMESTAMPS[0]
+            retry_after = int(URL_IMPORT_WINDOW_SECONDS - (now - oldest))
+            return False, max(retry_after, 1)
+        _URL_IMPORT_TIMESTAMPS.append(now)
+        return True, 0
 
 
 def _db():
@@ -159,5 +182,148 @@ def register(bp):
             "path": final_path,
             "kind": kind,
             "source": source,
+            "size_bytes": total,
+        })
+
+    @bp.route("/api/ahb/social/sources/url-import", methods=["POST"])
+    def social_sources_url_import():
+        data = request.get_json(silent=True) or {}
+        url = (data.get("url") or "").strip()
+        if not url:
+            return jsonify({"error": "url required"}), 400
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return jsonify({"error": "url must start with http:// or https://"}), 400
+        allowed, retry_after = _url_import_allowed()
+        if not allowed:
+            return jsonify({
+                "error": "rate limit exceeded",
+                "retry_after_seconds": retry_after,
+                "limit": URL_IMPORT_RATE_LIMIT,
+                "window_seconds": URL_IMPORT_WINDOW_SECONDS,
+            }), 429
+        try:
+            import yt_dlp
+        except ImportError:
+            return jsonify({"error": "yt-dlp not installed"}), 500
+        day = datetime.utcnow().strftime("%Y-%m-%d")
+        day_dir = os.path.join(UPLOADS_DIR, day)
+        os.makedirs(day_dir, exist_ok=True)
+        uid = uuid.uuid4().hex[:12]
+        out_tpl = os.path.join(day_dir, f"{uid}.%(ext)s")
+        ydl_opts = {
+            "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            "outtmpl": out_tpl,
+            "merge_output_format": "mp4",
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "socket_timeout": 30,
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as e:
+            return jsonify({"error": "download failed", "detail": str(e)[-200:]}), 400
+        except Exception as e:
+            return jsonify({"error": "yt-dlp error", "detail": str(e)[-200:]}), 500
+        # Locate the produced file (may have any of mp4/webm/mkv extensions)
+        produced = None
+        for ext in (".mp4", ".mkv", ".webm", ".mov"):
+            cand = os.path.join(day_dir, f"{uid}{ext}")
+            if os.path.exists(cand):
+                produced = cand
+                break
+        if not produced:
+            return jsonify({"error": "download succeeded but file not located"}), 500
+        title = (info.get("title") or "Imported video").strip()
+        con = _db()
+        try:
+            _ensure_image_captions_table(con)
+            cur = con.execute(
+                "INSERT INTO image_captions (project_id, sub_path, caption, tags, indexed_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (None, produced, title, "url-import",
+                 datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            con.commit()
+            new_id = cur.lastrowid
+        finally:
+            con.close()
+        return jsonify({
+            "ok": True,
+            "id": new_id,
+            "path": produced,
+            "title": title,
+            "duration": info.get("duration"),
+            "source": "url-import",
+        })
+
+    @bp.route("/api/ahb/social/sources/voice-memo", methods=["POST"])
+    def social_sources_voice_memo():
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "file required (multipart 'file')"}), 400
+        original = file.filename or "memo.webm"
+        ext = os.path.splitext(original)[1].lower() or ".webm"
+        if ext not in (".webm", ".wav", ".mp3", ".m4a", ".ogg"):
+            return jsonify({"error": "audio extension required", "got": ext}), 400
+        day = datetime.utcnow().strftime("%Y-%m-%d")
+        day_dir = os.path.join(UPLOADS_DIR, day)
+        os.makedirs(day_dir, exist_ok=True)
+        uid = uuid.uuid4().hex[:12]
+        dest = os.path.join(day_dir, f"voice_{uid}{ext}")
+        total = 0
+        with open(dest, "wb") as out_f:
+            while True:
+                chunk = file.stream.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    out_f.close()
+                    try:
+                        os.remove(dest)
+                    except OSError:
+                        pass
+                    return jsonify({
+                        "error": f"upload exceeds {MAX_UPLOAD_BYTES // (1024*1024)}MB",
+                    }), 400
+                out_f.write(chunk)
+        # Transcribe with faster_whisper (reuses social_audio's cached model)
+        transcript = ""
+        try:
+            try:
+                from dashboard import social_audio
+            except ImportError:
+                import social_audio
+            model = social_audio._get_whisper()
+            # Whisper handles webm/opus directly via ffmpeg under the hood
+            segments, _info = model.transcribe(dest, beam_size=1)
+            transcript = " ".join(seg.text.strip() for seg in segments).strip()
+        except Exception as e:
+            transcript = ""
+            transcribe_error = str(e)[-200:]
+        else:
+            transcribe_error = None
+        # Insert as a source row (audio kind)
+        con = _db()
+        try:
+            _ensure_image_captions_table(con)
+            cur = con.execute(
+                "INSERT INTO image_captions (project_id, sub_path, caption, tags, indexed_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (None, dest, transcript or "Voice memo", "voice-memo",
+                 datetime.utcnow().isoformat(timespec="seconds")),
+            )
+            con.commit()
+            new_id = cur.lastrowid
+        finally:
+            con.close()
+        return jsonify({
+            "ok": True,
+            "id": new_id,
+            "path": dest,
+            "transcript": transcript,
+            "transcribe_error": transcribe_error,
             "size_bytes": total,
         })

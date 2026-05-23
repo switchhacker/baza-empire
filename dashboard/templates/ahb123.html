@@ -18574,6 +18574,8 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="Record from webcam (MediaRecorder)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openWebcam()">📹 Webcam</button>
             <button class="btn-secondary ss-tip" data-tip="Record your screen (getDisplayMedia)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openScreen()">🖥️ Screen</button>
             <button class="btn-secondary ss-tip" data-tip="Upload a file" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openFile()">📁 File</button>
+            <button class="btn-secondary ss-tip" data-tip="Import a video from URL (yt-dlp)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openUrl()">🔗 URL</button>
+            <button class="btn-secondary ss-tip" data-tip="Record a voice memo (auto-transcribed)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openVoiceMemo()">🎙️ Memo</button>
           </div>
           <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:280px;overflow-y:auto"></div>
           <div style="margin-top:10px">
@@ -20237,7 +20239,132 @@ SocialStudio.modules.recorder = (function(){
     inp.click();
   }
 
-  return { openWebcam, openScreen, openFile };
+  async function openUrl() {
+    const url = window.prompt('Paste a video URL (YouTube, TikTok, IG, etc.):', '');
+    if (!url || !url.trim()) return;
+    const tid = SocialStudio.modules.toast.progress('Importing… (yt-dlp, up to a minute)');
+    try {
+      const r = await fetch('/api/ahb/social/sources/url-import', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const j = await r.json();
+      if (r.status === 429) {
+        SocialStudio.modules.toast.resolve(tid, 'error',
+          'Rate limit — try again in ' + Math.ceil(j.retry_after_seconds/60) + ' min');
+        return;
+      }
+      if (!r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Import failed');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success',
+        'Imported "' + (j.title||'video').slice(0, 40) + '" as source #' + j.id);
+      if (SocialStudio.modules.composer && SocialStudio.modules.composer._reload) {
+        SocialStudio.modules.composer._reload();
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function openVoiceMemo() {
+    _mode = 'voicememo';
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (e) {
+      SocialStudio.modules.toast.error('Mic access denied: ' + e.message);
+      return;
+    }
+    _stream = stream;
+    _modal = document.createElement('div');
+    _modal.className = 'modal-bg'; _modal.style.cssText = 'display:flex';
+    _modal.innerHTML = `
+      <div class="modal" style="max-width:480px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🎙️ Voice memo</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <div style="padding:24px;text-align:center;background:#070712;border-radius:8px">
+          <div id="rec-status" style="color:#aaa;font-size:13px">Press ⏺ to start recording</div>
+        </div>
+        <div style="display:flex;justify-content:center;gap:6px;margin-top:14px">
+          <button class="btn-primary" id="rec-go">⏺ Start</button>
+          <button class="btn-secondary" id="rec-stop" disabled>⏹ Stop &amp; transcribe</button>
+        </div>
+        <div id="rec-transcript" style="margin-top:14px;color:#ddd;font-size:13px;line-height:1.5"></div>
+      </div>
+    `;
+    document.body.appendChild(_modal);
+    _modal.querySelector('[data-close]').addEventListener('click', _cleanup);
+    document.getElementById('rec-go').addEventListener('click', () => {
+      _chunks = [];
+      try {
+        _recorder = new MediaRecorder(_stream, { mimeType: 'audio/webm' });
+      } catch (e) {
+        SocialStudio.modules.toast.error('Recorder unsupported');
+        return;
+      }
+      _recorder.ondataavailable = (e) => { if (e.data && e.data.size) _chunks.push(e.data); };
+      _recorder.onstop = _uploadVoiceMemo;
+      _recorder.start(1000);
+      _startedAt = Date.now();
+      document.getElementById('rec-go').disabled = true;
+      document.getElementById('rec-stop').disabled = false;
+      document.getElementById('rec-status').textContent = '● Recording 0:00';
+      _timerHandle = setInterval(() => {
+        const sec = Math.floor((Date.now() - _startedAt) / 1000);
+        const m = Math.floor(sec / 60); const s = sec % 60;
+        document.getElementById('rec-status').textContent =
+          '● Recording ' + m + ':' + String(s).padStart(2, '0');
+      }, 500);
+    });
+    document.getElementById('rec-stop').addEventListener('click', () => {
+      if (_recorder && _recorder.state !== 'inactive') _recorder.stop();
+      if (_timerHandle) { clearInterval(_timerHandle); _timerHandle = null; }
+      document.getElementById('rec-stop').disabled = true;
+      document.getElementById('rec-status').textContent = 'Transcribing…';
+    });
+  }
+
+  async function _uploadVoiceMemo() {
+    const blob = new Blob(_chunks, { type: 'audio/webm' });
+    const fd = new FormData();
+    fd.append('file', blob, 'memo_' + Date.now() + '.webm');
+    const tid = SocialStudio.modules.toast.progress('Transcribing voice memo…');
+    try {
+      const r = await fetch('/api/ahb/social/sources/voice-memo', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Upload failed');
+        return;
+      }
+      const transcript = (j.transcript || '').trim();
+      document.getElementById('rec-transcript').innerHTML =
+        '<div style="background:#070712;border-radius:6px;padding:10px;border:1px solid #2a2a4a">' +
+        (transcript ? transcript : '<span style="color:#888">(no speech detected)</span>') +
+        '</div>' +
+        (transcript ? '<div style="text-align:center;margin-top:10px"><button class="btn-primary" id="rec-fill">Insert into caption</button></div>' : '');
+      SocialStudio.modules.toast.resolve(tid, 'success',
+        transcript ? 'Transcript ready' : 'Memo saved (no speech)');
+      const fillBtn = document.getElementById('rec-fill');
+      if (fillBtn) {
+        fillBtn.addEventListener('click', () => {
+          const platform = SocialStudio.state.activePlatform;
+          const ta = document.getElementById('ss-caption-' + platform);
+          if (ta) {
+            ta.value = (ta.value ? ta.value + '\n\n' : '') + transcript;
+          }
+          _cleanup();
+        });
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  return { openWebcam, openScreen, openFile, openUrl, openVoiceMemo };
 })();
 </script>
 
