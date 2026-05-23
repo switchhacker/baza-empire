@@ -17994,6 +17994,120 @@ SocialStudio.modules.composer = (function(){
     }
   }
 
+  const HOOK_PATTERNS = [
+    {key:'curiosity_gap', label:'Curiosity gap'},
+    {key:'contrarian',    label:'Contrarian'},
+    {key:'number_led',    label:'Number-led'},
+    {key:'before_after',  label:'Before/After'},
+    {key:'personal',      label:'Personal'},
+    {key:'mistake',       label:'Mistake'},
+    {key:'bold_claim',    label:'Bold claim'},
+  ];
+
+  function _hookPatternModal() {
+    return new Promise((resolve) => {
+      const m = document.createElement('div');
+      m.className = 'modal-bg';
+      m.style.cssText = 'display:flex';
+      document.body.appendChild(m);
+      const close = (val) => { document.body.removeChild(m); resolve(val); };
+      m.innerHTML = `
+        <div class="modal" style="max-width:520px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">🪝 Hook pattern</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${HOOK_PATTERNS.map(p => `<button class="btn-secondary" data-pattern="${p.key}" style="font-size:12px">${p.label}</button>`).join('')}
+          </div>
+          <div style="margin-top:14px;color:#666;font-size:11px">Click a pattern to generate 3 hooks.</div>
+        </div>
+      `;
+      m.querySelector('[data-close]').addEventListener('click', () => close(null));
+      m.addEventListener('click', (e) => {
+        if (e.target.dataset.pattern) close(e.target.dataset.pattern);
+      });
+    });
+  }
+
+  async function aiHookPattern() {
+    const pattern = await _hookPatternModal();
+    if (!pattern) return;
+    const tid = SocialStudio.modules.toast.progress('Generating ' + pattern + ' hooks…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/hook', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ source_ids: state.shotList, pattern, n: 3 }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.hooks || !j.hooks.length) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'No hooks returned');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', '3 hooks ready');
+      const pick = window.prompt('Pick a ' + pattern + ' hook:\n\n' + j.hooks.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
+      const idx = (parseInt(pick, 10) || 1) - 1;
+      if (j.hooks[idx]) {
+        document.getElementById('ss-hook-input').value = j.hooks[idx];
+        renderPreview();
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function aiCta() {
+    const caption = document.getElementById('ss-caption-' + state.activePlatform).value;
+    if (!caption.trim()) { SocialStudio.modules.toast.info('Generate a caption first'); return; }
+    const tid = SocialStudio.modules.toast.progress('Generating CTAs…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/cta', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ caption, platform: state.activePlatform }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ctas || !j.ctas.length) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'No CTAs returned');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', '3 CTAs');
+      const pick = window.prompt('Pick a CTA to append:\n\n' + j.ctas.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
+      const idx = (parseInt(pick, 10) || 1) - 1;
+      if (j.ctas[idx]) {
+        const ta = document.getElementById('ss-caption-' + state.activePlatform);
+        ta.value = (ta.value.trim() + '\n\n' + j.ctas[idx]).trim();
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function aiCommentBait() {
+    const caption = document.getElementById('ss-caption-' + state.activePlatform).value;
+    if (!caption.trim()) { SocialStudio.modules.toast.info('Generate a caption first'); return; }
+    const tid = SocialStudio.modules.toast.progress('Generating engagement prompts…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/comment-bait', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ caption, platform: state.activePlatform }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.prompts || !j.prompts.length) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'No prompts returned');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', '3 prompts');
+      const pick = window.prompt('Pick a comment-bait to append:\n\n' + j.prompts.map((h, i) => `${i+1}. ${h}`).join('\n'), '1');
+      const idx = (parseInt(pick, 10) || 1) - 1;
+      if (j.prompts[idx]) {
+        const ta = document.getElementById('ss-caption-' + state.activePlatform);
+        ta.value = (ta.value.trim() + '\n\n' + j.prompts[idx]).trim();
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
   async function aiScore() {
     const r = await fetch('/api/ahb/social/ai/score', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -18246,12 +18360,14 @@ SocialStudio.modules.composer = (function(){
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
             <button class="btn-secondary ss-tip" data-tip="Generate caption (local AI)" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
             <button class="btn-secondary ss-tip" data-tip="Suggest hashtags (forces brand floor tags)" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
-            <button class="btn-secondary ss-tip" data-tip="3 hook variants — pattern-interrupt style" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
+            <button class="btn-secondary ss-tip" data-tip="3 hook variants — pick a virality pattern" onclick="SocialStudio.modules.composer.aiHookPattern()">🪝 Hooks</button>
             <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 + critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
             <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
             <button class="btn-secondary ss-tip" data-tip="Translate caption to Spanish" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
             <button class="btn-secondary ss-tip" data-tip="Pick a music bed for video posts" onclick="SocialStudio.modules.composer.pickMusic()">🎵 Music</button>
             <button class="btn-secondary ss-tip" data-tip="Generate voiceover from caption (piper TTS)" onclick="SocialStudio.modules.voiceover.open(null, document.getElementById('ss-caption-' + SocialStudio.state.activePlatform).value)">🔊 VO</button>
+            <button class="btn-secondary ss-tip" data-tip="3 platform-tuned CTAs" onclick="SocialStudio.modules.composer.aiCta()">🎯 CTA</button>
+            <button class="btn-secondary ss-tip" data-tip="3 comment-bait prompts" onclick="SocialStudio.modules.composer.aiCommentBait()">💬 Engage</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
@@ -18268,7 +18384,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q);
   }
 
-  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
+  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
 })();
 
 SocialStudio.modules.library = (function(){
@@ -19549,13 +19665,33 @@ SocialStudio.modules.voiceover = (function(){
             <option value="en_US-lessac-medium">Lessac (US male, narrator)</option>
           </select>
         </label>
-        <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px">
+        <div style="display:flex;justify-content:space-between;gap:6px;margin-top:14px">
+          <button class="btn-secondary" id="vo-script">🤖 Generate script</button>
           <button class="btn-primary" id="vo-go">🎤 Generate</button>
         </div>
         <div id="vo-preview" style="margin-top:14px"></div>
       </div>
     `;
     document.getElementById('vo-go').addEventListener('click', () => generate(postId));
+    document.getElementById('vo-script').addEventListener('click', () => generateScript());
+  }
+
+  async function generateScript() {
+    const caption = (document.getElementById('vo-text').value || '').trim();
+    if (!caption) { SocialStudio.modules.toast.info('Paste a caption or text first'); return; }
+    const tid = SocialStudio.modules.toast.progress('Writing VO script…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/voiceover-script', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ caption }),
+      });
+      const j = await r.json();
+      if (!r.ok) { SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
+      document.getElementById('vo-text').value = j.script || caption;
+      SocialStudio.modules.toast.resolve(tid, 'success', 'Script ready');
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
   }
 
   async function generate(postId) {
@@ -19578,7 +19714,7 @@ SocialStudio.modules.voiceover = (function(){
     }
   }
 
-  return { open, generate };
+  return { open, generate, generateScript };
 })();
 </script>
 
