@@ -19138,5 +19138,94 @@ SocialStudio.modules.overlay = (function(){
 })();
 </script>
 
+<script>
+SocialStudio.modules.gridpreview = (function(){
+  function install() {
+    const shell = document.getElementById('ss-preview-shell');
+    if (!shell || document.getElementById('ss-grid-preview')) return;
+    const wrap = shell.parentElement;
+    const tb = document.getElementById('ss-overlay-toolbar') || document.getElementById('ss-preview-toolbar');
+    if (tb) {
+      const btn = document.createElement('button');
+      btn.id = 'ss-grid-toggle';
+      btn.textContent = '⊞ Grid';
+      btn.title = 'Show IG 3x3 grid preview';
+      btn.addEventListener('click', toggle);
+      tb.appendChild(btn);
+    }
+    const gp = document.createElement('div');
+    gp.id = 'ss-grid-preview';
+    gp.style.cssText = 'display:none;margin-top:10px;background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:10px';
+    wrap.appendChild(gp);
+  }
+
+  let visible = false;
+  function toggle() {
+    visible = !visible;
+    const el = document.getElementById('ss-grid-preview');
+    if (!el) return;
+    el.style.display = visible ? 'block' : 'none';
+    document.getElementById('ss-grid-toggle').classList.toggle('active', visible);
+    if (visible) refresh();
+  }
+
+  async function refresh() {
+    const platform = SocialStudio.state.activePlatform;
+    if (!['ig_feed_square', 'ig_feed_portrait'].includes(platform)) {
+      document.getElementById('ss-grid-preview').innerHTML =
+        '<div style="color:#666;font-size:12px;text-align:center;padding:20px">Grid preview is only relevant for IG Feed.</div>';
+      return;
+    }
+    const r = await fetch('/api/ahb/social/posts?status=posted&platform=' + platform + '&limit=8');
+    const items = ((await r.json()).items || []);
+    const cells = [];
+    cells.push({ current: true });
+    items.forEach(p => cells.push({ id: p.id, cover: p.cover_path ? '/api/ahb/social/posts/' + p.id + '/cover' : '' }));
+    while (cells.length < 9) cells.push({ empty: true });
+    document.getElementById('ss-grid-preview').innerHTML = `
+      <div style="font-size:11px;color:#aaa;margin-bottom:8px">Your IG feed with this post at the top-left:</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px">
+        ${cells.slice(0, 9).map(c => {
+          if (c.current) {
+            const firstItem = SocialStudio.state.shotList[0];
+            const id = typeof firstItem === 'object' ? (firstItem && firstItem.id) : firstItem;
+            const src = SocialStudio.state.sources.find(s => s.id === id);
+            const url = src ? '/api/cloud/thumb/' + encodeURIComponent(src.sub_path) + '?size=300' : '';
+            return `<div style="aspect-ratio:1;background:#1a1a2e;border:2px solid #10b981;border-radius:4px;overflow:hidden"><img src="${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"></div>`;
+          }
+          if (c.empty) {
+            return `<div style="aspect-ratio:1;background:#1a1a2e;border-radius:4px"></div>`;
+          }
+          return `<div style="aspect-ratio:1;background:#1a1a2e;border-radius:4px;overflow:hidden"><img src="${c.cover}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"></div>`;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  if (SocialStudio.modules.composer) {
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+    const origToggle = SocialStudio.modules.composer.toggle;
+    SocialStudio.modules.composer.toggle = function() {
+      const r = origToggle.apply(this, arguments);
+      if (visible) setTimeout(refresh, 0);
+      return r;
+    };
+    const origSetPlatform = SocialStudio.modules.composer.setPlatform;
+    SocialStudio.modules.composer.setPlatform = function() {
+      const r = origSetPlatform.apply(this, arguments);
+      if (visible) setTimeout(refresh, 0);
+      return r;
+    };
+  }
+
+  return { install, toggle, refresh };
+})();
+</script>
+
 </body>
 </html>
