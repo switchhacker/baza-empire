@@ -670,14 +670,22 @@ def _resolve_media_paths(source_media_ids: list) -> list:
         "/home/switchhacker/baza-cloud",
     )
     cloud_root_abs = os.path.abspath(cloud_root)
+    # v2.1 T20: uploads from webcam/screen capture land under DASHBOARD_DIR/uploads/social
+    uploads_root_abs = os.path.abspath(
+        os.path.join(DASHBOARD_DIR, "uploads", "social")
+    )
+    allowed_roots = (cloud_root_abs, uploads_root_abs)
     paths = []
     for r in rows:
         p = r["sub_path"]
         if not os.path.isabs(p):
             p = os.path.join(cloud_root, p)
         p_abs = os.path.abspath(p)
-        # Reject if path escapes the cloud root (path traversal defense)
-        if not p_abs.startswith(cloud_root_abs + os.sep) and p_abs != cloud_root_abs:
+        # Reject if path escapes any of the allowed roots (traversal defense)
+        if not any(
+            p_abs.startswith(root + os.sep) or p_abs == root
+            for root in allowed_roots
+        ):
             continue
         if os.path.exists(p_abs):
             paths.append(p_abs)

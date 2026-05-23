@@ -18570,6 +18570,11 @@ SocialStudio.modules.composer = (function(){
             <option value="">All projects</option>
           </select>
           <input id="ss-source-q" class="search-box" placeholder="Search caption/tags" style="width:100%;margin-bottom:6px" oninput="if(this._t)clearTimeout(this._t);this._t=setTimeout(()=>SocialStudio.modules.composer._reload(),300)">
+          <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap">
+            <button class="btn-secondary ss-tip" data-tip="Record from webcam (MediaRecorder)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openWebcam()">📹 Webcam</button>
+            <button class="btn-secondary ss-tip" data-tip="Record your screen (getDisplayMedia)" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openScreen()">🖥️ Screen</button>
+            <button class="btn-secondary ss-tip" data-tip="Upload a file" style="font-size:11px;padding:4px 8px;flex:1" onclick="SocialStudio.modules.recorder.openFile()">📁 File</button>
+          </div>
           <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:280px;overflow-y:auto"></div>
           <div style="margin-top:10px">
             <div style="font-weight:700;font-size:12px;color:#aaa;margin-bottom:6px">📋 Shot list (drag to reorder)</div>
@@ -20051,6 +20056,188 @@ SocialStudio.modules.voiceover = (function(){
   }
 
   return { open, generate, generateScript };
+})();
+
+SocialStudio.modules.recorder = (function(){
+  let _stream = null;
+  let _recorder = null;
+  let _chunks = [];
+  let _modal = null;
+  let _mode = null;
+  let _startedAt = 0;
+  let _timerHandle = null;
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _cleanup() {
+    if (_recorder && _recorder.state !== 'inactive') {
+      try { _recorder.stop(); } catch (e) {}
+    }
+    if (_stream) {
+      _stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    }
+    if (_timerHandle) { clearInterval(_timerHandle); _timerHandle = null; }
+    _stream = null; _recorder = null; _chunks = []; _mode = null;
+    if (_modal) { try { document.body.removeChild(_modal); } catch (e) {} _modal = null; }
+  }
+
+  function _buildModal(title) {
+    _modal = document.createElement('div');
+    _modal.className = 'modal-bg';
+    _modal.style.cssText = 'display:flex';
+    _modal.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">${_esc(title)}</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <video id="rec-preview" autoplay muted playsinline style="width:100%;background:#000;border-radius:6px;max-height:320px"></video>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:10px">
+          <span id="rec-status" style="color:#aaa;font-size:12px">Idle</span>
+          <span style="flex:1"></span>
+          <button class="btn-primary" id="rec-go">⏺ Start</button>
+          <button class="btn-secondary" id="rec-stop" disabled>⏹ Stop</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(_modal);
+    _modal.querySelector('[data-close]').addEventListener('click', _cleanup);
+  }
+
+  async function openWebcam() {
+    _mode = 'webcam';
+    _buildModal('📹 Webcam recorder');
+    try {
+      _stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (e) {
+      SocialStudio.modules.toast.error('Webcam access denied: ' + e.message);
+      _cleanup();
+      return;
+    }
+    _attachStream();
+  }
+
+  async function openScreen() {
+    _mode = 'screen';
+    _buildModal('🖥️ Screen recorder');
+    try {
+      _stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    } catch (e) {
+      SocialStudio.modules.toast.error('Screen capture denied: ' + e.message);
+      _cleanup();
+      return;
+    }
+    _attachStream();
+  }
+
+  function _attachStream() {
+    const v = document.getElementById('rec-preview');
+    v.srcObject = _stream;
+    document.getElementById('rec-go').addEventListener('click', _start);
+    document.getElementById('rec-stop').addEventListener('click', _stop);
+  }
+
+  function _start() {
+    _chunks = [];
+    try {
+      _recorder = new MediaRecorder(_stream, { mimeType: 'video/webm;codecs=vp9,opus' });
+    } catch (e) {
+      try {
+        _recorder = new MediaRecorder(_stream, { mimeType: 'video/webm' });
+      } catch (e2) {
+        SocialStudio.modules.toast.error('Recorder unsupported: ' + e2.message);
+        return;
+      }
+    }
+    _recorder.ondataavailable = (e) => { if (e.data && e.data.size) _chunks.push(e.data); };
+    _recorder.onstop = _upload;
+    _recorder.start(1000);
+    _startedAt = Date.now();
+    document.getElementById('rec-go').disabled = true;
+    document.getElementById('rec-stop').disabled = false;
+    document.getElementById('rec-status').textContent = '● Recording 0:00';
+    _timerHandle = setInterval(() => {
+      const sec = Math.floor((Date.now() - _startedAt) / 1000);
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      document.getElementById('rec-status').textContent =
+        '● Recording ' + m + ':' + String(s).padStart(2, '0');
+    }, 500);
+  }
+
+  function _stop() {
+    if (_recorder && _recorder.state !== 'inactive') {
+      _recorder.stop();
+    }
+    if (_timerHandle) { clearInterval(_timerHandle); _timerHandle = null; }
+    document.getElementById('rec-stop').disabled = true;
+    document.getElementById('rec-status').textContent = 'Uploading…';
+  }
+
+  async function _upload() {
+    const blob = new Blob(_chunks, { type: 'video/webm' });
+    const fd = new FormData();
+    fd.append('file', blob, _mode + '_' + Date.now() + '.webm');
+    fd.append('source', _mode);
+    const tid = SocialStudio.modules.toast.progress('Uploading ' + Math.round(blob.size/1024) + ' KB…');
+    try {
+      const r = await fetch('/api/ahb/social/sources/upload?source=' + _mode, {
+        method: 'POST', body: fd,
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Upload failed');
+      } else {
+        SocialStudio.modules.toast.resolve(tid, 'success', 'Saved as source #' + j.id);
+        if (SocialStudio.modules.composer && SocialStudio.modules.composer._reload) {
+          SocialStudio.modules.composer._reload();
+        }
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+    _cleanup();
+  }
+
+  function openFile() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*,video/*,audio/*';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.addEventListener('change', async () => {
+      const file = inp.files && inp.files[0];
+      document.body.removeChild(inp);
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('source', 'file');
+      const tid = SocialStudio.modules.toast.progress('Uploading ' + file.name + '…');
+      try {
+        const r = await fetch('/api/ahb/social/sources/upload?source=file', {
+          method: 'POST', body: fd,
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Upload failed');
+        } else {
+          SocialStudio.modules.toast.resolve(tid, 'success', 'Saved as source #' + j.id);
+          if (SocialStudio.modules.composer && SocialStudio.modules.composer._reload) {
+            SocialStudio.modules.composer._reload();
+          }
+        }
+      } catch (e) {
+        SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+      }
+    });
+    inp.click();
+  }
+
+  return { openWebcam, openScreen, openFile };
 })();
 </script>
 
