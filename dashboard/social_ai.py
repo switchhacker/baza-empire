@@ -129,6 +129,159 @@ def register(bp):
                 con.close()
         return jsonify({"translations": translations, "targets": targets, "model": model})
 
+    @bp.route("/api/ahb/social/ai/cover-pick", methods=["POST"])
+    def social_ai_cover_pick():
+        import base64
+        import json as _json
+        import os as _os
+        import subprocess
+        import tempfile
+
+        try:
+            import requests  # ollama HTTP
+        except ImportError:
+            return jsonify({"error": "requests not installed"}), 500
+
+        data = request.get_json(silent=True) or {}
+        post_id = data.get("post_id")
+        if post_id is None:
+            return jsonify({"error": "post_id required"}), 400
+        try:
+            post_id = int(post_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "post_id must be int"}), 400
+
+        con = _ss._conn()
+        try:
+            row = con.execute(
+                "SELECT asset_path, cover_path FROM ahb_social_posts WHERE id=?",
+                (post_id,),
+            ).fetchone()
+        finally:
+            con.close()
+        if not row:
+            return jsonify({"error": "post not found"}), 404
+        asset = row["asset_path"]
+        if not asset or not _os.path.exists(asset):
+            return jsonify({"error": "post has no rendered asset"}), 400
+        # Probe duration
+        try:
+            out = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", asset],
+                check=True, capture_output=True, timeout=10,
+            )
+            duration = float(out.stdout.decode().strip())
+        except Exception as e:
+            return jsonify({"error": "ffprobe failed", "detail": str(e)[-200:]}), 500
+        if duration <= 0:
+            return jsonify({"error": "asset has no duration"}), 400
+
+        # Extract 5 candidate frames
+        tmpdir = tempfile.mkdtemp(prefix="coverpick_")
+        frame_paths = []
+        for i, frac in enumerate((0.0, 0.25, 0.50, 0.75, 0.95)):
+            t = duration * frac
+            fp = _os.path.join(tmpdir, f"f{i}.jpg")
+            try:
+                subprocess.run(
+                    ["ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", asset,
+                     "-frames:v", "1", "-q:v", "3", fp],
+                    check=True, capture_output=True, timeout=15,
+                )
+                if _os.path.exists(fp) and _os.path.getsize(fp) > 0:
+                    frame_paths.append(fp)
+            except subprocess.CalledProcessError:
+                continue
+        if not frame_paths:
+            return jsonify({"error": "frame extraction failed"}), 500
+
+        settings = _settings.load_settings()
+        model = data.get("model") or settings.get("vision_model") or "qwen3-vl:latest"
+        # b64-encode each frame
+        images_b64 = []
+        for fp in frame_paths:
+            with open(fp, "rb") as fh:
+                images_b64.append(base64.b64encode(fh.read()).decode("ascii"))
+
+        prompt = (
+            "You are selecting a video thumbnail. I will show you "
+            f"{len(frame_paths)} candidate frames in order (index 0 first). "
+            "Pick the SINGLE best thumbnail — the one most likely to make "
+            "someone stop scrolling: subject clearly visible, in focus, "
+            "no motion blur, expressive moment. "
+            'Respond with ONLY a JSON object like {"index": N} where N is '
+            "the 0-based index of the best frame."
+        )
+
+        # Try Ollama generate endpoint
+        try:
+            resp = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "images": images_b64,
+                    "stream": False,
+                    "options": {"temperature": 0.0},
+                },
+                timeout=60,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            response_text = body.get("response") or ""
+        except requests.RequestException as e:
+            return jsonify({"error": "vision call failed", "detail": str(e)[-200:]}), 500
+
+        # Parse {"index": N}
+        idx = 0
+        try:
+            start = response_text.find("{")
+            end = response_text.rfind("}")
+            if start >= 0 and end > start:
+                obj = _json.loads(response_text[start:end + 1])
+                idx = int(obj.get("index") or 0)
+        except Exception:
+            idx = 0
+        idx = max(0, min(idx, len(frame_paths) - 1))
+
+        # Copy winning frame to cover.jpg next to the asset
+        cover_path = _os.path.splitext(asset)[0] + "_cover.jpg"
+        try:
+            with open(frame_paths[idx], "rb") as src_f, open(cover_path, "wb") as dst_f:
+                dst_f.write(src_f.read())
+        except OSError as e:
+            return jsonify({"error": "cover write failed", "detail": str(e)[-200:]}), 500
+        finally:
+            # Cleanup tempdir
+            for fp in frame_paths:
+                try:
+                    _os.remove(fp)
+                except OSError:
+                    pass
+            try:
+                _os.rmdir(tmpdir)
+            except OSError:
+                pass
+
+        # Persist on post
+        con = _ss._conn()
+        try:
+            con.execute(
+                "UPDATE ahb_social_posts SET cover_path=? WHERE id=?",
+                (cover_path, post_id),
+            )
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({
+            "ok": True,
+            "cover_path": cover_path,
+            "picked_index": idx,
+            "candidates": len(frame_paths),
+            "model": model,
+        })
+
     @bp.route("/api/ahb/social/ai/storyboard", methods=["POST"])
     def social_ai_storyboard():
         import json as _json

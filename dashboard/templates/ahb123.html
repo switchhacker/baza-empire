@@ -18781,6 +18781,7 @@ SocialStudio.modules.postdetail = (function(){
         <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.subtitles(${p.id})">&#x1F4DD; Subtitles</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.voiceover && SocialStudio.modules.voiceover.open(${p.id}, document.getElementById('pd-caption').value)">&#x1F50A; VO</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.coverPick(${p.id})">&#x1F5BC;&#xFE0F; Pick cover</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
           <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
@@ -18817,7 +18818,26 @@ SocialStudio.modules.postdetail = (function(){
       SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
     }
   }
-  return { open, save, bundle, telegram, subtitles };
+  async function coverPick(id) {
+    const tid = SocialStudio.modules.toast.progress('Vision pick (qwen3-vl)…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/cover-pick', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ post_id: id }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Failed');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', 'Cover picked (frame ' + j.picked_index + '/' + (j.candidates - 1) + ')');
+      // Force-reload the library tile thumbnail
+      if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+  return { open, save, bundle, telegram, subtitles, coverPick };
 })();
 
 SocialStudio.modules.presets = (function(){

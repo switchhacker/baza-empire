@@ -310,6 +310,26 @@ def test_broll_400_no_caption(client):
     assert r.status_code == 400
 
 
+def test_cover_pick_400_no_post_id(client):
+    r = client.post("/api/ahb/social/ai/cover-pick", json={})
+    assert r.status_code == 400
+    assert "post_id required" in r.get_json()["error"]
+
+
+def test_cover_pick_404_unknown_post(client):
+    r = client.post("/api/ahb/social/ai/cover-pick", json={"post_id": 999999})
+    assert r.status_code == 404
+
+
+def test_cover_pick_400_no_asset(client):
+    pid = client.post("/api/ahb/social/posts", json={
+        "platform": "tiktok", "variant": "9x16", "source_media_ids": [1],
+    }).get_json()["id"]
+    r = client.post("/api/ahb/social/ai/cover-pick", json={"post_id": pid})
+    assert r.status_code == 400
+    assert "no rendered asset" in r.get_json()["error"]
+
+
 def test_broll_returns_suggestions(client, monkeypatch):
     import social_studio as ss
     monkeypatch.setattr(ss, "_call_ollama_chat",
