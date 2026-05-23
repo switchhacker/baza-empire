@@ -125,6 +125,45 @@ def render_still(src: str, out: str, platform: str,
     return out
 
 
+def _beat_timestamps(music_path: str) -> list:
+    """Return a sorted list of beat timestamps (seconds) using librosa.
+    Returns [] on any failure — callers must handle missing beats."""
+    try:
+        import librosa
+        y, sr = librosa.load(music_path, sr=22050, mono=True)
+        _, beats = librosa.beat.beat_track(y=y, sr=sr)
+        return [float(t) for t in librosa.frames_to_time(beats, sr=sr)]
+    except Exception as e:
+        print(f"[social_render] beat tracking failed: {e}", flush=True)
+        return []
+
+
+def _snap_outpoints_to_beats(clips: list, beats: list) -> list:
+    """For each clip, set outpoint to the nearest beat after the running total.
+    Mutates clip dicts in place; returns the new list."""
+    if not beats:
+        return clips
+    cursor = 0.0
+    for c in clips:
+        in_s = float(c.get("in_seconds") or 0.0)
+        cur_out = c.get("out_seconds")
+        if cur_out is None:
+            # No prior outpoint — give it a default 3s
+            cur_out = in_s + 3.0
+        nominal_clip_len = float(cur_out) - in_s
+        target = cursor + nominal_clip_len
+        # Nearest beat ≥ target (don't shorten below 0.5s)
+        candidates = [b for b in beats if b >= cursor + 0.5]
+        if not candidates:
+            cursor = target
+            continue
+        snapped = min(candidates, key=lambda b: abs(b - target))
+        new_len = snapped - cursor
+        c["out_seconds"] = in_s + new_len
+        cursor = snapped
+    return clips
+
+
 def render_video(srcs, out: str, platform: str,
                  hook_text: Optional[str] = None,
                  brand_corner: bool = False,
@@ -140,7 +179,9 @@ def render_video(srcs, out: str, platform: str,
                  voiceover_path: Optional[str] = None,
                  voiceover_volume_db: float = -14.0,
                  intro_path: Optional[str] = None,
-                 outro_path: Optional[str] = None) -> str:
+                 outro_path: Optional[str] = None,
+                 ken_burns: bool = True,
+                 beat_sync: bool = False) -> str:
     if not srcs:
         raise ValueError("no sources")
     clips = []
@@ -156,12 +197,18 @@ def render_video(srcs, out: str, platform: str,
     if outro_path and os.path.exists(outro_path):
         clips = clips + [{"path": outro_path, "in_seconds": None, "out_seconds": None}]
 
+    if beat_sync and music_path and os.path.exists(music_path):
+        beats = _beat_timestamps(music_path)
+        if beats:
+            clips = _snap_outpoints_to_beats(clips, beats)
+
     w, h = _ffprobe(clips[0]["path"])
     g = build_filter_graph(
         w, h, platform, fill_mode, hook_text, brand_corner,
         lut_path=lut_path, logo_path=logo_path,
         logo_position=logo_position, logo_opacity=logo_opacity,
         subtitles_path=subtitles_path,
+        ken_burns=ken_burns,
     )
 
     tmpdir = os.path.dirname(out) or "."

@@ -129,6 +129,67 @@ def register(bp):
                 con.close()
         return jsonify({"translations": translations, "targets": targets, "model": model})
 
+    @bp.route("/api/ahb/social/ai/storyboard", methods=["POST"])
+    def social_ai_storyboard():
+        import json as _json
+
+        data = request.get_json(silent=True) or {}
+        desc = (data.get("project_description") or "").strip()
+        if not desc:
+            return jsonify({"error": "project_description required"}), 400
+        try:
+            duration = float(data.get("duration") or 20)
+        except (TypeError, ValueError):
+            duration = 20.0
+        duration = max(5.0, min(duration, 120.0))
+        style = data.get("style") or "pro"
+        sys_prompt = _settings.load_prompt("storyboard")
+        user = f"Project: {desc}\nDuration: {duration:g}\nStyle: {style}\n"
+        model = data.get("model") or _ss._pick_copy_model()
+        raw = _ss._call_ollama_chat(model, sys_prompt, user, temperature=0.7)
+        # Parse — prefer reusing _extract_json_array, falling back to a permissive parse.
+        shots = []
+        try:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list):
+                shots = parsed
+        except Exception:
+            try:
+                start = raw.find("[")
+                end = raw.rfind("]")
+                if start >= 0 and end > start:
+                    shots = _json.loads(raw[start:end + 1])
+            except Exception:
+                shots = []
+        # Normalize: keep only dicts with required keys
+        norm = []
+        for s in shots:
+            if not isinstance(s, dict):
+                continue
+            norm.append({
+                "shot_type": str(s.get("shot_type") or "medium"),
+                "subject": str(s.get("subject") or "").strip(),
+                "duration_sec": float(s.get("duration_sec") or 2.5),
+                "voiceover_line": str(s.get("voiceover_line") or "").strip(),
+            })
+        return jsonify({"shots": norm[:10], "duration": duration, "style": style, "model": model})
+
+    @bp.route("/api/ahb/social/ai/broll", methods=["POST"])
+    def social_ai_broll():
+        data = request.get_json(silent=True) or {}
+        caption = (data.get("caption") or "").strip()
+        if not caption:
+            return jsonify({"error": "caption required"}), 400
+        sys_prompt = _settings.load_prompt("broll")
+        user = (
+            f"Caption: {caption}\n"
+            f"Existing media:\n{_ss._sources_summary(data.get('source_ids') or [])}\n"
+        )
+        model = data.get("model") or _ss._pick_copy_model()
+        raw = _ss._call_ollama_chat(model, sys_prompt, user, temperature=0.7)
+        suggestions = _ss._extract_json_array(raw)[:5]
+        return jsonify({"suggestions": suggestions, "model": model})
+
     @bp.route("/api/ahb/social/ai/predict", methods=["POST"])
     def social_ai_predict():
         data = request.get_json(silent=True) or {}

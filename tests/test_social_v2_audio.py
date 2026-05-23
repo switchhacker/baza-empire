@@ -111,6 +111,44 @@ def test_voiceover_preview_rejects_traversal(client):
     assert r.status_code == 400
 
 
+def test_brand_kit_upload_rejects_bad_kind(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/brand-kit/upload", data={"kind": "evil"})
+    assert r.status_code == 400
+
+
+def test_brand_kit_upload_rejects_missing_file(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/brand-kit/upload", data={"kind": "logo"})
+    assert r.status_code == 400
+
+
+def test_brand_kit_upload_rejects_wrong_ext(client):
+    c, _ = client
+    import io
+    r = c.post(
+        "/api/ahb/social/brand-kit/upload",
+        data={"kind": "logo", "file": (io.BytesIO(b"\x89PNG fake"), "logo.txt")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+    assert ".png" in r.get_json()["error"]
+
+
+def test_brand_kit_upload_size_cap(client):
+    c, _ = client
+    import io
+    # 2MB of bytes — over the 1MB logo cap
+    big = io.BytesIO(b"\x00" * (2 * 1024 * 1024))
+    r = c.post(
+        "/api/ahb/social/brand-kit/upload",
+        data={"kind": "logo", "file": (big, "logo.png")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+    assert "1MB" in r.get_json()["error"]
+
+
 def test_bundle_includes_per_language_captions(client, tmp_path):
     c, ss = client
     # Create a post with translations and a fake rendered asset

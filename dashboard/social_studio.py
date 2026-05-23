@@ -952,6 +952,8 @@ def _kick_render_async(post_id: int, body: dict) -> int:
             hook = (body or {}).get("hook_text")
             fill = (body or {}).get("fill_mode", "blurred")
             trims = (body or {}).get("trims") or {}
+            ken_burns = bool((body or {}).get("ken_burns", True))
+            beat_sync = bool((body or {}).get("beat_sync", False))
             try:
                 if is_video:
                     post_row = _get_post(post_id)
@@ -997,7 +999,8 @@ def _kick_render_async(post_id: int, body: dict) -> int:
                                              subtitles_path=subtitles_path,
                                              music_path=music_path,
                                              voiceover_path=voiceover_path,
-                                             intro_path=intro_path, outro_path=outro_path)
+                                             intro_path=intro_path, outro_path=outro_path,
+                                             ken_burns=ken_burns, beat_sync=beat_sync)
                     else:
                         _render.render_video(paths, out_path, platform,
                                              hook_text=hook, fill_mode=fill,
@@ -1005,7 +1008,8 @@ def _kick_render_async(post_id: int, body: dict) -> int:
                                              subtitles_path=subtitles_path,
                                              music_path=music_path,
                                              voiceover_path=voiceover_path,
-                                             intro_path=intro_path, outro_path=outro_path)
+                                             intro_path=intro_path, outro_path=outro_path,
+                                             ken_burns=ken_burns, beat_sync=beat_sync)
                     cover_path = os.path.join(out_dir, "cover.jpg")
                     _render.extract_cover(out_path, cover_path)
                 else:
@@ -1123,6 +1127,81 @@ def social_brand_put():
     b.update({k: v for k, v in data.items() if k in b})
     _settings.save_brand_kit(b)
     return jsonify({"ok": True, "brand_kit": b})
+
+
+_BRAND_UPLOAD_KINDS = {
+    "logo":  {"field": "logo_path",  "exts": {".png"},               "max_mb": 1,  "max_seconds": None},
+    "intro": {"field": "intro_clip_path", "exts": {".mp4", ".mov"}, "max_mb": 30, "max_seconds": 5.0},
+    "outro": {"field": "outro_clip_path", "exts": {".mp4", ".mov"}, "max_mb": 30, "max_seconds": 5.0},
+}
+
+
+def _probe_video_duration(path: str) -> float:
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries",
+             "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", path],
+            check=True, capture_output=True, timeout=15,
+        )
+        return float(out.stdout.decode().strip())
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
+        return -1.0
+
+
+@social_bp.route("/api/ahb/social/brand-kit/upload", methods=["POST"])
+def social_brand_upload():
+    kind = (request.form.get("kind") or "").strip().lower()
+    if kind not in _BRAND_UPLOAD_KINDS:
+        return jsonify({"error": "kind must be one of: " + ", ".join(_BRAND_UPLOAD_KINDS)}), 400
+    spec = _BRAND_UPLOAD_KINDS[kind]
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "file required (multipart 'file')"}), 400
+    fn = file.filename or ""
+    ext = os.path.splitext(fn)[1].lower()
+    if ext not in spec["exts"]:
+        return jsonify({
+            "error": f"{kind} requires extension in {sorted(spec['exts'])}",
+        }), 400
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "static", "social", "brand")
+    os.makedirs(out_dir, exist_ok=True)
+    safe_name = f"{kind}{ext}"
+    dest = os.path.join(out_dir, safe_name)
+    # Stream + cap on size
+    max_bytes = spec["max_mb"] * 1024 * 1024
+    total = 0
+    chunks = []
+    while True:
+        chunk = file.stream.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            return jsonify({"error": f"{kind} exceeds {spec['max_mb']}MB"}), 400
+        chunks.append(chunk)
+    with open(dest, "wb") as f:
+        for c in chunks:
+            f.write(c)
+    # Duration validation for clips
+    if spec["max_seconds"] is not None:
+        dur = _probe_video_duration(dest)
+        if dur < 0:
+            os.remove(dest)
+            return jsonify({"error": f"ffprobe failed to read {kind} duration"}), 400
+        if dur > spec["max_seconds"]:
+            os.remove(dest)
+            return jsonify({
+                "error": f"{kind} duration {dur:.1f}s exceeds max {spec['max_seconds']}s",
+            }), 400
+    # Persist on brand kit
+    b = _settings.load_brand_kit()
+    rel_path = os.path.join("static", "social", "brand", safe_name)
+    b[spec["field"]] = rel_path
+    _settings.save_brand_kit(b)
+    return jsonify({"ok": True, "kind": kind, "path": rel_path, "size_bytes": total})
 
 
 # ---------------------------------------------------------------------------

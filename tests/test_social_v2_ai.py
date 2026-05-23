@@ -258,3 +258,66 @@ def test_best_times_unknown_platform_falls_back(client):
     r = client.get("/api/ahb/social/best-times?platform=mystery")
     assert r.status_code == 200
     assert len(r.get_json()["slots"]) == 7
+
+
+def test_storyboard_400_no_description(client):
+    r = client.post("/api/ahb/social/ai/storyboard", json={})
+    assert r.status_code == 400
+
+
+def test_storyboard_returns_shots(client, monkeypatch):
+    import social_studio as ss
+    fake_json = (
+        '[{"shot_type":"closeup","subject":"trim","duration_sec":2,"voiceover_line":"Press here."},'
+        '{"shot_type":"wide","subject":"finished bathroom","duration_sec":3,"voiceover_line":""}]'
+    )
+    monkeypatch.setattr(ss, "_call_ollama_chat", lambda *a, **k: fake_json)
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post("/api/ahb/social/ai/storyboard",
+                    json={"project_description": "Tile install demo", "duration": 20, "style": "pro"})
+    assert r.status_code == 200
+    j = r.get_json()
+    assert len(j["shots"]) == 2
+    assert j["shots"][0]["shot_type"] == "closeup"
+    assert j["shots"][0]["duration_sec"] == 2.0
+
+
+def test_storyboard_clamps_duration(client, monkeypatch):
+    import social_studio as ss
+    monkeypatch.setattr(ss, "_call_ollama_chat", lambda *a, **k: "[]")
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post("/api/ahb/social/ai/storyboard",
+                    json={"project_description": "x", "duration": 9999})
+    assert r.status_code == 200
+    assert r.get_json()["duration"] == 120
+
+
+def test_storyboard_handles_bad_json(client, monkeypatch):
+    import social_studio as ss
+    monkeypatch.setattr(ss, "_call_ollama_chat",
+                        lambda *a, **k: "Some preamble\n[" \
+                            "{\"shot_type\":\"wide\",\"subject\":\"x\",\"duration_sec\":2,\"voiceover_line\":\"\"}" \
+                        "]\nAfterward.")
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post("/api/ahb/social/ai/storyboard",
+                    json={"project_description": "demo"})
+    assert r.status_code == 200
+    assert len(r.get_json()["shots"]) == 1
+
+
+def test_broll_400_no_caption(client):
+    r = client.post("/api/ahb/social/ai/broll", json={})
+    assert r.status_code == 400
+
+
+def test_broll_returns_suggestions(client, monkeypatch):
+    import social_studio as ss
+    monkeypatch.setattr(ss, "_call_ollama_chat",
+                        lambda *a, **k: '["closeup: bead", "overhead: corner", "POV: hand"]')
+    monkeypatch.setattr(ss, "_pick_copy_model", lambda: "fake")
+    r = client.post("/api/ahb/social/ai/broll",
+                    json={"caption": "Caulk demo", "source_ids": []})
+    assert r.status_code == 200
+    s = r.get_json()["suggestions"]
+    assert len(s) == 3
+    assert s[0].startswith("closeup:")

@@ -17717,6 +17717,8 @@ window.SocialStudio = window.SocialStudio || {
     brandKit: null,
     lutName: '',
     lastTranslations: null,
+    kenBurns: true,
+    beatSync: false,
   },
   modules: {},
   init() {
@@ -18094,6 +18096,113 @@ SocialStudio.modules.composer = (function(){
     }
   }
 
+  async function aiStoryboard() {
+    const platform = state.activePlatform;
+    const caption = document.getElementById('ss-caption-' + platform).value.trim();
+    // Use caption as project_description if present; otherwise prompt
+    let desc = caption;
+    if (!desc) {
+      desc = window.prompt('Describe the project for the storyboard (one paragraph):', '');
+      if (!desc) return;
+    }
+    const durStr = window.prompt('Total duration in seconds (5–120):', '20');
+    const duration = Math.max(5, Math.min(120, parseFloat(durStr) || 20));
+    const styleSel = document.getElementById('ss-tone');
+    const style = (styleSel && styleSel.value) || 'pro';
+    const tid = SocialStudio.modules.toast.progress('Designing storyboard…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/storyboard', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ project_description: desc, duration, style }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.shots || !j.shots.length) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'No shots returned');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', j.shots.length + ' shots');
+      const m = document.createElement('div');
+      m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+      document.body.appendChild(m);
+      const close = () => document.body.removeChild(m);
+      const esc = s => String(s||'').replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+      m.innerHTML = `
+        <div class="modal" style="max-width:760px;max-height:80vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">📋 Storyboard · ${j.shots.length} shots · ${j.duration}s · ${esc(j.style)}</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
+            ${j.shots.map((s, i) => `
+              <div class="ss-card" style="padding:10px;cursor:pointer" data-subject="${esc(s.subject)}">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                  <div style="font-weight:700;font-size:12px;color:#10b981">${i+1}. ${esc(s.shot_type)}</div>
+                  <div style="font-size:11px;color:#888">${s.duration_sec.toFixed(1)}s</div>
+                </div>
+                <div style="font-size:12px;color:#ddd;line-height:1.4">${esc(s.subject)}</div>
+                ${s.voiceover_line ? `<div style="font-size:11px;color:#888;font-style:italic;margin-top:4px;border-left:2px solid #2a2a4a;padding-left:6px">"${esc(s.voiceover_line)}"</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+          <div style="color:#666;font-size:11px;margin-top:10px;text-align:center">Tap any card to filter sources by its subject.</div>
+        </div>
+      `;
+      m.querySelector('[data-close]').addEventListener('click', close);
+      m.addEventListener('click', (e) => {
+        const card = e.target.closest('[data-subject]');
+        if (!card) return;
+        const q = card.dataset.subject;
+        const qBox = document.getElementById('ss-source-q');
+        if (qBox) {
+          qBox.value = q;
+          if (typeof _reload === 'function') _reload();
+        }
+        SocialStudio.modules.toast.info('Filtered sources by: ' + q);
+      });
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function aiBroll() {
+    const platform = state.activePlatform;
+    const caption = document.getElementById('ss-caption-' + platform).value;
+    if (!caption.trim()) { SocialStudio.modules.toast.info('Generate a caption first'); return; }
+    const tid = SocialStudio.modules.toast.progress('Suggesting B-roll…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/broll', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ caption, source_ids: state.shotList }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.suggestions || !j.suggestions.length) {
+        SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'No suggestions');
+        return;
+      }
+      SocialStudio.modules.toast.resolve(tid, 'success', j.suggestions.length + ' B-roll ideas');
+      const m = document.createElement('div');
+      m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+      document.body.appendChild(m);
+      const close = () => document.body.removeChild(m);
+      const esc = s => String(s||'').replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+      m.innerHTML = `
+        <div class="modal" style="max-width:520px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">📸 B-roll suggestions</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <ul style="font-size:13px;color:#ddd;padding-left:20px;line-height:1.7;list-style:'📸 ';margin:6px 0">
+            ${j.suggestions.map(s => `<li style="padding-left:6px">${esc(s)}</li>`).join('')}
+          </ul>
+          <div style="color:#666;font-size:11px;text-align:center;margin-top:10px">Capture these shots to round out your video.</div>
+        </div>
+      `;
+      m.querySelector('[data-close]').addEventListener('click', close);
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
   async function aiPredict() {
     const platform = state.activePlatform;
     const caption = document.getElementById('ss-caption-' + platform).value;
@@ -18208,6 +18317,8 @@ SocialStudio.modules.composer = (function(){
       body: JSON.stringify({
         hook_text: document.getElementById('ss-hook-input').value || null,
         trims: trims,
+        ken_burns: state.kenBurns !== false,
+        beat_sync: !!state.beatSync,
       }),
     }).then(r => r.json());
     if (ren.error) { SocialStudio.modules.toast.error('Render failed: ' + ren.error); return; }
@@ -18482,6 +18593,15 @@ SocialStudio.modules.composer = (function(){
             <button class="ss-lut-chip" data-lut="bw"        style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('bw')">B&amp;W</button>
             <button class="ss-lut-chip" data-lut="warm"      style="background:none;border:1px solid #2a2a4a;color:#aaa;border-radius:12px;padding:3px 10px;cursor:pointer" onclick="SocialStudio.modules.composer.setLut('warm')">Warm</button>
           </div>
+          <div id="ss-motion-strip" style="display:flex;gap:14px;font-size:11px;margin:2px 0 8px;color:#aaa;align-items:center">
+            <label style="cursor:pointer" title="Slow zoom-in on still photos">
+              <input type="checkbox" id="ss-ken-burns" onchange="SocialStudio.state.kenBurns = this.checked" checked> Ken-Burns
+            </label>
+            <label style="cursor:pointer" title="Snap clip cuts to music beats (requires music attached)">
+              <input type="checkbox" id="ss-beat-sync" onchange="SocialStudio.state.beatSync = this.checked"> Beat-sync cuts
+            </label>
+            <span style="color:#666;font-size:10px;margin-left:auto">Motion</span>
+          </div>
           <div id="ss-preview-shell" class="ss-preview-shell tiktok"></div>
           <input id="ss-hook-input" placeholder="Hook overlay text (≤ 60 chars)" maxlength="60" style="width:100%;margin-top:8px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" oninput="SocialStudio.modules.composer.renderPreview()">
         </div>
@@ -18518,6 +18638,8 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="3 platform-tuned CTAs" onclick="SocialStudio.modules.composer.aiCta()">🎯 CTA</button>
             <button class="btn-secondary ss-tip" data-tip="3 comment-bait prompts" onclick="SocialStudio.modules.composer.aiCommentBait()">💬 Engage</button>
             <button class="btn-secondary ss-tip" data-tip="Performance prediction + improvements" onclick="SocialStudio.modules.composer.aiPredict()">🔮 Predict</button>
+            <button class="btn-secondary ss-tip" data-tip="Plan a 5-10 shot storyboard" onclick="SocialStudio.modules.composer.aiStoryboard()">📋 Storyboard</button>
+            <button class="btn-secondary ss-tip" data-tip="Suggest B-roll shots to fill gaps" onclick="SocialStudio.modules.composer.aiBroll()">📸 B-roll</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
@@ -18534,7 +18656,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q);
   }
 
-  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
+  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiStoryboard, aiBroll, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic };
 })();
 
 SocialStudio.modules.library = (function(){
@@ -18926,11 +19048,55 @@ SocialStudio.modules.brandkit = (function(){
         <label style="display:block;font-size:12px;color:#aaa;margin-bottom:8px">Founded year
           <input id="bk-year" value="${_esc(b.founded_year || '')}" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
         </label>
+        <div style="border-top:1px solid #1a1a2e;margin:14px 0 10px;padding-top:10px">
+          <div style="font-size:12px;color:#aaa;font-weight:700;margin-bottom:8px">Uploads</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:6px">
+            <div>
+              <div style="font-size:11px;color:#888;margin-bottom:4px">Logo (PNG ≤ 1MB)</div>
+              <input type="file" id="bk-up-logo" accept="image/png" style="font-size:11px;color:#aaa;width:100%">
+              <div id="bk-up-logo-status" style="font-size:10px;color:#666;margin-top:2px">${b.logo_path ? 'current: ' + _esc(b.logo_path) : 'not set'}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#888;margin-bottom:4px">Intro (MP4 ≤ 5s, 30MB)</div>
+              <input type="file" id="bk-up-intro" accept="video/mp4,video/quicktime" style="font-size:11px;color:#aaa;width:100%">
+              <div id="bk-up-intro-status" style="font-size:10px;color:#666;margin-top:2px">${b.intro_clip_path ? 'current: ' + _esc(b.intro_clip_path) : 'not set'}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:#888;margin-bottom:4px">Outro (MP4 ≤ 5s, 30MB)</div>
+              <input type="file" id="bk-up-outro" accept="video/mp4,video/quicktime" style="font-size:11px;color:#aaa;width:100%">
+              <div id="bk-up-outro-status" style="font-size:10px;color:#666;margin-top:2px">${b.outro_clip_path ? 'current: ' + _esc(b.outro_clip_path) : 'not set'}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn-secondary" style="font-size:11px" onclick="SocialStudio.modules.brandkit.upload('logo')">Upload logo</button>
+            <button class="btn-secondary" style="font-size:11px" onclick="SocialStudio.modules.brandkit.upload('intro')">Upload intro</button>
+            <button class="btn-secondary" style="font-size:11px" onclick="SocialStudio.modules.brandkit.upload('outro')">Upload outro</button>
+          </div>
+        </div>
         <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
           <button class="btn-primary" onclick="SocialStudio.modules.brandkit.save()">Save</button>
         </div>
       </div>
     `;
+  }
+  async function upload(kind) {
+    const input = document.getElementById('bk-up-' + kind);
+    const file = input && input.files && input.files[0];
+    if (!file) { SocialStudio.modules.toast.info('Choose a file first'); return; }
+    const tid = SocialStudio.modules.toast.progress('Uploading ' + kind + '…');
+    try {
+      const fd = new FormData();
+      fd.append('kind', kind);
+      fd.append('file', file);
+      const r = await fetch('/api/ahb/social/brand-kit/upload', { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok) { SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Upload failed'); return; }
+      SocialStudio.modules.toast.resolve(tid, 'success', kind + ' uploaded (' + Math.round(j.size_bytes/1024) + ' KB)');
+      const st = document.getElementById('bk-up-' + kind + '-status');
+      if (st) st.textContent = 'current: ' + j.path;
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+    }
   }
   async function save() {
     const body = {
@@ -18947,7 +19113,7 @@ SocialStudio.modules.brandkit = (function(){
     });
     document.getElementById('socialBrandKit').style.display = 'none';
   }
-  return { open, save };
+  return { open, save, upload };
 })();
 
 SocialStudio.modules.scheduler = (function(){
