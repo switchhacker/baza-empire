@@ -17933,6 +17933,143 @@ SocialStudio.modules.composer = (function(){
     SocialStudio.modules.progress.watch(ren.job_id, 'Rendering ' + state.activePlatform);
   }
 
+  async function renderAll() {
+    if (!state.shotList.length) {
+      SocialStudio.modules.toast.info('Pick at least one source.');
+      return;
+    }
+    const platforms = Object.entries(state.platforms).filter(([_, on]) => on).map(([p]) => p);
+    if (!platforms.length) {
+      SocialStudio.modules.toast.info('Toggle at least one platform on.');
+      return;
+    }
+    const batchToast = SocialStudio.modules.toast.progress('Rendering 0/' + platforms.length + ' platforms…');
+    let done = 0;
+    const trims = {};
+    state.shotList.forEach(item => {
+      if (typeof item === 'object' && (item.in_seconds != null || item.out_seconds != null)) {
+        trims[String(item.id)] = { in_seconds: item.in_seconds, out_seconds: item.out_seconds };
+      }
+    });
+    for (const platform of platforms) {
+      const post = await fetch('/api/ahb/social/posts', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          platform, variant: platform,
+          source_media_ids: state.shotList.map(i => typeof i === 'object' ? i.id : i),
+          caption: (document.getElementById('ss-caption-' + platform) || {}).value || '',
+          hashtags: (document.getElementById('ss-hashtags-' + platform) || {}).value || '',
+        }),
+      }).then(r => r.json());
+      const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          hook_text: document.getElementById('ss-hook-input').value || null,
+          trims: trims,
+        }),
+      }).then(r => r.json());
+      if (ren.error) {
+        SocialStudio.modules.toast.error(platform + ' failed: ' + ren.error);
+      }
+      done++;
+      SocialStudio.modules.toast.update(batchToast, {
+        percent: Math.round(done / platforms.length * 100),
+        msg: `Rendering ${done}/${platforms.length} platforms…`
+      });
+    }
+    SocialStudio.modules.toast.resolve(batchToast, 'success', `${done}/${platforms.length} renders queued`);
+    setTimeout(() => {
+      if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+    }, 1500);
+  }
+
+  async function aiAB() {
+    const platform = state.activePlatform;
+    const body = () => ({
+      source_ids: state.shotList.map(i => typeof i === 'object' ? i.id : i),
+      platform, tone: document.getElementById('ss-tone').value,
+      length: document.getElementById('ss-length').value,
+      style: document.getElementById('ss-style').value,
+    });
+    SocialStudio.modules.toast.info('Generating A/B variants…');
+    const [a, b] = await Promise.all([
+      fetch('/api/ahb/social/ai/caption', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body()),
+      }).then(r => r.json()),
+      fetch('/api/ahb/social/ai/caption', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body()),
+      }).then(r => r.json()),
+    ]);
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    m.innerHTML = `
+      <div class="modal" style="max-width:780px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🧪 A/B caption variations</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:12px">
+            <div style="font-weight:700;color:#10b981;margin-bottom:6px">Variant A</div>
+            <div style="white-space:pre-wrap;font-size:13px;color:#ddd;min-height:120px">${_esc(a.caption||'')}</div>
+            <button class="btn-primary" data-pick="A" style="width:100%;margin-top:10px">Use A</button>
+          </div>
+          <div style="background:#070712;border:1px solid #2a2a4a;border-radius:8px;padding:12px">
+            <div style="font-weight:700;color:#60a5fa;margin-bottom:6px">Variant B</div>
+            <div style="white-space:pre-wrap;font-size:13px;color:#ddd;min-height:120px">${_esc(b.caption||'')}</div>
+            <button class="btn-primary" data-pick="B" style="width:100%;margin-top:10px">Use B</button>
+          </div>
+        </div>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
+    m.querySelectorAll('[data-pick]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cap = btn.dataset.pick === 'A' ? a.caption : b.caption;
+        document.getElementById('ss-caption-' + platform).value = cap || '';
+        close();
+        SocialStudio.modules.toast.success('Variant ' + btn.dataset.pick + ' applied');
+      });
+    });
+  }
+
+  async function aiTranslate() {
+    const platform = state.activePlatform;
+    const caption = document.getElementById('ss-caption-' + platform).value;
+    if (!caption.trim()) {
+      SocialStudio.modules.toast.info('Generate a caption first.');
+      return;
+    }
+    const tid = SocialStudio.modules.toast.progress('Translating to ES…');
+    const r = await fetch('/api/ahb/social/ai/translate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ text: caption, target_lang: 'es' }),
+    });
+    const j = await r.json();
+    SocialStudio.modules.toast.resolve(tid, 'success', 'Translated');
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    m.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🌐 Spanish translation</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <textarea style="width:100%;height:160px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-size:13px">${_esc(j.text||'')}</textarea>
+        <div style="font-size:11px;color:#666;margin-top:8px">Copy this manually for now — multi-language post storage lands in v2.1.</div>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
+  }
+
   function render() {
     root().innerHTML = `
       <div class="ss-grid">
@@ -17985,8 +18122,11 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
             <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
             <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
           </div>
-          <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render package</button>
+          <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
+          <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
         </div>
       </div>
     `;
@@ -18000,7 +18140,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q);
   }
 
-  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderPreview, renderShotRail, shotRemove, shotTrim, _reload };
+  return { render, toggle, setPlatform, aiCaption, aiHashtags, aiHooks, aiScore, renderPackage, renderAll, aiAB, aiTranslate, renderPreview, renderShotRail, shotRemove, shotTrim, _reload };
 })();
 
 SocialStudio.modules.library = (function(){
