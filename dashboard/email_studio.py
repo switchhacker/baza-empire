@@ -1495,12 +1495,96 @@ def api_cleanup_unsubscribe_candidates():
 
 
 @email_bp.route("/api/email2/cleanup/unsubscribe", methods=["POST"])
+def _send_unsub_mailto(svc, mailto_uri: str) -> dict:
+    """Send a plain unsubscribe email per the List-Unsubscribe mailto: URI.
+    mailto syntax: mailto:address?subject=...&body=..."""
+    from urllib.parse import urlparse, parse_qs, unquote
+    p = urlparse(mailto_uri)
+    to = p.path or ""
+    qs = parse_qs(p.query)
+    subject = (qs.get("subject", ["unsubscribe"])[0]) or "unsubscribe"
+    body = unquote(qs.get("body", ["unsubscribe"])[0]) or "unsubscribe"
+    msg = MIMEText(body, "plain", _charset="utf-8")
+    msg["To"] = to
+    msg["Subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    result = svc.users().messages().send(userId="me", body={"raw": raw}).execute()
+    return {"to": to, "subject": subject, "gmail_id": result.get("id")}
+
+
+def _try_unsub_http(url: str) -> dict:
+    """Attempt the RFC 8058 one-click POST. Uses requests (better redirect/SSL
+    handling than urllib). On TLS/SSL failure of an https URL, retries http://.
+    Returns {ok, status?, final_url?, fell_back?, error?}."""
+    import requests
+    body = "List-Unsubscribe=One-Click"
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        # Some senders 403 on default urllib UA; mimic a normal browser.
+        "User-Agent": "Mozilla/5.0 (compatible; BazaMail/1.0 unsubscribe)",
+    }
+    attempts: list[dict] = []
+
+    def _attempt(u: str, allow_get_fallback: bool) -> dict:
+        # First try POST with follow-redirects on
+        try:
+            r = requests.post(u, data=body, headers=headers, timeout=15,
+                              allow_redirects=True)
+            ok = 200 <= r.status_code < 400
+            res = {"method": "POST", "url": u, "status": r.status_code,
+                   "final_url": r.url, "ok": ok}
+            if ok:
+                return res
+            # Some senders accept only GET on the link (older RFC 2369 style)
+            if allow_get_fallback and r.status_code in (400, 404, 405):
+                try:
+                    rg = requests.get(u, headers=headers, timeout=15,
+                                      allow_redirects=True)
+                    res2 = {"method": "GET", "url": u, "status": rg.status_code,
+                            "final_url": rg.url, "ok": 200 <= rg.status_code < 400}
+                    return res2
+                except Exception as e2:
+                    res["get_error"] = str(e2)
+            return res
+        except requests.exceptions.SSLError as e:
+            return {"method": "POST", "url": u, "ok": False,
+                    "error": f"SSL: {e}", "ssl_error": True}
+        except Exception as e:
+            return {"method": "POST", "url": u, "ok": False, "error": str(e)}
+
+    a = _attempt(url, allow_get_fallback=True)
+    attempts.append(a)
+    if a.get("ok"):
+        return {"ok": True, "status": a.get("status"), "final_url": a.get("final_url"),
+                "method": a.get("method"), "fell_back": False, "attempts": attempts}
+
+    # SSL handshake failure on https — try the http equivalent.
+    if a.get("ssl_error") and url.startswith("https://"):
+        http_url = "http://" + url[len("https://"):]
+        b = _attempt(http_url, allow_get_fallback=True)
+        attempts.append(b)
+        if b.get("ok"):
+            return {"ok": True, "status": b.get("status"), "final_url": b.get("final_url"),
+                    "method": b.get("method"), "fell_back": True,
+                    "fallback_kind": "ssl_to_http", "attempts": attempts}
+
+    return {"ok": False, "error": a.get("error") or f"HTTP {a.get('status')}",
+            "attempts": attempts}
+
+
+@email_bp.route("/api/email2/cleanup/unsubscribe", methods=["POST"])
 def api_cleanup_unsubscribe():
-    """Execute a one-click unsubscribe (RFC 8058 POST) for a given gmail message."""
+    """Best-effort unsubscribe. Order:
+      1) RFC 8058 one-click POST to https:// (with redirects)
+      2) GET fallback if the POST 405/404s
+      3) https → http retry on SSL handshake failure
+      4) mailto: fallback (sends a 1-line email via Gmail)
+    Body: {gmail_id, prefer_mailto?, account?}"""
     data = request.get_json(silent=True) or {}
     gid = data.get("gmail_id")
     if not gid:
         return jsonify({"ok": False, "error": "missing gmail_id"}), 400
+    prefer_mailto = bool(data.get("prefer_mailto"))
     try:
         svc = _gmail(_req_account_id())
         m = svc.users().messages().get(
@@ -1511,20 +1595,41 @@ def api_cleanup_unsubscribe():
         lu = hdrs.get("List-Unsubscribe", "")
         urls = re.findall(r"<([^>]+)>", lu)
         http_url = next((u for u in urls if u.startswith("http")), "")
-        if not http_url:
-            return jsonify({"ok": False, "error": "no http unsubscribe URL"}), 400
-        # RFC 8058 one-click POST
-        try:
-            req = urllib.request.Request(
-                http_url, data=b"List-Unsubscribe=One-Click",
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=15) as r:
-                status = r.status
-        except Exception as e:
-            return jsonify({"ok": False, "error": f"POST failed: {e}", "url": http_url}), 502
-        return jsonify({"ok": True, "status": status, "url": http_url})
+        mailto = next((u for u in urls if u.startswith("mailto:")), "")
+        if not http_url and not mailto:
+            return jsonify({"ok": False, "error": "no unsubscribe targets in header"}), 400
+
+        # Allow callers to skip the http path entirely (e.g. previously failed)
+        if prefer_mailto and mailto:
+            sent = _send_unsub_mailto(svc, mailto)
+            return jsonify({"ok": True, "via": "mailto", **sent})
+
+        http_result = None
+        if http_url:
+            http_result = _try_unsub_http(http_url)
+            if http_result.get("ok"):
+                return jsonify({"ok": True, "via": "http", **http_result})
+
+        # http failed (or no http URL) — try mailto
+        if mailto:
+            try:
+                sent = _send_unsub_mailto(svc, mailto)
+                return jsonify({
+                    "ok": True, "via": "mailto",
+                    "http_failed": http_result if http_result else None,
+                    **sent,
+                })
+            except Exception as e:
+                return jsonify({
+                    "ok": False,
+                    "error": f"both http and mailto failed; mailto: {e}",
+                    "http_result": http_result, "mailto": mailto,
+                }), 502
+
+        return jsonify({
+            "ok": False, "error": "unsubscribe attempts failed",
+            "http_result": http_result, "mailto": mailto or None,
+        }), 502
     except FileNotFoundError as e:
         return jsonify({"ok": False, "error": str(e)}), 503
     except Exception as e:
