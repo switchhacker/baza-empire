@@ -17789,7 +17789,10 @@ SocialStudio.modules.composer = (function(){
   }
 
   async function renderPackage() {
-    if (!state.shotList.length) { SocialStudio.modules.toast.info('Pick at least one source first.'); return; }
+    if (!state.shotList.length) {
+      SocialStudio.modules.toast.info('Pick at least one source.');
+      return;
+    }
     const post = await fetch('/api/ahb/social/posts', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -17799,13 +17802,12 @@ SocialStudio.modules.composer = (function(){
         hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
       }),
     }).then(r => r.json());
-    const ren = await fetch(`/api/ahb/social/posts/${post.id}/render`, {
+    const ren = await fetch(`/api/ahb/social/posts/${post.id}/render-async`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ hook_text: document.getElementById('ss-hook-input').value || null }),
     }).then(r => r.json());
     if (ren.error) { SocialStudio.modules.toast.error('Render failed: ' + ren.error); return; }
-    SocialStudio.modules.toast.success('Rendered → Library');
-    SocialStudio.switchSub('library');
+    SocialStudio.modules.progress.watch(ren.job_id, 'Rendering ' + state.activePlatform);
   }
 
   function render() {
@@ -18595,6 +18597,52 @@ SocialStudio.modules.keymap = (function(){
   };
 
   return { install, showHelp, bindings };
+})();
+</script>
+
+<script>
+SocialStudio.modules.progress = (function(){
+  const POLL_MS = 1500;
+
+  async function watch(jobId, label) {
+    const toastId = SocialStudio.modules.toast.progress(label || 'Rendering…', {
+      onCancel: async () => {
+        await fetch('/api/ahb/social/jobs/' + jobId, { method: 'DELETE' });
+        SocialStudio.modules.toast.update(toastId, { msg: 'Cancelling…' });
+      },
+    });
+    let lastPct = 0;
+    const tick = async () => {
+      let job;
+      try {
+        const r = await fetch('/api/ahb/social/jobs/' + jobId);
+        if (!r.ok) {
+          SocialStudio.modules.toast.resolve(toastId, 'error', 'Job lookup failed');
+          return;
+        }
+        job = await r.json();
+      } catch (e) {
+        SocialStudio.modules.toast.resolve(toastId, 'error', 'Network error');
+        return;
+      }
+      lastPct = Math.min(95, lastPct + 5);
+      SocialStudio.modules.toast.update(toastId, { percent: lastPct });
+      if (job.status === 'done') {
+        SocialStudio.modules.toast.update(toastId, { percent: 100 });
+        setTimeout(() => SocialStudio.modules.toast.resolve(toastId, 'success', 'Render complete'), 200);
+        if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+      } else if (job.status === 'failed') {
+        SocialStudio.modules.toast.resolve(toastId, 'error', 'Render failed: ' + (job.error || 'unknown'));
+      } else if (job.status === 'cancelled') {
+        SocialStudio.modules.toast.resolve(toastId, 'info', 'Render cancelled');
+      } else {
+        setTimeout(tick, POLL_MS);
+      }
+    };
+    setTimeout(tick, POLL_MS);
+  }
+
+  return { watch };
 })();
 </script>
 
