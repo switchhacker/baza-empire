@@ -3,10 +3,13 @@
   "fast_copy_model": "gemma3:12b",
   "vision_model": "qwen3-vl:latest",
   "tts_engine": "piper",
-  "cloud_models_enabled": false,
+  "cloud_models_enabled": true,
   "cloud_copy_model": "gpt-oss:120b-cloud",
-  "autopilot_master": false,
+  "autopilot_master": true,
   "daily_post_cap": 4,
   "cool_down_days": 14,
-  "burn_in_subtitles_default": true
+  "burn_in_subtitles_default": true,
+  "translation_targets": [
+    "es"
+  ]
 }
