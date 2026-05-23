@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-22 ahb123 — Social Media Studio spec written
+- 2026-05-22 ahb123 — Social Media Studio plan written
+- 2026-05-22 Pulled SuperGemma4-26B-Uncensored Q4_K_M + made settings model selector dynamic
+- 2026-05-22 Dual-GPU Ollama instance for SuperGemma4-26B (AMD + NVIDIA via Vulkan)
+- 2026-05-22 Social Media Studio — Phase 1 shipped (14-task plan)
+- 2026-05-22 Comms — John Doe model tester (pick ANY model per chat)
+- 2026-05-22 Social Media Studio — merged into main
+- 2026-05-22 Email tab — modern 3-pane AI-infused mail client (Phase 1)
+- 2026-05-22 Email — multi-account + cleanup tools
 - 2026-05-21 AHB123 — W-9 / 1099 subcontractor support on employees
 - 2026-05-21 ahb123 receipts — address search, project sum, printable PDF
 - 2026-05-21 Recent Receipts — reviewed-checkmark column + zoom lightbox
 - 2026-05-21 Receipt zoom lightbox — center image + floating close button
 - 2026-05-21 QuickRF — add receipt images from Baza Data Hub
 - 2026-05-20 Sam Axe photo bursts — investigation, no drops on Sam side
-- 2026-05-20 Sam Axe bursts — conclusion: ~3 bursts dropped upstream of bot
-- 2026-05-20 Data Hub — video thumbnails + click-to-play
-- 2026-05-17 Sam — drop_pending_updates flipped True → False
-- 2026-05-17 Receipt OCR — investigate inaccurate dates; user says queue images are low-quality vs high-quality…
-- 2026-05-17 Receipt OCR — date accuracy fix: upscale 480px→1800px + tightened prompt
-- 2026-05-17 ahb123 Baza picker — z-index fix
-- 2026-05-17 QuickRF Analyzed bin — fix: typing in total/date/store fields gets eaten
-- 2026-05-17 QuickRF Analyzed bin — template cache made fix invisible until dashboard restart
-- 2026-05-17 QuickRF Analyzed bin — fix: edits revert to OCR value after blur
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
