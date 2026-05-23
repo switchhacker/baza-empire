@@ -845,6 +845,187 @@ def social_settings_put():
     return jsonify({"ok": True, "settings": s})
 
 
+def _ensure_social_v2_tables(db_path: Optional[str] = None) -> None:
+    """Add v2 column additions and tables. Idempotent."""
+    path = db_path or _db_path()
+    con = None
+    try:
+        con = sqlite3.connect(path, timeout=8.0)
+        con.execute("PRAGMA busy_timeout = 8000")
+        for table, col_def in [
+            ("ahb_social_jobs", "pid INTEGER"),
+        ]:
+            try:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass  # column exists
+        con.commit()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_social_v2_tables deferred: {e}", flush=True)
+    finally:
+        if con is not None:
+            con.close()
+
+
+_ensure_social_v2_tables()
+
+
+import threading
+
+
+def _kick_render_async(post_id: int, body: dict) -> int:
+    con = _conn()
+    try:
+        cur = con.execute(
+            "INSERT INTO ahb_social_jobs (post_id, kind, status, input) VALUES (?, ?, ?, ?)",
+            (post_id, "render", "queued", json.dumps(body)),
+        )
+        con.commit()
+        job_id = cur.lastrowid
+    finally:
+        con.close()
+
+    def _worker():
+        con = _conn()
+        try:
+            con.execute(
+                "UPDATE ahb_social_jobs SET status='running', started_at=?, pid=? WHERE id=?",
+                (datetime.utcnow().isoformat(timespec="seconds"), os.getpid(), job_id),
+            )
+            con.commit()
+        finally:
+            con.close()
+        try:
+            source_ids = _get_post_source_ids(post_id)
+            paths = _resolve_media_paths(source_ids)
+            if not paths:
+                _job_finish(job_id, "failed", error="no resolvable source media")
+                return
+            out_dir = os.path.join(
+                DASHBOARD_DIR, "artifacts", "social",
+                datetime.utcnow().strftime("%Y-%m-%d"), str(post_id),
+            )
+            os.makedirs(out_dir, exist_ok=True)
+            is_video = any(
+                p.lower().endswith((".mp4", ".mov", ".webm", ".mkv")) for p in paths
+            )
+            post = _get_post(post_id)
+            if post is None:
+                _job_finish(job_id, "failed", error="post not found")
+                return
+            platform = post["platform"]
+            ext = ".mp4" if is_video else ".jpg"
+            out_path = os.path.join(out_dir, f"{platform}{ext}")
+            hook = (body or {}).get("hook_text")
+            fill = (body or {}).get("fill_mode", "blurred")
+            try:
+                if is_video:
+                    _render.render_video(paths, out_path, platform, hook_text=hook, fill_mode=fill)
+                    cover_path = os.path.join(out_dir, "cover.jpg")
+                    _render.extract_cover(out_path, cover_path)
+                else:
+                    _render.render_still(paths[0], out_path, platform, hook_text=hook, fill_mode=fill)
+                    cover_path = out_path
+            except (subprocess.CalledProcessError, ValueError, OSError) as e:
+                _set_post_status(post_id, "failed")
+                detail = (e.stderr.decode(errors='ignore')[-500:]
+                          if isinstance(e, subprocess.CalledProcessError) and e.stderr
+                          else str(e))
+                _job_finish(job_id, "failed", error=detail, output_path=None)
+                return
+            _set_post_render_paths(post_id, out_path, cover_path)
+            _job_finish(job_id, "done", output_path=out_path)
+        except Exception as e:
+            _job_finish(job_id, "failed", error=str(e))
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    return job_id
+
+
+def _get_post_source_ids(post_id: int) -> list:
+    con = _conn()
+    try:
+        r = con.execute("SELECT source_media_ids FROM ahb_social_posts WHERE id=?", (post_id,)).fetchone()
+    finally:
+        con.close()
+    if not r:
+        return []
+    try:
+        return json.loads(r["source_media_ids"] or "[]")
+    except Exception:
+        return []
+
+
+def _get_post(post_id: int):
+    con = _conn()
+    try:
+        r = con.execute("SELECT * FROM ahb_social_posts WHERE id=?", (post_id,)).fetchone()
+    finally:
+        con.close()
+    return r
+
+
+def _set_post_status(post_id: int, status: str) -> None:
+    con = _conn()
+    try:
+        con.execute("UPDATE ahb_social_posts SET status=?, updated_at=? WHERE id=?",
+                    (status, datetime.utcnow().isoformat(timespec="seconds"), post_id))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _set_post_render_paths(post_id: int, asset_path: str, cover_path: str) -> None:
+    con = _conn()
+    try:
+        con.execute(
+            "UPDATE ahb_social_posts SET asset_path=?, cover_path=?, updated_at=? WHERE id=?",
+            (asset_path, cover_path, datetime.utcnow().isoformat(timespec="seconds"), post_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _job_finish(job_id: int, status: str, error: str = None, output_path: str = None) -> None:
+    con = _conn()
+    try:
+        con.execute(
+            "UPDATE ahb_social_jobs SET status=?, finished_at=?, error=?, output_path=? WHERE id=?",
+            (status, datetime.utcnow().isoformat(timespec="seconds"), error, output_path, job_id),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/render-async", methods=["POST"])
+def social_render_post_async(pid: int):
+    body = request.get_json(silent=True) or {}
+    if _get_post(pid) is None:
+        return jsonify({"error": "post not found"}), 404
+    job_id = _kick_render_async(pid, body)
+    return jsonify({"job_id": job_id})
+
+
+@social_bp.route("/api/ahb/social/jobs/<int:jid>", methods=["DELETE"])
+def social_job_cancel(jid: int):
+    con = _conn()
+    try:
+        row = con.execute("SELECT status, pid FROM ahb_social_jobs WHERE id=?", (jid,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        con.execute(
+            "UPDATE ahb_social_jobs SET status='cancelled', finished_at=? WHERE id=?",
+            (datetime.utcnow().isoformat(timespec="seconds"), jid),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True})
+
+
 @social_bp.route("/api/ahb/social/brand-kit", methods=["GET"])
 def social_brand_get():
     return jsonify(_settings.load_brand_kit())
