@@ -764,6 +764,73 @@
   .ss-safe-zone::after { bottom:0; height:17%; }
   .ss-trunc-marker { position:absolute; left:14px; right:14px; bottom:78px; pointer-events:none; z-index:5; color:rgba(255,255,255,.7); font-size:9px; font-style:italic; text-align:right }
 </style>
+<style>
+  @media (max-width: 768px) {
+    #tab-social .ss-grid {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    #tab-social .ss-card { padding: 8px; }
+    #ss-source-grid {
+      grid-template-columns: repeat(4, 100px) !important;
+      grid-auto-flow: column;
+      overflow-x: auto;
+      max-height: 140px !important;
+      padding-bottom: 6px;
+    }
+    #ss-source-grid::-webkit-scrollbar { height: 4px; }
+    #ss-variant-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      max-height: 60vh;
+      overflow-y: auto;
+      background: #0a0a18;
+      border-top: 2px solid #10b981;
+      border-radius: 14px 14px 0 0;
+      z-index: 1000;
+      transform: translateY(calc(100% - 56px));
+      transition: transform .25s ease;
+      box-shadow: 0 -8px 24px rgba(0,0,0,.5);
+    }
+    #ss-variant-panel.open { transform: translateY(0); }
+    #ss-variant-panel::before {
+      content: 'Tap to ✏ edit copy ▲';
+      display: block;
+      text-align: center;
+      padding: 12px;
+      font-size: 13px;
+      color: #aaa;
+      cursor: pointer;
+    }
+    #tab-social button { min-height: 44px; }
+    #socialToastStack { bottom: 80px !important; }
+  }
+  .ss-tip { position: relative; }
+  .ss-tip:hover::after, .ss-tip:focus::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0a0a18;
+    border: 1px solid #2a2a4a;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #ddd;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 999;
+    pointer-events: none;
+  }
+  .ss-tour-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 99998;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ss-tour-card {
+    background: #0e0e1e; border: 1px solid #10b981; border-radius: 12px;
+    padding: 20px; max-width: 420px; color: #fff;
+  }
+</style>
 </head>
 <body>
 
@@ -18156,12 +18223,12 @@ SocialStudio.modules.composer = (function(){
             </div>
           `).join('')}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
-            <button class="btn-secondary" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
+            <button class="btn-secondary ss-tip" data-tip="Generate caption (local AI)" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
+            <button class="btn-secondary ss-tip" data-tip="Suggest hashtags (forces brand floor tags)" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
+            <button class="btn-secondary ss-tip" data-tip="3 hook variants — pattern-interrupt style" onclick="SocialStudio.modules.composer.aiHooks()">🪝 Hooks</button>
+            <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 + critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
+            <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
+            <button class="btn-secondary ss-tip" data-tip="Translate caption to Spanish" onclick="SocialStudio.modules.composer.aiTranslate()">🌐 ES</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
@@ -18250,7 +18317,7 @@ SocialStudio.modules.library = (function(){
         </select>
         <input placeholder="Search caption/hashtags" oninput="SocialStudio.modules.library.setFilter('q', this.value)" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
       </div>
-      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet.</div>'}</div>
+      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'composer\')">Pick media in Composer →</button></div>'}</div>
     `;
   }
 
@@ -18369,7 +18436,7 @@ SocialStudio.modules.presets = (function(){
           <button class="btn-primary" onclick="SocialStudio.modules.presets.edit(null)">+ New</button>
         </div>
       </div>
-      <div>${list || '<div style="color:#444;padding:40px;text-align:center">No presets. Click &quot;Install seed presets&quot;.</div>'}</div>
+      <div>${list || '<div style="color:#444;padding:40px;text-align:center">No presets. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.modules.presets.installSeeds()">Install 8 seed presets →</button></div>'}</div>
     `;
   }
 
@@ -18613,7 +18680,7 @@ SocialStudio.modules.scheduler = (function(){
         `).join('')}
       </div>
     `).join('');
-    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">No scheduled posts.</div>';
+    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">Nothing scheduled. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'library\')">Pick from Library →</button></div>';
   }
   return { render: load };
 })();
@@ -19224,6 +19291,107 @@ SocialStudio.modules.gridpreview = (function(){
   }
 
   return { install, toggle, refresh };
+})();
+</script>
+
+<script>
+SocialStudio.modules.mobile = (function(){
+  function install() {
+    if (window.matchMedia && window.matchMedia('(min-width: 769px)').matches) return;
+    const vp = document.getElementById('ss-variant-panel');
+    if (!vp || vp.dataset.mobileWired) return;
+    vp.dataset.mobileWired = '1';
+    vp.addEventListener('click', (e) => {
+      if (e.target === vp || (e.target.previousSibling === null && e.target.parentElement === vp)) {
+        vp.classList.toggle('open');
+      }
+    });
+  }
+  if (SocialStudio.modules.composer) {
+    const origRender = SocialStudio.modules.composer.render;
+    SocialStudio.modules.composer.render = function() {
+      const r = origRender.apply(this, arguments);
+      setTimeout(install, 0);
+      return r;
+    };
+  }
+  return { install };
+})();
+
+SocialStudio.modules.tour = (function(){
+  const STEPS = [
+    { text: '👋 Welcome to Social Studio. Make TikTok + Instagram content from your project media — all local AI.' },
+    { text: '🗂 Pick sources from your existing project media in the left column.' },
+    { text: '📱 Live preview shows exactly what your post will look like on each platform.' },
+    { text: '✨ AI tools: caption, hashtags, hooks, score, A/B, translate.' },
+    { text: '📚 Library tracks all drafts, scheduled, and posted content.' },
+    { text: '🤖 Auto-Pilot drafts posts on a schedule when you enable it.' },
+    { text: 'Press ? anytime to see keyboard shortcuts. Happy posting! 🚀' },
+  ];
+
+  function show(stepIdx) {
+    document.querySelectorAll('.ss-tour-overlay').forEach(e => e.remove());
+    if (stepIdx >= STEPS.length) {
+      localStorage.setItem('ss_tour_done', '1');
+      return;
+    }
+    const step = STEPS[stepIdx];
+    const o = document.createElement('div');
+    o.className = 'ss-tour-overlay';
+    o.innerHTML = `
+      <div class="ss-tour-card">
+        <div style="font-size:14px;line-height:1.4;color:#fff;margin-bottom:14px">${step.text}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <button class="btn-secondary" data-skip>Skip tour</button>
+          <div style="color:#aaa;font-size:11px">${stepIdx+1} / ${STEPS.length}</div>
+          <button class="btn-primary" data-next>${stepIdx === STEPS.length - 1 ? 'Done' : 'Next'}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(o);
+    o.querySelector('[data-skip]').addEventListener('click', () => {
+      o.remove(); localStorage.setItem('ss_tour_done', '1');
+    });
+    o.querySelector('[data-next]').addEventListener('click', () => {
+      o.remove(); show(stepIdx + 1);
+    });
+  }
+
+  function maybeStart() {
+    if (localStorage.getItem('ss_tour_done')) return;
+    if (!document.getElementById('tab-social').classList.contains('active')) return;
+    setTimeout(() => show(0), 400);
+  }
+
+  function force() { localStorage.removeItem('ss_tour_done'); show(0); }
+
+  const origInit = SocialStudio.init;
+  SocialStudio.init = function() { const r = origInit.apply(this, arguments); maybeStart(); return r; };
+  return { show, force };
+})();
+
+SocialStudio.modules.a11y = (function(){
+  function install() {
+    document.querySelectorAll('.modal-bg[id^="social"]').forEach(m => {
+      m.setAttribute('role', 'dialog');
+      m.setAttribute('aria-modal', 'true');
+    });
+    if (!document.body.dataset.ssEscWired) {
+      document.body.dataset.ssEscWired = '1';
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        document.querySelectorAll('.modal-bg[id^="social"]').forEach(m => {
+          if (m.style.display !== 'none') m.style.display = 'none';
+        });
+      });
+    }
+    document.querySelectorAll('#tab-social button').forEach(b => {
+      if (!b.getAttribute('aria-label')) b.setAttribute('aria-label', (b.textContent || '').trim() || 'button');
+    });
+  }
+  const origInit = SocialStudio.init;
+  SocialStudio.init = function() { const r = origInit.apply(this, arguments); install(); return r; };
+  return { install };
 })();
 </script>
 
