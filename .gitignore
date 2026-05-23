@@ -26,3 +26,5 @@ dashboard/artifacts/.vision-scraped/
 dashboard/artifacts/.vision-crops/
 
 venv
+dashboard/static/social/piper-voices/*.onnx
+dashboard/static/social/piper-voices/*.onnx.json
