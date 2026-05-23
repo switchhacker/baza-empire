@@ -3897,9 +3897,11 @@ def api_infra_metrics():
     })
 
 
-# ── Email — local SQLite (context.db on baza) ─────────────────────────────────
+# ── Email — local SQLite (baza_projects.db `emails` table) ────────────────────
+# Legacy /api/email/* routes (kept for backwards-compat with the previous queue UI).
+# The modern Mail UI lives at /email and uses /api/email2/* via email_studio.py.
 
-EMAIL_DB_PATH = os.path.join(FRAMEWORK_DIR, "context.db")
+EMAIL_DB_PATH = os.path.join(DASHBOARD_DIR, "baza_projects.db")
 
 def get_email_db():
     conn = sqlite3.connect(EMAIL_DB_PATH)
@@ -3947,28 +3949,28 @@ def email_page():
 @app.route('/api/email/queue')
 def api_email_queue():
     if not email_db_exists():
-        return jsonify({"records": [], "error": "context.db not found — email pipeline not initialised yet"})
+        return jsonify({"records": [], "error": "baza_projects.db not found"})
     status = request.args.get("status", "")
     limit  = int(request.args.get("limit", 50))
     try:
         conn = get_email_db()
         if status:
             rows = conn.execute(
-                "SELECT * FROM email_queue WHERE status=? ORDER BY received_at DESC LIMIT ?",
+                "SELECT * FROM emails WHERE status=? ORDER BY received_at DESC LIMIT ?",
                 (status, limit)
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM email_queue ORDER BY received_at DESC LIMIT ?",
+                "SELECT * FROM emails ORDER BY received_at DESC LIMIT ?",
                 (limit,)
             ).fetchall()
         conn.close()
-        # Normalise field names for the frontend (from -> sender, body_snippet -> snippet)
+        # Normalise field names for legacy frontend (from_addr → from)
         records = []
         for r in rows:
             d = dict(r)
-            d.setdefault("from",         d.get("sender", ""))
-            d.setdefault("body_snippet", d.get("snippet", ""))
+            d.setdefault("from", d.get("from_addr", ""))
+            d.setdefault("to",   d.get("to_addr", ""))
             records.append(d)
         return jsonify({"records": records})
     except Exception as e:
@@ -3980,7 +3982,7 @@ def api_email_stats():
         return jsonify({"total":0,"pending":0,"approved":0,"ignored":0,"sent":0,"high_priority":0})
     try:
         conn = get_email_db()
-        rows = conn.execute("SELECT status, priority FROM email_queue").fetchall()
+        rows = conn.execute("SELECT status, priority FROM emails").fetchall()
         conn.close()
         stats = {"total": len(rows), "pending": 0, "approved": 0,
                  "ignored": 0, "sent": 0, "high_priority": 0}
@@ -3995,9 +3997,9 @@ def api_email_stats():
 
 @app.route('/api/email/action', methods=['POST'])
 def api_email_action():
-    """approve / ignore / restore an email by its local DB id or gmail_id."""
+    """Legacy approve / ignore / restore. Uses email-pipeline/send_reply.py for sends."""
     if not email_db_exists():
-        return jsonify({"success": False, "error": "context.db not found"})
+        return jsonify({"success": False, "error": "baza_projects.db not found"})
     body     = request.get_json() or {}
     gmail_id = body.get("gmail_id")
     action   = body.get("action", "")
@@ -4014,31 +4016,27 @@ def api_email_action():
         conn = get_email_db()
         if reply:
             conn.execute(
-                "UPDATE email_queue SET status=?, suggested_reply=? WHERE gmail_id=?",
+                "UPDATE emails SET status=?, suggested_reply=? WHERE gmail_id=?",
                 (new_status, reply, gmail_id)
             )
         else:
             conn.execute(
-                "UPDATE email_queue SET status=? WHERE gmail_id=?",
+                "UPDATE emails SET status=? WHERE gmail_id=?",
                 (new_status, gmail_id)
             )
         conn.commit()
 
-        # If approving — run email_send.py via subprocess
         if action == "approve":
             row = conn.execute(
-                "SELECT id FROM email_queue WHERE gmail_id=?", (gmail_id,)
+                "SELECT id FROM emails WHERE gmail_id=?", (gmail_id,)
             ).fetchone()
             conn.close()
             if row:
                 local_id = row["id"]
-                send_cmd = [
-                    VENV_PYTHON,
-                    os.path.join(FRAMEWORK_DIR, "skills", "shared", "email_send.py"),
-                    "approve", str(local_id)
-                ]
+                send_script = os.path.join(FRAMEWORK_DIR, "email-pipeline", "send_reply.py")
+                send_cmd = [VENV_PYTHON, send_script, str(local_id)]
                 if reply:
-                    send_cmd += ["send", str(local_id), reply]
+                    send_cmd.append(reply)
                 subprocess.Popen(send_cmd, cwd=FRAMEWORK_DIR,
                                  stdout=open(os.path.join(LOGS_DIR, "email_send.log"), "a"),
                                  stderr=subprocess.STDOUT)
@@ -4051,10 +4049,11 @@ def api_email_action():
 
 @app.route('/api/email/fetch', methods=['POST'])
 def api_email_fetch():
-    """Manually trigger email_fetch.py to pull new emails from Gmail."""
+    """Manually trigger email-pipeline/fetch_emails.py to pull new emails from Gmail."""
     try:
+        fetch_script = os.path.join(FRAMEWORK_DIR, "email-pipeline", "fetch_emails.py")
         proc = subprocess.Popen(
-            [VENV_PYTHON, os.path.join(FRAMEWORK_DIR, "skills", "shared", "email_fetch.py")],
+            [VENV_PYTHON, fetch_script],
             cwd=FRAMEWORK_DIR,
             stdout=open(os.path.join(LOGS_DIR, "email_fetch.log"), "a"),
             stderr=subprocess.STDOUT
@@ -13772,6 +13771,13 @@ except ImportError:
     from social_studio import _ensure_social_tables, social_bp as _social_bp
 _ensure_social_tables()
 app.register_blueprint(_social_bp)
+
+try:
+    from dashboard.email_studio import _ensure_email_schema, email_bp as _email_bp
+except ImportError:
+    from email_studio import _ensure_email_schema, email_bp as _email_bp
+_ensure_email_schema()
+app.register_blueprint(_email_bp)
 
 
 @app.route('/api/ahb/documents', methods=['GET'])
