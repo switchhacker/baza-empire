@@ -589,14 +589,41 @@ def social_posts_list():
         sql += " AND p.platform=?"; args.append(platform)
     if project_id is not None:
         sql += " AND p.project_id=?"; args.append(project_id)
-    if q:
-        sql += " AND (LOWER(p.caption) LIKE ? OR LOWER(p.hashtags) LIKE ?)"
-        args += [f"%{q}%", f"%{q}%"]
+    # Full-text / substring search: ignore queries shorter than 3 chars.
+    use_q = len(q) >= 3
+    fts_clause = None
+    fts_arg = None
+    if use_q:
+        # FTS5 phrase match — wrap in double quotes so user input with
+        # operator chars (& : * etc) is treated as a literal phrase.
+        fts_arg = '"' + q.replace('"', '""') + '"'
+        fts_clause = (
+            " AND p.id IN (SELECT rowid FROM ahb_social_posts_fts "
+            "WHERE ahb_social_posts_fts MATCH ?)"
+        )
     sql += " ORDER BY p.id DESC LIMIT ? OFFSET ?"
     args += [limit, offset]
     con = _conn()
     try:
-        rows = con.execute(sql, args).fetchall()
+        if use_q:
+            # Try FTS5 path: splice the MATCH subquery in before ORDER BY
+            order_idx = sql.rfind(" ORDER BY ")
+            fts_sql = sql[:order_idx] + fts_clause + sql[order_idx:]
+            fts_args = args[:-2] + [fts_arg] + args[-2:]
+            try:
+                rows = con.execute(fts_sql, fts_args).fetchall()
+            except sqlite3.OperationalError:
+                # FTS5 table missing or syntax error: fall back to LIKE.
+                like_clause = (
+                    " AND (LOWER(p.caption) LIKE ? OR LOWER(p.hashtags) LIKE ?"
+                    " OR LOWER(p.first_comment) LIKE ?)"
+                )
+                like_sql = sql[:order_idx] + like_clause + sql[order_idx:]
+                wild = f"%{q}%"
+                like_args = args[:-2] + [wild, wild, wild] + args[-2:]
+                rows = con.execute(like_sql, like_args).fetchall()
+        else:
+            rows = con.execute(sql, args).fetchall()
         items = [_row_to_post(r) for r in rows]
         # Attach tags per post (single batched query)
         if items:

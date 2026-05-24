@@ -221,3 +221,58 @@ def test_post_tags_set_with_stale_ids_only_applies_valid(client):
     j = r.get_json()
     assert r.status_code == 200
     assert j["applied"] == 1
+
+
+def test_search_q_finds_fts_match(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, hashtags) VALUES (1,'ig_reel','A','draft','brooklyn renovation kitchen','#reno')")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, hashtags) VALUES (1,'ig_reel','A','draft','queens bathroom remodel','#bath')")
+    con.commit()
+    con.close()
+    items = c.get("/api/ahb/social/posts?q=brooklyn").get_json()["items"]
+    captions = [p["caption"] for p in items]
+    assert any("brooklyn" in (cap or "") for cap in captions)
+    assert not any("queens" in (cap or "") for cap in captions)
+
+
+def test_search_q_short_string_returns_all(client):
+    """q shorter than 3 chars should be ignored (no filter)."""
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','one')")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','two')")
+    con.commit()
+    con.close()
+    items = c.get("/api/ahb/social/posts?q=on").get_json()["items"]
+    assert len(items) >= 2
+
+
+def test_search_q_matches_hashtags(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, hashtags) VALUES (1,'ig_reel','A','draft','x','#poolconstruction #ahbco')")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, hashtags) VALUES (1,'ig_reel','A','draft','x','#kitchen')")
+    con.commit()
+    con.close()
+    items = c.get("/api/ahb/social/posts?q=poolconstruction").get_json()["items"]
+    assert len(items) == 1
+
+
+def test_search_q_combines_with_tag_filter(client):
+    c, db = client
+    tid = c.post("/api/ahb/social/tags", json={"name": "launch"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','brooklyn kitchen launch')")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','brooklyn bathroom only')")
+    con.commit()
+    pid_kitchen = con.execute("SELECT id FROM ahb_social_posts WHERE caption LIKE '%kitchen%' ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    c.post(f"/api/ahb/social/posts/{pid_kitchen}/tags", json={"tag_ids": [tid]})
+    items = c.get("/api/ahb/social/posts?q=brooklyn&tag=launch").get_json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == pid_kitchen
