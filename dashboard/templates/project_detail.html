@@ -74,6 +74,7 @@
     .toast.err{border-color:#3a1a1a;color:#ff8888}
     .toast.ok{border-color:#1a3a2a;color:#00d084}
   </style>
+  <script src="/static/vendor/d3.v7.min.js"></script>
 </head>
 <body>
   {% set nav_active = 'projects' %}
@@ -98,6 +99,7 @@
     </div>
 
     <div class="tabs" id="tabs">
+      <div class="tab" data-tab="scaffold" onclick="setTab('scaffold')">🌳 Scaffold</div>
       <div class="tab active" data-tab="overview" onclick="setTab('overview')">Overview</div>
       <div class="tab" data-tab="brainstorm" onclick="setTab('brainstorm')">Brainstorm</div>
       <div class="tab" data-tab="develop" onclick="setTab('develop')">Develop</div>
@@ -298,6 +300,69 @@
     <!-- Iterate -->
     <div class="panel" id="panel-iterate">
       <div class="placeholder">Iterate — assign tasks to agents to extend or fix this project. Coming in #5 (agent project access).</div>
+    </div>
+
+    <!-- Scaffold (Live Build Tree) -->
+    <div class="panel" id="panel-scaffold" style="padding:0">
+      <div id="tab-scaffold" class="tab-content">
+        <!-- Header strip -->
+        <div class="scaffold-header" style="display:flex;align-items:center;gap:12px;padding:10px;border-bottom:1px solid #2a2a2a;">
+          <button id="scaffold-pause-toggle" class="btn-sm" title="Pause/resume autonomous runner">⏸ Pause</button>
+          <button id="scaffold-start-btn" class="btn-sm" style="background:#22c55e;color:#fff;">▶ Start scaffold</button>
+          <div style="flex:1;">
+            <div class="scaffold-progress-bar" style="position:relative;height:18px;background:#222;border-radius:9px;overflow:hidden;">
+              <div id="scaffold-progress-fill" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:linear-gradient(90deg,#FFD700,#22c55e);transition:width 0.4s;"></div>
+              <span id="scaffold-progress-label" style="position:absolute;right:10px;top:0;line-height:18px;font-size:12px;font-weight:700;color:#fff;text-shadow:0 0 3px #000;">0%</span>
+            </div>
+          </div>
+          <button id="scaffold-open-inventory" class="btn-sm">🧰 Inventory</button>
+          <button id="scaffold-open-equipment" class="btn-sm">🔧 Equipment</button>
+          <button id="scaffold-open-supplies" class="btn-sm">🛒 Supplies</button>
+        </div>
+
+        <!-- Tree canvas -->
+        <div id="scaffold-tree-wrap" style="position:relative;height:520px;background:#0e0e0e;overflow:hidden;border-bottom:1px solid #2a2a2a;">
+          <svg id="scaffold-tree-svg" style="width:100%;height:100%;"></svg>
+          <div id="scaffold-empty-state" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#777;text-align:center;">
+            <div>
+              <div style="font-size:48px;">🌱</div>
+              <div style="margin-top:8px;">No scaffold yet. Click <strong>▶ Start scaffold</strong> to grow your build tree.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Side panel (slides in from right) -->
+        <div id="scaffold-side-panel" style="position:fixed;top:0;right:-440px;width:420px;height:100vh;background:#161616;border-left:1px solid #333;z-index:9000;transition:right 0.25s;overflow-y:auto;box-shadow:-4px 0 16px rgba(0,0,0,0.5);">
+          <div id="scaffold-side-panel-body" style="padding:14px;">
+            <button onclick="ScaffoldUI && ScaffoldUI.closeSidePanel()" style="float:right;font-size:18px;background:none;border:none;color:#999;cursor:pointer;">✕</button>
+            <div id="scaffold-node-detail"></div>
+          </div>
+        </div>
+
+        <!-- BOM table -->
+        <div style="padding:12px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+            <h3 style="margin:0;">📋 Bill of Materials</h3>
+            <button id="scaffold-bom-add" class="btn-sm">+ Add part</button>
+          </div>
+          <table id="scaffold-bom-table" style="width:100%;border-collapse:collapse;">
+            <thead style="background:#1a1a1a;">
+              <tr>
+                <th style="padding:6px;text-align:left;">✓</th>
+                <th style="padding:6px;text-align:left;">Name</th>
+                <th style="padding:6px;text-align:left;">Qty</th>
+                <th style="padding:6px;text-align:left;">Unit $</th>
+                <th style="padding:6px;text-align:left;">Vendor</th>
+                <th style="padding:6px;text-align:left;">Status</th>
+                <th style="padding:6px;text-align:left;">Node</th>
+                <th style="padding:6px;text-align:left;"></th>
+              </tr>
+            </thead>
+            <tbody id="scaffold-bom-tbody"></tbody>
+          </table>
+          <div id="scaffold-bom-empty" style="padding:20px;color:#777;text-align:center;">No parts yet.</div>
+        </div>
+      </div>
     </div>
   </div>
 
