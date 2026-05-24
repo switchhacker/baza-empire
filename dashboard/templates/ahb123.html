@@ -20582,17 +20582,19 @@ SocialStudio.modules.calendar = (function(){
     const post = _posts.find(p => p.id === id);
     if (!post) return;
 
-    // Build new scheduled_at, preserving time-of-day.
+    // Build new scheduled_at, preserving time-of-day and any TZ suffix.
     const oldSched = (post.scheduled_at || '').trim();
     const oldDate = oldSched.slice(0, 10);
     if (oldDate === dateKey) return; // no-op drop on same day
     let timePart = '12:00:00';
+    let tzSuffix = '';
     if (oldSched.length >= 19) {
       timePart = oldSched.slice(11, 19);
+      tzSuffix = oldSched.slice(19);  // '', '+00:00', 'Z', etc.
     } else if (oldSched.includes('T') && oldSched.length > 11) {
       timePart = oldSched.slice(11) || '12:00:00';
     }
-    const newSched = dateKey + 'T' + timePart;
+    const newSched = dateKey + 'T' + timePart + tzSuffix;
 
     try {
       const r = await fetch('/api/ahb/social/posts/' + id, {
@@ -20602,8 +20604,7 @@ SocialStudio.modules.calendar = (function(){
       });
       if (r.ok) {
         SocialStudio.modules.toast.success('Rescheduled to ' + dateKey);
-        post.scheduled_at = newSched;
-        _draw();
+        await refresh();
       } else {
         SocialStudio.modules.toast.error('Reschedule failed');
       }
@@ -20665,6 +20666,7 @@ SocialStudio.modules.calendar = (function(){
   }
   // Allow forced refresh from outside (e.g. after PATCH from List view).
   async function refresh() {
+    _posts = [];
     await _fetchPosts();
     _draw();
   }
