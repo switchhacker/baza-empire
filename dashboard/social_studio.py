@@ -1801,3 +1801,145 @@ except ImportError:
 social_ai.register(social_bp)
 social_audio.register(social_bp)
 social_sources.register(social_bp)
+
+
+def _ensure_social_v22_tables(db_path: Optional[str] = None) -> None:
+    """Add v2.2 tables for workflow/trends/analytics. Idempotent."""
+    path = db_path or _db_path()
+    con = None
+    try:
+        con = sqlite3.connect(path, timeout=8.0)
+        con.execute("PRAGMA busy_timeout = 8000")
+        for col_def in [
+            "requires_review INTEGER DEFAULT 0",
+            "schedule_dow TEXT",
+            "schedule_time TEXT",
+        ]:
+            try:
+                con.execute(f"ALTER TABLE ahb_social_presets ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS ahb_social_post_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                caption_template TEXT,
+                hashtag_set TEXT,
+                platform_targets TEXT DEFAULT '[]',
+                first_comment_template TEXT,
+                music_id INTEGER,
+                voiceover_script TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                color TEXT DEFAULT '#10b981',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_post_tags (
+                post_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                PRIMARY KEY (post_id, tag_id)
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_hashtag_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag TEXT NOT NULL,
+                observed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                source_url TEXT,
+                notes TEXT
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_competitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                handle TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_sound_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sound_url TEXT,
+                example_video_url TEXT,
+                title TEXT,
+                observed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_analytics (
+                post_id INTEGER PRIMARY KEY,
+                views INTEGER DEFAULT 0,
+                likes INTEGER DEFAULT 0,
+                comments INTEGER DEFAULT 0,
+                saves INTEGER DEFAULT 0,
+                shares INTEGER DEFAULT 0,
+                posted_at TEXT,
+                post_url TEXT,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_approval_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT,
+                note TEXT,
+                at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS ahb_social_post_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL,
+                version_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                snapshot TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_hashtag_snapshots_tag ON ahb_social_hashtag_snapshots(tag);
+            CREATE INDEX IF NOT EXISTS idx_post_versions_post ON ahb_social_post_versions(post_id);
+            CREATE INDEX IF NOT EXISTS idx_approval_events_post ON ahb_social_approval_events(post_id);
+        """)
+        try:
+            con.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS ahb_social_posts_fts USING fts5(
+                    caption, hashtags, first_comment,
+                    content='ahb_social_posts',
+                    content_rowid='id'
+                );
+                CREATE TRIGGER IF NOT EXISTS ahb_social_posts_ai AFTER INSERT ON ahb_social_posts BEGIN
+                    INSERT INTO ahb_social_posts_fts(rowid, caption, hashtags, first_comment)
+                    VALUES (new.id, new.caption, new.hashtags, new.first_comment);
+                END;
+                CREATE TRIGGER IF NOT EXISTS ahb_social_posts_au AFTER UPDATE ON ahb_social_posts BEGIN
+                    INSERT INTO ahb_social_posts_fts(ahb_social_posts_fts, rowid, caption, hashtags, first_comment)
+                    VALUES('delete', old.id, old.caption, old.hashtags, old.first_comment);
+                    INSERT INTO ahb_social_posts_fts(rowid, caption, hashtags, first_comment)
+                    VALUES (new.id, new.caption, new.hashtags, new.first_comment);
+                END;
+                CREATE TRIGGER IF NOT EXISTS ahb_social_posts_ad AFTER DELETE ON ahb_social_posts BEGIN
+                    INSERT INTO ahb_social_posts_fts(ahb_social_posts_fts, rowid, caption, hashtags, first_comment)
+                    VALUES('delete', old.id, old.caption, old.hashtags, old.first_comment);
+                END;
+            """)
+            con.execute("""
+                INSERT INTO ahb_social_posts_fts(rowid, caption, hashtags, first_comment)
+                SELECT id, caption, hashtags, first_comment FROM ahb_social_posts
+                WHERE id NOT IN (SELECT rowid FROM ahb_social_posts_fts)
+            """)
+        except sqlite3.OperationalError as e:
+            print(f"[startup] FTS5 unavailable, search will fall back to LIKE: {e}", flush=True)
+        con.commit()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_social_v22_tables deferred: {e}", flush=True)
+    finally:
+        if con is not None:
+            con.close()
+
+
+_ensure_social_v22_tables()
+
+
+try:
+    from dashboard import social_workflow, social_trends, social_analytics
+except ImportError:
+    import social_workflow
+    import social_trends
+    import social_analytics
+social_workflow.register(social_bp)
+social_trends.register(social_bp)
+social_analytics.register(social_bp)
