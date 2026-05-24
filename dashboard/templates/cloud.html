@@ -418,6 +418,7 @@
     .ml-tick.year{font-size:18px;color:#ffe680;text-shadow:0 0 18px rgba(255,200,60,.7),0 2px 8px rgba(0,0,0,.8);letter-spacing:3px}
     .ml-tick .ml-tick-bar{width:48px;height:2px;background:rgba(255,255,255,.55);border-radius:2px}
     .ml-tick.year .ml-tick-bar{width:84px;height:3px;background:rgba(255,220,120,.7);box-shadow:0 0 12px rgba(255,200,60,.6)}
+    .ml-tick.empty{opacity:.38}
 
     /* Memory card — liquid glass */
     .ml-card{position:absolute;border-radius:16px;overflow:hidden;cursor:pointer;
@@ -2180,20 +2181,27 @@ function fmtSize(b){
 
 /* ===================== MEMORY LANE ===================== */
 const ML_SEASON_OF_MONTH = {1:'winter',2:'winter',3:'spring',4:'spring',5:'spring',6:'summer',7:'summer',8:'summer',9:'fall',10:'fall',11:'fall',12:'winter'};
-const ML_PX_PER_MONTH = 520;   // vertical pixels per month
-const ML_LANE_PAD = 28;        // gap from center line to nearest card edge
-const ML_LANE_RIGHT_EDGE = 24; // gap from viewport edge
-const ML_CARD_W_BASE = 200;    // base card width
-const ML_CARD_H_BASE = 200;    // base card height (square-ish; we vary)
+const ML_PX_PER_MONTH = 520;        // vertical pixels per month
+const ML_LANE_PAD = 28;             // gap from center line to nearest card edge
+const ML_CARD_W_BASE = 200;         // base card width
+const ML_CARD_H_BASE = 200;         // base card height
+const ML_RENDER_WINDOW_PX = 1400;   // render cards within ±this many px of viewport center
+const ML_PER_MONTH = 50;            // server cap per month
+const ML_PREFETCH_MONTHS = 3;       // ±N months around current center
 
-let mlItems = null;       // chronological flat list
-let mlYearMonths = null;  // sorted list of "YYYY-MM" keys present
+let mlOutline = null;           // [{ym, c}]
+let mlMonthLoaded = null;       // Set of "YYYY-MM" we've fetched items for
+let mlMonthLoading = null;      // Set of in-flight ym's
+let mlItemsByAbs = null;        // Map<absMonth, items[]>  (each item has layout fields)
+let mlAllRenderedCards = null;  // Map<key, DOM>  key = ym + '#' + seq
 let mlCurrentYear = null;
 let mlCurrentMonth = null;
-let mlScrollTop = 0;
 let mlRafId = null;
 let mlActiveSeason = null;
 let mlMounted = false;
+let mlStartMonths = 0;
+let mlEndMonths = 0;
+let mlPaddingPx = 0;
 
 function showMemoryLane(){
   _hideAllViews();
@@ -2205,57 +2213,118 @@ function showMemoryLane(){
 async function mlMount(){
   const empty = document.getElementById('ml-empty');
   empty.classList.add('hidden');
-  try {
-    if (!mlItems) {
-      const r = await fetch('/api/cloud/media');
-      const data = await r.json();
-      mlItems = _mlFlattenItems(data);
-    }
-  } catch (e) {
-    empty.classList.remove('hidden');
-    empty.querySelector('.ml-empty-text').textContent = 'Could not load memories';
-    empty.querySelector('.ml-empty-sub').textContent = e.message || '';
-    return;
-  }
-  if (!mlItems || !mlItems.length) {
-    empty.classList.remove('hidden');
-    return;
-  }
   const firstTime = !mlMounted;
+  if (firstTime) {
+    mlMonthLoaded = new Set();
+    mlMonthLoading = new Set();
+    mlItemsByAbs = new Map();
+    mlAllRenderedCards = new Map();
+    try {
+      // Initial fetch: outline + first window of items (≈30 KB / <100ms).
+      const r = await fetch('/api/cloud/media/lane?per_month=' + ML_PER_MONTH);
+      const data = await r.json();
+      mlOutline = data.outline || [];
+      if (!mlOutline.length) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      _mlAbsorbItems(data.items || []);
+      _mlMarkRangeLoaded(data.from, data.to);
+    } catch (e) {
+      empty.classList.remove('hidden');
+      empty.querySelector('.ml-empty-text').textContent = 'Could not load memories';
+      empty.querySelector('.ml-empty-sub').textContent = e.message || '';
+      return;
+    }
+  }
   mlMounted = true;
   mlRender();
   if (!window._mlTeardown) _mlBindScroll();
   requestAnimationFrame(()=>{
     if (firstTime) {
       const today = new Date();
-      mlJumpToDate(today.getFullYear(), today.getMonth()+1, false);
-    } else {
-      mlUpdateVisuals();
+      const todayAbs = today.getFullYear() * 12 + today.getMonth();
+      const latestAbs = mlOutline && mlOutline.length ? _mlYmToAbs(mlOutline[mlOutline.length - 1].ym) : todayAbs;
+      const targetAbs = Math.min(todayAbs, latestAbs);
+      const yr = Math.floor(targetAbs / 12);
+      const mo = (targetAbs % 12 + 12) % 12 + 1;
+      mlJumpToDate(yr, mo, false);
     }
+    mlUpdateVisuals();
   });
 }
 
-function _mlFlattenItems(data){
-  const out = [];
-  const years = (data && data.years) || {};
-  Object.keys(years).sort().forEach(function(y){
-    const months = years[y].months || {};
-    Object.keys(months).sort().forEach(function(m){
-      const days = months[m].days || {};
-      Object.keys(days).sort().forEach(function(d){
-        (days[d] || []).forEach(function(it, idx){
-          out.push({
-            path: it.path, name: it.name, type: it.type, favorite: !!it.favorite,
-            date: it.date || (y+'-'+m+'-'+d), time: it.time || '',
-            year: parseInt(y, 10), month: parseInt(m, 10), day: parseInt(d, 10),
-            // dayOrder used for vertical positioning within a month
-            _dayFloat: parseInt(d, 10) + (idx * 0.001),
-          });
-        });
-      });
+function _mlAbsorbItems(items){
+  // Bucket items by absolute month and compute layout fields.
+  // Items arrive already ordered by date_taken; we keep that order and stripe lanes.
+  const bucketCounters = new Map();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const ymStr = (it.d || '').slice(0, 7);
+    if (!ymStr || ymStr.length !== 7) continue;
+    const yr = parseInt(ymStr.slice(0, 4), 10);
+    const mo = parseInt(ymStr.slice(5, 7), 10);
+    const day = parseInt((it.d || '').slice(8, 10), 10) || 1;
+    const abs = yr * 12 + (mo - 1);
+    if (!mlItemsByAbs.has(abs)) mlItemsByAbs.set(abs, []);
+    const seq = (bucketCounters.get(abs) || 0) + 1;
+    bucketCounters.set(abs, seq);
+    const monthFrac = Math.min(0.95, (day - 1) / 31) + ((seq - 1) % 8) * 0.005;
+    const yTop = Math.round(mlPaddingPx + (abs - mlStartMonths) * ML_PX_PER_MONTH + monthFrac * ML_PX_PER_MONTH);
+    const lane = (seq % 2 === 1) ? 'left' : 'right';
+    const sizeVariant = (seq + abs) % 5;
+    const w = ML_CARD_W_BASE + [0, 28, -32, 56, 12][sizeVariant];
+    const h = ML_CARD_H_BASE + [0, -10, 38, 12, -28][sizeVariant];
+    const stackDepth = Math.floor((seq - 1) / 2);
+    const xOff = ML_LANE_PAD + stackDepth * 18 + Math.abs(((seq * 37) % 19) - 9) * 3;
+    mlItemsByAbs.get(abs).push({
+      path: it.p, name: it.p.split('/').pop(), type: it.t,
+      date: it.d, year: yr, month: mo, day: day,
+      _abs: abs, _yCenter: yTop, _lane: lane,
+      _w: w, _h: h, _xOff: xOff,
+      _key: ymStr + '#' + seq,
     });
-  });
-  return out;
+  }
+}
+
+function _mlYmToAbs(ym){
+  if (!ym || ym.length < 7) return null;
+  const y = parseInt(ym.slice(0, 4), 10);
+  const m = parseInt(ym.slice(5, 7), 10);
+  if (!y || !m) return null;
+  return y * 12 + (m - 1);
+}
+
+function _mlAbsToYm(abs){
+  const y = Math.floor(abs / 12);
+  const m = (abs % 12 + 12) % 12 + 1;
+  return y.toString().padStart(4, '0') + '-' + m.toString().padStart(2, '0');
+}
+
+function _mlMarkRangeLoaded(fromYm, toYm){
+  const a = _mlYmToAbs(fromYm), b = _mlYmToAbs(toYm);
+  if (a == null || b == null) return;
+  for (let i = a; i <= b; i++) mlMonthLoaded.add(_mlAbsToYm(i));
+}
+
+async function _mlFetchMonth(ym){
+  if (mlMonthLoaded.has(ym) || mlMonthLoading.has(ym)) return;
+  mlMonthLoading.add(ym);
+  try {
+    const r = await fetch('/api/cloud/media/lane?from=' + ym + '&to=' + ym + '&per_month=' + ML_PER_MONTH + '&outline=0');
+    const data = await r.json();
+    if (data.items && data.items.length) _mlAbsorbItems(data.items);
+    mlMonthLoaded.add(ym);
+  } catch (e) {
+    // mark as loaded anyway to avoid hot-looping a broken month
+    mlMonthLoaded.add(ym);
+  } finally {
+    mlMonthLoading.delete(ym);
+    // Trigger re-render of the visible window.
+    if (!mlRafId) {
+      mlRafId = requestAnimationFrame(function(){ mlRafId = null; mlUpdateVisuals(); });
+    }
+  }
 }
 
 function mlRender(){
@@ -2263,42 +2332,57 @@ function mlRender(){
   const lanesRight = document.getElementById('ml-lane-right');
   const ticks = document.getElementById('ml-timeline-marks');
   const hwy = document.getElementById('ml-highway');
-  if (!mlItems || !mlItems.length) return;
+  if (!mlOutline || !mlOutline.length) return;
 
-  // Determine the full year span.
-  const minDate = mlItems[0];
-  const maxDate = mlItems[mlItems.length - 1];
-  // Pad outward by 2 months so user can scroll a little past the edges.
-  const startMonths = (minDate.year * 12 + (minDate.month - 1)) - 2;
-  const endMonths   = (maxDate.year * 12 + (maxDate.month - 1)) + 2;
-  const totalMonths = endMonths - startMonths + 1;
+  // Highway range = first ↔ last month in outline, with ±2 month breathing room.
+  const firstAbs = _mlYmToAbs(mlOutline[0].ym);
+  const lastAbs = _mlYmToAbs(mlOutline[mlOutline.length - 1].ym);
+  mlStartMonths = firstAbs - 2;
+  mlEndMonths   = lastAbs + 2;
+  const totalMonths = mlEndMonths - mlStartMonths + 1;
 
-  // Set highway height: each month gets ML_PX_PER_MONTH. Plus padding above/below = viewport.
   const stage = document.getElementById('ml-stage');
   const vh = stage.clientHeight;
-  const padding = Math.round(vh / 2); // half-viewport pad top and bottom = "center" semantics
-  const highwayHeight = totalMonths * ML_PX_PER_MONTH + padding * 2;
+  mlPaddingPx = Math.round(vh / 2);
+  const highwayHeight = totalMonths * ML_PX_PER_MONTH + mlPaddingPx * 2;
   hwy.style.height = highwayHeight + 'px';
-  hwy.style.paddingTop = padding + 'px';
-  hwy.style.paddingBottom = padding + 'px';
+  hwy.style.paddingTop = mlPaddingPx + 'px';
+  hwy.style.paddingBottom = mlPaddingPx + 'px';
   hwy.style.minHeight = 'unset';
-  hwy.dataset.startMonthAbs = String(startMonths);
-  hwy.dataset.endMonthAbs = String(endMonths);
-  hwy.dataset.padding = String(padding);
+  hwy.dataset.startMonthAbs = String(mlStartMonths);
+  hwy.dataset.endMonthAbs = String(mlEndMonths);
+  hwy.dataset.padding = String(mlPaddingPx);
 
-  // Clear lanes & ticks
+  // Recompute layout for any items already absorbed (mlStartMonths/mlPaddingPx
+  // may have shifted from defaults of 0).
+  mlItemsByAbs.forEach(function(arr, abs){
+    for (let i = 0; i < arr.length; i++) {
+      const it = arr[i];
+      const monthFrac = Math.min(0.95, ((it.day || 1) - 1) / 31) + ((i) % 8) * 0.005;
+      it._yCenter = Math.round(mlPaddingPx + (abs - mlStartMonths) * ML_PX_PER_MONTH + monthFrac * ML_PX_PER_MONTH);
+    }
+  });
+
+  // Clear lanes & ticks.
   lanesLeft.innerHTML = '';
   lanesRight.innerHTML = '';
   ticks.innerHTML = '';
+  mlAllRenderedCards = new Map();
 
-  // Place ticks for every month + bold year tick at January.
-  for (let abs = startMonths; abs <= endMonths; abs++) {
+  // Outline → set of months that have any content (for tick weight).
+  const monthsWithData = new Set();
+  for (let i = 0; i < mlOutline.length; i++) monthsWithData.add(mlOutline[i].ym);
+
+  // Place ticks for every month in span + bold year tick at January.
+  for (let abs = mlStartMonths; abs <= mlEndMonths; abs++) {
     const y = Math.floor(abs / 12);
     const m = (abs % 12) + 1;
-    const yTop = padding + (abs - startMonths) * ML_PX_PER_MONTH;
+    const yTop = mlPaddingPx + (abs - mlStartMonths) * ML_PX_PER_MONTH;
     const tickEl = document.createElement('div');
     const isYearTick = (m === 1);
-    tickEl.className = 'ml-tick' + (isYearTick ? ' year' : '');
+    const ymStr = _mlAbsToYm(abs);
+    const isEmpty = !monthsWithData.has(ymStr);
+    tickEl.className = 'ml-tick' + (isYearTick ? ' year' : '') + (isEmpty ? ' empty' : '');
     tickEl.style.top = yTop + 'px';
     tickEl.dataset.year = String(y);
     tickEl.dataset.month = String(m);
@@ -2309,61 +2393,103 @@ function mlRender(){
     }
     ticks.appendChild(tickEl);
   }
+  // Cards are added/removed lazily by _mlRenderCards() driven from mlUpdateVisuals.
+}
 
-  // Place media cards.
-  // For each item, abs_pos = (year*12 + month-1 - startMonths) + dayFraction
-  // Y coord = padding + abs_pos * ML_PX_PER_MONTH
-  // Lane alternation: even index -> left, odd -> right (within month, by chronological order)
-  // Adds variety to width/height for highway-feel.
-  const monthCounter = {};
-  mlItems.forEach(function(it, i){
-    const abs = (it.year * 12 + (it.month - 1));
-    const monthKey = it.year + '-' + it.month;
-    const seq = (monthCounter[monthKey] = (monthCounter[monthKey] || 0) + 1);
-    const monthFrac = Math.min(0.95, (it._dayFloat - 1) / 31);
-    const yTop = Math.round(padding + (abs - startMonths) * ML_PX_PER_MONTH + monthFrac * ML_PX_PER_MONTH);
-    const lane = (seq % 2 === 1) ? 'left' : 'right';
-    const sizeVariant = (i % 5);  // some big, some small
-    const w = ML_CARD_W_BASE + [0, 28, -32, 56, 12][sizeVariant];
-    const h = ML_CARD_H_BASE + [0, -10, 38, 12, -28][sizeVariant];
-
-    const card = document.createElement('div');
-    card.className = 'ml-card';
-    card.style.width = w + 'px';
-    card.style.height = h + 'px';
-    card.style.top = (yTop - h/2) + 'px';
-
-    // Horizontal placement: closer to center for small lane indexes, farther for higher counts.
-    // We push outward as lane stacking grows so cards don't pile up.
-    const stackDepth = Math.floor((seq - 1) / 2);  // 0,0,1,1,2,2,...
-    const offsetFromCenter = ML_LANE_PAD + stackDepth * 18 + Math.abs(((i*37)%19) - 9) * 3;
-    if (lane === 'left') {
-      card.style.right = offsetFromCenter + 'px';
-      card.style.left = 'auto';
-    } else {
-      card.style.left = offsetFromCenter + 'px';
-      card.style.right = 'auto';
-    }
-    card.dataset.index = String(i);
-    card.dataset.yCenter = String(yTop);
-    card.dataset.abs = String(abs + monthFrac);
-
-    const thumb = '/api/cloud/thumb/' + encodeURIComponent(it.path) + '?size=400';
-    const isVid = it.type === 'video';
-    card.innerHTML =
-      '<img src="' + thumb + '" loading="lazy" alt="' + (it.name||'') + '" onerror="this.style.background=\'#222\';this.removeAttribute(\'src\');">' +
-      (isVid ? '<span class="ml-vid-badge">VIDEO</span>' : '') +
-      '<div class="ml-card-date">' + (it.date || '') + '</div>';
-
-    card.addEventListener('click', function(){
-      openLightbox(mlItems, parseInt(card.dataset.index, 10));
-    });
-
-    (lane === 'left' ? lanesLeft : lanesRight).appendChild(card);
+function _mlBuildCard(it){
+  const card = document.createElement('div');
+  card.className = 'ml-card';
+  card.style.width = it._w + 'px';
+  card.style.height = it._h + 'px';
+  card.style.top = (it._yCenter - it._h / 2) + 'px';
+  if (it._lane === 'left') {
+    card.style.right = it._xOff + 'px';
+    card.style.left = 'auto';
+  } else {
+    card.style.left = it._xOff + 'px';
+    card.style.right = 'auto';
+  }
+  card.dataset.key = it._key;
+  card.dataset.yCenter = String(it._yCenter);
+  card.dataset.path = it.path;
+  const thumb = '/api/cloud/thumb/' + encodeURIComponent(it.path) + '?size=400';
+  const isVid = it.type === 'video';
+  const safeName = (it.name||'').replace(/"/g,'&quot;');
+  card.innerHTML =
+    '<img src="' + thumb + '" loading="lazy" alt="' + safeName + '" onerror="this.style.display=\'none\';this.parentNode.style.background=\'linear-gradient(135deg,#1a1a2e,#2a1a3e)\'">' +
+    (isVid ? '<span class="ml-vid-badge">VIDEO</span>' : '') +
+    '<div class="ml-card-date">' + (it.date || '') + '</div>';
+  card.addEventListener('click', function(){
+    _mlOpenLightboxFromCard(it);
   });
+  return card;
+}
 
-  // Initialize visuals.
-  mlUpdateVisuals();
+function _mlOpenLightboxFromCard(it){
+  // Build a small lightbox set: items from same month + neighbors.
+  const arr = [];
+  let openIdx = 0;
+  for (let abs = it._abs - 1; abs <= it._abs + 1; abs++) {
+    const bucket = mlItemsByAbs.get(abs);
+    if (!bucket) continue;
+    for (let i = 0; i < bucket.length; i++) {
+      if (bucket[i]._key === it._key) openIdx = arr.length;
+      arr.push({ path: bucket[i].path, name: bucket[i].name, type: bucket[i].type, date: bucket[i].date });
+    }
+  }
+  openLightbox(arr, openIdx);
+}
+
+function _mlRenderCards(centerY){
+  // Add cards within ML_RENDER_WINDOW_PX of viewport center; remove cards outside.
+  const lanesLeft = document.getElementById('ml-lane-left');
+  const lanesRight = document.getElementById('ml-lane-right');
+  if (!mlAllRenderedCards || !mlItemsByAbs) return;
+
+  const winLo = centerY - ML_RENDER_WINDOW_PX;
+  const winHi = centerY + ML_RENDER_WINDOW_PX;
+  const monthLo = Math.floor((winLo - mlPaddingPx) / ML_PX_PER_MONTH) + mlStartMonths - 1;
+  const monthHi = Math.ceil ((winHi - mlPaddingPx) / ML_PX_PER_MONTH) + mlStartMonths + 1;
+
+  // 1) Fetch any visible months we haven't loaded yet (within ±ML_PREFETCH_MONTHS).
+  for (let abs = monthLo - ML_PREFETCH_MONTHS; abs <= monthHi + ML_PREFETCH_MONTHS; abs++) {
+    const ym = _mlAbsToYm(abs);
+    if (!mlMonthLoaded.has(ym) && !mlMonthLoading.has(ym)) {
+      _mlFetchMonth(ym);  // fire-and-forget
+    }
+  }
+
+  // 2) Build want-set of card keys for visible window.
+  const want = new Set();
+  const wantData = new Map(); // key -> item
+  for (let abs = monthLo; abs <= monthHi; abs++) {
+    const bucket = mlItemsByAbs.get(abs);
+    if (!bucket || !bucket.length) continue;
+    for (let i = 0; i < bucket.length; i++) {
+      const it = bucket[i];
+      if (it._yCenter >= winLo && it._yCenter <= winHi) {
+        want.add(it._key);
+        wantData.set(it._key, it);
+      }
+    }
+  }
+
+  // 3) Remove cards no longer wanted.
+  mlAllRenderedCards.forEach(function(el, key){
+    if (!want.has(key)) {
+      el.remove();
+      mlAllRenderedCards.delete(key);
+    }
+  });
+  // 4) Add new cards.
+  want.forEach(function(key){
+    if (mlAllRenderedCards.has(key)) return;
+    const it = wantData.get(key);
+    const el = _mlBuildCard(it);
+    if (it._lane === 'left') lanesLeft.appendChild(el);
+    else lanesRight.appendChild(el);
+    mlAllRenderedCards.set(key, el);
+  });
 }
 
 function _mlBindScroll(){
@@ -2404,15 +2530,12 @@ function mlUpdateVisuals(){
   if (!stage || !vp || !hwy) return;
   const vh = stage.clientHeight;
   const centerY = vp.scrollTop + vh / 2;
-  const padding = parseFloat(hwy.dataset.padding || '0');
-  const startMonths = parseFloat(hwy.dataset.startMonthAbs || '0');
 
-  // Compute current month at viewport center
-  const monthAbsFloat = startMonths + (centerY - padding) / ML_PX_PER_MONTH;
+  // Compute current month at viewport center.
+  const monthAbsFloat = mlStartMonths + (centerY - mlPaddingPx) / ML_PX_PER_MONTH;
   const currentMonthAbs = Math.round(monthAbsFloat);
   const newYear = Math.floor(currentMonthAbs / 12);
   const newMonth = (currentMonthAbs % 12 + 12) % 12 + 1;
-
   if (newYear !== mlCurrentYear || newMonth !== mlCurrentMonth) {
     mlCurrentYear = newYear;
     mlCurrentMonth = newMonth;
@@ -2421,32 +2544,31 @@ function mlUpdateVisuals(){
     _mlUpdateSeason(newMonth);
   }
 
-  // Fish-eye + fade: per-card scale/opacity based on distance from viewport center
-  const cards = stage.querySelectorAll('.ml-card');
+  // Add/remove cards based on which window we're looking at (also kicks lazy fetch).
+  _mlRenderCards(centerY);
+
+  // Fish-eye + fade for the currently rendered cards only.
   const FALLOFF = vh * 0.55;
-  for (let i = 0; i < cards.length; i++) {
-    const card = cards[i];
-    const yCenter = parseFloat(card.dataset.yCenter);
-    const cardCenterInVp = yCenter - vp.scrollTop;
-    const dist = Math.abs(cardCenterInVp - vh / 2);
-    const norm = Math.min(1, dist / FALLOFF);
-    // scale: 1.18 at center, 0.55 at perimeter
-    const scale = 1.18 - norm * 0.63;
-    // opacity: 1 center → 0.06 perimeter (so they fade away)
-    const opacity = Math.max(0, 1 - Math.pow(norm, 1.35) * 1.05);
-    // x squeeze toward center (fish-eye horizontal pinch)
-    const xSqueeze = (1 - norm * 0.18);
-    card.style.transform = 'scale(' + (scale * xSqueeze) + ',' + scale + ')';
-    card.style.opacity = String(opacity);
-    // Skip layout-killers when fully invisible: hide them from compositor work
-    if (opacity < 0.02) {
-      card.style.visibility = 'hidden';
-    } else if (card.style.visibility === 'hidden') {
-      card.style.visibility = 'visible';
-    }
+  if (mlAllRenderedCards) {
+    mlAllRenderedCards.forEach(function(card){
+      const yCenter = parseFloat(card.dataset.yCenter);
+      const cardCenterInVp = yCenter - vp.scrollTop;
+      const dist = Math.abs(cardCenterInVp - vh / 2);
+      const norm = Math.min(1, dist / FALLOFF);
+      const scale = 1.18 - norm * 0.63;
+      const opacity = Math.max(0, 1 - Math.pow(norm, 1.35) * 1.05);
+      const xSqueeze = (1 - norm * 0.18);
+      card.style.transform = 'scale(' + (scale * xSqueeze) + ',' + scale + ')';
+      card.style.opacity = String(opacity);
+      if (opacity < 0.02) {
+        card.style.visibility = 'hidden';
+      } else if (card.style.visibility === 'hidden') {
+        card.style.visibility = 'visible';
+      }
+    });
   }
 
-  // Ticks: shrink + fade similarly
+  // Ticks: shrink + fade similarly. ~14*N where N is total months — manageable.
   const ticks = stage.querySelectorAll('.ml-tick');
   for (let i = 0; i < ticks.length; i++) {
     const tick = ticks[i];
@@ -2489,7 +2611,13 @@ function mlJumpToDate(year, month, smooth){
 
 function mlJumpToday(){
   const today = new Date();
-  mlJumpToDate(today.getFullYear(), today.getMonth()+1, true);
+  // Prefer today's month if it has data; otherwise land on the most recent month that does.
+  const todayAbs = today.getFullYear() * 12 + today.getMonth();
+  const latestAbs = mlOutline && mlOutline.length ? _mlYmToAbs(mlOutline[mlOutline.length - 1].ym) : todayAbs;
+  const targetAbs = Math.min(todayAbs, latestAbs);
+  const yr = Math.floor(targetAbs / 12);
+  const mo = (targetAbs % 12 + 12) % 12 + 1;
+  mlJumpToDate(yr, mo, true);
 }
 function mlPrevYear(){
   if (!mlCurrentYear) return;

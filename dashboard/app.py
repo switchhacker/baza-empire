@@ -12165,6 +12165,93 @@ if CLOUD_ENABLED:
             })
         return jsonify({'years': years, 'total': len(rows)})
 
+    @app.route('/api/cloud/media/lane')
+    def api_cloud_media_lane():
+        """Slim, range-paged endpoint for Memory Lane.
+
+        Query params:
+          from=YYYY-MM   (default: 6 months back from latest)
+          to=YYYY-MM     (default: latest available month)
+          per_month=int  (default: 60, max: 200) — cap items per month, stride-sampled
+          outline=1      (default 1) — include {ym, count} list of every month present
+
+        Response shape (tiny):
+          {
+            outline: [{ym: '2025-04', c: 421}, ...],   # only if outline=1
+            items:   [{p, t, d}, ...],                 # p=path, t=photo|video, d=YYYY-MM-DD
+            from: 'YYYY-MM', to: 'YYYY-MM'
+          }
+        """
+        from_ym = (request.args.get('from') or '').strip()
+        to_ym = (request.args.get('to') or '').strip()
+        per_month = int(request.args.get('per_month', 60))
+        per_month = max(10, min(per_month, 200))
+        want_outline = request.args.get('outline', '1') != '0'
+
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        conn.row_factory = sqlite3.Row
+
+        outline = []
+        if want_outline:
+            outline_rows = conn.execute("""
+                SELECT substr(date_taken, 1, 7) AS ym, COUNT(*) AS c
+                FROM cloud_media_index
+                WHERE media_type IN ('photo','video') AND date_taken IS NOT NULL AND date_taken != ''
+                GROUP BY ym
+                ORDER BY ym
+            """).fetchall()
+            outline = [{'ym': r['ym'], 'c': r['c']} for r in outline_rows if r['ym'] and len(r['ym']) == 7]
+
+        # Default range = latest 7 months
+        if not to_ym:
+            latest = conn.execute("""
+                SELECT substr(date_taken, 1, 7) AS ym FROM cloud_media_index
+                WHERE media_type IN ('photo','video') AND date_taken IS NOT NULL AND date_taken != ''
+                ORDER BY ym DESC LIMIT 1
+            """).fetchone()
+            to_ym = latest['ym'] if latest else ''
+        if not from_ym and to_ym:
+            try:
+                yr, mo = int(to_ym[:4]), int(to_ym[5:7])
+                mo -= 6
+                while mo < 1:
+                    yr -= 1; mo += 12
+                from_ym = f"{yr:04d}-{mo:02d}"
+            except Exception:
+                from_ym = to_ym
+
+        items = []
+        if from_ym and to_ym:
+            # Use ROW_NUMBER over each month to stride-sample evenly.
+            rows = conn.execute("""
+                WITH ranked AS (
+                  SELECT filepath, media_type, date_taken,
+                         substr(date_taken,1,7) AS ym,
+                         ROW_NUMBER() OVER (PARTITION BY substr(date_taken,1,7)
+                                            ORDER BY date_taken, time_taken, rowid) AS rn,
+                         COUNT(*) OVER (PARTITION BY substr(date_taken,1,7)) AS tot
+                  FROM cloud_media_index
+                  WHERE media_type IN ('photo','video')
+                    AND date_taken IS NOT NULL AND date_taken != ''
+                    AND substr(date_taken,1,7) >= ?
+                    AND substr(date_taken,1,7) <= ?
+                )
+                SELECT filepath, media_type, date_taken FROM ranked
+                WHERE tot <= ? OR ((rn - 1) * ?) % tot < ?
+                ORDER BY date_taken, ym
+                LIMIT 4000
+            """, (from_ym, to_ym, per_month, per_month, per_month)).fetchall()
+            items = [{'p': r['filepath'], 't': r['media_type'], 'd': r['date_taken']} for r in rows]
+
+        conn.close()
+        return jsonify({
+            'outline': outline,
+            'items': items,
+            'from': from_ym,
+            'to': to_ym,
+            'per_month': per_month,
+        })
+
     @app.route('/api/cloud/media/serve/<path:filepath>')
     def api_cloud_media_serve(filepath):
         """Serve original media file inline (for lightbox)."""
