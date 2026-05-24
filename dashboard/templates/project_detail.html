@@ -331,14 +331,6 @@
           </div>
         </div>
 
-        <!-- Side panel (slides in from right) -->
-        <div id="scaffold-side-panel" style="position:fixed;top:0;right:-440px;width:420px;height:100vh;background:#161616;border-left:1px solid #333;z-index:9000;transition:right 0.25s;overflow-y:auto;box-shadow:-4px 0 16px rgba(0,0,0,0.5);">
-          <div id="scaffold-side-panel-body" style="padding:14px;">
-            <button onclick="ScaffoldUI && ScaffoldUI.closeSidePanel()" style="float:right;font-size:18px;background:none;border:none;color:#999;cursor:pointer;">✕</button>
-            <div id="scaffold-node-detail"></div>
-          </div>
-        </div>
-
         <!-- BOM table -->
         <div style="padding:12px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
@@ -724,6 +716,323 @@ setInterval(()=>{
 }, 4000);
 
 reload();
+</script>
+
+<!-- Scaffold side panel (body-level so it's tab-agnostic) -->
+<div id="scaffold-side-panel" style="position:fixed;top:0;right:-440px;width:420px;height:100vh;background:#161616;border-left:1px solid #333;z-index:9000;transition:right 0.25s;overflow-y:auto;box-shadow:-4px 0 16px rgba(0,0,0,0.5);">
+  <div id="scaffold-side-panel-body" style="padding:14px;">
+    <button onclick="ScaffoldUI && ScaffoldUI.closeSidePanel()" style="float:right;font-size:18px;background:none;border:none;color:#999;cursor:pointer;">✕</button>
+    <div id="scaffold-node-detail"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // Project id — get from URL: /projects/<id>
+  const PROJECT_ID = (window.location.pathname.split('/').pop() || '').trim();
+  if (!PROJECT_ID) return; // not on a project detail page
+
+  let _graph = { nodes: [], edges: [], progress_pct: 0, has_star: false };
+  let _eventSource = null;
+  let _reconnectDelay = 1000;
+  let _inited = false;
+  let _paused = null;  // null = unknown; will lazy-detect on first toggle
+
+  const ICONS = {
+    root: '🌱', research: '🔬', decision: '❓',
+    hardware_component: '🔩', firmware: '⚡', software_module: '💻',
+    integration: '🔗', test: '✅', deploy: '🚀',
+    result: '🍎', manual_step: '✋'
+  };
+  const STATUS_COLOR = {
+    pending: '#9ca3af', in_progress: '#3b82f6',
+    done: '#22c55e', blocked: '#ef4444',
+    awaiting_part: '#f59e0b', failed: '#dc2626',
+    overridden: '#a855f7'
+  };
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function _api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({'Content-Type': 'application/json'}, opts.headers || {});
+    const r = await fetch(`/api/baza/projects/${PROJECT_ID}${path}`, opts);
+    if (!r.ok && opts.method !== 'GET' && opts.method !== undefined) {
+      console.error('scaffold api', path, r.status);
+    }
+    return r.json().catch(() => ({}));
+  }
+
+  async function loadGraph() {
+    _graph = await _api('/scaffold');
+    if (!_graph || !_graph.nodes) { _graph = { nodes: [], edges: [], progress_pct: 0, has_star: false }; }
+    drawTree();
+    drawBOM();
+    drawProgress();
+  }
+
+  function drawProgress() {
+    const fill = document.getElementById('scaffold-progress-fill');
+    const lbl = document.getElementById('scaffold-progress-label');
+    if (!fill || !lbl) return;
+    fill.style.width = (_graph.progress_pct || 0) + '%';
+    lbl.textContent = _graph.has_star ? '⭐' : ((_graph.progress_pct || 0) + '%');
+  }
+
+  function drawTree() {
+    const svgEl = document.getElementById('scaffold-tree-svg');
+    if (!svgEl) return;
+    const svg = d3.select(svgEl);
+    svg.selectAll('*').remove();
+    const empty = document.getElementById('scaffold-empty-state');
+    if (!_graph.nodes.length) {
+      if (empty) empty.style.display = 'flex';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    const W = svgEl.clientWidth || 800;
+    const H = svgEl.clientHeight || 520;
+
+    // Build hierarchy; handle case where multiple roots exist
+    let hierarchyNodes = _graph.nodes.slice();
+    const hasRoot = hierarchyNodes.some(n => n.parent_id == null || n.parent_id === undefined);
+    let rootData;
+    try {
+      if (!hasRoot) throw new Error('no roots');
+      const stratify = d3.stratify().id(d => d.id).parentId(d => d.parent_id);
+      rootData = stratify(hierarchyNodes);
+    } catch (e) {
+      // multi-root: synthesize one
+      const wrapped = [{id: '_root', parent_id: null, title: 'project', node_type: 'root', status: 'done'}]
+        .concat(hierarchyNodes.map(n => (n.parent_id == null || n.parent_id === undefined) ? {...n, parent_id: '_root'} : n));
+      const stratify = d3.stratify().id(d => d.id).parentId(d => d.parent_id);
+      rootData = stratify(wrapped);
+    }
+
+    const tree = d3.tree().size([W - 80, H - 80]);
+    tree(rootData);
+
+    const g = svg.append('g').attr('transform', 'translate(40, 40)');
+
+    // Edges
+    g.selectAll('.link').data(rootData.links()).enter()
+      .append('path').attr('class', 'link')
+      .attr('fill', 'none').attr('stroke', '#444').attr('stroke-width', 1.5)
+      .attr('d', d3.linkVertical().x(d => d.x).y(d => d.y));
+
+    // Nodes
+    const node = g.selectAll('.node').data(rootData.descendants()).enter()
+      .append('g').attr('class', 'node')
+      .attr('transform', d => `translate(${d.x}, ${d.y})`)
+      .style('cursor', 'pointer')
+      .on('click', (evt, d) => { if (d.data.id !== '_root') openSidePanel(d.data.id); });
+
+    node.append('rect')
+      .attr('x', -75).attr('y', -22).attr('width', 150).attr('height', 44)
+      .attr('rx', 6).attr('ry', 6)
+      .attr('fill', d => STATUS_COLOR[d.data.status] || '#666')
+      .attr('opacity', 0.85)
+      .attr('stroke', '#000').attr('stroke-width', 1);
+
+    node.append('text').attr('text-anchor', 'middle').attr('y', -4)
+      .attr('fill', '#fff').attr('font-size', '14px')
+      .text(d => (ICONS[d.data.node_type] || '•') + ' ' + (d.data.title || '').slice(0, 16));
+
+    node.append('text').attr('text-anchor', 'middle').attr('y', 14)
+      .attr('fill', '#ddd').attr('font-size', '10px')
+      .text(d => d.data.status);
+
+    // Zoom
+    svg.call(d3.zoom().scaleExtent([0.2, 3])
+      .on('zoom', evt => g.attr('transform', evt.transform)));
+  }
+
+  function openSidePanel(nodeId) {
+    const n = _graph.nodes.find(x => String(x.id) === String(nodeId));
+    if (!n) return;
+    const panel = document.getElementById('scaffold-side-panel');
+    const body = document.getElementById('scaffold-node-detail');
+    if (!panel || !body) return;
+    const payload = n.payload || {};
+    body.innerHTML = `
+      <h3 style="margin-top:0;">${escapeHtml(ICONS[n.node_type] || '•')} ${escapeHtml(n.title)}</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <span class="pill" style="background:${STATUS_COLOR[n.status]||'#666'};padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;">${escapeHtml(n.status)}</span>
+        <span class="pill" style="background:#333;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;">${escapeHtml(n.node_type)}</span>
+        ${n.agent_assigned ? `<span class="pill" style="background:#1a1a1a;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;">👤 ${escapeHtml(n.agent_assigned)}</span>` : ''}
+      </div>
+      <p style="color:#bbb;font-size:13px;">${escapeHtml(n.description || '')}</p>
+      ${payload.options ? `<div style="margin-top:10px;">
+         <strong>Options:</strong><ul>${payload.options.map(o => `<li>${escapeHtml(o)}${o===n.chosen_option?' ✓':''}</li>`).join('')}</ul>
+         <button onclick="ScaffoldUI.overrideDecision(${n.id})" class="btn-sm">Override</button>
+      </div>` : ''}
+      <div style="margin-top:14px;border-top:1px solid #333;padding-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button onclick="ScaffoldUI.runNode(${n.id})" class="btn-sm">↻ Re-run</button>
+        <button onclick="ScaffoldUI.addNote(${n.id})" class="btn-sm">📝 Note</button>
+        ${n.node_type === 'manual_step' ? `<button onclick="ScaffoldUI.markDone(${n.id})" class="btn-sm" style="background:#22c55e;color:#fff;">✅ Mark done</button>` : ''}
+        <button onclick="ScaffoldUI.deleteNode(${n.id})" class="btn-sm" style="background:#7a1d1d;color:#fff;">Delete</button>
+      </div>
+      <details style="margin-top:14px;">
+        <summary style="cursor:pointer;color:#888;font-size:12px;">Raw payload</summary>
+        <pre style="background:#0a0a0a;padding:8px;font-size:11px;overflow-x:auto;color:#ddd;">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>
+      </details>`;
+    panel.style.right = '0';
+  }
+
+  function closeSidePanel() {
+    const panel = document.getElementById('scaffold-side-panel');
+    if (panel) panel.style.right = '-440px';
+  }
+
+  // ---- BOM ----
+  async function drawBOM() {
+    const r = await _api('/bom');
+    const tbody = document.getElementById('scaffold-bom-tbody');
+    const empty = document.getElementById('scaffold-bom-empty');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!r.items || !r.items.length) { if (empty) empty.style.display = 'block'; return; }
+    if (empty) empty.style.display = 'none';
+    r.items.forEach(b => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #222';
+      tr.innerHTML = `
+        <td style="padding:6px;"><input type="checkbox" ${b.in_hand?'checked':''} onchange="ScaffoldUI.toggleHand(${b.id})"></td>
+        <td style="padding:6px;">${escapeHtml(b.name)}${b.part_number?` <span style="color:#888;font-size:11px;">(${escapeHtml(b.part_number)})</span>`:''}</td>
+        <td style="padding:6px;">${b.qty}</td>
+        <td style="padding:6px;">${b.unit_price?'$'+b.unit_price:''}</td>
+        <td style="padding:6px;">${b.vendor?(b.url?`<a href="${escapeHtml(b.url)}" target="_blank">${escapeHtml(b.vendor)}</a>`:escapeHtml(b.vendor)):''}</td>
+        <td style="padding:6px;"><span class="pill" style="background:#333;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;">${escapeHtml(b.status)}</span></td>
+        <td style="padding:6px;">${b.node_id?`<a href="javascript:void(0)" onclick="ScaffoldUI.openSidePanel(${b.node_id})">#${b.node_id}</a>`:''}</td>
+        <td style="padding:6px;"><button class="btn-sm" onclick="ScaffoldUI.promoteBom(${b.id})">→ Inv</button> <button class="btn-sm" style="background:#7a1d1d;color:#fff;" onclick="ScaffoldUI.deleteBom(${b.id})">✕</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ---- Actions ----
+  async function startScaffold() {
+    const desc = prompt("Project description (what should the agent build?):");
+    if (!desc) return;
+    await _api('/scaffold/start', { method: 'POST', body: JSON.stringify({description: desc}) });
+    loadGraph();
+  }
+  async function runNode(id) {
+    await _api(`/scaffold/node/${id}/run`, { method: 'POST', body: '{}' });
+    loadGraph();
+  }
+  async function addNote(id) {
+    const note = prompt("Note:");
+    if (!note) return;
+    await _api(`/scaffold/node/${id}/note`, { method: 'POST', body: JSON.stringify({note}) });
+  }
+  async function markDone(id) {
+    await _api(`/scaffold/node/${id}`, { method: 'PATCH', body: JSON.stringify({status: 'done'}) });
+    loadGraph();
+  }
+  async function deleteNode(id) {
+    if (!confirm("Delete this node and its descendants?")) return;
+    await _api(`/scaffold/node/${id}`, { method: 'DELETE' });
+    closeSidePanel();
+    loadGraph();
+  }
+  async function overrideDecision(id) {
+    const choice = prompt("Override with which option?");
+    if (!choice) return;
+    await _api(`/scaffold/node/${id}/override`, { method: 'POST', body: JSON.stringify({chosen_option: choice}) });
+    loadGraph();
+  }
+  async function toggleHand(bid) {
+    await _api(`/bom/${bid}/toggle-hand`, { method: 'POST', body: '{}' });
+    loadGraph();
+  }
+  async function promoteBom(bid) {
+    await _api(`/bom/${bid}/promote-inventory`, { method: 'POST', body: '{}' });
+    drawBOM();
+  }
+  async function deleteBom(bid) {
+    if (!confirm("Delete this BOM row?")) return;
+    await _api(`/bom/${bid}`, { method: 'DELETE' });
+    drawBOM();
+  }
+  async function addBom() {
+    const name = prompt("Part name:"); if (!name) return;
+    const qty = parseInt(prompt("Qty:", "1")) || 1;
+    await _api('/bom', { method: 'POST', body: JSON.stringify({name, qty}) });
+    drawBOM();
+  }
+  async function togglePause() {
+    const btn = document.getElementById('scaffold-pause-toggle');
+    if (!btn) return;
+    const currentlyPaused = btn.textContent.indexOf('▶') !== -1;
+    const url = currentlyPaused ? '/scaffold/resume' : '/scaffold/pause';
+    await _api(url, { method: 'POST', body: '{}' });
+    btn.textContent = currentlyPaused ? '⏸ Pause' : '▶ Resume';
+  }
+
+  // ---- SSE ----
+  function connectStream() {
+    if (_eventSource) { try { _eventSource.close(); } catch(_) {} }
+    _eventSource = new EventSource(`/api/baza/projects/${PROJECT_ID}/scaffold/stream`);
+    _eventSource.addEventListener('hello', () => { _reconnectDelay = 1000; });
+    ['created','started','status_changed','completed','decided','overridden',
+     'bom_added','bom_in_hand','promoted_to_inventory','note','deleted',
+     'project_paused','project_resumed','awaiting_part','rerun_requested',
+     'failed'].forEach(t => {
+      _eventSource.addEventListener(t, () => loadGraph());
+    });
+    _eventSource.onerror = () => {
+      try { _eventSource.close(); } catch(_) {}
+      _eventSource = null;
+      setTimeout(connectStream, _reconnectDelay);
+      _reconnectDelay = Math.min(_reconnectDelay * 2, 30000);
+    };
+  }
+
+  function teardown() {
+    if (_eventSource) { try { _eventSource.close(); } catch(_) {} _eventSource = null; }
+    closeSidePanel();
+  }
+
+  function init() {
+    if (_inited) { loadGraph(); return; }
+    _inited = true;
+    const startBtn = document.getElementById('scaffold-start-btn');
+    const pauseBtn = document.getElementById('scaffold-pause-toggle');
+    const bomAddBtn = document.getElementById('scaffold-bom-add');
+    const invBtn = document.getElementById('scaffold-open-inventory');
+    const equipBtn = document.getElementById('scaffold-open-equipment');
+    const suppBtn = document.getElementById('scaffold-open-supplies');
+    if (startBtn) startBtn.addEventListener('click', startScaffold);
+    if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
+    if (bomAddBtn) bomAddBtn.addEventListener('click', addBom);
+    if (invBtn) invBtn.addEventListener('click', () => { if (window.InventoryModal) window.InventoryModal.open(); else alert('Inventory modal not loaded yet'); });
+    if (equipBtn) equipBtn.addEventListener('click', () => { if (window.EquipmentModal) window.EquipmentModal.open(); else alert('Equipment modal not loaded yet'); });
+    if (suppBtn) suppBtn.addEventListener('click', () => alert('Cross-project supplies roll-up is Phase 3.'));
+    loadGraph();
+    connectStream();
+  }
+
+  window.ScaffoldUI = {
+    init, loadGraph, openSidePanel, closeSidePanel, teardown,
+    runNode, addNote, markDone, deleteNode, overrideDecision,
+    toggleHand, promoteBom, deleteBom, addBom
+  };
+
+  // Init when scaffold tab becomes active. The existing setTab() shows panels by
+  // toggling .active — listen for clicks on the scaffold tab button.
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.querySelector('[data-tab="scaffold"]');
+    if (btn) btn.addEventListener('click', () => { setTimeout(init, 50); });
+    // If page loaded with #scaffold hash or scaffold tab is already active, init now
+    const panel = document.getElementById('panel-scaffold');
+    if (panel && panel.classList.contains('active')) setTimeout(init, 50);
+  });
+})();
 </script>
 </body>
 </html>
