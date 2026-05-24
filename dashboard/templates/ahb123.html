@@ -1175,15 +1175,17 @@
       <div id="rq-list-upload" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:380px;overflow-y:auto"></div>
     </div>
 
-    <!-- Bin 2: Pre-scan (pending/processing/error) -->
+    <!-- Bin 2: Pre-scan (pending/processing/error) — collapsible -->
     <div id="rq-bin-prescan" style="display:none;border-top:1px solid #1a1a2e;padding-top:12px;margin-top:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
-        <div style="font-size:11px;color:#4da6ff;text-transform:uppercase;letter-spacing:1.5px;font-weight:700">
+      <div id="rq-prescan-hdr" onclick="rqTogglePrescan(event)" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;cursor:pointer;user-select:none" title="Click to expand/collapse">
+        <div style="font-size:11px;color:#4da6ff;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;display:flex;align-items:center;gap:8px">
+          <span id="rq-prescan-chev" style="font-size:10px;color:#4da6ff;width:10px;display:inline-block">&#9656;</span>
           &#9881; Pre-scan (<span id="rq-cnt-prescan">0</span>)
+          <span id="rq-prescan-err-pill" style="display:none;background:#ff555533;color:#ff8888;border:1px solid #ff5555;border-radius:10px;padding:1px 8px;font-size:10px;letter-spacing:.5px"></span>
         </div>
-        <button class="btn btn-sm btn-primary" id="rq-run-btn" onclick="runReceiptQueue()">Process Queue</button>
+        <button class="btn btn-sm btn-primary" id="rq-run-btn" onclick="event.stopPropagation();runReceiptQueue()">Process Queue</button>
       </div>
-      <div id="rq-list-prescan" style="max-height:300px;overflow-y:auto"></div>
+      <div id="rq-list-prescan" style="max-height:300px;overflow-y:auto;display:none"></div>
     </div>
 
     <!-- Bin 3: Analyzed (ready for review/file) -->
@@ -8580,6 +8582,7 @@ async function loadReceiptQueue(){
     document.getElementById('rq-bin-upload').style.display=staged?'block':'none';
     document.getElementById('rq-bin-prescan').style.display=(pending+processing+errored)?'block':'none';
     document.getElementById('rq-bin-analyzed').style.display=ready?'block':'none';
+    _rqApplyPrescanCollapse(errored);
     renderReceiptQueue();
     if(pending||processing) _rqStartPolling();
   }catch(e){console.error('loadReceiptQueue',e);}
@@ -8623,10 +8626,11 @@ function renderReceiptQueue(){
     psEl.innerHTML=queueItems.map(q=>{
       const c=q.status==='processing'?'#4da6ff':q.status==='error'?'#ff5555':'#f59e0b';
       const lbl=q.status==='error'?(q.error||'Failed'):q.status.toUpperCase();
-      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid ${c};border-radius:6px;margin:4px 0;font-size:11px">
-        <span style="color:${c};font-weight:700;min-width:90px">${escHtml(String(lbl).slice(0,80))}</span>
-        <span style="color:#666;font-family:monospace">${escHtml(q.mode||'')}</span>
-        <span style="color:#444;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml((q.image_path||'').split('/').pop()||'')}</span>
+      const fname=(q.image_path||'').split('/').pop()||'';
+      const short=fname.length>18?fname.slice(0,8)+'…'+fname.slice(-8):fname;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 8px;background:#0a0a18;border:1px solid #1a1a2e;border-left:3px solid ${c};border-radius:5px;margin:3px 0;font-size:11px">
+        <span style="color:${c};font-weight:700;min-width:80px">${escHtml(String(lbl).slice(0,80))}</span>
+        <span style="color:#444;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace" title="${escHtml(fname)}">${escHtml(short)}</span>
         ${q.status==='error'?`<button class="btn btn-sm btn-secondary" onclick="rqRescan('${q.id}')">Retry</button><button class="btn btn-sm btn-danger" onclick="rejectQueueItem('${q.id}')">Erase</button>`:''}
       </div>`;
     }).join('')||'<div style="text-align:center;padding:10px;color:#444;font-size:11px">Idle</div>';
@@ -8886,6 +8890,33 @@ async function runReceiptQueue(){
     loadReceiptQueue();
   }catch(e){showToast('Error','error');}
   finally{btn.textContent='Process Queue';btn.disabled=false;}
+}
+
+// Pre-scan collapse: user pref in localStorage, but errors always force-expand
+// so failures (Retry/Erase buttons) can never get hidden.
+function _rqPrescanCollapsed(){
+  return localStorage.getItem('rq_prescan_collapsed')!=='0';
+}
+function _rqApplyPrescanCollapse(erroredCount){
+  const list=document.getElementById('rq-list-prescan');
+  const chev=document.getElementById('rq-prescan-chev');
+  const pill=document.getElementById('rq-prescan-err-pill');
+  if(!list||!chev)return;
+  if(pill){
+    if(erroredCount>0){pill.style.display='inline-block';pill.textContent=erroredCount+' error'+(erroredCount>1?'s':'');}
+    else{pill.style.display='none';}
+  }
+  const forceOpen=erroredCount>0;
+  const open=forceOpen||!_rqPrescanCollapsed();
+  list.style.display=open?'block':'none';
+  chev.innerHTML=open?'&#9662;':'&#9656;';
+}
+function rqTogglePrescan(ev){
+  if(ev) ev.stopPropagation();
+  const cur=_rqPrescanCollapsed();
+  localStorage.setItem('rq_prescan_collapsed', cur?'0':'1');
+  const errored=(window.receiptQueue||[]).filter(q=>q.status==='error').length;
+  _rqApplyPrescanCollapse(errored);
 }
 async function confirmQueueItem(qid){
   const q=receiptQueue.find(x=>x.id===qid);if(!q)return;
