@@ -267,6 +267,22 @@
     .mem-thumb:hover .trash-btn{opacity:1}
     .mem-thumb .trash-btn:hover{background:#c0392b}
     .mem-thumb.removing{opacity:.3;pointer-events:none;transition:opacity .25s}
+    /* ── Memories select mode ── */
+    .mem-thumb .mem-sel-mark{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.6);border:2px solid #fff;color:#fff;font-size:12px;line-height:18px;text-align:center;font-weight:900;display:none;z-index:3;pointer-events:none}
+    .memories-area.select-mode .mem-thumb{cursor:cell}
+    .memories-area.select-mode .mem-thumb .mem-sel-mark{display:block}
+    .memories-area.select-mode .mem-thumb .trash-btn{display:none}
+    .memories-area.select-mode .mem-thumb.mem-selected{outline:3px solid #7c3aed;outline-offset:-3px}
+    .memories-area.select-mode .mem-thumb.mem-selected .mem-sel-mark{background:#7c3aed;border-color:#fff}
+    .memories-area.select-mode .mem-thumb.mem-selected .mem-sel-mark::after{content:"\2713"}
+    .mem-drag-rect{position:fixed;border:1.5px dashed #7c3aed;background:rgba(124,58,237,.12);pointer-events:none;z-index:400;display:none}
+    .mem-action-bar{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0f0f1f;border:1px solid #2a2a44;border-radius:14px;padding:10px 14px;display:none;align-items:center;gap:8px;box-shadow:0 12px 40px rgba(0,0,0,.55);z-index:600;flex-wrap:wrap;max-width:94vw}
+    .mem-action-bar.visible{display:flex}
+    .mem-action-bar .mab-count{color:#c4b5fd;font-weight:800;font-size:13px;margin-right:6px}
+    .mem-action-bar button{background:#1a1a2e;border:1px solid #2a2a44;color:#ddd;padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,color .15s}
+    .mem-action-bar button:hover{background:#252540;color:#fff}
+    .mem-action-bar .mab-danger:hover{background:#4a1a20;color:#ff8080}
+    .mem-action-bar .mab-clear{color:#666;border-color:#222}
 
     /* ── LIGHTBOX ── */
     .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:500;display:none;flex-direction:column;align-items:center;justify-content:center}
@@ -304,6 +320,140 @@
     .doc-name{font-size:13px;font-weight:700;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .doc-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;margin-top:4px}
     .doc-detail{font-size:10px;color:#555;margin-top:4px}
+
+    /* ─── MEMORY LANE ─── */
+    .ml-favicon{display:inline-block;line-height:0;vertical-align:middle;margin-right:2px;filter:drop-shadow(0 1px 2px rgba(124,58,237,.5))}
+    .memory-lane-view{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;background:#04040a;color:#e6e6f0}
+    .memory-lane-view.hidden{display:none}
+
+    /* Season background layers (crossfade) */
+    .ml-seasons{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+    .ml-season{position:absolute;inset:0;opacity:0;transition:opacity 1.4s cubic-bezier(.5,.05,.3,1);pointer-events:none}
+    .ml-season.active{opacity:1}
+    .ml-bg-winter{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,#1a2845 0%,#0a1226 45%,#04040a 100%)}
+    .ml-bg-spring{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,#2a4d2e 0%,#13351a 45%,#04140a 100%)}
+    .ml-bg-summer{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 22%,#ffb347 0%,#c45e2a 25%,#3a1a0a 70%,#04040a 100%)}
+    .ml-bg-fall{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,#7a3a1a 0%,#3d1e0d 45%,#0d0405 100%)}
+
+    /* Sun rays */
+    .ml-sun{position:absolute;top:-12%;left:50%;width:60vmax;height:60vmax;transform:translateX(-50%);background:radial-gradient(circle at center,rgba(255,225,140,.85) 0%,rgba(255,180,60,.45) 18%,rgba(255,120,40,.1) 45%,transparent 65%);filter:blur(4px);animation:ml-sun-pulse 8s ease-in-out infinite}
+    @keyframes ml-sun-pulse{0%,100%{opacity:.85;transform:translateX(-50%) scale(1)}50%{opacity:1;transform:translateX(-50%) scale(1.08)}}
+
+    /* Snow */
+    .ml-snow{position:absolute;inset:0;background:
+      radial-gradient(2px 2px at 12% 18%,rgba(255,255,255,.85),transparent 60%),
+      radial-gradient(1.5px 1.5px at 32% 78%,rgba(255,255,255,.75),transparent 60%),
+      radial-gradient(2px 2px at 58% 32%,rgba(255,255,255,.85),transparent 60%),
+      radial-gradient(1px 1px at 72% 64%,rgba(255,255,255,.6),transparent 60%),
+      radial-gradient(2.5px 2.5px at 88% 22%,rgba(255,255,255,.95),transparent 60%),
+      radial-gradient(1.5px 1.5px at 22% 92%,rgba(255,255,255,.7),transparent 60%);
+      background-size:100% 200%;animation:ml-snow-fall 18s linear infinite}
+    @keyframes ml-snow-fall{from{background-position:0 -100%}to{background-position:0 100%}}
+
+    /* Petals (spring) */
+    .ml-petals{position:absolute;inset:0;background:
+      radial-gradient(3px 6px at 14% 28%,rgba(255,170,210,.7),transparent 70%),
+      radial-gradient(3px 6px at 36% 62%,rgba(255,200,220,.6),transparent 70%),
+      radial-gradient(3px 6px at 62% 18%,rgba(200,255,180,.6),transparent 70%),
+      radial-gradient(3px 6px at 82% 72%,rgba(255,180,210,.65),transparent 70%);
+      background-size:100% 220%;animation:ml-petal-drift 22s linear infinite}
+    @keyframes ml-petal-drift{from{background-position:0 -120%}to{background-position:0 120%}}
+
+    /* Leaves (fall) */
+    .ml-leaves{position:absolute;inset:0;background:
+      radial-gradient(4px 7px at 18% 22%,rgba(255,140,40,.7),transparent 70%),
+      radial-gradient(5px 8px at 42% 58%,rgba(220,90,30,.65),transparent 70%),
+      radial-gradient(3px 6px at 66% 32%,rgba(255,180,80,.7),transparent 70%),
+      radial-gradient(4px 7px at 84% 76%,rgba(180,60,20,.75),transparent 70%);
+      background-size:100% 220%;animation:ml-leaf-drift 20s linear infinite}
+    @keyframes ml-leaf-drift{from{background-position:0 -120%}to{background-position:0 120%}}
+
+    /* Toolbar */
+    .ml-toolbar{position:relative;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 20px;background:linear-gradient(180deg,rgba(8,8,18,.85),rgba(8,8,18,.55) 70%,transparent);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid rgba(124,58,237,.15);flex-wrap:wrap}
+    .ml-title{font-size:15px;font-weight:800;color:#fff;letter-spacing:1.5px;display:flex;align-items:center;gap:8px;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+    .ml-title-icon{font-size:18px}
+    .ml-year-pill{padding:6px 14px;background:rgba(124,58,237,.18);border:1px solid rgba(124,58,237,.4);border-radius:999px;color:#c4b5fd;font-weight:800;font-size:13px;letter-spacing:1px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+    .ml-month-pill{padding:6px 12px;background:rgba(233,69,96,.14);border:1px solid rgba(233,69,96,.35);border-radius:999px;color:#ffb3c1;font-weight:700;font-size:12px;letter-spacing:.5px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+    .ml-toolbar-spacer{flex:1}
+    .ml-tool-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#e6e6f0;padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .2s,border-color .2s}
+    .ml-tool-btn:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.28)}
+
+    /* Stage = the fishbowl */
+    .ml-stage{position:relative;flex:1;overflow:hidden;perspective:1400px}
+    .ml-viewport{position:absolute;inset:0;overflow-y:scroll;overflow-x:hidden;overscroll-behavior:contain;scroll-behavior:auto;z-index:2;
+      -webkit-mask-image:radial-gradient(ellipse 70% 88% at 50% 50%,#000 38%,rgba(0,0,0,.85) 58%,rgba(0,0,0,.35) 80%,transparent 100%);
+      mask-image:radial-gradient(ellipse 70% 88% at 50% 50%,#000 38%,rgba(0,0,0,.85) 58%,rgba(0,0,0,.35) 80%,transparent 100%);
+    }
+    .ml-viewport::-webkit-scrollbar{width:0;height:0}
+    .ml-viewport{scrollbar-width:none}
+
+    /* Liquid-glass perimeter ring */
+    .ml-bubble-edge{position:absolute;inset:0;z-index:3;pointer-events:none;border-radius:50%/50%;
+      box-shadow:inset 0 0 120px 40px rgba(0,0,0,.7), inset 0 0 240px 80px rgba(0,0,0,.5);
+      background:radial-gradient(ellipse 72% 90% at 50% 50%,transparent 55%,rgba(4,4,12,.4) 78%,rgba(4,4,12,.95) 100%);
+    }
+    .ml-bubble-glass{position:absolute;inset:0;z-index:4;pointer-events:none;
+      background:radial-gradient(ellipse 38% 24% at 50% 22%,rgba(255,255,255,.14),rgba(255,255,255,0) 70%),
+                 radial-gradient(ellipse 22% 14% at 30% 78%,rgba(255,255,255,.08),rgba(255,255,255,0) 70%);
+      mix-blend-mode:screen;
+    }
+
+    /* Highway */
+    .ml-highway{position:relative;width:100%;min-height:200vh;padding:50vh 0}
+    .ml-center-line{position:absolute;left:50%;top:0;bottom:0;width:6px;transform:translateX(-50%);
+      background:repeating-linear-gradient(to bottom,#f5d442 0,#f5d442 18px,transparent 18px,transparent 38px);
+      box-shadow:0 0 18px rgba(245,212,66,.55),0 0 38px rgba(245,212,66,.25);
+      opacity:.95;z-index:2;border-radius:3px}
+    .ml-center-line::before,.ml-center-line::after{content:"";position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.15)}
+    .ml-center-line::before{left:-22px}
+    .ml-center-line::after{left:22px}
+
+    .ml-lane{position:absolute;top:0;bottom:0;width:50%;z-index:1}
+    .ml-lane-left{left:0}
+    .ml-lane-right{right:0}
+
+    /* Timeline ticks */
+    .ml-timeline-marks{position:absolute;left:50%;top:0;bottom:0;transform:translateX(-50%);z-index:3;pointer-events:none}
+    .ml-tick{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;color:#fff;font-weight:800;font-size:11px;letter-spacing:1.5px;text-shadow:0 2px 8px rgba(0,0,0,.7);white-space:nowrap;pointer-events:none}
+    .ml-tick.year{font-size:18px;color:#ffe680;text-shadow:0 0 18px rgba(255,200,60,.7),0 2px 8px rgba(0,0,0,.8);letter-spacing:3px}
+    .ml-tick .ml-tick-bar{width:48px;height:2px;background:rgba(255,255,255,.55);border-radius:2px}
+    .ml-tick.year .ml-tick-bar{width:84px;height:3px;background:rgba(255,220,120,.7);box-shadow:0 0 12px rgba(255,200,60,.6)}
+
+    /* Memory card — liquid glass */
+    .ml-card{position:absolute;border-radius:16px;overflow:hidden;cursor:pointer;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.18);
+      box-shadow:0 12px 38px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.18);
+      backdrop-filter:blur(10px) saturate(1.3);-webkit-backdrop-filter:blur(10px) saturate(1.3);
+      transform-origin:center center;will-change:transform,opacity;
+      transition:opacity .25s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .ml-card::before{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;
+      background:radial-gradient(ellipse 80% 36% at 50% 0%,rgba(255,255,255,.22),transparent 70%);
+      mix-blend-mode:screen}
+    .ml-card:hover{border-color:rgba(255,255,255,.36);box-shadow:0 16px 48px rgba(0,0,0,.7),0 0 0 1px rgba(124,58,237,.4),inset 0 1px 0 rgba(255,255,255,.25)}
+    .ml-card img,.ml-card video{display:block;width:100%;height:100%;object-fit:cover;border-radius:15px}
+    .ml-card .ml-vid-badge{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:800;letter-spacing:1px;backdrop-filter:blur(4px)}
+    .ml-card .ml-card-date{position:absolute;bottom:6px;left:6px;right:6px;font-size:10px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.9);font-weight:700;opacity:0;transition:opacity .2s}
+    .ml-card:hover .ml-card-date{opacity:1}
+
+    /* Empty state */
+    .ml-empty{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;color:#aaa}
+    .ml-empty.hidden{display:none}
+    .ml-empty-icon{font-size:56px;margin-bottom:14px;filter:drop-shadow(0 4px 16px rgba(233,69,96,.5))}
+    .ml-empty-text{font-size:16px;font-weight:800;color:#ddd}
+    .ml-empty-sub{font-size:12px;margin-top:6px;color:#777}
+
+    .ml-hint{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:6;font-size:10px;letter-spacing:2px;color:rgba(255,255,255,.45);text-transform:uppercase;background:rgba(0,0,0,.35);padding:4px 12px;border-radius:999px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);pointer-events:none}
+
+    @media (max-width: 720px){
+      .ml-toolbar{padding:8px 12px;gap:6px}
+      .ml-title{font-size:13px;letter-spacing:1px}
+      .ml-year-pill,.ml-month-pill{font-size:11px;padding:5px 10px}
+      .ml-tool-btn{padding:5px 9px;font-size:10px}
+      .ml-tick.year{font-size:14px}
+      .ml-tick{font-size:9px}
+    }
   </style>
 </head>
 <body>
@@ -372,6 +522,35 @@
     <div class="sidebar-divider"></div>
     <button class="sidebar-btn" onclick="showMemories()" id="btn-memories">
       <span>&#128248;</span> Memories
+    </button>
+    <button class="sidebar-btn" onclick="showMemoryLane()" id="btn-memory-lane" title="Scroll through your timeline">
+      <span class="ml-favicon" aria-hidden="true">
+        <svg viewBox="0 0 32 18" width="20" height="12" style="display:block">
+          <defs>
+            <linearGradient id="ml-road" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2a2a3e"/>
+              <stop offset="1" stop-color="#0a0a14"/>
+            </linearGradient>
+          </defs>
+          <rect x="0" y="12" width="32" height="6" fill="url(#ml-road)"/>
+          <line x1="2" y1="15" x2="6" y2="15" stroke="#f5d442" stroke-width="0.7"/>
+          <line x1="10" y1="15" x2="14" y2="15" stroke="#f5d442" stroke-width="0.7"/>
+          <line x1="18" y1="15" x2="22" y2="15" stroke="#f5d442" stroke-width="0.7"/>
+          <line x1="26" y1="15" x2="30" y2="15" stroke="#f5d442" stroke-width="0.7"/>
+          <rect x="9" y="7" width="14" height="5" rx="1.2" fill="#e94560"/>
+          <rect x="11" y="8.5" width="4" height="2.2" rx="0.4" fill="#a8d8ff" opacity="0.85"/>
+          <rect x="17" y="8.5" width="4" height="2.2" rx="0.4" fill="#a8d8ff" opacity="0.85"/>
+          <circle cx="12" cy="13" r="1.4" fill="#111" stroke="#444" stroke-width="0.3"/>
+          <circle cx="20" cy="13" r="1.4" fill="#111" stroke="#444" stroke-width="0.3"/>
+          <ellipse cx="16" cy="5" rx="3.4" ry="3" fill="#f7c8a8"/>
+          <path d="M12.8 4.3 Q13.5 1.8 16 1.6 Q18.5 1.8 19.2 4.3 Q19 5.6 16 5.4 Q13 5.6 12.8 4.3 Z" fill="#d96b8a" opacity="0.7"/>
+          <ellipse cx="14.4" cy="4.4" rx="1.4" ry="1" fill="#0d0d1e"/>
+          <ellipse cx="17.6" cy="4.4" rx="1.4" ry="1" fill="#0d0d1e"/>
+          <line x1="15.8" y1="4.4" x2="16.2" y2="4.4" stroke="#7c3aed" stroke-width="0.5"/>
+          <ellipse cx="14.4" cy="4.4" rx="0.5" ry="0.4" fill="#7c3aed" opacity="0.9"/>
+          <ellipse cx="17.6" cy="4.4" rx="0.5" ry="0.4" fill="#7c3aed" opacity="0.9"/>
+        </svg>
+      </span> Memory Lane
     </button>
     <button class="sidebar-btn" onclick="showDocuments()" id="btn-documents">
       <span>&#128196;</span> Documents
@@ -501,12 +680,65 @@
           <button onclick="memZoom(-1)">&#8722;</button>
           <button onclick="memZoom(1)">&#43;</button>
         </div>
+        <button class="mem-filter-btn" id="mem-select-btn" onclick="memToggleSelectMode()" title="Select multiple — click thumbs or drag a rectangle">&#9745; Select</button>
         <button class="mem-filter-btn" id="mem-fav-btn" onclick="toggleMemFav()">&#9829; Favorites</button>
         <button class="mem-filter-btn" onclick="reindexMedia()">&#8635; Scan</button>
       </div>
       <div class="memories-area" id="memories-area">
         <div style="text-align:center;padding:60px;color:#333">Loading memories...</div>
       </div>
+    </div>
+
+    <!-- Memory Lane view -->
+    <div class="memory-lane-view hidden" id="memory-lane-view">
+      <div class="ml-seasons" id="ml-seasons" aria-hidden="true">
+        <div class="ml-season ml-season-winter" data-season="winter">
+          <div class="ml-bg-winter"></div>
+          <div class="ml-snow"></div>
+        </div>
+        <div class="ml-season ml-season-spring" data-season="spring">
+          <div class="ml-bg-spring"></div>
+          <div class="ml-petals"></div>
+        </div>
+        <div class="ml-season ml-season-summer" data-season="summer">
+          <div class="ml-bg-summer"></div>
+          <div class="ml-sun"></div>
+        </div>
+        <div class="ml-season ml-season-fall" data-season="fall">
+          <div class="ml-bg-fall"></div>
+          <div class="ml-leaves"></div>
+        </div>
+      </div>
+
+      <div class="ml-toolbar">
+        <div class="ml-title"><span class="ml-title-icon">&#128293;</span> Memory Lane</div>
+        <div class="ml-year-pill" id="ml-year-pill">—</div>
+        <div class="ml-month-pill" id="ml-month-pill">—</div>
+        <div class="ml-toolbar-spacer"></div>
+        <button class="ml-tool-btn" onclick="mlJumpToday()" title="Jump to today">&#8982; Today</button>
+        <button class="ml-tool-btn" onclick="mlPrevYear()" title="Previous year">&#9664; Year</button>
+        <button class="ml-tool-btn" onclick="mlNextYear()" title="Next year">Year &#9654;</button>
+      </div>
+
+      <div class="ml-stage" id="ml-stage">
+        <div class="ml-bubble-edge"></div>
+        <div class="ml-viewport" id="ml-viewport">
+          <div class="ml-highway" id="ml-highway">
+            <div class="ml-center-line" id="ml-center-line"></div>
+            <div class="ml-lane ml-lane-left" id="ml-lane-left"></div>
+            <div class="ml-lane ml-lane-right" id="ml-lane-right"></div>
+            <div class="ml-timeline-marks" id="ml-timeline-marks"></div>
+          </div>
+        </div>
+        <div class="ml-bubble-glass"></div>
+        <div class="ml-empty hidden" id="ml-empty">
+          <div class="ml-empty-icon">&#128293;</div>
+          <div class="ml-empty-text">No memories on the timeline yet</div>
+          <div class="ml-empty-sub">Upload photos or connect iCloud — they'll fly down the highway</div>
+        </div>
+      </div>
+
+      <div class="ml-hint" id="ml-hint">Scroll &middot; pinch &middot; drag to drive the timeline</div>
     </div>
 
     <!-- Documents view -->
@@ -558,6 +790,35 @@
   <div class="ctx-item" onclick="ctxAction('rename')">Rename</div>
   <div class="ctx-divider"></div>
   <div class="ctx-item" onclick="ctxAction('delete')" style="color:#ff6666">Delete</div>
+</div>
+
+<!-- Memories multi-select action bar (Select mode) -->
+<div class="mem-action-bar" id="mem-action-bar">
+  <span class="mab-count" id="mem-sel-count">0 selected</span>
+  <button onclick="memBulkAddToSocial()" title="Add to Social Studio media pool (persistent, autopilot-accessible)">&#127916; Add to Social</button>
+  <button onclick="memBulkAttachAhb()" title="Attach to an AHB123 project">&#127959; Add to AHB123</button>
+  <button onclick="memBulkShare()" title="Create share links (7-day)">&#128279; Share</button>
+  <button onclick="memBulkDownload()" title="Download each">&#8681; Download</button>
+  <button class="mab-danger" onclick="memBulkDelete()" title="Delete selected">&#128465; Delete</button>
+  <button class="mab-clear" onclick="memClearSelection()">Clear</button>
+</div>
+<div class="mem-drag-rect" id="mem-drag-rect"></div>
+
+<!-- AHB123 project picker modal (used by Memories "Add to AHB123") -->
+<div class="modal-overlay" id="mem-ahb-modal">
+  <div class="modal" style="width:420px">
+    <div class="modal-title">Attach to AHB123 project</div>
+    <select id="mem-ahb-project" style="width:100%;background:#111;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:14px;margin-bottom:10px"></select>
+    <select id="mem-ahb-phase" style="width:100%;background:#111;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:14px;margin-bottom:16px">
+      <option value="before">Phase: Before</option>
+      <option value="during" selected>Phase: During</option>
+      <option value="after">Phase: After</option>
+    </select>
+    <div class="modal-btns">
+      <button class="btn-modal-cancel" onclick="memCloseAhbModal()">Cancel</button>
+      <button class="btn-modal-ok" onclick="memConfirmAhbAttach()">Attach</button>
+    </div>
+  </div>
 </div>
 
 <!-- Multi-select action bar (shown when selection > 0) -->
@@ -761,13 +1022,14 @@ function setupTextarea() {
 
 /* ── FILES ── */
 function _hideAllViews(){
-  ['no-agent-view','chat-view','files-view','icloud-view','memories-view','documents-view'].forEach(id=>{
+  ['no-agent-view','chat-view','files-view','icloud-view','memories-view','memory-lane-view','documents-view'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.classList.add('hidden');
   });
   document.querySelectorAll('.agent-item').forEach(el=>el.classList.remove('active'));
-  ['btn-my-files','btn-icloud','btn-memories','btn-documents','btn-imports'].forEach(id=>{
+  ['btn-my-files','btn-icloud','btn-memories','btn-memory-lane','btn-documents','btn-imports'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.classList.remove('active');
   });
+  if (window._mlTeardown) { try { window._mlTeardown(); } catch(e){} }
 }
 
 function showFiles() {
@@ -952,6 +1214,9 @@ function openFile(path, name) {
 let _hlsLib = null;
 let _activeHls = null;
 let _videoKeyHandler = null;
+// Per-open context so callers (Memories) can supply a transcoding source
+// URL and a video-only siblings list without depending on currentItems.
+let _vpContext = null;  // {siblings:[{path,name}], getSrcUrl:(path)=>url}
 async function _loadHlsJs() {
   if (_hlsLib) return _hlsLib;
   if (window.Hls) { _hlsLib = window.Hls; return _hlsLib; }
@@ -980,28 +1245,37 @@ function closeVideoPlayer() {
     document.removeEventListener('keydown', _videoKeyHandler);
     _videoKeyHandler = null;
   }
+  _vpContext = null;
 }
 
 function openVideoPlayer(path, name) {
+  const ctx = _vpContext;
+  // closeVideoPlayer nukes _vpContext, so re-set it after close to keep
+  // the navigation context alive across prev/next re-opens.
   closeVideoPlayer();
-  const siblings = _videoSiblings();
+  _vpContext = ctx;
+  const siblings = (ctx && ctx.siblings) || _videoSiblings();
   const idx = siblings.findIndex(s => s.path === path);
   const prev = idx > 0 ? siblings[idx - 1] : null;
   const next = (idx >= 0 && idx < siblings.length - 1) ? siblings[idx + 1] : null;
   const counter = idx >= 0 ? `${idx + 1} / ${siblings.length}` : '';
 
   const ext = (name.split('.').pop() || '').toLowerCase();
-  const nativeSrc = '/api/cloud/files/open?path=' + encodeURIComponent(path);
-  const hlsSrc    = '/api/cloud/media/hls?path=' + encodeURIComponent(path);
-  const needsHls  = HLS_EXT.has(ext);
+  const nativeSrc = (ctx && ctx.getSrcUrl)
+    ? ctx.getSrcUrl(path)
+    : '/api/cloud/files/open?path=' + encodeURIComponent(path);
+  // Raw-bytes fallback if the primary source fails to decode in-browser
+  const rawSrc = '/api/cloud/media/serve/' + encodeURIComponent(path);
+  const hlsSrc = '/api/cloud/media/hls?path=' + encodeURIComponent(path);
+  const needsHls = HLS_EXT.has(ext);
 
   const modal = document.createElement('div');
   modal.id = 'video-player-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;padding:20px';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;padding:20px';
   const disabledPrev = prev ? '' : 'opacity:.3;pointer-events:none';
   const disabledNext = next ? '' : 'opacity:.3;pointer-events:none';
   modal.innerHTML = `
-    <div style="width:100%;max-width:1100px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#ddd;gap:10px">
+    <div style="width:min(1400px,92vw);display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#ddd;gap:10px">
       <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">${escapeHtml(name)}${counter ? ` <span style="color:#666;font-weight:400;margin-left:8px">${counter}</span>` : ''}</div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button id="vp-prev" title="Previous (←)" style="background:#1a1a2e;border:1px solid #2a2a44;color:#ddd;padding:6px 12px;border-radius:6px;cursor:pointer;${disabledPrev}">&larr; Prev</button>
@@ -1010,30 +1284,31 @@ function openVideoPlayer(path, name) {
         <button id="vp-close" title="Close (Esc)" style="background:#1a1a2e;border:1px solid #2a2a44;color:#ddd;padding:6px 12px;border-radius:6px;cursor:pointer">Close</button>
       </div>
     </div>
-    <video id="vp-video" controls autoplay style="width:100%;max-width:1100px;max-height:80vh;background:#000;border-radius:8px"></video>
-    <div id="vp-status" style="color:#888;font-size:12px;margin-top:8px">Loading…</div>
+    <video id="vp-video" controls autoplay playsinline preload="metadata"
+      style="width:min(1400px,92vw);height:min(80vh,calc(min(1400px,92vw)*9/16));max-height:80vh;background:#000;border-radius:8px;display:block"></video>
+    <div id="vp-status" style="color:#888;font-size:12px;margin-top:8px;min-height:1em">Loading…</div>
   `;
   document.body.appendChild(modal);
 
   const video = document.getElementById('vp-video');
   const status = document.getElementById('vp-status');
 
+  const goPrev = () => { if (prev) openVideoPlayer(prev.path, prev.name); };
+  const goNext = () => { if (next) openVideoPlayer(next.path, next.name); };
+
   document.getElementById('vp-close').onclick = closeVideoPlayer;
   document.getElementById('vp-download').onclick = () => downloadFile(path);
-  if (prev) document.getElementById('vp-prev').onclick = () => openVideoPlayer(prev.path, prev.name);
-  if (next) document.getElementById('vp-next').onclick = () => openVideoPlayer(next.path, next.name);
+  if (prev) document.getElementById('vp-prev').onclick = goPrev;
+  if (next) document.getElementById('vp-next').onclick = goNext;
 
   // Auto-advance when a clip ends, if there's a next one
-  video.addEventListener('ended', () => {
-    if (next) openVideoPlayer(next.path, next.name);
-  });
+  video.addEventListener('ended', goNext);
 
-  // Keyboard: ← prev, → next, Esc close, Space play/pause (space is default on video)
   _videoKeyHandler = (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key === 'Escape') { e.preventDefault(); closeVideoPlayer(); }
-    else if (e.key === 'ArrowLeft' && prev) { e.preventDefault(); openVideoPlayer(prev.path, prev.name); }
-    else if (e.key === 'ArrowRight' && next) { e.preventDefault(); openVideoPlayer(next.path, next.name); }
+    else if (e.key === 'ArrowLeft' && prev) { e.preventDefault(); goPrev(); }
+    else if (e.key === 'ArrowRight' && next) { e.preventDefault(); goNext(); }
   };
   document.addEventListener('keydown', _videoKeyHandler);
 
@@ -1058,14 +1333,31 @@ function openVideoPlayer(path, name) {
     }
   };
 
+  // Once metadata is in, clear the placeholder status. Error handler chains:
+  //   primary source (transcoded/files-open) → HLS (if .ts-family) OR raw bytes → give-up message
+  let _triedRaw = false;
+  video.addEventListener('loadedmetadata', () => { status.textContent = ''; });
+  video.addEventListener('playing', () => { status.textContent = ''; });
+  video.addEventListener('waiting', () => {
+    if (!video.duration) status.textContent = 'Preparing video (transcoding on first play can take a moment)…';
+  });
+  video.addEventListener('error', () => {
+    if (needsHls) { playViaHls(); return; }
+    if (!_triedRaw && video.src !== rawSrc) {
+      _triedRaw = true;
+      status.textContent = 'Retrying with raw source…';
+      video.src = rawSrc;
+      video.load();
+      return;
+    }
+    status.textContent = 'Cannot play this video in the browser — use Download.';
+  });
+
   if (needsHls) {
-    // Try native first — some browsers decode raw TS if codecs are standard.
     video.src = nativeSrc;
     video.addEventListener('loadedmetadata', () => { status.textContent = 'Playing (native)'; }, {once:true});
-    video.addEventListener('error', playViaHls, {once:true});
   } else {
     video.src = nativeSrc;
-    status.textContent = '';
   }
 }
 
@@ -1502,10 +1794,12 @@ function renderMemDays(area){
       var thumb='/api/cloud/thumb/'+encodeURIComponent(it.path)+'?size='+Math.min(sz*2,400);
       var isVid=it.type==='video';
       var globalIdx=startIdx+idx;
-      html+='<div class="mem-thumb'+(it.favorite?' is-fav':'')+'" data-lb-idx="'+globalIdx+'" data-path="'+escapeHtml(it.path)+'">';
+      const isSelected=memSelection.has(it.path);
+      html+='<div class="mem-thumb'+(it.favorite?' is-fav':'')+(isSelected?' mem-selected':'')+'" data-lb-idx="'+globalIdx+'" data-path="'+escapeHtml(it.path)+'" data-type="'+(it.type||'')+'" data-name="'+escapeHtml(it.name)+'">';
       html+='<img src="'+thumb+'" loading="lazy" alt="'+escapeHtml(it.name)+'">';
       html+='<button class="trash-btn" title="Delete this item" aria-label="Delete">&#128465;</button>';
       html+='<span class="fav-dot">&#9829;</span>';
+      html+='<span class="mem-sel-mark"></span>';
       if(isVid)html+='<span class="vid-badge">VIDEO</span>';
       html+='</div>';
     });
@@ -1513,18 +1807,240 @@ function renderMemDays(area){
   });
   window._memLbItems=allItems;
   area.innerHTML=html;
-  // Attach click handlers via delegation
+  area.classList.toggle('select-mode', memSelectMode);
+  // Click delegation: in select mode, click toggles selection; otherwise opens lightbox.
+  // Trash button always deletes single (visible only outside select mode).
   area.querySelectorAll('.mem-thumb[data-lb-idx]').forEach(function(el){
     el.addEventListener('click',function(ev){
-      // Trash button click — stop propagation and call delete
       if(ev.target.closest('.trash-btn')){
         ev.stopPropagation();
         memDeleteItem(el);
         return;
       }
+      if(memSelectMode){
+        memToggleThumb(el, ev.shiftKey);
+        return;
+      }
       openLightbox(window._memLbItems, parseInt(el.dataset.lbIdx));
     });
   });
+  _memBindDragRect(area);
+  memRefreshActionBar();
+}
+
+/* ── Memories multi-select state + actions ─────────────────────────────── */
+const memSelection = new Map();   // path -> {name, type}
+let memSelectMode = false;
+let _memLastSelectedPath = null;  // for shift-range
+let _memDragBound = false;
+
+function memToggleSelectMode(){
+  memSelectMode = !memSelectMode;
+  const btn = document.getElementById('mem-select-btn');
+  if(btn) btn.classList.toggle('active', memSelectMode);
+  const area = document.getElementById('memories-area');
+  if(area) area.classList.toggle('select-mode', memSelectMode);
+  if(!memSelectMode){ memClearSelection(); }
+  else { memRefreshActionBar(); }
+}
+
+function memToggleThumb(el, shiftKey){
+  const path = el.dataset.path;
+  if(!path) return;
+  if(shiftKey && _memLastSelectedPath){
+    // Range-select: walk DOM order between last and current
+    const thumbs = Array.from(document.querySelectorAll('.mem-thumb[data-path]'));
+    const a = thumbs.findIndex(t => t.dataset.path === _memLastSelectedPath);
+    const b = thumbs.findIndex(t => t.dataset.path === path);
+    if(a >= 0 && b >= 0){
+      const [lo, hi] = a < b ? [a,b] : [b,a];
+      for(let i=lo; i<=hi; i++){
+        const t = thumbs[i];
+        memSelection.set(t.dataset.path, {name: t.dataset.name, type: t.dataset.type});
+        t.classList.add('mem-selected');
+      }
+      memRefreshActionBar();
+      return;
+    }
+  }
+  if(memSelection.has(path)){
+    memSelection.delete(path);
+    el.classList.remove('mem-selected');
+  } else {
+    memSelection.set(path, {name: el.dataset.name, type: el.dataset.type});
+    el.classList.add('mem-selected');
+    _memLastSelectedPath = path;
+  }
+  memRefreshActionBar();
+}
+
+function memClearSelection(){
+  memSelection.clear();
+  _memLastSelectedPath = null;
+  document.querySelectorAll('.mem-thumb.mem-selected').forEach(el => el.classList.remove('mem-selected'));
+  memRefreshActionBar();
+}
+
+function memRefreshActionBar(){
+  const bar = document.getElementById('mem-action-bar');
+  if(!bar) return;
+  const n = memSelection.size;
+  document.getElementById('mem-sel-count').textContent = n + ' selected';
+  if(memSelectMode && n > 0) bar.classList.add('visible'); else bar.classList.remove('visible');
+}
+
+/* Drag-rectangle selection — only active in select mode, only over .memories-area */
+function _memBindDragRect(area){
+  if(_memDragBound) return;
+  _memDragBound = true;
+  let dragging = false;
+  let startX=0, startY=0, areaRect=null;
+  const rect = document.getElementById('mem-drag-rect');
+  area.addEventListener('mousedown', (ev) => {
+    if(!memSelectMode) return;
+    // Only start drag from blank area or directly on the grid, not on a thumb/button
+    if(ev.target.closest('.mem-thumb') || ev.target.closest('button')) return;
+    if(ev.button !== 0) return;
+    dragging = true;
+    startX = ev.clientX; startY = ev.clientY;
+    areaRect = area.getBoundingClientRect();
+    if(!ev.shiftKey && !ev.metaKey && !ev.ctrlKey){ memClearSelection(); }
+    rect.style.left = startX + 'px';
+    rect.style.top  = startY + 'px';
+    rect.style.width = '0px';
+    rect.style.height = '0px';
+    rect.style.display = 'block';
+    ev.preventDefault();
+  });
+  document.addEventListener('mousemove', (ev) => {
+    if(!dragging) return;
+    const x1 = Math.min(startX, ev.clientX);
+    const y1 = Math.min(startY, ev.clientY);
+    const x2 = Math.max(startX, ev.clientX);
+    const y2 = Math.max(startY, ev.clientY);
+    rect.style.left = x1 + 'px';
+    rect.style.top  = y1 + 'px';
+    rect.style.width  = (x2 - x1) + 'px';
+    rect.style.height = (y2 - y1) + 'px';
+    document.querySelectorAll('.mem-thumb[data-path]').forEach(el => {
+      const r = el.getBoundingClientRect();
+      const intersects = !(r.right < x1 || r.left > x2 || r.bottom < y1 || r.top > y2);
+      if(intersects){
+        if(!memSelection.has(el.dataset.path)){
+          memSelection.set(el.dataset.path, {name: el.dataset.name, type: el.dataset.type});
+          el.classList.add('mem-selected');
+        }
+      }
+    });
+    memRefreshActionBar();
+  });
+  document.addEventListener('mouseup', () => {
+    if(!dragging) return;
+    dragging = false;
+    rect.style.display = 'none';
+  });
+}
+
+function _memSelectedPaths(){ return Array.from(memSelection.keys()); }
+
+async function memBulkAddToSocial(){
+  const paths = _memSelectedPaths();
+  if(!paths.length) return;
+  const r = await fetch('/api/ahb/social/sources/import-cloud-batch', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths, origin: 'memories'})
+  });
+  const d = await r.json();
+  if(!d.success){ alert('Add to Social failed: ' + (d.error || 'unknown')); return; }
+  alert(`Added to Social pool — ${d.imported_count} new, ${d.already_count} already there` +
+        (d.failed_count ? `, ${d.failed_count} failed` : '') +
+        '.\n\nThese stay in the Composer source library and are visible to autopilot.');
+}
+
+async function memBulkShare(){
+  const paths = _memSelectedPaths();
+  if(!paths.length) return;
+  const r = await fetch('/api/cloud/media/share-batch', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths, expires_days: 7})
+  });
+  const d = await r.json();
+  if(!d.success){ alert('Share failed: ' + (d.error || 'unknown')); return; }
+  const urls = (d.shares || []).filter(s => s.url).map(s => s.url);
+  const failed = (d.shares || []).filter(s => s.error);
+  if(urls.length){
+    const blob = urls.join('\n');
+    try { await navigator.clipboard.writeText(blob); } catch(e){}
+    alert(`Created ${urls.length} share link(s) (7-day). Copied to clipboard:\n\n` + blob +
+          (failed.length ? `\n\n${failed.length} could not be shared.` : ''));
+  } else {
+    alert('No links created.');
+  }
+}
+
+function memBulkDownload(){
+  const paths = _memSelectedPaths();
+  paths.forEach(p => window.open('/api/cloud/media/serve/' + encodeURIComponent(p), '_blank'));
+}
+
+async function memBulkDelete(){
+  const paths = _memSelectedPaths();
+  if(!paths.length) return;
+  if(!confirm(`Delete ${paths.length} item(s)? This can't be undone.`)) return;
+  for(const p of paths){
+    try {
+      await fetch('/api/cloud/media/delete', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: p})
+      });
+    } catch(e){}
+    // Mark as deleted in cached lightbox items
+    if(window._memLbItems){
+      const it = window._memLbItems.find(m => m && m.path === p);
+      if(it) it._deleted = true;
+    }
+    document.querySelectorAll(`.mem-thumb[data-path="${(p||'').replace(/"/g,'\\"')}"]`).forEach(el => el.remove());
+  }
+  memClearSelection();
+}
+
+async function memBulkAttachAhb(){
+  const paths = _memSelectedPaths();
+  if(!paths.length) return;
+  // Lazy-load AHB project list
+  let projects = [];
+  try {
+    const r = await fetch('/api/ahb/projects');
+    projects = await r.json();
+  } catch(e){
+    alert('Could not load projects: ' + e.message); return;
+  }
+  if(!projects || !projects.length){
+    alert('No AHB123 projects found.'); return;
+  }
+  const sel = document.getElementById('mem-ahb-project');
+  sel.innerHTML = projects.map(p => `<option value="${p.id}">${escapeHtml(p.title || ('#'+p.id))}</option>`).join('');
+  document.getElementById('mem-ahb-modal').classList.add('visible');
+}
+
+function memCloseAhbModal(){
+  document.getElementById('mem-ahb-modal').classList.remove('visible');
+}
+
+async function memConfirmAhbAttach(){
+  const project_id = parseInt(document.getElementById('mem-ahb-project').value);
+  const phase = document.getElementById('mem-ahb-phase').value;
+  const paths = _memSelectedPaths();
+  if(!project_id || !paths.length){ memCloseAhbModal(); return; }
+  const r = await fetch('/api/ahb/media/attach-cloud-batch', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths, project_id, phase})
+  });
+  const d = await r.json();
+  memCloseAhbModal();
+  if(!d.success){ alert('Attach failed: ' + (d.error || 'unknown')); return; }
+  alert(`Attached ${d.attached} item(s) to project as "${phase}".` +
+        ((d.missing||[]).length ? `\n${d.missing.length} could not be resolved.` : ''));
 }
 
 async function memDeleteItem(el){
@@ -1601,14 +2117,22 @@ function lbNav(dir){
 
 function renderLb(){
   const it=lbItems[lbIdx];if(!it)return;
-  const c=document.getElementById('lb-content');
   const isVid = it.type==='video';
-  const url = (isVid ? '/api/cloud/media/play/' : '/api/cloud/media/serve/') + encodeURIComponent(it.path);
   if(isVid){
-    c.innerHTML=`<video src="${url}" controls autoplay style="max-width:92vw;max-height:80vh;border-radius:4px"></video>`;
-  }else{
-    c.innerHTML=`<img src="${url}" style="max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px">`;
+    // Hand off to the full-size video player (handles transcoding, prev/next,
+    // raw-bytes fallback) instead of cramming a bare <video> into the lightbox.
+    const videoItems=(lbItems||[]).filter(m=>m.type==='video').map(m=>({path:m.path,name:m.name}));
+    _vpContext={
+      siblings:videoItems,
+      getSrcUrl:(p)=>'/api/cloud/media/play/'+encodeURIComponent(p)
+    };
+    closeLightbox();
+    openVideoPlayer(it.path,it.name);
+    return;
   }
+  const c=document.getElementById('lb-content');
+  const url='/api/cloud/media/serve/'+encodeURIComponent(it.path);
+  c.innerHTML=`<img src="${url}" style="max-width:92vw;max-height:80vh;object-fit:contain;border-radius:4px">`;
   const info=document.getElementById('lb-info');
   info.innerHTML=`<div class="lb-name">${escapeHtml(it.name)}</div>
     <div>${it.date||''} ${it.time||''} &middot; ${fmtSize(it.size)} &middot; ${it.source||''}</div>`;
@@ -1652,6 +2176,328 @@ function fmtSize(b){
   if(b>1048576)return (b/1048576).toFixed(1)+' MB';
   if(b>1024)return (b/1024).toFixed(0)+' KB';
   return b+' B';
+}
+
+/* ===================== MEMORY LANE ===================== */
+const ML_SEASON_OF_MONTH = {1:'winter',2:'winter',3:'spring',4:'spring',5:'spring',6:'summer',7:'summer',8:'summer',9:'fall',10:'fall',11:'fall',12:'winter'};
+const ML_PX_PER_MONTH = 520;   // vertical pixels per month
+const ML_LANE_PAD = 28;        // gap from center line to nearest card edge
+const ML_LANE_RIGHT_EDGE = 24; // gap from viewport edge
+const ML_CARD_W_BASE = 200;    // base card width
+const ML_CARD_H_BASE = 200;    // base card height (square-ish; we vary)
+
+let mlItems = null;       // chronological flat list
+let mlYearMonths = null;  // sorted list of "YYYY-MM" keys present
+let mlCurrentYear = null;
+let mlCurrentMonth = null;
+let mlScrollTop = 0;
+let mlRafId = null;
+let mlActiveSeason = null;
+let mlMounted = false;
+
+function showMemoryLane(){
+  _hideAllViews();
+  document.getElementById('btn-memory-lane').classList.add('active');
+  document.getElementById('memory-lane-view').classList.remove('hidden');
+  mlMount();
+}
+
+async function mlMount(){
+  const empty = document.getElementById('ml-empty');
+  empty.classList.add('hidden');
+  try {
+    if (!mlItems) {
+      const r = await fetch('/api/cloud/media');
+      const data = await r.json();
+      mlItems = _mlFlattenItems(data);
+    }
+  } catch (e) {
+    empty.classList.remove('hidden');
+    empty.querySelector('.ml-empty-text').textContent = 'Could not load memories';
+    empty.querySelector('.ml-empty-sub').textContent = e.message || '';
+    return;
+  }
+  if (!mlItems || !mlItems.length) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  const firstTime = !mlMounted;
+  mlMounted = true;
+  mlRender();
+  if (!window._mlTeardown) _mlBindScroll();
+  requestAnimationFrame(()=>{
+    if (firstTime) {
+      const today = new Date();
+      mlJumpToDate(today.getFullYear(), today.getMonth()+1, false);
+    } else {
+      mlUpdateVisuals();
+    }
+  });
+}
+
+function _mlFlattenItems(data){
+  const out = [];
+  const years = (data && data.years) || {};
+  Object.keys(years).sort().forEach(function(y){
+    const months = years[y].months || {};
+    Object.keys(months).sort().forEach(function(m){
+      const days = months[m].days || {};
+      Object.keys(days).sort().forEach(function(d){
+        (days[d] || []).forEach(function(it, idx){
+          out.push({
+            path: it.path, name: it.name, type: it.type, favorite: !!it.favorite,
+            date: it.date || (y+'-'+m+'-'+d), time: it.time || '',
+            year: parseInt(y, 10), month: parseInt(m, 10), day: parseInt(d, 10),
+            // dayOrder used for vertical positioning within a month
+            _dayFloat: parseInt(d, 10) + (idx * 0.001),
+          });
+        });
+      });
+    });
+  });
+  return out;
+}
+
+function mlRender(){
+  const lanesLeft = document.getElementById('ml-lane-left');
+  const lanesRight = document.getElementById('ml-lane-right');
+  const ticks = document.getElementById('ml-timeline-marks');
+  const hwy = document.getElementById('ml-highway');
+  if (!mlItems || !mlItems.length) return;
+
+  // Determine the full year span.
+  const minDate = mlItems[0];
+  const maxDate = mlItems[mlItems.length - 1];
+  // Pad outward by 2 months so user can scroll a little past the edges.
+  const startMonths = (minDate.year * 12 + (minDate.month - 1)) - 2;
+  const endMonths   = (maxDate.year * 12 + (maxDate.month - 1)) + 2;
+  const totalMonths = endMonths - startMonths + 1;
+
+  // Set highway height: each month gets ML_PX_PER_MONTH. Plus padding above/below = viewport.
+  const stage = document.getElementById('ml-stage');
+  const vh = stage.clientHeight;
+  const padding = Math.round(vh / 2); // half-viewport pad top and bottom = "center" semantics
+  const highwayHeight = totalMonths * ML_PX_PER_MONTH + padding * 2;
+  hwy.style.height = highwayHeight + 'px';
+  hwy.style.paddingTop = padding + 'px';
+  hwy.style.paddingBottom = padding + 'px';
+  hwy.style.minHeight = 'unset';
+  hwy.dataset.startMonthAbs = String(startMonths);
+  hwy.dataset.endMonthAbs = String(endMonths);
+  hwy.dataset.padding = String(padding);
+
+  // Clear lanes & ticks
+  lanesLeft.innerHTML = '';
+  lanesRight.innerHTML = '';
+  ticks.innerHTML = '';
+
+  // Place ticks for every month + bold year tick at January.
+  for (let abs = startMonths; abs <= endMonths; abs++) {
+    const y = Math.floor(abs / 12);
+    const m = (abs % 12) + 1;
+    const yTop = padding + (abs - startMonths) * ML_PX_PER_MONTH;
+    const tickEl = document.createElement('div');
+    const isYearTick = (m === 1);
+    tickEl.className = 'ml-tick' + (isYearTick ? ' year' : '');
+    tickEl.style.top = yTop + 'px';
+    tickEl.dataset.year = String(y);
+    tickEl.dataset.month = String(m);
+    if (isYearTick) {
+      tickEl.innerHTML = '<span class="ml-tick-bar"></span><span>' + y + '</span><span class="ml-tick-bar"></span>';
+    } else {
+      tickEl.innerHTML = '<span class="ml-tick-bar"></span><span>' + MONTHS_LABEL[m] + '</span><span class="ml-tick-bar"></span>';
+    }
+    ticks.appendChild(tickEl);
+  }
+
+  // Place media cards.
+  // For each item, abs_pos = (year*12 + month-1 - startMonths) + dayFraction
+  // Y coord = padding + abs_pos * ML_PX_PER_MONTH
+  // Lane alternation: even index -> left, odd -> right (within month, by chronological order)
+  // Adds variety to width/height for highway-feel.
+  const monthCounter = {};
+  mlItems.forEach(function(it, i){
+    const abs = (it.year * 12 + (it.month - 1));
+    const monthKey = it.year + '-' + it.month;
+    const seq = (monthCounter[monthKey] = (monthCounter[monthKey] || 0) + 1);
+    const monthFrac = Math.min(0.95, (it._dayFloat - 1) / 31);
+    const yTop = Math.round(padding + (abs - startMonths) * ML_PX_PER_MONTH + monthFrac * ML_PX_PER_MONTH);
+    const lane = (seq % 2 === 1) ? 'left' : 'right';
+    const sizeVariant = (i % 5);  // some big, some small
+    const w = ML_CARD_W_BASE + [0, 28, -32, 56, 12][sizeVariant];
+    const h = ML_CARD_H_BASE + [0, -10, 38, 12, -28][sizeVariant];
+
+    const card = document.createElement('div');
+    card.className = 'ml-card';
+    card.style.width = w + 'px';
+    card.style.height = h + 'px';
+    card.style.top = (yTop - h/2) + 'px';
+
+    // Horizontal placement: closer to center for small lane indexes, farther for higher counts.
+    // We push outward as lane stacking grows so cards don't pile up.
+    const stackDepth = Math.floor((seq - 1) / 2);  // 0,0,1,1,2,2,...
+    const offsetFromCenter = ML_LANE_PAD + stackDepth * 18 + Math.abs(((i*37)%19) - 9) * 3;
+    if (lane === 'left') {
+      card.style.right = offsetFromCenter + 'px';
+      card.style.left = 'auto';
+    } else {
+      card.style.left = offsetFromCenter + 'px';
+      card.style.right = 'auto';
+    }
+    card.dataset.index = String(i);
+    card.dataset.yCenter = String(yTop);
+    card.dataset.abs = String(abs + monthFrac);
+
+    const thumb = '/api/cloud/thumb/' + encodeURIComponent(it.path) + '?size=400';
+    const isVid = it.type === 'video';
+    card.innerHTML =
+      '<img src="' + thumb + '" loading="lazy" alt="' + (it.name||'') + '" onerror="this.style.background=\'#222\';this.removeAttribute(\'src\');">' +
+      (isVid ? '<span class="ml-vid-badge">VIDEO</span>' : '') +
+      '<div class="ml-card-date">' + (it.date || '') + '</div>';
+
+    card.addEventListener('click', function(){
+      openLightbox(mlItems, parseInt(card.dataset.index, 10));
+    });
+
+    (lane === 'left' ? lanesLeft : lanesRight).appendChild(card);
+  });
+
+  // Initialize visuals.
+  mlUpdateVisuals();
+}
+
+function _mlBindScroll(){
+  const vp = document.getElementById('ml-viewport');
+  if (!vp) return;
+  const onScroll = function(){
+    mlScrollTop = vp.scrollTop;
+    if (mlRafId) return;
+    mlRafId = requestAnimationFrame(function(){
+      mlRafId = null;
+      mlUpdateVisuals();
+    });
+  };
+  vp.addEventListener('scroll', onScroll, {passive:true});
+
+  // Resize handler - re-render highway height when stage size changes.
+  const onResize = function(){
+    if (document.getElementById('memory-lane-view').classList.contains('hidden')) return;
+    // Preserve current month roughly
+    const curY = mlCurrentYear, curM = mlCurrentMonth;
+    mlRender();
+    if (curY && curM) mlJumpToDate(curY, curM, false);
+  };
+  window.addEventListener('resize', onResize);
+
+  // Teardown hook captured by _hideAllViews().
+  window._mlTeardown = function(){
+    vp.removeEventListener('scroll', onScroll);
+    window.removeEventListener('resize', onResize);
+    window._mlTeardown = null;
+  };
+}
+
+function mlUpdateVisuals(){
+  const stage = document.getElementById('ml-stage');
+  const vp = document.getElementById('ml-viewport');
+  const hwy = document.getElementById('ml-highway');
+  if (!stage || !vp || !hwy) return;
+  const vh = stage.clientHeight;
+  const centerY = vp.scrollTop + vh / 2;
+  const padding = parseFloat(hwy.dataset.padding || '0');
+  const startMonths = parseFloat(hwy.dataset.startMonthAbs || '0');
+
+  // Compute current month at viewport center
+  const monthAbsFloat = startMonths + (centerY - padding) / ML_PX_PER_MONTH;
+  const currentMonthAbs = Math.round(monthAbsFloat);
+  const newYear = Math.floor(currentMonthAbs / 12);
+  const newMonth = (currentMonthAbs % 12 + 12) % 12 + 1;
+
+  if (newYear !== mlCurrentYear || newMonth !== mlCurrentMonth) {
+    mlCurrentYear = newYear;
+    mlCurrentMonth = newMonth;
+    document.getElementById('ml-year-pill').textContent = newYear;
+    document.getElementById('ml-month-pill').textContent = MONTHS_LABEL[newMonth] || '';
+    _mlUpdateSeason(newMonth);
+  }
+
+  // Fish-eye + fade: per-card scale/opacity based on distance from viewport center
+  const cards = stage.querySelectorAll('.ml-card');
+  const FALLOFF = vh * 0.55;
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    const yCenter = parseFloat(card.dataset.yCenter);
+    const cardCenterInVp = yCenter - vp.scrollTop;
+    const dist = Math.abs(cardCenterInVp - vh / 2);
+    const norm = Math.min(1, dist / FALLOFF);
+    // scale: 1.18 at center, 0.55 at perimeter
+    const scale = 1.18 - norm * 0.63;
+    // opacity: 1 center → 0.06 perimeter (so they fade away)
+    const opacity = Math.max(0, 1 - Math.pow(norm, 1.35) * 1.05);
+    // x squeeze toward center (fish-eye horizontal pinch)
+    const xSqueeze = (1 - norm * 0.18);
+    card.style.transform = 'scale(' + (scale * xSqueeze) + ',' + scale + ')';
+    card.style.opacity = String(opacity);
+    // Skip layout-killers when fully invisible: hide them from compositor work
+    if (opacity < 0.02) {
+      card.style.visibility = 'hidden';
+    } else if (card.style.visibility === 'hidden') {
+      card.style.visibility = 'visible';
+    }
+  }
+
+  // Ticks: shrink + fade similarly
+  const ticks = stage.querySelectorAll('.ml-tick');
+  for (let i = 0; i < ticks.length; i++) {
+    const tick = ticks[i];
+    const top = parseFloat(tick.style.top);
+    const dist = Math.abs(top - centerY);
+    const norm = Math.min(1, dist / FALLOFF);
+    const scale = 1.12 - norm * 0.55;
+    const opacity = Math.max(0, 1 - Math.pow(norm, 1.2) * 1.0);
+    tick.style.transform = 'translateX(-50%) scale(' + scale + ')';
+    tick.style.opacity = String(opacity);
+  }
+}
+
+function _mlUpdateSeason(monthInt){
+  const target = ML_SEASON_OF_MONTH[monthInt] || 'spring';
+  if (target === mlActiveSeason) return;
+  mlActiveSeason = target;
+  const seasons = document.querySelectorAll('#ml-seasons .ml-season');
+  seasons.forEach(function(s){
+    if (s.dataset.season === target) s.classList.add('active');
+    else s.classList.remove('active');
+  });
+}
+
+function mlJumpToDate(year, month, smooth){
+  const hwy = document.getElementById('ml-highway');
+  const vp = document.getElementById('ml-viewport');
+  const stage = document.getElementById('ml-stage');
+  if (!hwy || !vp || !stage) return;
+  const startMonths = parseFloat(hwy.dataset.startMonthAbs || '0');
+  const endMonths = parseFloat(hwy.dataset.endMonthAbs || '0');
+  const padding = parseFloat(hwy.dataset.padding || '0');
+  const requested = year * 12 + (month - 1);
+  // Clamp to data range
+  const clamped = Math.max(startMonths, Math.min(endMonths, requested));
+  const yTop = padding + (clamped - startMonths) * ML_PX_PER_MONTH;
+  const targetScroll = yTop - stage.clientHeight / 2;
+  vp.scrollTo({top: targetScroll, behavior: smooth ? 'smooth' : 'auto'});
+}
+
+function mlJumpToday(){
+  const today = new Date();
+  mlJumpToDate(today.getFullYear(), today.getMonth()+1, true);
+}
+function mlPrevYear(){
+  if (!mlCurrentYear) return;
+  mlJumpToDate(mlCurrentYear - 1, mlCurrentMonth || 7, true);
+}
+function mlNextYear(){
+  if (!mlCurrentYear) return;
+  mlJumpToDate(mlCurrentYear + 1, mlCurrentMonth || 7, true);
 }
 
 /* ===================== DOCUMENTS ===================== */

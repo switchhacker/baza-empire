@@ -12252,6 +12252,141 @@ if CLOUD_ENABLED:
         return send_from_directory(TRANSCODE_DIR, key,
                                    as_attachment=False, mimetype='video/mp4')
 
+    def _resolve_cloud_media_path(filepath):
+        """Resolve a cloud_media_index key ({source}/{rel}) to absolute path.
+        Mirrors the fallback chain used by serve/play endpoints."""
+        full, _ = _resolve_media_path(filepath)
+        if full:
+            return full
+        parts = filepath.split('/', 1)
+        if len(parts) == 2:
+            for base, s in CLOUD_MEDIA_DIRS:
+                if s == parts[0]:
+                    cand = os.path.realpath(os.path.join(base, parts[1]))
+                    if cand.startswith(os.path.realpath(base)) and os.path.exists(cand):
+                        return cand
+        return None
+
+    @app.route('/api/cloud/media/share-batch', methods=['POST'])
+    def api_cloud_media_share_batch():
+        """Create tokenized public share links for one or more cloud media items
+        (uses cloud_media_index path format `{source}/{rel}`). Returns one
+        {token,url} per input path, or {error} for failures."""
+        import secrets as _secrets
+        import datetime as _dt
+        data = request.json or {}
+        paths = data.get('paths') or []
+        if not paths:
+            return jsonify({'success': False, 'error': 'paths[] required'}), 400
+        days = int(data.get('expires_days', 7))
+        expires_at = (_dt.datetime.utcnow() + _dt.timedelta(days=days)).isoformat() if days > 0 else None
+        user_dir_real = os.path.realpath(os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID)))
+        conn = _ahb_db()
+        out = []
+        for p in paths:
+            full = _resolve_cloud_media_path(p)
+            if not full or not os.path.isfile(full):
+                out.append({'path': p, 'error': 'not found'})
+                continue
+            # Re-express as user-dir-relative when possible so /s/<token> resolves
+            # the same way single-file shares do.
+            share_path = p
+            if full.startswith(user_dir_real + os.sep):
+                share_path = os.path.relpath(full, user_dir_real)
+            token = _secrets.token_urlsafe(18)
+            try:
+                conn.execute(
+                    "INSERT INTO cloud_shares (token, user_id, path, expires_at, created_by) "
+                    "VALUES (?,?,?,?,?)",
+                    (token, str(FAMILY_USER_ID), share_path, expires_at, 'serge'))
+                base = _public_base_url()
+                out.append({'path': p, 'token': token, 'url': f"{base}/s/{token}"})
+            except Exception as e:
+                out.append({'path': p, 'error': str(e)})
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'shares': out, 'expires_at': expires_at})
+
+    @app.route('/api/ahb/social/sources/import-cloud-batch', methods=['POST'])
+    def api_social_import_cloud_batch():
+        """Import cloud_media_index entries into the social-studio media pool
+        (image_captions table — origin='composer' in /api/ahb/social/sources).
+        Idempotent: existing rows reported under `already`. The autopilot agent
+        and the Composer source picker both read from image_captions, so items
+        imported here persist across the Social UI."""
+        import datetime as _dt
+        data = request.json or {}
+        paths = data.get('paths') or []
+        origin = (data.get('origin') or 'memories').strip()
+        tags = (data.get('tags') or '').strip() or origin
+        if not paths:
+            return jsonify({'success': False, 'error': 'paths[] required'}), 400
+        db = os.path.join(DASHBOARD_DIR, 'baza_projects.db')
+        con = sqlite3.connect(db)
+        con.row_factory = sqlite3.Row
+        con.execute("""CREATE TABLE IF NOT EXISTS image_captions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER,
+            sub_path TEXT NOT NULL UNIQUE,
+            caption TEXT,
+            tags TEXT,
+            indexed_at TEXT)""")
+        imported, already, failed = [], [], []
+        now = _dt.datetime.utcnow().isoformat(timespec='seconds')
+        for p in paths:
+            full = _resolve_cloud_media_path(p)
+            if not full:
+                failed.append({'path': p, 'error': 'not found'}); continue
+            row = con.execute(
+                "SELECT id FROM image_captions WHERE sub_path=?", (full,)).fetchone()
+            if row:
+                already.append({'path': p, 'id': row['id']}); continue
+            try:
+                cur = con.execute(
+                    "INSERT INTO image_captions (sub_path, caption, tags, indexed_at) "
+                    "VALUES (?,?,?,?)",
+                    (full, os.path.basename(full), tags, now))
+                imported.append({'path': p, 'id': cur.lastrowid})
+            except Exception as e:
+                failed.append({'path': p, 'error': str(e)})
+        con.commit(); con.close()
+        return jsonify({'success': True,
+                        'imported': imported, 'already': already, 'failed': failed,
+                        'imported_count': len(imported),
+                        'already_count': len(already),
+                        'failed_count': len(failed)})
+
+    @app.route('/api/ahb/media/attach-cloud-batch', methods=['POST'])
+    def api_ahb_attach_cloud_batch():
+        """Attach cloud media items to an AHB123 project (ahb_media_attachments).
+        Accepts cloud_media_index keys (`{source}/{rel}`) — the table itself
+        stores those exact keys, so no abs-path conversion is needed; we just
+        verify each path resolves to an existing file before attaching.
+        Body: {paths:[...], project_id, phase?:'during'}"""
+        data = request.json or {}
+        paths = data.get('paths') or []
+        pid = data.get('project_id')
+        phase = data.get('phase', 'during')
+        if not paths or not pid:
+            return jsonify({'success': False, 'error': 'paths[] and project_id required'}), 400
+        if phase not in ('before', 'during', 'after'):
+            return jsonify({'success': False, 'error': 'phase must be before/during/after'}), 400
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+        attached, missing = 0, []
+        for p in paths:
+            if not _resolve_cloud_media_path(p):
+                missing.append(p); continue
+            try:
+                conn.execute(
+                    "INSERT INTO ahb_media_attachments (media_filepath, project_id, phase, source) "
+                    "VALUES (?,?,?, 'manual') "
+                    "ON CONFLICT(media_filepath, project_id) DO UPDATE SET phase=excluded.phase, source='manual'",
+                    (p, pid, phase))
+                attached += 1
+            except Exception:
+                missing.append(p)
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'attached': attached, 'missing': missing})
+
     @app.route('/api/cloud/media/upload', methods=['POST'])
     def api_cloud_media_upload():
         """Accept multipart photo/video uploads from the Media tab's Upload
