@@ -537,3 +537,20 @@ def test_patch_scheduled_at_preserves_time(client):
     sched = con.execute("SELECT scheduled_at FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()[0]
     con.close()
     assert sched == "2026-06-15T15:30:00"
+
+
+def test_bulk_set_status_no_event_when_unchanged(client):
+    """Bulk-setting status to its current value should be a no-op (no event, affected=0)."""
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','approved','x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post("/api/ahb/social/posts/bulk",
+               json={"ids": [pid], "action": "set_status", "params": {"status": "approved"}})
+    assert r.status_code == 200
+    assert r.get_json()["affected"] == 0
+    j = c.get(f"/api/ahb/social/posts/{pid}/approval-events").get_json()
+    assert all(e["action"] != "status:approved" for e in j["events"])

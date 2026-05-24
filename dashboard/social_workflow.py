@@ -342,15 +342,23 @@ def register(bp):
                 return jsonify({"error": f"invalid status: {status}"}), 400
             con = _db()
             try:
-                cur = con.execute(
-                    f"UPDATE ahb_social_posts SET status=?, "
-                    f"updated_at=? WHERE id IN ({ph})",
-                    [status, datetime.utcnow().isoformat(timespec="seconds"), *ids],
-                )
-                affected = cur.rowcount
-                # T8: log approval event for each id whose status actually changed.
-                if affected:
-                    for pid in ids:
+                # Find which ids actually need updating (status differs).
+                changed = [r[0] for r in con.execute(
+                    f"SELECT id FROM ahb_social_posts "
+                    f"WHERE id IN ({ph}) AND status != ?",
+                    [*ids, status],
+                ).fetchall()]
+                affected = 0
+                if changed:
+                    ch = ",".join("?" * len(changed))
+                    cur = con.execute(
+                        f"UPDATE ahb_social_posts SET status=?, "
+                        f"updated_at=? WHERE id IN ({ch})",
+                        [status, datetime.utcnow().isoformat(timespec="seconds"), *changed],
+                    )
+                    affected = cur.rowcount
+                    # T8: log approval event only for rows whose status actually changed.
+                    for pid in changed:
                         _log_approval_event(
                             con, pid, f"status:{status}", "serge", "",
                         )
