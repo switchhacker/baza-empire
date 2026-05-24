@@ -83,3 +83,39 @@ def test_bom_not_found(client):
     r = client.patch("/api/baza/projects/p1/bom/9999",
                      json={"status": "ordered"})
     assert r.status_code == 404
+
+
+def test_inventory_crud(client):
+    r = client.post("/api/baza/inventory",
+                    json={"name": "Arduino Uno", "category": "MCU",
+                          "quantity": 3, "location": "garage bin 1"})
+    assert r.status_code == 201
+    iid = r.get_json()["id"]
+    items = client.get("/api/baza/inventory").get_json()["items"]
+    assert any(i["id"] == iid for i in items)
+
+    r2 = client.patch(f"/api/baza/inventory/{iid}", json={"quantity": 4})
+    assert r2.status_code == 200
+
+    r3 = client.delete(f"/api/baza/inventory/{iid}")
+    assert r3.status_code == 200
+
+
+def test_equipment_crud(client):
+    r = client.post("/api/baza/equipment",
+                    json={"name": "Hakko FX-888D", "type": "soldering"})
+    assert r.status_code == 201
+    eid = r.get_json()["id"]
+    items = client.get("/api/baza/equipment").get_json()["items"]
+    assert any(i["id"] == eid for i in items)
+
+    client.patch(f"/api/baza/equipment/{eid}", json={"status": "in_use"})
+    items = client.get("/api/baza/equipment").get_json()["items"]
+    assert next(i for i in items if i["id"] == eid)["status"] == "in_use"
+
+    client.delete(f"/api/baza/equipment/{eid}")
+
+
+def test_inventory_not_found(client):
+    r = client.patch("/api/baza/inventory/9999", json={"quantity": 1})
+    assert r.status_code == 404

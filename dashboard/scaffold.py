@@ -380,3 +380,110 @@ def bom_promote_inventory(pid, bid):
     eng.emit_event(pid, node_id=b["node_id"], event_type="promoted_to_inventory",
                    actor="user", payload={"bom_id": bid, "inventory_id": inv_id})
     return jsonify({"ok": True, "inventory_id": inv_id})
+
+
+# ---------------- Global Inventory + Equipment ----------------
+
+INV_WRITABLE = {"category", "name", "part_number", "quantity", "location",
+                "condition", "unit_price", "vendor", "url", "notes"}
+EQUIP_WRITABLE = {"name", "type", "location", "status", "in_use_by", "notes"}
+
+
+def _crud_helpers(table, writable_set):
+    """Returns (list_fn, create_fn, patch_fn, delete_fn) for a global table."""
+    def _list():
+        con = sqlite3.connect(_db_path()); con.row_factory = sqlite3.Row
+        try:
+            rows = con.execute(
+                f"SELECT * FROM {table} ORDER BY id DESC"
+            ).fetchall()
+        finally:
+            con.close()
+        return jsonify({"items": [dict(r) for r in rows]})
+
+    def _create():
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        cols = [k for k in body if k in writable_set]
+        cols_sql = ", ".join(cols)
+        ph = ", ".join("?" for _ in cols)
+        vals = [body[k] for k in cols]
+        con = sqlite3.connect(_db_path())
+        try:
+            cur = con.execute(
+                f"INSERT INTO {table} ({cols_sql}) VALUES ({ph})", vals
+            )
+            new_id = cur.lastrowid
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"id": new_id}), 201
+
+    def _patch(item_id):
+        body = request.get_json(silent=True) or {}
+        sets, vals = [], []
+        for k, v in body.items():
+            if k in writable_set:
+                sets.append(f"{k}=?"); vals.append(v)
+        if not sets:
+            return jsonify({"error": "nothing to update"}), 400
+        sets.append("updated_at=CURRENT_TIMESTAMP"); vals.append(item_id)
+        con = sqlite3.connect(_db_path())
+        try:
+            cur = con.execute(
+                f"UPDATE {table} SET {', '.join(sets)} WHERE id=?", vals
+            )
+            if cur.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True})
+
+    def _delete(item_id):
+        con = sqlite3.connect(_db_path())
+        try:
+            cur = con.execute(f"DELETE FROM {table} WHERE id=?", (item_id,))
+            if cur.rowcount == 0:
+                return jsonify({"error": "not found"}), 404
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True})
+
+    return _list, _create, _patch, _delete
+
+
+_inv_list, _inv_create, _inv_patch, _inv_delete = _crud_helpers("baza_inventory", INV_WRITABLE)
+_eq_list, _eq_create, _eq_patch, _eq_delete = _crud_helpers("baza_equipment", EQUIP_WRITABLE)
+
+scaffold_bp.add_url_rule("/api/baza/inventory", "inv_list", _inv_list, methods=["GET"])
+scaffold_bp.add_url_rule("/api/baza/inventory", "inv_create", _inv_create, methods=["POST"])
+scaffold_bp.add_url_rule("/api/baza/inventory/<int:item_id>", "inv_patch", _inv_patch, methods=["PATCH"])
+scaffold_bp.add_url_rule("/api/baza/inventory/<int:item_id>", "inv_delete", _inv_delete, methods=["DELETE"])
+
+scaffold_bp.add_url_rule("/api/baza/equipment", "eq_list", _eq_list, methods=["GET"])
+scaffold_bp.add_url_rule("/api/baza/equipment", "eq_create", _eq_create, methods=["POST"])
+scaffold_bp.add_url_rule("/api/baza/equipment/<int:item_id>", "eq_patch", _eq_patch, methods=["PATCH"])
+scaffold_bp.add_url_rule("/api/baza/equipment/<int:item_id>", "eq_delete", _eq_delete, methods=["DELETE"])
+
+
+# ---------------- Supplies needed (Phase 3 stub returning real data) ----------------
+
+@scaffold_bp.route("/api/baza/supplies/needed", methods=["GET"])
+def supplies_needed():
+    con = sqlite3.connect(_db_path()); con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute("""
+            SELECT name, part_number, vendor, url, SUM(qty) as total_qty,
+                   MIN(unit_price) as best_price, COUNT(*) as project_count
+            FROM project_bom
+            WHERE in_hand = 0 AND status NOT IN ('cancelled', 'received')
+            GROUP BY name, part_number
+            ORDER BY total_qty DESC
+        """).fetchall()
+    finally:
+        con.close()
+    return jsonify({"items": [dict(r) for r in rows]})
