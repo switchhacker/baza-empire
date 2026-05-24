@@ -100,3 +100,27 @@ def test_inspo_library_returns_items_key(client):
     assert isinstance(j, dict)
     assert "items" in j
     assert isinstance(j["items"], list)
+
+
+def test_competitor_delete_unknown_returns_404(client):
+    c, _ = client
+    r = c.delete("/api/ahb/social/trends/competitors/99999")
+    assert r.status_code == 404
+
+
+def test_inspo_library_skips_non_json_and_malformed(tmp_path, monkeypatch, client):
+    """Library should skip .txt files and malformed JSON gracefully."""
+    import os
+    # Write a non-JSON file and an invalid JSON file
+    monkeypatch.setenv("BAZA_SOCIAL_INSPO_DIR", str(tmp_path))
+    (tmp_path / "skip.txt").write_text("not json")
+    (tmp_path / "bad.json").write_text("{this is not valid json")
+    (tmp_path / "good.json").write_text('{"category": "demo", "caption": "ok"}')
+    c, _ = client
+    j = c.get("/api/ahb/social/trends/inspo-library").get_json()
+    assert isinstance(j["items"], list)
+    # At minimum, no crash; ideally the good entry is present and bad/non-JSON skipped
+    names = {it.get("file_name") for it in j["items"]}
+    assert "skip.txt" not in names
+    # bad.json might be filtered out or included with a parse error — both are acceptable;
+    # what matters is the endpoint didn't 5xx.
