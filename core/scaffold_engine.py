@@ -3,7 +3,7 @@ import json
 import sqlite3
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 NODE_TYPES = {
@@ -169,19 +169,18 @@ class ScaffoldEngine:
         if not node:
             return
         pid = node["project_id"]
-        to_delete = [node_id]
-        queue = [node_id]
-        while queue:
-            parent = queue.pop()
-            with self._con() as con:
+        with self._con() as con:
+            to_delete = [node_id]
+            queue = [node_id]
+            while queue:
+                parent = queue.pop()
                 rows = con.execute(
                     "SELECT id FROM project_scaffold_nodes WHERE parent_id=?",
                     (parent,)
                 ).fetchall()
-            for r in rows:
-                to_delete.append(r["id"])
-                queue.append(r["id"])
-        with self._con() as con:
+                for r in rows:
+                    to_delete.append(r["id"])
+                    queue.append(r["id"])
             con.executemany(
                 "DELETE FROM project_scaffold_nodes WHERE id=?",
                 [(i,) for i in to_delete]
@@ -235,14 +234,23 @@ class ScaffoldEngine:
         return True
 
     def get_runnable_nodes(self, project_id, limit=20):
-        candidates = [n for n in self.get_nodes(project_id) if n["status"] == "pending"]
-        out = []
-        for n in candidates:
-            if self.is_runnable(n["id"]):
-                out.append(n)
-                if len(out) >= limit:
-                    break
-        return out
+        with self._con() as con:
+            rows = con.execute("""
+                SELECT n.* FROM project_scaffold_nodes n
+                LEFT JOIN project_scaffold_nodes p ON p.id = n.parent_id
+                WHERE n.project_id = ?
+                  AND n.status = 'pending'
+                  AND (n.parent_id IS NULL OR p.status IN ('in_progress','done'))
+                  AND NOT EXISTS (
+                      SELECT 1 FROM project_scaffold_edges e
+                      JOIN project_scaffold_nodes dep ON dep.id = e.from_node
+                      WHERE e.to_node = n.id AND e.edge_type = 'depends_on'
+                        AND dep.status != 'done'
+                  )
+                ORDER BY n.depth, n.id
+                LIMIT ?
+            """, (project_id, limit)).fetchall()
+        return [dict(r) for r in rows]
 
     # ---------------- Progress ----------------
 
@@ -275,7 +283,7 @@ class ScaffoldEngine:
                          status="done",
                          chosen_option=chosen_option,
                          auto_decided=1,
-                         completed_at=datetime.utcnow().isoformat())
+                         completed_at=datetime.now(timezone.utc).isoformat())
         node = self.get_node(node_id)
         self.emit_event(node["project_id"], node_id=node_id, event_type="decided",
                         actor=node["agent_assigned"] or "system",
@@ -323,7 +331,7 @@ class ScaffoldEngine:
             "event_type": event_type,
             "actor": actor,
             "payload": payload or {},
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         event_bus.publish(project_id, event)
         return event_id

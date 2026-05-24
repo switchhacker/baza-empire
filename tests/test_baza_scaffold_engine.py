@@ -1,7 +1,5 @@
 import json
 import sqlite3
-import tempfile
-import os
 import pytest
 from pathlib import Path
 import sys
@@ -11,18 +9,19 @@ sys.path.insert(0, str(ROOT))
 
 
 @pytest.fixture
-def db():
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        path = f.name
+def db(tmp_path):
+    path = tmp_path / "test.db"
     from dashboard.app import _ensure_scaffold_tables
-    con = sqlite3.connect(path)
-    con.execute("CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, scaffold_paused INTEGER DEFAULT 0)")
-    _ensure_scaffold_tables(con)
-    con.execute("INSERT INTO projects(id, name) VALUES('p1', 'Test')")
-    con.commit()
-    yield path
-    con.close()
-    os.unlink(path)
+    con = sqlite3.connect(str(path))
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, scaffold_paused INTEGER DEFAULT 0)")
+        _ensure_scaffold_tables(con)
+        con.execute("INSERT INTO projects(id, name) VALUES('p1', 'Test')")
+        con.commit()
+    finally:
+        con.close()
+    yield str(path)
+    # tmp_path is auto-cleaned by pytest
 
 
 def test_create_root_node(db):
@@ -138,3 +137,21 @@ def test_assign_default_agent_by_type(db):
     assert default_agent_for("integration") == "claw_batto"
     assert default_agent_for("deploy") == "claw_batto"
     assert default_agent_for("manual_step") is None
+
+
+def test_override_cascade_does_not_touch_unrelated_children(db):
+    """override_decision should only re-queue dependents linked via edges,
+    not unrelated child nodes of the decision."""
+    from core.scaffold_engine import ScaffoldEngine
+    eng = ScaffoldEngine(db)
+    decision = eng.create_node("p1", node_type="decision", title="sensor")
+    eng.decide(decision, chosen_option="lidar", reason="auto")
+    # Unrelated child (linked by parent, not by edge) — should NOT be re-queued
+    sibling = eng.create_node("p1", node_type="research", title="other",
+                               parent_id=decision)
+    eng.update_node(sibling, status="done")
+    eng.override_decision(decision, chosen_option="ultrasonic", reason="user")
+    nodes = {n["id"]: n for n in eng.get_nodes("p1")}
+    # Sibling is parent-child of decision (no depends_on edge), so override
+    # does NOT touch it — current behavior, documented here
+    assert nodes[sibling]["status"] == "done"
