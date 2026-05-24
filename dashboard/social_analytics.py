@@ -12,6 +12,43 @@ from datetime import datetime, timedelta
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ARCHIVE_ROOT = os.path.join(_HERE, "artifacts", "social", "archive")
 
+_DASHBOARD_DIR = _HERE
+_ALLOWED_FS_ROOTS_DEFAULT = [
+    os.path.join(_DASHBOARD_DIR, "artifacts"),
+    os.path.join(_DASHBOARD_DIR, "uploads"),
+    os.path.join(_DASHBOARD_DIR, "static"),
+]
+
+
+def _allowed_fs_roots():
+    extra = os.environ.get("BAZA_SOCIAL_FS_ROOTS", "")
+    roots = list(_ALLOWED_FS_ROOTS_DEFAULT)
+    for r in extra.split(":"):
+        r = r.strip()
+        if r:
+            roots.append(os.path.abspath(r))
+    return [os.path.abspath(r) for r in roots]
+
+
+def _path_is_safe(p: str) -> bool:
+    """True if `p` resolves inside one of the allowed FS roots.
+
+    An empty/falsy path returns False — callers should pre-check for
+    null/empty before invoking this so a missing path doesn't get
+    flagged as "unsafe" (it's just absent).
+    """
+    if not p:
+        return False
+    try:
+        ap = os.path.abspath(os.path.realpath(p))
+    except Exception:
+        return False
+    for root in _allowed_fs_roots():
+        if ap == root or ap.startswith(root + os.sep):
+            return True
+    return False
+
+
 _COUNT_FIELDS = ("views", "likes", "comments", "saves", "shares")
 _OPTIONAL_FIELDS = ("posted_at", "post_url")
 _UPSERT_ALLOWED_COLS = frozenset(list(_COUNT_FIELDS) + list(_OPTIONAL_FIELDS))
@@ -529,8 +566,8 @@ def register(bp):
             days = int(raw)
         except ValueError:
             days = 90
-        if days < 0:
-            days = 0
+        if days < 1:
+            return jsonify({"error": "older_than_days must be >= 1"}), 400
         cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat(
             timespec="seconds"
         )
@@ -602,13 +639,25 @@ def register(bp):
                 # Move files only for cleanup-eligible posts.
                 row = eligible.get(pid)
                 if row is not None:
+                    seen_paths: set = set()
                     for col in ("asset_path", "cover_path"):
                         src = row[col]
                         if not src or not isinstance(src, str):
                             continue
+                        if not os.path.exists(src):
+                            continue
+                        # Dedup: asset_path and cover_path can point at the
+                        # same file (e.g. when the cover IS the asset). Only
+                        # move it once.
+                        if src in seen_paths:
+                            continue
+                        seen_paths.add(src)
+                        if not _path_is_safe(src):
+                            errors.append(
+                                f"id {pid}: refusing to touch unsafe path ({col})"
+                            )
+                            continue
                         try:
-                            if not os.path.exists(src):
-                                continue
                             os.makedirs(archive_dir, exist_ok=True)
                             base = os.path.basename(src)
                             # Prefix with post id to avoid collisions inside
@@ -645,13 +694,25 @@ def register(bp):
             deleted = 0
             for r in rows:
                 pid = r["id"]
+                seen_paths: set = set()
                 for col in ("asset_path", "cover_path"):
                     p = r[col]
                     if not p or not isinstance(p, str):
                         continue
+                    if not os.path.exists(p):
+                        continue
+                    # Dedup: asset_path and cover_path may refer to the same
+                    # underlying file — don't try to unlink it twice.
+                    if p in seen_paths:
+                        continue
+                    seen_paths.add(p)
+                    if not _path_is_safe(p):
+                        errors.append(
+                            f"id {pid}: refusing to touch unsafe path ({col})"
+                        )
+                        continue
                     try:
-                        if os.path.exists(p):
-                            os.unlink(p)
+                        os.unlink(p)
                     except OSError as e:
                         errors.append(f"id {pid}: unlink {col} failed ({e})")
                 try:

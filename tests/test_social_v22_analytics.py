@@ -256,3 +256,38 @@ def test_upsert_analytics_rejects_unknown_column(client):
             assert "disallowed" in str(e)
     finally:
         con.close()
+
+
+def test_cleanup_days_zero_rejected(client):
+    c, _ = client
+    r = c.get("/api/ahb/social/analytics/cleanup?older_than_days=0")
+    assert r.status_code == 400
+    r = c.get("/api/ahb/social/analytics/cleanup?older_than_days=-5")
+    assert r.status_code == 400
+
+
+def test_cleanup_archive_refuses_unsafe_path(client, tmp_path):
+    """A post whose asset_path points outside the allowed roots is skipped, not touched."""
+    import sqlite3, os
+    from datetime import datetime, timedelta
+    c, db = client
+    # Create a real file far outside the dashboard tree
+    bad = tmp_path / "evil.bin"
+    bad.write_bytes(b"x")
+    con = sqlite3.connect(db)
+    old = (datetime.utcnow() - timedelta(days=200)).isoformat(timespec="seconds")
+    con.execute(
+        "INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, posted_at, asset_path) "
+        "VALUES (1,'ig_reel','A','posted','evil', ?, ?)",
+        (old, str(bad)),
+    )
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post("/api/ahb/social/analytics/cleanup/archive", json={"ids": [pid]})
+    j = r.get_json()
+    assert r.status_code == 200
+    # archived_at should NOT be stamped because move was refused; the row should report an error
+    assert any("unsafe" in e.lower() for e in j.get("errors", []))
+    # The evil file should still exist
+    assert bad.exists()
