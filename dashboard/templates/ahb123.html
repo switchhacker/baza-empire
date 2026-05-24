@@ -3245,6 +3245,7 @@
       <button class="btn-secondary ss-subnav" data-sub="scheduler">Scheduler</button>
       <button class="btn-secondary ss-subnav" data-sub="presets">Presets</button>
       <button class="btn-secondary ss-subnav" data-sub="autopilot">Auto-Pilot</button>
+      <button class="btn-secondary ss-subnav" data-sub="inspo">💡 Inspo</button>
       <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
     </div>
   </div>
@@ -3253,6 +3254,7 @@
   <div id="ss-sub-scheduler" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-presets" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-autopilot" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-inspo" class="ss-sub" style="display:none"></div>
 </div>
 
 <!-- ============================ EMAIL ============================ -->
@@ -20868,6 +20870,344 @@ SocialStudio.modules.autopilot = (function(){
   }
 
   return { render: load, toggleMaster, runTickNow };
+})();
+</script>
+
+<script>
+// ============================ SOCIAL STUDIO — INSPO TAB ============================
+SocialStudio.modules.inspo = (function(){
+  const root = () => document.getElementById('ss-sub-inspo');
+  const state = { activeSection: 'url', urlResult: null, hashtags: [], competitors: [], sounds: [], library: [] };
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _toast() { return (SocialStudio.modules.toast || { info(){}, error(){}, success(){}, progress(){return 0}, resolve(){} }); }
+
+  function shell() {
+    return `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn-secondary insp-snav" data-sec="url">🔗 URL Paste</button>
+        <button class="btn-secondary insp-snav" data-sec="hashtags">#️⃣ Hashtags</button>
+        <button class="btn-secondary insp-snav" data-sec="competitors">👀 Competitors</button>
+        <button class="btn-secondary insp-snav" data-sec="sounds">🎵 Sounds</button>
+        <button class="btn-secondary insp-snav" data-sec="library">📚 Library</button>
+      </div>
+      <div id="insp-section-url" class="insp-section"></div>
+      <div id="insp-section-hashtags" class="insp-section" style="display:none"></div>
+      <div id="insp-section-competitors" class="insp-section" style="display:none"></div>
+      <div id="insp-section-sounds" class="insp-section" style="display:none"></div>
+      <div id="insp-section-library" class="insp-section" style="display:none"></div>
+    `;
+  }
+
+  function activateSection(name) {
+    state.activeSection = name;
+    document.querySelectorAll('#ss-sub-inspo .insp-snav').forEach(b =>
+      b.classList.toggle('active', b.dataset.sec === name));
+    document.querySelectorAll('#ss-sub-inspo .insp-section').forEach(d =>
+      d.style.display = d.id === ('insp-section-' + name) ? '' : 'none');
+    if (name === 'url') renderUrl();
+    if (name === 'hashtags') renderHashtags();
+    if (name === 'competitors') renderCompetitors();
+    if (name === 'sounds') renderSounds();
+    if (name === 'library') renderLibrary();
+  }
+
+  // ---------- URL paste ----------
+  function renderUrl() {
+    const el = document.getElementById('insp-section-url');
+    if (!el) return;
+    const r = state.urlResult;
+    const card = r ? `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;padding:14px;margin-top:10px;display:grid;grid-template-columns:160px 1fr;gap:14px">
+        ${r.thumbnail_url ? `<img src="${_esc(r.thumbnail_url)}" referrerpolicy="no-referrer" style="width:160px;height:auto;border-radius:6px;object-fit:cover;background:#000">` : '<div style="width:160px;height:120px;background:#1a1a3a;border-radius:6px"></div>'}
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:6px">${_esc(r.title)}</div>
+          <div style="font-size:11px;color:#888;margin-bottom:8px">
+            ${_esc(r.uploader || 'unknown')}${r.days_ago != null ? ` &middot; ${r.days_ago} days ago` : ''}${r.views != null ? ` &middot; ${Number(r.views).toLocaleString()} views` : ''}
+          </div>
+          <div style="margin-bottom:8px">${(r.hashtags || []).map(h => `<span style="display:inline-block;background:#1a3a5a;color:#9fcfff;border-radius:4px;padding:2px 6px;font-size:11px;margin:2px 4px 2px 0">${_esc(h)}</span>`).join('')}</div>
+          <div style="font-size:12px;color:#bbb;white-space:pre-wrap;max-height:140px;overflow:auto;background:#07070f;border:1px solid #1a1a3a;border-radius:6px;padding:8px;margin-bottom:8px">${_esc((r.description || '').slice(0, 1200))}${(r.description || '').length > 1200 ? '…' : ''}</div>
+          <button class="btn-secondary btn-sm" onclick="SocialStudio.modules.inspo.suggestSimilarHook()">🪝 Suggest similar hook</button>
+        </div>
+      </div>
+    ` : '';
+    el.innerHTML = `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;padding:14px">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px">Paste a TikTok / IG / YouTube URL</div>
+        <div style="font-size:11px;color:#666;margin-bottom:10px">We'll pull title, caption, hashtags, views, and let you riff off the hook.</div>
+        <div style="display:flex;gap:8px">
+          <input id="insp-url-input" type="url" placeholder="https://..." style="flex:1;background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:8px 10px;font-size:12px">
+          <button class="btn-primary" onclick="SocialStudio.modules.inspo.analyzeUrl()">Analyze</button>
+        </div>
+      </div>
+      ${card}
+    `;
+  }
+
+  async function analyzeUrl() {
+    const inp = document.getElementById('insp-url-input');
+    const url = (inp && inp.value || '').trim();
+    if (!url) { _toast().info('Paste a URL'); return; }
+    const tid = _toast().progress('Fetching metadata via yt-dlp…');
+    try {
+      const r = await fetch('/api/ahb/social/trends/inspo-url', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const j = await r.json();
+      if (!r.ok) { _toast().resolve(tid, 'error', j.error || 'Failed'); return; }
+      state.urlResult = j;
+      _toast().resolve(tid, 'success', 'Loaded ' + (j.title || 'video'));
+      renderUrl();
+    } catch (e) {
+      _toast().resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function suggestSimilarHook() {
+    const r = state.urlResult;
+    if (!r) return;
+    const tid = _toast().progress('Asking for a similar hook…');
+    try {
+      const resp = await fetch('/api/ahb/social/ai/hooks', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          n: 3,
+          prompt_addendum: 'Match the structure of this caption: ' + (r.description || '').slice(0, 800),
+        }),
+      });
+      const j = await resp.json();
+      if (!resp.ok) { _toast().resolve(tid, 'error', j.error || 'Failed'); return; }
+      const hooks = (j.hooks || []);
+      if (!hooks.length) { _toast().resolve(tid, 'error', 'No hooks returned'); return; }
+      _toast().resolve(tid, 'success', hooks.length + ' hooks ready');
+      const out = document.createElement('div');
+      out.style.cssText = 'background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;padding:12px;margin-top:10px';
+      out.innerHTML = '<div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:6px">🪝 Suggested hooks</div>' +
+        hooks.map(h => '<div style="font-size:12px;color:#ddd;padding:6px 0;border-bottom:1px solid #1a1a3a">' + _esc(h) + '</div>').join('');
+      document.getElementById('insp-section-url').appendChild(out);
+    } catch (e) {
+      _toast().resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  // ---------- Hashtag tracker ----------
+  async function renderHashtags() {
+    const el = document.getElementById('insp-section-hashtags');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/ahb/social/trends/hashtag-snapshots');
+      state.hashtags = (await r.json()).items || [];
+    } catch (e) { state.hashtags = []; }
+    const groups = {};
+    state.hashtags.forEach(s => { (groups[s.tag] = groups[s.tag] || []).push(s); });
+    const groupHtml = Object.keys(groups).sort().map(tag => `
+      <div style="margin-bottom:12px;background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:10px">
+        <div style="font-size:12px;font-weight:700;color:#9fcfff;margin-bottom:6px">${_esc(tag)} <span style="color:#666;font-weight:400">(${groups[tag].length})</span></div>
+        ${groups[tag].map(s => `
+          <div style="font-size:11px;color:#bbb;padding:4px 0;border-top:1px solid #1a1a3a">
+            <span style="color:#666">${_esc(s.observed_at || '')}</span>
+            ${s.source_url ? ` &middot; <a href="${_esc(s.source_url)}" target="_blank" rel="noreferrer noopener" style="color:#9fcfff">source</a>` : ''}
+            ${s.notes ? ` &middot; ${_esc(s.notes)}` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `).join('') || '<div style="font-size:11px;color:#666;padding:10px">No snapshots yet.</div>';
+    el.innerHTML = `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:8px">Add hashtag snapshot</div>
+        <div style="display:grid;grid-template-columns:1fr 2fr 2fr auto;gap:8px">
+          <input id="insp-tag" placeholder="#renovation" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <input id="insp-tag-url" placeholder="source url (optional)" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <input id="insp-tag-notes" placeholder="notes" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <button class="btn-primary btn-sm" onclick="SocialStudio.modules.inspo.addHashtag()">Add</button>
+        </div>
+      </div>
+      ${groupHtml}
+    `;
+  }
+
+  async function addHashtag() {
+    const tag = (document.getElementById('insp-tag') || {}).value || '';
+    const source_url = (document.getElementById('insp-tag-url') || {}).value || '';
+    const notes = (document.getElementById('insp-tag-notes') || {}).value || '';
+    if (!tag.trim()) { _toast().info('Tag required'); return; }
+    try {
+      const r = await fetch('/api/ahb/social/trends/hashtag-snapshots', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: tag.trim(), source_url, notes }),
+      });
+      const j = await r.json();
+      if (!r.ok) { _toast().error(j.error || 'Failed'); return; }
+      _toast().success('Snapshot saved');
+      renderHashtags();
+    } catch (e) { _toast().error('Network: ' + e.message); }
+  }
+
+  // ---------- Competitors ----------
+  async function renderCompetitors() {
+    const el = document.getElementById('insp-section-competitors');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/ahb/social/trends/competitors');
+      state.competitors = (await r.json()).items || [];
+    } catch (e) { state.competitors = []; }
+    const rowsHtml = state.competitors.map(c => `
+      <tr>
+        <td style="color:#fff">${_esc(c.handle)}</td>
+        <td><span style="background:#1a3a5a;color:#9fcfff;padding:2px 6px;border-radius:4px;font-size:11px">${_esc(c.platform)}</span></td>
+        <td style="color:#bbb;font-size:11px">${_esc(c.notes || '')}</td>
+        <td style="color:#666;font-size:11px">${_esc(c.created_at || '')}</td>
+        <td><button class="btn-secondary btn-sm" onclick="SocialStudio.modules.inspo.deleteCompetitor(${c.id})" title="Delete">×</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="5" style="text-align:center;color:#666;padding:14px">No competitors tracked.</td></tr>';
+    el.innerHTML = `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:8px">Watch competitor</div>
+        <div style="display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px">
+          <input id="insp-comp-handle" placeholder="@handle" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <select id="insp-comp-platform" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+            <option value="tiktok">tiktok</option>
+            <option value="instagram">instagram</option>
+            <option value="youtube">youtube</option>
+            <option value="other">other</option>
+          </select>
+          <input id="insp-comp-notes" placeholder="notes" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <button class="btn-primary btn-sm" onclick="SocialStudio.modules.inspo.addCompetitor()">Add</button>
+        </div>
+      </div>
+      <table class="data-table">
+        <thead><tr><th>Handle</th><th>Platform</th><th>Notes</th><th>Added</th><th style="width:50px"></th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+  }
+
+  async function addCompetitor() {
+    const handle = (document.getElementById('insp-comp-handle') || {}).value || '';
+    const platform = (document.getElementById('insp-comp-platform') || {}).value || '';
+    const notes = (document.getElementById('insp-comp-notes') || {}).value || '';
+    if (!handle.trim()) { _toast().info('Handle required'); return; }
+    try {
+      const r = await fetch('/api/ahb/social/trends/competitors', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: handle.trim(), platform, notes }),
+      });
+      const j = await r.json();
+      if (!r.ok) { _toast().error(j.error || 'Failed'); return; }
+      _toast().success('Added');
+      renderCompetitors();
+    } catch (e) { _toast().error('Network: ' + e.message); }
+  }
+
+  async function deleteCompetitor(cid) {
+    if (!confirm('Remove competitor?')) return;
+    try {
+      const r = await fetch('/api/ahb/social/trends/competitors/' + cid, { method: 'DELETE' });
+      if (!r.ok) { _toast().error('Delete failed'); return; }
+      _toast().success('Removed');
+      renderCompetitors();
+    } catch (e) { _toast().error('Network: ' + e.message); }
+  }
+
+  // ---------- Sounds ----------
+  async function renderSounds() {
+    const el = document.getElementById('insp-section-sounds');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/ahb/social/trends/sound-snapshots');
+      state.sounds = (await r.json()).items || [];
+    } catch (e) { state.sounds = []; }
+    const list = state.sounds.map(s => `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:10px;margin-bottom:8px">
+        <div style="font-size:12px;color:#fff;font-weight:700">${_esc(s.title || '(untitled)')}</div>
+        <div style="font-size:11px;color:#888;margin-top:4px">
+          <a href="${_esc(s.sound_url)}" target="_blank" rel="noreferrer noopener" style="color:#9fcfff">sound</a>
+          ${s.example_video_url ? ` &middot; <a href="${_esc(s.example_video_url)}" target="_blank" rel="noreferrer noopener" style="color:#9fcfff">example</a>` : ''}
+          &middot; <span style="color:#666">${_esc(s.observed_at || '')}</span>
+        </div>
+        ${s.notes ? `<div style="font-size:11px;color:#bbb;margin-top:4px">${_esc(s.notes)}</div>` : ''}
+      </div>
+    `).join('') || '<div style="font-size:11px;color:#666;padding:10px">No sounds tracked.</div>';
+    el.innerHTML = `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:8px">Track a sound</div>
+        <div style="display:grid;grid-template-columns:2fr 2fr 2fr 2fr auto;gap:8px">
+          <input id="insp-sound-url" placeholder="sound URL *" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <input id="insp-sound-example" placeholder="example video URL" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <input id="insp-sound-title" placeholder="title" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <input id="insp-sound-notes" placeholder="notes" style="background:#07070f;border:1px solid #1a1a3a;color:#fff;border-radius:6px;padding:6px 8px;font-size:12px">
+          <button class="btn-primary btn-sm" onclick="SocialStudio.modules.inspo.addSound()">Add</button>
+        </div>
+      </div>
+      ${list}
+    `;
+  }
+
+  async function addSound() {
+    const sound_url = (document.getElementById('insp-sound-url') || {}).value || '';
+    const example_video_url = (document.getElementById('insp-sound-example') || {}).value || '';
+    const title = (document.getElementById('insp-sound-title') || {}).value || '';
+    const notes = (document.getElementById('insp-sound-notes') || {}).value || '';
+    if (!sound_url.trim()) { _toast().info('sound_url required'); return; }
+    try {
+      const r = await fetch('/api/ahb/social/trends/sound-snapshots', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sound_url, example_video_url, title, notes }),
+      });
+      const j = await r.json();
+      if (!r.ok) { _toast().error(j.error || 'Failed'); return; }
+      _toast().success('Sound saved');
+      renderSounds();
+    } catch (e) { _toast().error('Network: ' + e.message); }
+  }
+
+  // ---------- Inspo library ----------
+  async function renderLibrary() {
+    const el = document.getElementById('insp-section-library');
+    if (!el) return;
+    try {
+      const r = await fetch('/api/ahb/social/trends/inspo-library');
+      state.library = (await r.json()).items || [];
+    } catch (e) { state.library = []; }
+    const cards = state.library.map(i => `
+      <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:10px;overflow:hidden">
+        ${i.thumbnail ? `<img src="${_esc(i.thumbnail)}" referrerpolicy="no-referrer" style="width:100%;height:160px;object-fit:cover;background:#000">` : '<div style="height:160px;background:#1a1a3a"></div>'}
+        <div style="padding:10px">
+          <div style="font-size:10px;color:#9fcfff;text-transform:uppercase;letter-spacing:1px">${_esc(i.category)}</div>
+          <div style="font-size:12px;color:#fff;font-weight:700;margin:4px 0">${_esc(i.hook || i.file_name)}</div>
+          <div style="font-size:11px;color:#bbb;white-space:pre-wrap;max-height:100px;overflow:auto">${_esc(i.caption || '')}</div>
+          ${i.structural_analysis ? `<details style="margin-top:6px"><summary style="font-size:11px;color:#9fcfff;cursor:pointer">structure</summary><div style="font-size:11px;color:#aaa;margin-top:4px;white-space:pre-wrap">${_esc(i.structural_analysis)}</div></details>` : ''}
+        </div>
+      </div>
+    `).join('') || '<div style="font-size:11px;color:#666;grid-column:1/-1;padding:14px;text-align:center">No inspo files yet. Drop JSON into dashboard/static/social/inspo/.</div>';
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">${cards}</div>
+    `;
+  }
+
+  function render() {
+    const el = root();
+    if (!el) return;
+    if (!el._inited) {
+      el.innerHTML = shell();
+      el.querySelectorAll('.insp-snav').forEach(b => {
+        b.addEventListener('click', () => activateSection(b.dataset.sec));
+      });
+      el._inited = true;
+    }
+    activateSection(state.activeSection);
+  }
+
+  return {
+    render, analyzeUrl, suggestSimilarHook,
+    addHashtag, addCompetitor, deleteCompetitor, addSound,
+  };
 })();
 </script>
 
