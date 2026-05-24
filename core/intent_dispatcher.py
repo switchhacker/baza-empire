@@ -99,6 +99,9 @@ def dispatch(envelope: dict, extra: dict | None = None) -> dict[str, Any]:
     if intent in ("develop", "iterate"):
         return _handle_develop_or_iterate(envelope, args, intent)
 
+    if intent == "scaffold_decompose":
+        return _handle_scaffold_decompose(envelope, args)
+
     if intent in ("flash", "render", "preview", "debug"):
         followup_map = {
             "flash":   "use the Deploy tab Flash card on firmware projects",
@@ -273,6 +276,131 @@ def _handle_develop_or_iterate(envelope: dict, args: dict, intent: str) -> dict[
         },
         "status": 201,
     }
+
+
+# ── scaffold_decompose — create a task for Claw to decompose a root node ─────
+
+def _handle_scaffold_decompose(envelope: dict, args: dict) -> dict[str, Any]:
+    """Insert a task in baza_projects.db assigned to claw_batto, instructing him
+    to call web_search + scaffold_emit_nodes + scaffold_complete_node on the
+    given root scaffold node. Returns a flat dict (so the scaffold blueprint
+    can read .task_id at top level)."""
+    import os as _os
+    import sqlite3 as _sqlite3
+    import uuid as _uuid
+    from pathlib import Path as _Path
+
+    project_id = envelope.get("project_id") or args.get("project_id")
+    root_node_id = envelope.get("root_node_id") or args.get("root_node_id")
+    description = (envelope.get("description") or args.get("description") or "").strip()
+
+    if not project_id or root_node_id is None:
+        return {"error": "missing project_id or root_node_id"}, 400
+
+    db = _os.environ.get(
+        "BAZA_PROJECTS_DB",
+        str(_Path(__file__).resolve().parents[1] / "dashboard" / "baza_projects.db"),
+    )
+
+    title = f"[scaffold decompose] {description[:50]}"
+    prompt = (
+        f"You are decomposing scaffold root node #{root_node_id} for Baza "
+        f"project `{project_id}`.\n\n"
+        f"Root description: {description}\n\n"
+        "Plan the build tree and emit 4-8 first-level child nodes. Steps:\n\n"
+        "1. Understand the topic — call the web_search skill for context "
+        "on the build. Example:\n"
+        f"   ##SKILL:web_search{{\"query\": \"{description[:80]}\", "
+        "\"max_results\": 5}}##\n\n"
+        "2. Plan the tree. Identify hardware vs software branches. For a "
+        "hardware project, include nodes for major sub-systems "
+        "(power, sensors, enclosure, firmware), and include AT LEAST ONE "
+        "`decision` node where a real architectural choice has to be made.\n\n"
+        "3. Emit child nodes under the root via scaffold_emit_nodes. Each "
+        "child needs `title`, `type` (one of: root, decision, "
+        "hardware_component, firmware, software_module, deliverable), and "
+        "optionally `description`. Example:\n"
+        f"   ##SKILL:scaffold_emit_nodes{{\"project_id\": \"{project_id}\", "
+        f"\"parent_id\": {root_node_id}, \"nodes\": ["
+        "{\"title\": \"...\", \"type\": \"hardware_component\", "
+        "\"description\": \"...\"}, ...]}}##\n\n"
+        "4. Mark the root node done so the scaffold runner can advance:\n"
+        f"   ##SKILL:scaffold_complete_node{{\"node_id\": {root_node_id}, "
+        "\"result\": \"decomposed\"}}##\n\n"
+        "End your response with TASK_COMPLETE when both skills have run "
+        "successfully."
+    )
+
+    now = _now_iso()
+    try:
+        conn = _sqlite3.connect(db, timeout=10)
+        # Detect schema: production dashboard has id TEXT PK + priority TEXT;
+        # the lightweight test fixture has id INTEGER PK AUTOINCREMENT + priority INTEGER.
+        cols = {row[1]: (row[2] or "").upper() for row in
+                conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        id_is_int = "INT" in cols.get("id", "")
+        priority_val = 9 if "INT" in cols.get("priority", "") else "high"
+        has_updated_at = "updated_at" in cols
+        has_notes = "notes" in cols
+
+        if id_is_int:
+            # Let autoincrement assign the id; read it back via lastrowid.
+            field_list = ["project_id", "title", "description",
+                          "assigned_to", "status", "priority"]
+            value_list = [project_id, title, prompt,
+                          "claw_batto", "pending", priority_val]
+            if has_notes:
+                field_list.append("notes")
+                value_list.append("")
+            if "created_at" in cols:
+                field_list.append("created_at")
+                value_list.append(now)
+            if has_updated_at:
+                field_list.append("updated_at")
+                value_list.append(now)
+            placeholders = ",".join("?" * len(field_list))
+            cur = conn.execute(
+                f"INSERT INTO tasks ({','.join(field_list)}) VALUES ({placeholders})",
+                value_list,
+            )
+            task_id = cur.lastrowid
+        else:
+            task_id = str(_uuid.uuid4())[:8]
+            conn.execute(
+                """
+                INSERT INTO tasks
+                  (id, project_id, title, description, assigned_to, status, priority,
+                   notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'claw_batto', 'pending', ?, '', ?, ?)
+                """,
+                (task_id, project_id, title, prompt, priority_val, now, now),
+            )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return {"error": f"task insert failed: {e}"}, 500
+
+    # Emit chain-spine events so /chains and the scaffold side panel can see
+    # the dispatch immediately.
+    try:
+        from core import task_events as te
+        te.emit("intent_parsed", project_id=project_id, agent_id="claw_batto",
+                payload={"intent": "scaffold_decompose", "task_id": task_id,
+                         "root_node_id": root_node_id})
+        te.emit("task_started", task_id=task_id, project_id=project_id,
+                agent_id="claw_batto",
+                payload={"title": title, "queued": True,
+                         "root_node_id": root_node_id})
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "task_id": task_id,
+        "agent": "claw_batto",
+        "project_id": project_id,
+        "root_node_id": root_node_id,
+    }, 200
 
 
 def _run_first_iteration_inline(agent_id: str, task_id: str, title: str,
