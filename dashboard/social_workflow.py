@@ -542,3 +542,89 @@ def register(bp):
 
         # Should never reach (action validated above)
         return jsonify({"error": "unhandled action"}), 400
+
+    # ---- Versions (auto-save + history) ----------------------------------
+
+    @bp.route("/api/ahb/social/posts/<int:pid>/versions", methods=["GET"])
+    def social_post_versions_list(pid: int):
+        con = _db()
+        try:
+            rows = con.execute(
+                "SELECT id, version_at, snapshot FROM ahb_social_post_versions "
+                "WHERE post_id=? ORDER BY id DESC",
+                (pid,),
+            ).fetchall()
+        finally:
+            con.close()
+        out = []
+        for r in rows:
+            try:
+                snap = json.loads(r["snapshot"]) if r["snapshot"] else {}
+            except Exception:
+                snap = {}
+            out.append({
+                "id": r["id"],
+                "version_at": r["version_at"],
+                "snapshot": snap,
+            })
+        return jsonify({"versions": out})
+
+    @bp.route("/api/ahb/social/posts/<int:pid>/versions/<int:vid>/restore",
+              methods=["POST"])
+    def social_post_versions_restore(pid: int, vid: int):
+        # Pull writable whitelist from social_studio so restore stays in
+        # lockstep with the PATCH endpoint.
+        try:
+            from dashboard import social_studio as _ss
+        except ImportError:
+            import social_studio as _ss
+        writable = _ss.POST_WRITABLE
+
+        con = _db()
+        try:
+            vrow = con.execute(
+                "SELECT id, post_id, snapshot FROM ahb_social_post_versions "
+                "WHERE id=? AND post_id=?",
+                (vid, pid),
+            ).fetchone()
+            if not vrow:
+                return jsonify({"error": "version not found"}), 404
+            try:
+                snap = json.loads(vrow["snapshot"]) if vrow["snapshot"] else {}
+            except Exception:
+                snap = {}
+            if not isinstance(snap, dict):
+                return jsonify({"error": "corrupt snapshot"}), 500
+
+            # Build UPDATE from snapshot intersected with writable columns.
+            sets, vals = [], []
+            for k, v in snap.items():
+                if k not in writable:
+                    continue
+                sets.append(f"{k}=?")
+                vals.append(json.dumps(v) if isinstance(v, (list, dict)) else v)
+            if not sets:
+                return jsonify({"error": "snapshot has no writable fields"}), 400
+
+            # Snapshot current row first so the restore itself is undo-able.
+            prior = con.execute(
+                "SELECT * FROM ahb_social_posts WHERE id=?", (pid,)
+            ).fetchone()
+            if prior is None:
+                return jsonify({"error": "post not found"}), 404
+            prior_snap = {k: prior[k] for k in prior.keys() if k != "id"}
+            con.execute(
+                "INSERT INTO ahb_social_post_versions (post_id, snapshot) VALUES (?, ?)",
+                (pid, json.dumps(prior_snap, default=str)),
+            )
+
+            sets.append("updated_at=?")
+            vals.append(datetime.utcnow().isoformat(timespec="seconds"))
+            vals.append(pid)
+            con.execute(
+                f"UPDATE ahb_social_posts SET {','.join(sets)} WHERE id=?", vals
+            )
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True})

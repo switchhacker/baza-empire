@@ -697,6 +697,17 @@ def social_posts_patch(pid: int):
     vals.append(pid)
     con = _conn()
     try:
+        # Snapshot the prior row before the UPDATE so users can restore
+        # to any previous state (and undo restores).
+        prior = con.execute(
+            "SELECT * FROM ahb_social_posts WHERE id=?", (pid,)
+        ).fetchone()
+        if prior is not None:
+            snap = {k: prior[k] for k in prior.keys() if k != "id"}
+            con.execute(
+                "INSERT INTO ahb_social_post_versions (post_id, snapshot) VALUES (?, ?)",
+                (pid, json.dumps(snap, default=str)),
+            )
         con.execute(f"UPDATE ahb_social_posts SET {','.join(sets)} WHERE id=?", vals)
         con.commit()
     finally:

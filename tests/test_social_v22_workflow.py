@@ -388,3 +388,64 @@ def test_bulk_schedule_rejects_garbage_datetime(client):
                json={"ids": [pid], "action": "schedule",
                      "params": {"scheduled_at": "tomorrow at noon"}})
     assert r.status_code == 400
+
+
+def test_patch_creates_version(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','original')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    # Patch the caption
+    r = c.patch(f"/api/ahb/social/posts/{pid}",
+                json={"caption": "edited"})
+    assert r.status_code == 200
+    # Versions endpoint
+    j = c.get(f"/api/ahb/social/posts/{pid}/versions").get_json()
+    assert len(j["versions"]) >= 1
+    snap = j["versions"][0]["snapshot"]
+    assert snap.get("caption") == "original"
+
+
+def test_restore_round_trip(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','v1')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    c.patch(f"/api/ahb/social/posts/{pid}", json={"caption": "v2"})
+    c.patch(f"/api/ahb/social/posts/{pid}", json={"caption": "v3"})
+    # Should now have 2 versions, oldest snapshot=v1 (or v2 depending on ordering)
+    versions = c.get(f"/api/ahb/social/posts/{pid}/versions").get_json()["versions"]
+    assert len(versions) >= 2
+    # Find the version whose snapshot.caption == "v1"
+    target = next(v for v in versions if v["snapshot"]["caption"] == "v1")
+    r = c.post(f"/api/ahb/social/posts/{pid}/versions/{target['id']}/restore")
+    assert r.status_code == 200
+    # Current caption should be v1
+    con = sqlite3.connect(db)
+    cap = con.execute("SELECT caption FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()[0]
+    con.close()
+    assert cap == "v1"
+
+
+def test_restore_unknown_version_404(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post(f"/api/ahb/social/posts/{pid}/versions/999999/restore")
+    assert r.status_code == 404
+
+
+def test_versions_for_unknown_post_returns_empty(client):
+    c, _ = client
+    j = c.get("/api/ahb/social/posts/999999/versions").get_json()
+    assert j["versions"] == []

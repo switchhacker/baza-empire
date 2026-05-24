@@ -2895,6 +2895,133 @@
   </div>
 </div>
 
+<!-- ===================== TREASURY → VENDORS TAB ===================== -->
+<div class="tab-pane" id="tab-vendors">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🤝 Vendors</div>
+      <div class="page-sub">Suppliers, subcontractors, insurance partners — search the directory and discover new vendors by niche</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary" onclick="vtOpenDiscoverModal()" style="background:#1a3a5a;color:#9fcfff;border:1px solid #2a5a8a">🔍 Find New Vendors</button>
+      <button class="btn btn-secondary" onclick="vtSyncFromData()">↻ Sync from Data</button>
+      <button class="btn btn-primary" onclick="vtOpenAddModal()">+ Add Vendor</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card stat-total"><div class="stat-val" id="vt-stat-total">—</div><div class="stat-lbl">Total Vendors</div></div>
+    <div class="stat-card stat-done"><div class="stat-val" id="vt-stat-used" style="color:#5cdc99">—</div><div class="stat-lbl">Used in Receipts</div></div>
+    <div class="stat-card stat-progress"><div class="stat-val" id="vt-stat-locs" style="color:#9fcfff">—</div><div class="stat-lbl">Known Locations</div></div>
+    <div class="stat-card stat-paid"><div class="stat-val" id="vt-stat-spent" style="color:#f59e0b">$0</div><div class="stat-lbl">Total Spent</div></div>
+    <div class="stat-card stat-active"><div class="stat-val" id="vt-stat-types" style="color:#c4b5fd">—</div><div class="stat-lbl">Vendor Types</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px">
+    <input class="search-box" type="text" id="vt-search"
+           placeholder="Search name, contact, address, city, ZIP, vendor type, niche…"
+           oninput="vtRender()" style="flex:1;min-width:260px;font-size:12px">
+    <select class="filter-select" id="vt-type-filter" onchange="vtRender()" style="font-size:11px">
+      <option value="">All Types</option>
+    </select>
+    <select class="filter-select" id="vt-state-filter" onchange="vtRender()" style="font-size:11px">
+      <option value="">All States</option>
+    </select>
+    <select class="filter-select" id="vt-sort" onchange="vtRender()" style="font-size:11px">
+      <option value="name">Sort: A–Z</option>
+      <option value="receipts">Sort: Most Used</option>
+      <option value="spent">Sort: Most Spent</option>
+      <option value="locations">Sort: Most Locations</option>
+      <option value="newest">Sort: Newest Added</option>
+    </select>
+    <label style="font-size:11px;color:#888;display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="checkbox" id="vt-used-only" onchange="vtRender()"> Used only
+    </label>
+    <label style="font-size:11px;color:#888;display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="checkbox" id="vt-with-locs" onchange="vtRender()"> Has locations
+    </label>
+    <span id="vt-count" style="font-size:10px;color:#555;margin-left:auto"></span>
+  </div>
+
+  <!-- Master / detail layout -->
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,460px);gap:14px">
+    <!-- Vendor list -->
+    <div id="vt-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;align-content:start;min-height:200px">
+      <div style="grid-column:1/-1;text-align:center;padding:30px;color:#555;font-size:12px">Loading vendors…</div>
+    </div>
+    <!-- Detail panel (sticky) -->
+    <div id="vt-detail" style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;padding:16px;position:sticky;top:10px;align-self:start;max-height:calc(100vh - 100px);overflow-y:auto">
+      <div style="text-align:center;padding:40px 10px;color:#444;font-size:12px">
+        Click a vendor on the left to see contact, locations, and receipt history here.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Vendor modal -->
+<div class="modal-bg" id="vtAddModal" style="z-index:1100">
+  <div class="modal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">+ Add Vendor</h2>
+      <button class="btn-secondary btn-sm" onclick="closeModal('vtAddModal')">✕</button>
+    </div>
+    <div class="form-row"><div class="form-group" style="flex:2"><label>Name *</label><input type="text" id="vt-add-name" placeholder="e.g., Smith Hardware"></div>
+      <div class="form-group" style="flex:1"><label>Type</label>
+        <select id="vt-add-type"><option value="">—</option>
+          <option>Materials</option><option>Tools</option><option>Subcontractor</option>
+          <option>Insurance</option><option>Electronics</option><option>Fuel</option>
+          <option>Food</option><option>Office supplies</option><option>Clothes</option>
+          <option>Online</option><option>Other</option>
+        </select></div></div>
+    <div class="form-row"><div class="form-group" style="flex:1"><label>Contact name</label><input type="text" id="vt-add-contact"></div>
+      <div class="form-group" style="flex:1"><label>Phone</label><input type="text" id="vt-add-phone"></div></div>
+    <div class="form-row"><div class="form-group" style="flex:1"><label>Email</label><input type="text" id="vt-add-email"></div>
+      <div class="form-group" style="flex:1"><label>EIN / SSN</label><input type="text" id="vt-add-ein"></div></div>
+    <div class="form-group"><label>Address</label><input type="text" id="vt-add-addr" placeholder="Street, City, State, ZIP"></div>
+    <div class="form-group"><label>Notes</label><textarea id="vt-add-notes" rows="2"></textarea></div>
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('vtAddModal')">Cancel</button>
+      <button class="btn-primary" onclick="vtSubmitAdd()">Save</button></div>
+  </div>
+</div>
+
+<!-- Find New Vendors modal -->
+<div class="modal-bg" id="vtDiscoverModal" style="z-index:1100">
+  <div class="modal" style="max-width:760px;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0">🔍 Find New Vendors</h2>
+      <button class="btn-secondary btn-sm" onclick="closeModal('vtDiscoverModal')">✕</button>
+    </div>
+    <div class="modal-sub" style="margin-bottom:10px">
+      Describe what you need (by name, field, or niche). A local LLM suggests real vendors within 250 mi of Bensalem.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <input class="search-box" type="text" id="vt-discover-q"
+             placeholder='e.g. "tile distributors", "electrical supply Bucks County", "appliance parts wholesale"'
+             style="flex:1;min-width:260px;font-size:12px"
+             onkeydown="if(event.key==='Enter')vtRunDiscover()">
+      <select class="filter-select" id="vt-discover-type" style="font-size:11px">
+        <option value="">Any type</option>
+        <option>Materials</option><option>Tools</option><option>Subcontractor</option>
+        <option>Electronics</option><option>Fuel</option><option>Food</option>
+        <option>Office supplies</option><option>Online</option><option>Other</option>
+      </select>
+      <input type="text" id="vt-discover-zip" placeholder="ZIP" value="19020"
+             style="width:80px;font-size:11px;padding:6px 8px;background:#0a0a16;color:#ccc;border:1px solid #1a1a2e;border-radius:6px">
+      <button class="btn-primary btn-sm" onclick="vtRunDiscover()">Search</button>
+    </div>
+    <div style="font-size:10px;color:#444;margin-bottom:8px">
+      Tip: paste a partial company name to validate it ("appliance solutions") or describe a niche
+      to brainstorm options ("flooring wholesale", "metal scrap recycling near Philly"). Results
+      can be added to your directory with one click.
+    </div>
+    <div id="vt-discover-results" style="flex:1;overflow-y:auto;border:1px solid #1a1a2e;border-radius:8px;background:#06060c;padding:8px;min-height:240px">
+      <div style="text-align:center;padding:40px;color:#444;font-size:12px">Type a query above and press Search.</div>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== REVIEWS TAB ===================== -->
 <!-- ============================ MEDIA (was Photos) ============================ -->
 <div class="tab-pane" id="tab-photos">
@@ -3171,18 +3298,11 @@
     <div id="packages-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px"></div>
   </div>
 
-  <!-- Vendors mini-CRM -->
-  <div style="margin-bottom:24px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div style="font-size:14px;font-weight:800;color:#fff">🤝 Vendors &amp; Subcontractors</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span style="font-size:11px;color:#555" id="vendor-count"></span>
-        <input class="search-box" type="text" id="vendor-search" placeholder="Search vendor or city..."
-               oninput="renderVendors()" style="font-size:11px;padding:4px 8px;min-width:200px">
-        <button class="btn-secondary btn-sm" onclick="syncVendorsFromData()" title="Auto-create vendor rows from locations DB + receipt history">↻ Sync</button>
-      </div>
-    </div>
-    <div id="vendors-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px"></div>
+  <!-- Vendors moved to Treasury → Vendors. This stub keeps the link for users
+       who remember the old location. -->
+  <div style="margin-bottom:24px;background:#0a0a16;border:1px dashed #2a2a4a;border-radius:10px;padding:14px;text-align:center">
+    <div style="font-size:12px;color:#888">🤝 <b style="color:#aaa">Vendors &amp; Subcontractors</b> has moved to <b style="color:#9fcfff">Treasury → Vendors</b> with full search, location data, and LLM-powered discovery.</div>
+    <div style="margin-top:8px"><button class="btn-secondary btn-sm" onclick="switchTab('vendors')" style="background:#1a3a5a;color:#9fcfff;border:1px solid #2a5a8a">Open Vendors Tab →</button></div>
   </div>
 
   <!-- Tracked Files (manual file records) -->
@@ -4637,6 +4757,7 @@
 <div id="socialVoiceover"    class="modal-bg" style="display:none"></div>
 <div id="socialSettings"     class="modal-bg" style="display:none"></div>
 <div id="socialPostDetail"   class="modal-bg" style="display:none"></div>
+<div id="socialPostHistory"  class="modal-bg" style="display:none"></div>
 
 <!-- Social Studio toast stack (body-level, bottom-right) -->
 <div id="socialToastStack" style="position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none"></div>
@@ -4708,7 +4829,7 @@ setInterval(updateClock,1000); updateClock();
 const TAB_GROUPS = {
   projects: {label:'Projects', icon:'🏗️', children:['projects','invoices','changeorders']},
   heavyeq:  {label:'Heavy Equipment', icon:'🚜', children:['estimator','architect','docprep']},
-  treasury: {label:'Treasury', icon:'🏦', children:['billing','receipts','payroll','taxdocs','ipay']}
+  treasury: {label:'Treasury', icon:'🏦', children:['billing','receipts','vendors','payroll','taxdocs','ipay']}
 };
 // Per-leaf labels + icons for the contextual sub-row
 const LEAF_META = {
@@ -4720,6 +4841,7 @@ const LEAF_META = {
   docprep:     {label:'DocPrep',         icon:'📂'},
   billing:     {label:'Billing',         icon:'📑'},
   receipts:    {label:'QuickRF',         icon:'🧾'},
+  vendors:     {label:'Vendors',         icon:'🤝'},
   payroll:     {label:'Payroll',         icon:'💵'},
   taxdocs:     {label:'Uncle Sam',       icon:'🦅'},
   ipay:        {label:'Debt',            icon:'💳'}
@@ -4773,6 +4895,7 @@ function switchTab(tabName){
     projects: loadProjects,
     invoices: loadInvoices,
     receipts: function(){ loadReceipts(); rqeLoad(); loadReceiptQueue(); },
+    vendors: loadVendorsTab,
     payroll: function(){ loadPayroll(); loadEmployees(); },
     estimator: loadEstimatorSettings,
     ipay: loadDebts,
@@ -14969,7 +15092,7 @@ async function handleBulkPhotoUpload(input){
 let allDocs=[], filteredDocs=[], allPackages=[], currentDoc=null, currentPackage=null;
 
 async function loadDocPrep(){
-  await Promise.all([loadCuratedDocs(), loadPackages(), loadVendors(), loadFiles()]);
+  await Promise.all([loadCuratedDocs(), loadPackages(), loadFiles()]);
 }
 
 let allVendors=[];
@@ -15066,8 +15189,325 @@ async function syncVendorsFromData(){
     const r=await fetch('/api/ahb/vendors/sync-from-data',{method:'POST'});
     const d=await r.json();
     showToast(`Created ${d.created_from_locations||0} from locations, ${d.created_from_receipts||0} from receipts`);
-    await loadVendors();
+    if (typeof loadVendorsTab === 'function') await loadVendorsTab();
   }catch(e){showToast('Sync failed','error');}
+}
+
+/* ========================= TREASURY → VENDORS TAB ========================= */
+let vtVendors = [], vtSelectedId = null;
+
+async function loadVendorsTab(){
+  try{
+    const r = await fetch('/api/ahb/vendors');
+    vtVendors = await r.json();
+    allVendors = vtVendors; // keep legacy global in sync (used by showAllVendorLocs)
+    vtPopulateFilters();
+    vtRenderStats();
+    vtRender();
+    if (vtSelectedId) {
+      const found = vtVendors.find(v => v.id === vtSelectedId);
+      if (found) vtSelectVendor(vtSelectedId);
+    }
+  }catch(e){
+    const list = document.getElementById('vt-list');
+    if (list) list.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#a44;font-size:12px">Failed to load vendors.</div>';
+  }
+}
+
+function vtPopulateFilters(){
+  const types = new Set();
+  const states = new Set();
+  vtVendors.forEach(v => {
+    if (v.vendor_type) types.add(v.vendor_type);
+    (v.locations||[]).forEach(l => { if (l.state) states.add(l.state); });
+  });
+  const tSel = document.getElementById('vt-type-filter');
+  if (tSel) {
+    const cur = tSel.value;
+    tSel.innerHTML = '<option value="">All Types</option>' +
+      [...types].sort().map(t => `<option ${t===cur?'selected':''}>${escHtml(t)}</option>`).join('');
+  }
+  const sSel = document.getElementById('vt-state-filter');
+  if (sSel) {
+    const cur = sSel.value;
+    sSel.innerHTML = '<option value="">All States</option>' +
+      [...states].sort().map(s => `<option ${s===cur?'selected':''}>${escHtml(s)}</option>`).join('');
+  }
+}
+
+function vtRenderStats(){
+  const total = vtVendors.length;
+  const used = vtVendors.filter(v => (v.receipt_count||0) > 0).length;
+  const locs = vtVendors.reduce((s,v)=> s + (v.locations||[]).length, 0);
+  const spent = vtVendors.reduce((s,v)=> s + (v.receipt_total||0), 0);
+  const types = new Set(vtVendors.map(v => v.vendor_type).filter(Boolean)).size;
+  const set = (id,val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('vt-stat-total', total);
+  set('vt-stat-used', used);
+  set('vt-stat-locs', locs);
+  set('vt-stat-spent', '$'+Number(spent).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}));
+  set('vt-stat-types', types);
+}
+
+function vtFilterAndSort(){
+  const q = ((document.getElementById('vt-search')||{}).value||'').toLowerCase().trim();
+  const type = (document.getElementById('vt-type-filter')||{}).value || '';
+  const state = (document.getElementById('vt-state-filter')||{}).value || '';
+  const sort = (document.getElementById('vt-sort')||{}).value || 'name';
+  const usedOnly = !!(document.getElementById('vt-used-only')||{}).checked;
+  const withLocs = !!(document.getElementById('vt-with-locs')||{}).checked;
+
+  let list = vtVendors.slice();
+  if (q) {
+    list = list.filter(v => {
+      const hay = [v.name, v.vendor_type, v.contact_name, v.email, v.phone, v.address, v.notes].filter(Boolean).join(' ').toLowerCase();
+      if (hay.indexOf(q) !== -1) return true;
+      return (v.locations||[]).some(l =>
+        ['city','street','state','zip','name','phone'].some(k => (l[k]||'').toString().toLowerCase().indexOf(q) !== -1)
+      );
+    });
+  }
+  if (type)  list = list.filter(v => (v.vendor_type||'') === type);
+  if (state) list = list.filter(v => (v.locations||[]).some(l => (l.state||'') === state));
+  if (usedOnly) list = list.filter(v => (v.receipt_count||0) > 0 || (v.locations||[]).some(l => (l.usage_count||0) > 0));
+  if (withLocs) list = list.filter(v => (v.locations||[]).length > 0);
+
+  if (sort === 'receipts')      list.sort((a,b)=> (b.receipt_count||0)-(a.receipt_count||0));
+  else if (sort === 'spent')    list.sort((a,b)=> (b.receipt_total||0)-(a.receipt_total||0));
+  else if (sort === 'locations')list.sort((a,b)=> (b.locations||[]).length-(a.locations||[]).length);
+  else if (sort === 'newest')   list.sort((a,b)=> (b.id||0)-(a.id||0));
+  else                          list.sort((a,b)=> (a.name||'').toLowerCase().localeCompare((b.name||'').toLowerCase()));
+  return list;
+}
+
+function vtRender(){
+  const list = document.getElementById('vt-list');
+  if (!list) return;
+  const filtered = vtFilterAndSort();
+  const cnt = document.getElementById('vt-count');
+  if (cnt) cnt.textContent = `${filtered.length} of ${vtVendors.length}`;
+  if (!filtered.length) {
+    list.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:30px;color:#555;font-size:12px">No vendors match. Try clearing filters, syncing from data, or finding new ones.</div>';
+    return;
+  }
+  const typeIcon = {insurance:'🛡',contractor:'🪪',vendor:'📋',materials:'🧱',tools:'🛠',electronics:'🔌',online:'🌐',subcontractor:'👷',other:'🤝',food:'🍔',fuel:'⛽','office supplies':'📎',clothes:'👕'};
+  list.innerHTML = filtered.map(v => {
+    const locs = v.locations || [];
+    const usedLocs = locs.filter(l => (l.usage_count||0) > 0).length;
+    const used = (v.receipt_count||0) > 0;
+    const selectedClass = v.id === vtSelectedId ? 'border-color:#5cdc99;box-shadow:0 0 0 1px #1a5a2e' : 'border-color:#1a1a2e';
+    return `<div onclick="vtSelectVendor(${v.id})" style="background:#0a0a16;border:1px solid;${selectedClass};border-radius:10px;padding:11px;cursor:pointer;transition:border-color .12s">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:18px">${typeIcon[(v.vendor_type||'').toLowerCase()]||'🤝'}</span>
+        <div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(v.name)}</div>
+        ${v.vendor_type?`<span style="font-size:9px;color:#666;padding:1px 6px;border:1px solid #1a1a2e;border-radius:6px">${escHtml(v.vendor_type)}</span>`:''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;margin-top:2px">
+        ${used?`<span title="${v.receipt_count} filed receipt${v.receipt_count===1?'':'s'}" style="padding:1px 7px;border-radius:5px;background:#0a3a1a;color:#5cdc99;border:1px solid #1a5a2e">✓ used ${v.receipt_count}</span>`:''}
+        ${locs.length?`<span style="padding:1px 7px;border-radius:5px;background:#0a1a2a;color:#9fcfff;border:1px solid #1a3a5a">📍 ${locs.length}${usedLocs?` <span style="color:#5cdc99">★${usedLocs}</span>`:''}</span>`:''}
+        ${(v.receipt_total||0)>0?`<span style="padding:1px 7px;border-radius:5px;background:#1a1408;color:#f5a623;border:1px solid #4a3a0a">$${Number(v.receipt_total).toLocaleString('en-US',{maximumFractionDigits:0})}</span>`:''}
+      </div>
+      ${v.contact_name?`<div style="font-size:10px;color:#aaa;margin-top:4px">${escHtml(v.contact_name)}</div>`:''}
+      ${v.phone?`<div style="font-size:10px;color:#888;margin-top:1px">📞 ${escHtml(v.phone)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function vtSelectVendor(vid){
+  vtSelectedId = vid;
+  const v = vtVendors.find(x => x.id === vid);
+  const panel = document.getElementById('vt-detail');
+  if (!panel) return;
+  if (!v) { panel.innerHTML = '<div style="text-align:center;padding:30px;color:#444;font-size:12px">Vendor not found.</div>'; return; }
+  vtRender(); // re-highlight selected card
+  const locs = v.locations || [];
+  const typeIcon = {insurance:'🛡',contractor:'🪪',vendor:'📋',materials:'🧱',tools:'🛠',electronics:'🔌',online:'🌐',subcontractor:'👷',other:'🤝',food:'🍔',fuel:'⛽','office supplies':'📎',clothes:'👕'};
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="font-size:24px">${typeIcon[(v.vendor_type||'').toLowerCase()]||'🤝'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:16px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(v.name)}</div>
+        <div style="font-size:10px;color:#888">${escHtml(v.vendor_type||'—')}</div>
+      </div>
+      <button class="btn-secondary btn-sm" onclick="vtEditVendor(${v.id})">✎</button>
+      <button class="btn-secondary btn-sm" onclick="vtDeleteVendor(${v.id})" style="background:#3a0f14;color:#ff8a8a;border:1px solid #5a1a22">🗑</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:10px">
+      ${(v.receipt_count||0)>0?`<span style="padding:2px 7px;border-radius:5px;background:#0a3a1a;color:#5cdc99;border:1px solid #1a5a2e">✓ ${v.receipt_count} receipt${v.receipt_count===1?'':'s'}</span>`:''}
+      ${(v.receipt_total||0)>0?`<span style="padding:2px 7px;border-radius:5px;background:#1a1408;color:#f5a623;border:1px solid #4a3a0a">$${Number(v.receipt_total).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:''}
+      <span style="padding:2px 7px;border-radius:5px;background:#0a1a2a;color:#9fcfff;border:1px solid #1a3a5a">📍 ${locs.length} location${locs.length===1?'':'s'}</span>
+    </div>
+    <div style="border-top:1px solid #1a1a2e;padding-top:8px;margin-bottom:8px">
+      ${v.contact_name?`<div style="font-size:11px;color:#bbb">${escHtml(v.contact_name)}</div>`:''}
+      ${v.phone?`<div style="font-size:11px;color:#888;margin-top:2px">📞 ${escHtml(v.phone)}</div>`:''}
+      ${v.email?`<div style="font-size:11px;color:#888;margin-top:2px">✉ ${escHtml(v.email)}</div>`:''}
+      ${v.address?`<div style="font-size:11px;color:#888;margin-top:2px">📮 ${escHtml(v.address)}</div>`:''}
+      ${v.ein_or_ssn?`<div style="font-size:10px;color:#666;font-family:monospace;margin-top:3px">EIN: ${escHtml(v.ein_or_ssn)}</div>`:''}
+      ${v.notes?`<div style="font-size:11px;color:#888;margin-top:6px;padding:6px 8px;background:#06060c;border-radius:6px">${escHtml(v.notes)}</div>`:''}
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      ${v.coi_doc_id?`<a href="/api/ahb/documents/file/${v.coi_doc_id}" target="_blank" style="padding:3px 8px;border-radius:6px;background:#0a1a2a;color:#4da6ff;font-size:10px;font-weight:700;text-decoration:none">📄 COI</a>`:''}
+      ${v.w9_doc_id?`<a href="/api/ahb/documents/file/${v.w9_doc_id}" target="_blank" style="padding:3px 8px;border-radius:6px;background:#0a1a2a;color:#4da6ff;font-size:10px;font-weight:700;text-decoration:none">📄 W9</a>`:''}
+      ${v.license_doc_id?`<a href="/api/ahb/documents/file/${v.license_doc_id}" target="_blank" style="padding:3px 8px;border-radius:6px;background:#0a1a2a;color:#4da6ff;font-size:10px;font-weight:700;text-decoration:none">📄 LICENSE</a>`:''}
+    </div>
+    <div style="font-size:10px;color:#666;font-weight:700;letter-spacing:.5px;margin-bottom:6px">LOCATIONS</div>
+    ${locs.length?locs.map(l=>{
+      const used = (l.usage_count||0) > 0;
+      return `<div style="font-size:11px;color:${used?'#5cdc99':'#888'};line-height:1.4;margin-bottom:4px;padding:5px 7px;background:${used?'#0a1a14':'#06060c'};border-left:2px solid ${used?'#5cdc99':'#1a1a2e'};border-radius:4px">
+        ${used?`<span title="${l.usage_count} matched receipt${l.usage_count===1?'':'s'}">★ ${l.usage_count}</span> `:''}${l.name?`<b>${escHtml(l.name)}</b><br>`:''}${escHtml([l.street,[l.city,l.state].filter(Boolean).join(', '),l.zip].filter(Boolean).join(', '))}
+        ${l.phone?`<div style="font-size:10px;color:#666;margin-top:1px">📞 ${escHtml(l.phone)}${l.store_number?` · #${escHtml(l.store_number)}`:''}</div>`:(l.store_number?`<div style="font-size:10px;color:#666;margin-top:1px">#${escHtml(l.store_number)}</div>`:'')}
+      </div>`;
+    }).join(''):'<div style="font-size:11px;color:#555;font-style:italic">No locations on file. Add via the Vendor Locations API or POST /api/ahb/vendor-locations.</div>'}
+  `;
+}
+
+async function vtSyncFromData(){
+  showToast('Syncing vendors…');
+  try{
+    const r = await fetch('/api/ahb/vendors/sync-from-data', {method:'POST'});
+    const d = await r.json();
+    showToast(`Synced — +${(d.created_from_locations||0)+(d.created_from_receipts||0)} vendors`);
+    await loadVendorsTab();
+  }catch(e){ showToast('Sync failed','error'); }
+}
+
+function vtOpenAddModal(){
+  ['name','contact','phone','email','ein','addr','notes'].forEach(k => {
+    const el = document.getElementById('vt-add-'+k); if (el) el.value = '';
+  });
+  const ty = document.getElementById('vt-add-type'); if (ty) ty.value = '';
+  const m = document.getElementById('vtAddModal'); if (m) { m.classList.add('show'); m.style.display='flex'; }
+}
+
+async function vtSubmitAdd(){
+  const name = (document.getElementById('vt-add-name').value||'').trim();
+  if (!name) { showToast('Name is required','error'); return; }
+  const body = {
+    name,
+    vendor_type: document.getElementById('vt-add-type').value || null,
+    contact_name: document.getElementById('vt-add-contact').value || null,
+    phone:        document.getElementById('vt-add-phone').value || null,
+    email:        document.getElementById('vt-add-email').value || null,
+    address:      document.getElementById('vt-add-addr').value || null,
+    ein_or_ssn:   document.getElementById('vt-add-ein').value || null,
+    notes:        document.getElementById('vt-add-notes').value || null,
+  };
+  try{
+    const r = await fetch('/api/ahb/vendors', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error||'Add failed');
+    showToast('Vendor added');
+    closeModal('vtAddModal');
+    vtSelectedId = d.id;
+    await loadVendorsTab();
+  }catch(e){ showToast('Add failed','error'); }
+}
+
+function vtEditVendor(vid){
+  const v = vtVendors.find(x => x.id === vid); if (!v) return;
+  vtOpenAddModal();
+  document.getElementById('vt-add-name').value = v.name||'';
+  document.getElementById('vt-add-type').value = v.vendor_type||'';
+  document.getElementById('vt-add-contact').value = v.contact_name||'';
+  document.getElementById('vt-add-phone').value = v.phone||'';
+  document.getElementById('vt-add-email').value = v.email||'';
+  document.getElementById('vt-add-addr').value = v.address||'';
+  document.getElementById('vt-add-ein').value = v.ein_or_ssn||'';
+  document.getElementById('vt-add-notes').value = v.notes||'';
+  // Override submit to PATCH instead of POST (set a flag, vtSubmitAdd checks it)
+  vtEditingId = vid;
+}
+let vtEditingId = null;
+const _vtSubmitAddOrig = vtSubmitAdd;
+vtSubmitAdd = async function(){
+  if (!vtEditingId) return _vtSubmitAddOrig();
+  const body = {};
+  ['name','vendor_type','contact_name','phone','email','address','ein_or_ssn','notes'].forEach((k,i) => {
+    const map = ['name','type','contact','phone','email','addr','ein','notes'];
+    const el = document.getElementById('vt-add-'+map[i]); if (el) body[k] = el.value;
+  });
+  try{
+    const r = await fetch('/api/ahb/vendors/'+vtEditingId, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error||'Update failed');
+    showToast('Vendor updated');
+    closeModal('vtAddModal');
+    const editedId = vtEditingId; vtEditingId = null;
+    vtSelectedId = editedId;
+    await loadVendorsTab();
+  }catch(e){ showToast('Update failed','error'); vtEditingId = null; }
+};
+
+async function vtDeleteVendor(vid){
+  const v = vtVendors.find(x => x.id === vid); if (!v) return;
+  if (!confirm(`Delete "${v.name}"? This won't touch receipts or locations.`)) return;
+  try{
+    const r = await fetch('/api/ahb/vendors/'+vid, {method:'DELETE'});
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error||'Delete failed');
+    showToast('Deleted');
+    if (vtSelectedId === vid) vtSelectedId = null;
+    await loadVendorsTab();
+  }catch(e){ showToast('Delete failed','error'); }
+}
+
+/* ── Find New Vendors (LLM discovery) ── */
+function vtOpenDiscoverModal(){
+  const m = document.getElementById('vtDiscoverModal');
+  if (m) { m.classList.add('show'); m.style.display='flex'; }
+  const inp = document.getElementById('vt-discover-q'); if (inp) setTimeout(()=>inp.focus(),50);
+}
+
+async function vtRunDiscover(){
+  const q = (document.getElementById('vt-discover-q').value||'').trim();
+  if (!q) { showToast('Enter a name, field, or niche','error'); return; }
+  const type = document.getElementById('vt-discover-type').value || '';
+  const zip = (document.getElementById('vt-discover-zip').value||'19020').trim();
+  const out = document.getElementById('vt-discover-results');
+  out.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:12px">Asking the local LLM (may take 10–60s)…</div>';
+  try{
+    const r = await fetch('/api/ahb/vendors/discover', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({query:q, near_zip:zip, vendor_type:type, max_results:12})
+    });
+    const d = await r.json();
+    if (!d.success) { out.innerHTML = `<div style="padding:20px;color:#a44;font-size:12px">${escHtml(d.error||'No results')}</div>`; return; }
+    if (!d.results || !d.results.length) { out.innerHTML = '<div style="padding:20px;color:#666;font-size:12px">No matches. Try a different phrasing.</div>'; return; }
+    out.innerHTML = `<div style="font-size:10px;color:#555;margin-bottom:6px">${d.results.length} suggestions · model ${escHtml(d.model)}</div>` +
+      d.results.map((r,i) => {
+        const slocs = (r.suggested_locations||[]).slice(0,3).map(l => escHtml([l.city,l.state].filter(Boolean).join(', ')||l.notes||'—')).join(' · ');
+        const addBtn = r.already_in_db
+          ? `<span style="padding:3px 8px;border-radius:5px;background:#0a3a1a;color:#5cdc99;font-size:10px;font-weight:700">✓ Already added</span>`
+          : `<button class="btn-primary btn-sm" onclick='vtAddFromDiscover(${JSON.stringify(r).replace(/'/g,"&#39;")})'>+ Add</button>`;
+        return `<div style="padding:9px 10px;border:1px solid #1a1a2e;border-radius:8px;margin-bottom:6px;background:#0a0a16">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+            <div style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#fff">${escHtml(r.name)}</div>
+            ${r.category?`<span style="font-size:9px;color:#666;padding:1px 6px;border:1px solid #1a1a2e;border-radius:5px">${escHtml(r.category)}</span>`:''}
+            ${addBtn}
+          </div>
+          ${r.why?`<div style="font-size:11px;color:#aaa;margin-bottom:3px">${escHtml(r.why)}</div>`:''}
+          ${slocs?`<div style="font-size:10px;color:#666">📍 ${slocs}</div>`:''}
+        </div>`;
+      }).join('');
+  }catch(e){ out.innerHTML = '<div style="padding:20px;color:#a44;font-size:12px">Discovery request failed.</div>'; }
+}
+
+async function vtAddFromDiscover(suggestion){
+  try{
+    const r = await fetch('/api/ahb/vendors', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: suggestion.name,
+        vendor_type: suggestion.category || null,
+        notes: 'Discovered via /vendors/discover: ' + (suggestion.why||'').slice(0,160)
+      })
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error||'Add failed');
+    showToast(`Added: ${suggestion.name}`);
+    await loadVendorsTab();
+    vtRunDiscover(); // refresh modal to show "Already added"
+  }catch(e){ showToast('Add failed','error'); }
 }
 
 async function loadCuratedDocs(){
@@ -19364,10 +19804,57 @@ SocialStudio.modules.library = (function(){
 
 SocialStudio.modules.postdetail = (function(){
   let _currentPost = null;
+  let _autosaveTimer = null;
+  let _badgeTimer = null;
   function _esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _flashSaved() {
+    const b = document.getElementById('pd-saved-badge');
+    if (!b) return;
+    if (_badgeTimer) { clearTimeout(_badgeTimer); _badgeTimer = null; }
+    b.style.opacity = '1';
+    b.style.color = '#10b981';
+    b.style.background = 'rgba(16,185,129,0.12)';
+    b.textContent = 'Saved ✓';
+    _badgeTimer = setTimeout(() => {
+      b.style.opacity = '0.45';
+      b.style.color = '#666';
+      b.style.background = 'transparent';
+      b.textContent = 'Idle';
+    }, 1000);
+  }
+
+  function _scheduleAutosave() {
+    if (!_currentPost) return;
+    if (_autosaveTimer) { clearTimeout(_autosaveTimer); _autosaveTimer = null; }
+    const id = _currentPost.id;
+    _autosaveTimer = setTimeout(async () => {
+      _autosaveTimer = null;
+      const captionEl = document.getElementById('pd-caption');
+      const hashtagsEl = document.getElementById('pd-hashtags');
+      const firstCommentEl = document.getElementById('pd-firstcomment');
+      if (!captionEl || !hashtagsEl || !firstCommentEl) return;
+      try {
+        const r = await fetch('/api/ahb/social/posts/' + id, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            caption: captionEl.value,
+            hashtags: hashtagsEl.value,
+            first_comment: firstCommentEl.value,
+          }),
+        });
+        if (r.ok) {
+          _currentPost.caption = captionEl.value;
+          _currentPost.hashtags = hashtagsEl.value;
+          _currentPost.first_comment = firstCommentEl.value;
+          _flashSaved();
+        }
+      } catch (e) { /* swallow network errors during autosave */ }
+    }, 500);
   }
 
   async function open(id) {
@@ -19381,24 +19868,88 @@ SocialStudio.modules.postdetail = (function(){
     m.innerHTML = `
       <div class="modal" style="max-width:700px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-size:16px;font-weight:800">${_esc(p.platform)} &middot; #${_esc(p.id)}</div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <div style="font-size:16px;font-weight:800">${_esc(p.platform)} &middot; #${_esc(p.id)}</div>
+            <span id="pd-saved-badge" style="font-size:11px;padding:2px 8px;border-radius:10px;color:#666;background:transparent;opacity:0.45;transition:opacity .2s, background .2s, color .2s">Idle</span>
+          </div>
           <button onclick="document.getElementById('socialPostDetail').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
         </div>
-        <textarea id="pd-caption" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.caption || '')}</textarea>
-        <input id="pd-hashtags" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" value="${_esc(p.hashtags || '')}">
-        <textarea id="pd-firstcomment" style="width:100%;height:60px;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" placeholder="First comment (IG convention)">${_esc(p.first_comment || '')}</textarea>
+        <textarea id="pd-caption" oninput="SocialStudio.modules.postdetail._scheduleAutosave()" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.caption || '')}</textarea>
+        <input id="pd-hashtags" oninput="SocialStudio.modules.postdetail._scheduleAutosave()" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" value="${_esc(p.hashtags || '')}">
+        <textarea id="pd-firstcomment" oninput="SocialStudio.modules.postdetail._scheduleAutosave()" style="width:100%;height:60px;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" placeholder="First comment (IG convention)">${_esc(p.first_comment || '')}</textarea>
         <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.subtitles(${p.id})">&#x1F4DD; Subtitles</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.voiceover && SocialStudio.modules.voiceover.open(${p.id}, document.getElementById('pd-caption').value)">&#x1F50A; VO</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.coverPick(${p.id})">&#x1F5BC;&#xFE0F; Pick cover</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.saveAsTemplate(${p.id})">&#x1F4CB; Save as template</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.editTags(${p.id})">&#x1F3F7; Tags</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.history(${p.id})">&#x1F4DC; History</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
           <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
         </div>
       </div>
     `;
+  }
+
+  async function history(id) {
+    const m = document.getElementById('socialPostHistory');
+    m.style.display = 'flex';
+    m.innerHTML = `<div class="modal" style="max-width:720px"><div style="color:#888;padding:20px;text-align:center">Loading versions…</div></div>`;
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id + '/versions');
+      const j = await r.json();
+      const versions = (j && j.versions) || [];
+      const currentCap = (_currentPost && _currentPost.id === id) ? (_currentPost.caption || '') : '';
+      const rowsHtml = versions.length === 0
+        ? '<div style="color:#666;padding:30px;text-align:center">No versions yet. Edits will appear here.</div>'
+        : versions.map(v => {
+            const snapCap = (v.snapshot && v.snapshot.caption) || '';
+            const same = String(snapCap) === String(currentCap);
+            const diffHtml = same
+              ? '<span style="color:#666">no change vs current</span>'
+              : `<div style="color:#aaa;font-size:11px">was: <span style="color:#fff">${_esc(String(snapCap).slice(0,80))}</span></div>
+                 <div style="color:#aaa;font-size:11px">now: <span style="color:#10b981">${_esc(String(currentCap).slice(0,80))}</span></div>`;
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px;border:1px solid #2a2a4a;border-radius:6px;margin-bottom:6px;background:#0b0b18">
+                <div style="min-width:0;flex:1">
+                  <div style="font-size:11px;color:#888">${_esc(v.version_at || '')}</div>
+                  <div style="margin-top:4px">${diffHtml}</div>
+                </div>
+                <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.restore(${id}, ${v.id})">Restore</button>
+              </div>
+            `;
+          }).join('');
+      m.innerHTML = `
+        <div class="modal" style="max-width:720px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:15px;font-weight:800">Version history &middot; #${_esc(id)}</div>
+            <button onclick="document.getElementById('socialPostHistory').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="max-height:60vh;overflow-y:auto">${rowsHtml}</div>
+        </div>
+      `;
+    } catch (e) {
+      m.innerHTML = `<div class="modal" style="max-width:480px"><div style="color:#f87171;padding:20px;text-align:center">Failed to load history: ${_esc(e.message)}</div></div>`;
+    }
+  }
+
+  async function restore(id, vid) {
+    try {
+      const r = await fetch(`/api/ahb/social/posts/${id}/versions/${vid}/restore`, { method: 'POST' });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        SocialStudio.modules.toast.error('Restore failed: ' + (j.error || r.status));
+        return;
+      }
+      document.getElementById('socialPostHistory').style.display = 'none';
+      document.getElementById('socialPostDetail').style.display = 'none';
+      await open(id);
+      SocialStudio.modules.toast.success('Version restored');
+      if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+    } catch (e) {
+      SocialStudio.modules.toast.error('Network: ' + e.message);
+    }
   }
   async function save(id) {
     await fetch('/api/ahb/social/posts/' + id, {
@@ -19483,7 +20034,8 @@ SocialStudio.modules.postdetail = (function(){
       if (SocialStudio.modules.library) SocialStudio.modules.library.render();
     });
   }
-  return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate, editTags };
+  return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate, editTags,
+           history, restore, _scheduleAutosave };
 })();
 
 SocialStudio.modules.presets = (function(){
