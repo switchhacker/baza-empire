@@ -9,6 +9,8 @@ from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
 
 def _db():
     path = os.environ.get("BAZA_DASHBOARD_DB",
@@ -156,6 +158,8 @@ def register(bp):
         if not name:
             return jsonify({"error": "name required"}), 400
         color = (data.get("color") or "#10b981").strip() or "#10b981"
+        if not _COLOR_RE.match(color):
+            return jsonify({"error": "invalid color (expected #rgb / #rrggbb / #rrggbbaa)"}), 400
         con = _db()
         try:
             try:
@@ -182,6 +186,8 @@ def register(bp):
             sets.append("name=?"); vals.append(name)
         if "color" in data:
             color = (data.get("color") or "#10b981").strip() or "#10b981"
+            if not _COLOR_RE.match(color):
+                return jsonify({"error": "invalid color"}), 400
             sets.append("color=?"); vals.append(color)
         if not sets:
             return jsonify({"error": "no writable fields"}), 400
@@ -250,11 +256,17 @@ def register(bp):
         con = _db()
         try:
             con.execute("DELETE FROM ahb_social_post_tags WHERE post_id=?", (pid,))
+            if clean:
+                ph = ",".join("?" * len(clean))
+                valid = {r[0] for r in con.execute(
+                    f"SELECT id FROM ahb_social_tags WHERE id IN ({ph})",
+                    clean,
+                ).fetchall()}
+            else:
+                valid = set()
             applied = 0
             for tid in clean:
-                # only insert if tag exists (silently ignore stale ids)
-                exists = con.execute("SELECT 1 FROM ahb_social_tags WHERE id=?", (tid,)).fetchone()
-                if not exists:
+                if tid not in valid:
                     continue
                 con.execute(
                     "INSERT OR IGNORE INTO ahb_social_post_tags (post_id, tag_id) VALUES (?, ?)",

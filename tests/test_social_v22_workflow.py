@@ -193,3 +193,31 @@ def test_tag_replace_set(client):
     j = c.get(f"/api/ahb/social/posts/{pid}/tags").get_json()
     ids = sorted(t["id"] for t in j["tags"])
     assert ids == [t2]
+
+
+def test_tag_create_invalid_color_rejected(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/tags", json={"name": "bad", "color": "red;background:url(x)"})
+    assert r.status_code == 400
+
+
+def test_tag_update_invalid_color_rejected(client):
+    c, _ = client
+    tid = c.post("/api/ahb/social/tags", json={"name": "ok"}).get_json()["id"]
+    r = c.put(f"/api/ahb/social/tags/{tid}", json={"color": "not-a-color"})
+    assert r.status_code == 400
+
+
+def test_post_tags_set_with_stale_ids_only_applies_valid(client):
+    c, db = client
+    tid = c.post("/api/ahb/social/tags", json={"name": "real"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1, 'ig_reel', 'A', 'draft', 'x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post(f"/api/ahb/social/posts/{pid}/tags", json={"tag_ids": [tid, 999999]})
+    j = r.get_json()
+    assert r.status_code == 200
+    assert j["applied"] == 1
