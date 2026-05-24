@@ -18750,7 +18750,8 @@ SocialStudio.modules.composer = (function(){
 SocialStudio.modules.library = (function(){
   const root = () => document.getElementById('ss-sub-library');
   let items = [];
-  let f = { status: '', platform: '', q: '' };
+  let allTags = [];
+  let f = { status: '', platform: '', q: '', tag: '' };
   let _t = null;
 
   function _esc(s) {
@@ -18764,9 +18765,18 @@ SocialStudio.modules.library = (function(){
     if (f.status) url.searchParams.set('status', f.status);
     if (f.platform) url.searchParams.set('platform', f.platform);
     if (f.q) url.searchParams.set('q', f.q);
-    const r = await fetch(url);
-    items = (await r.json()).items || [];
+    if (f.tag) url.searchParams.set('tag', f.tag);
+    const [postsR, tagsR] = await Promise.all([
+      fetch(url),
+      fetch('/api/ahb/social/tags').catch(() => null),
+    ]);
+    items = (await postsR.json()).items || [];
+    try { allTags = tagsR ? ((await tagsR.json()).items || []) : []; } catch(e) { allTags = []; }
     paint();
+  }
+
+  function _chip(t) {
+    return `<span style="display:inline-block;background:${_esc(t.color || '#10b981')};color:#fff;font-size:9px;padding:1px 6px;border-radius:8px;margin-right:3px;line-height:1.4">${_esc(t.name)}</span>`;
   }
 
   function paint() {
@@ -18777,10 +18787,11 @@ SocialStudio.modules.library = (function(){
              onerror="this.style.opacity='0.2'"
              onclick="SocialStudio.modules.postdetail.open(${p.id})">
         <div style="flex:1;min-width:0">
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
             <span class="ss-status-pill ss-pill-${_esc(p.status)}">${_esc(p.status)}</span>
             <span style="color:#888;font-size:11px">${_esc(p.platform)}</span>
             ${p.score != null ? `<span style="color:#10b981;font-size:11px">${_esc(p.score)}/100</span>` : ''}
+            ${(p.tags || []).map(_chip).join('')}
           </div>
           <div style="color:#ddd;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((p.caption||'').slice(0,160))}</div>
           <div style="color:#666;font-size:11px;margin-top:2px">${_esc((p.hashtags||'').slice(0,120))}</div>
@@ -18794,8 +18805,11 @@ SocialStudio.modules.library = (function(){
         </div>
       </div>
     `).join('');
+    const tagOpts = allTags.map(t =>
+      `<option value="${_esc(t.name)}" ${f.tag === t.name ? 'selected' : ''}>${_esc(t.name)}</option>`
+    ).join('');
     root().innerHTML = `
-      <div style="display:flex;gap:6px;margin-bottom:12px">
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select onchange="SocialStudio.modules.library.setFilter('status', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
@@ -18814,7 +18828,12 @@ SocialStudio.modules.library = (function(){
           <option value="ig_feed_portrait">IG Feed 4:5</option>
           <option value="ig_story">IG Story</option>
         </select>
+        <select onchange="SocialStudio.modules.library.setFilter('tag', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff" title="Filter by tag">
+          <option value="">All tags</option>
+          ${tagOpts}
+        </select>
         <input placeholder="Search caption/hashtags" oninput="SocialStudio.modules.library.setFilter('q', this.value)" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        <button class="btn-secondary" style="padding:6px 10px" title="Manage tags" onclick="SocialStudio.modules.tags.manager()">&#x1F3F7; Tags</button>
       </div>
       <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'composer\')">Pick media in Composer →</button></div>'}</div>
     `;
@@ -18873,6 +18892,7 @@ SocialStudio.modules.postdetail = (function(){
           <button class="btn-secondary" onclick="SocialStudio.modules.voiceover && SocialStudio.modules.voiceover.open(${p.id}, document.getElementById('pd-caption').value)">&#x1F50A; VO</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.coverPick(${p.id})">&#x1F5BC;&#xFE0F; Pick cover</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.saveAsTemplate(${p.id})">&#x1F4CB; Save as template</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.editTags(${p.id})">&#x1F3F7; Tags</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
           <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
@@ -18952,7 +18972,18 @@ SocialStudio.modules.postdetail = (function(){
     });
     SocialStudio.modules.toast.success('Saved as template');
   }
-  return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate };
+  async function editTags(id) {
+    const current = await SocialStudio.modules.tags.loadForPost(id);
+    SocialStudio.modules.tags.picker(current.map(t => t.id), async (newIds) => {
+      await fetch(`/api/ahb/social/posts/${id}/tags`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tag_ids: newIds }),
+      });
+      SocialStudio.modules.toast.success('Tags updated');
+      if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+    });
+  }
+  return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate, editTags };
 })();
 
 SocialStudio.modules.presets = (function(){
@@ -20947,6 +20978,150 @@ SocialStudio.modules.templates = (function(){
     });
   }
   return { picker };
+})();
+
+SocialStudio.modules.tags = (function(){
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  async function _fetchAll() {
+    try { return ((await (await fetch('/api/ahb/social/tags')).json()).items || []); }
+    catch(e) { return []; }
+  }
+  async function loadForPost(postId) {
+    try { return ((await (await fetch(`/api/ahb/social/posts/${postId}/tags`)).json()).tags || []); }
+    catch(e) { return []; }
+  }
+
+  async function manager() {
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex;z-index:1200';
+    document.body.appendChild(m);
+    const close = () => { try { document.body.removeChild(m); } catch(e){} };
+
+    async function paint() {
+      const tags = await _fetchAll();
+      m.innerHTML = `
+        <div class="modal" style="max-width:560px;max-height:80vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">&#x1F3F7; Tags</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center">
+            <input id="tag-new-name" placeholder="New tag name" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+            <input id="tag-new-color" type="color" value="#10b981" style="width:44px;height:34px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:2px;cursor:pointer">
+            <button class="btn-primary" data-add style="padding:6px 12px">Add</button>
+          </div>
+          ${tags.length ? tags.map(t => `
+            <div class="ss-card" style="margin-bottom:6px;display:flex;gap:6px;align-items:center">
+              <span style="display:inline-block;background:${_esc(t.color || '#10b981')};color:#fff;font-size:11px;padding:2px 10px;border-radius:10px;min-width:80px;text-align:center">${_esc(t.name)}</span>
+              <input data-rename="${t.id}" value="${_esc(t.name)}" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:4px 6px;color:#fff;font-size:12px">
+              <input data-recolor="${t.id}" type="color" value="${_esc(t.color || '#10b981')}" style="width:36px;height:28px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:2px;cursor:pointer">
+              <button class="btn-secondary" data-save="${t.id}" style="padding:4px 8px;font-size:11px">Save</button>
+              <button class="btn-secondary" data-del="${t.id}" style="padding:4px 8px;font-size:11px;color:#f87171">&times;</button>
+            </div>
+          `).join('') : '<div style="color:#444;padding:24px;text-align:center">No tags yet. Add one above.</div>'}
+        </div>
+      `;
+    }
+    await paint();
+
+    m.addEventListener('click', async (e) => {
+      const tgt = e.target;
+      if (tgt.dataset && tgt.dataset.close !== undefined) { close(); return; }
+      if (tgt.dataset && tgt.dataset.add !== undefined) {
+        const name = (m.querySelector('#tag-new-name').value || '').trim();
+        const color = m.querySelector('#tag-new-color').value || '#10b981';
+        if (!name) { SocialStudio.modules.toast.error('Name required'); return; }
+        const r = await fetch('/api/ahb/social/tags', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ name, color }),
+        });
+        if (r.status === 409) { SocialStudio.modules.toast.error('Tag exists'); return; }
+        if (!r.ok) { SocialStudio.modules.toast.error('Add failed'); return; }
+        await paint();
+        if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+        return;
+      }
+      if (tgt.dataset && tgt.dataset.save !== undefined) {
+        const id = tgt.dataset.save;
+        const name = (m.querySelector(`[data-rename="${id}"]`).value || '').trim();
+        const color = m.querySelector(`[data-recolor="${id}"]`).value || '#10b981';
+        if (!name) { SocialStudio.modules.toast.error('Name required'); return; }
+        const r = await fetch(`/api/ahb/social/tags/${id}`, {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ name, color }),
+        });
+        if (r.status === 409) { SocialStudio.modules.toast.error('Name conflict'); return; }
+        if (!r.ok) { SocialStudio.modules.toast.error('Save failed'); return; }
+        SocialStudio.modules.toast.success('Saved');
+        await paint();
+        if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+        return;
+      }
+      if (tgt.dataset && tgt.dataset.del !== undefined) {
+        if (!confirm('Delete this tag? It will be removed from all posts.')) return;
+        const id = tgt.dataset.del;
+        const r = await fetch(`/api/ahb/social/tags/${id}`, { method: 'DELETE' });
+        if (!r.ok) { SocialStudio.modules.toast.error('Delete failed'); return; }
+        await paint();
+        if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+      }
+    });
+  }
+
+  async function picker(currentTagIds, callback) {
+    const all = await _fetchAll();
+    const selected = new Set((currentTagIds || []).map(Number));
+    const m = document.createElement('div');
+    m.className = 'modal-bg';
+    m.style.cssText = 'display:flex;z-index:1200';
+    document.body.appendChild(m);
+    const close = () => { try { document.body.removeChild(m); } catch(e){} };
+
+    function paint() {
+      m.innerHTML = `
+        <div class="modal" style="max-width:480px;max-height:80vh;overflow-y:auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:16px;font-weight:800">&#x1F3F7; Pick tags</div>
+            <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
+            ${all.length ? all.map(t => {
+              const on = selected.has(t.id);
+              return `<span data-toggle="${t.id}" style="display:inline-block;background:${on ? _esc(t.color || '#10b981') : '#1a1a2e'};color:#fff;font-size:12px;padding:4px 12px;border-radius:12px;cursor:pointer;border:1px solid ${on ? _esc(t.color || '#10b981') : '#2a2a4a'};opacity:${on ? '1' : '0.6'}">${_esc(t.name)}</span>`;
+            }).join('') : '<div style="color:#444;padding:12px">No tags yet. Use the Tags manager to add some.</div>'}
+          </div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn-secondary" data-cancel>Cancel</button>
+            <button class="btn-primary" data-save>Save</button>
+          </div>
+        </div>
+      `;
+    }
+    paint();
+
+    m.addEventListener('click', (e) => {
+      const tgt = e.target;
+      if (tgt.dataset && (tgt.dataset.close !== undefined || tgt.dataset.cancel !== undefined)) { close(); return; }
+      if (tgt.dataset && tgt.dataset.toggle !== undefined) {
+        const id = Number(tgt.dataset.toggle);
+        if (selected.has(id)) selected.delete(id); else selected.add(id);
+        paint();
+        return;
+      }
+      if (tgt.dataset && tgt.dataset.save !== undefined) {
+        const out = Array.from(selected);
+        close();
+        callback(out);
+      }
+    });
+  }
+
+  return { manager, picker, loadForPost };
 })();
 </script>
 

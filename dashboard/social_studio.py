@@ -564,6 +564,7 @@ def social_posts_list():
     status = request.args.get("status")
     platform = request.args.get("platform")
     project_id = request.args.get("project_id", type=int)
+    tag = (request.args.get("tag") or "").strip()
     q = (request.args.get("q") or "").strip().lower()
     limit = min(request.args.get("limit", default=100, type=int), 500)
     offset = max(0, request.args.get("offset", default=0, type=int))
@@ -571,25 +572,57 @@ def social_posts_list():
         return jsonify({"error": "invalid status"}), 400
     if platform and platform not in ALLOWED_PLATFORMS:
         return jsonify({"error": "invalid platform"}), 400
-    sql = "SELECT * FROM ahb_social_posts WHERE 1=1"
-    args = []
+    if tag:
+        sql = (
+            "SELECT p.* FROM ahb_social_posts p "
+            "JOIN ahb_social_post_tags pt ON pt.post_id = p.id "
+            "JOIN ahb_social_tags t ON t.id = pt.tag_id "
+            "WHERE t.name=?"
+        )
+        args = [tag]
+    else:
+        sql = "SELECT * FROM ahb_social_posts p WHERE 1=1"
+        args = []
     if status:
-        sql += " AND status=?"; args.append(status)
+        sql += " AND p.status=?"; args.append(status)
     if platform:
-        sql += " AND platform=?"; args.append(platform)
+        sql += " AND p.platform=?"; args.append(platform)
     if project_id is not None:
-        sql += " AND project_id=?"; args.append(project_id)
+        sql += " AND p.project_id=?"; args.append(project_id)
     if q:
-        sql += " AND (LOWER(caption) LIKE ? OR LOWER(hashtags) LIKE ?)"
+        sql += " AND (LOWER(p.caption) LIKE ? OR LOWER(p.hashtags) LIKE ?)"
         args += [f"%{q}%", f"%{q}%"]
-    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    sql += " ORDER BY p.id DESC LIMIT ? OFFSET ?"
     args += [limit, offset]
     con = _conn()
     try:
         rows = con.execute(sql, args).fetchall()
+        items = [_row_to_post(r) for r in rows]
+        # Attach tags per post (single batched query)
+        if items:
+            ids = [it["id"] for it in items]
+            placeholders = ",".join("?" * len(ids))
+            tag_rows = con.execute(
+                f"SELECT pt.post_id, t.id, t.name, t.color "
+                f"FROM ahb_social_post_tags pt "
+                f"JOIN ahb_social_tags t ON t.id = pt.tag_id "
+                f"WHERE pt.post_id IN ({placeholders}) "
+                f"ORDER BY t.name COLLATE NOCASE",
+                ids,
+            ).fetchall()
+            by_post: dict = {}
+            for tr in tag_rows:
+                by_post.setdefault(tr["post_id"], []).append(
+                    {"id": tr["id"], "name": tr["name"], "color": tr["color"]}
+                )
+            for it in items:
+                it["tags"] = by_post.get(it["id"], [])
+        else:
+            for it in items:
+                it["tags"] = []
     finally:
         con.close()
-    return jsonify({"items": [_row_to_post(r) for r in rows]})
+    return jsonify({"items": items})
 
 
 @social_bp.route("/api/ahb/social/posts", methods=["POST"])

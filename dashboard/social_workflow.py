@@ -135,3 +135,133 @@ def register(bp):
             "voiceover_script": t.get("voiceover_script"),
             "template_id": tid,
         })
+
+    # ---- Tags / collections ----------------------------------------------
+
+    @bp.route("/api/ahb/social/tags", methods=["GET"])
+    def social_tags_list():
+        con = _db()
+        try:
+            rows = con.execute(
+                "SELECT id, name, color, created_at FROM ahb_social_tags ORDER BY name COLLATE NOCASE"
+            ).fetchall()
+        finally:
+            con.close()
+        return jsonify({"items": [dict(r) for r in rows]})
+
+    @bp.route("/api/ahb/social/tags", methods=["POST"])
+    def social_tags_create():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        color = (data.get("color") or "#10b981").strip() or "#10b981"
+        con = _db()
+        try:
+            try:
+                cur = con.execute(
+                    "INSERT INTO ahb_social_tags (name, color) VALUES (?, ?)",
+                    (name, color),
+                )
+                con.commit()
+                tid = cur.lastrowid
+            except sqlite3.IntegrityError:
+                return jsonify({"error": "tag name already exists"}), 409
+        finally:
+            con.close()
+        return jsonify({"id": tid, "name": name, "color": color})
+
+    @bp.route("/api/ahb/social/tags/<int:tid>", methods=["PUT"])
+    def social_tags_update(tid: int):
+        data = request.get_json(silent=True) or {}
+        sets, vals = [], []
+        if "name" in data:
+            name = (data.get("name") or "").strip()
+            if not name:
+                return jsonify({"error": "name cannot be empty"}), 400
+            sets.append("name=?"); vals.append(name)
+        if "color" in data:
+            color = (data.get("color") or "#10b981").strip() or "#10b981"
+            sets.append("color=?"); vals.append(color)
+        if not sets:
+            return jsonify({"error": "no writable fields"}), 400
+        vals.append(tid)
+        con = _db()
+        try:
+            # 404 if not found
+            row = con.execute("SELECT id FROM ahb_social_tags WHERE id=?", (tid,)).fetchone()
+            if not row:
+                return jsonify({"error": "not found"}), 404
+            try:
+                con.execute(f"UPDATE ahb_social_tags SET {','.join(sets)} WHERE id=?", vals)
+                con.commit()
+            except sqlite3.IntegrityError:
+                return jsonify({"error": "tag name already exists"}), 409
+        finally:
+            con.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/ahb/social/tags/<int:tid>", methods=["DELETE"])
+    def social_tags_delete(tid: int):
+        con = _db()
+        try:
+            row = con.execute("SELECT id FROM ahb_social_tags WHERE id=?", (tid,)).fetchone()
+            if not row:
+                return jsonify({"error": "not found"}), 404
+            # cascade: post_tags first, then tag itself
+            con.execute("DELETE FROM ahb_social_post_tags WHERE tag_id=?", (tid,))
+            con.execute("DELETE FROM ahb_social_tags WHERE id=?", (tid,))
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/ahb/social/posts/<int:pid>/tags", methods=["GET"])
+    def social_post_tags_get(pid: int):
+        con = _db()
+        try:
+            rows = con.execute(
+                "SELECT t.id, t.name, t.color FROM ahb_social_tags t "
+                "JOIN ahb_social_post_tags pt ON pt.tag_id = t.id "
+                "WHERE pt.post_id=? ORDER BY t.name COLLATE NOCASE",
+                (pid,),
+            ).fetchall()
+        finally:
+            con.close()
+        return jsonify({"tags": [dict(r) for r in rows]})
+
+    @bp.route("/api/ahb/social/posts/<int:pid>/tags", methods=["POST"])
+    def social_post_tags_set(pid: int):
+        data = request.get_json(silent=True) or {}
+        tag_ids = data.get("tag_ids")
+        if not isinstance(tag_ids, list):
+            return jsonify({"error": "tag_ids must be a list"}), 400
+        # coerce + dedupe + drop non-ints
+        clean = []
+        seen = set()
+        for v in tag_ids:
+            try:
+                i = int(v)
+            except (TypeError, ValueError):
+                continue
+            if i not in seen:
+                seen.add(i)
+                clean.append(i)
+        con = _db()
+        try:
+            con.execute("DELETE FROM ahb_social_post_tags WHERE post_id=?", (pid,))
+            applied = 0
+            for tid in clean:
+                # only insert if tag exists (silently ignore stale ids)
+                exists = con.execute("SELECT 1 FROM ahb_social_tags WHERE id=?", (tid,)).fetchone()
+                if not exists:
+                    continue
+                con.execute(
+                    "INSERT OR IGNORE INTO ahb_social_post_tags (post_id, tag_id) VALUES (?, ?)",
+                    (pid, tid),
+                )
+                applied += 1
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True, "applied": applied})

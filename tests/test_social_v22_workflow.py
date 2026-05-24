@@ -49,7 +49,7 @@ def client(monkeypatch):
     from flask import Flask
     app = Flask(__name__)
     app.register_blueprint(social_studio.social_bp)
-    yield app.test_client(), social_studio
+    yield app.test_client(), db
     _flush_modules()
 
 
@@ -109,3 +109,87 @@ def test_template_delete_unknown_returns_404(client):
     c, _ = client
     r = c.delete("/api/ahb/social/templates/999999")
     assert r.status_code == 404
+
+
+def test_tag_create_list_uniqueness(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/tags", json={"name": "launch", "color": "#ff0000"})
+    assert r.status_code == 200
+    tid = r.get_json()["id"]
+    items = c.get("/api/ahb/social/tags").get_json()["items"]
+    assert any(t["id"] == tid and t["name"] == "launch" for t in items)
+    # duplicate name
+    r2 = c.post("/api/ahb/social/tags", json={"name": "launch"})
+    assert r2.status_code == 409
+
+
+def test_tag_empty_name_rejected(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/tags", json={"name": "  "})
+    assert r.status_code == 400
+
+
+def test_tag_assign_and_query(client):
+    c, db = client
+    # Seed a tag and a post
+    tid = c.post("/api/ahb/social/tags", json={"name": "promo"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1, 'ig_reel', 'A', 'draft', 'p1')")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1, 'ig_reel', 'A', 'draft', 'p2')")
+    con.commit()
+    pid1 = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1 OFFSET 1").fetchone()[0]
+    pid2 = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    # Assign tag to pid1 only
+    r = c.post(f"/api/ahb/social/posts/{pid1}/tags", json={"tag_ids": [tid]})
+    assert r.status_code == 200
+    # Query: posts?tag=promo returns only pid1
+    items = c.get("/api/ahb/social/posts?tag=promo").get_json()["items"]
+    pids = [p["id"] for p in items]
+    assert pid1 in pids
+    assert pid2 not in pids
+    # Per-post tag fetch
+    j = c.get(f"/api/ahb/social/posts/{pid1}/tags").get_json()
+    assert any(t["id"] == tid for t in j["tags"])
+
+
+def test_tag_delete_cascades_to_post_tags(client):
+    c, db = client
+    tid = c.post("/api/ahb/social/tags", json={"name": "tmp"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1, 'ig_reel', 'A', 'draft', 'x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    c.post(f"/api/ahb/social/posts/{pid}/tags", json={"tag_ids": [tid]})
+    # Delete tag
+    r = c.delete(f"/api/ahb/social/tags/{tid}")
+    assert r.status_code == 200
+    # Post-tags row should be gone
+    import sqlite3 as s
+    con = s.connect(db)
+    n = con.execute("SELECT COUNT(*) FROM ahb_social_post_tags WHERE tag_id=?", (tid,)).fetchone()[0]
+    con.close()
+    assert n == 0
+
+
+def test_tag_replace_set(client):
+    c, db = client
+    t1 = c.post("/api/ahb/social/tags", json={"name": "a"}).get_json()["id"]
+    t2 = c.post("/api/ahb/social/tags", json={"name": "b"}).get_json()["id"]
+    t3 = c.post("/api/ahb/social/tags", json={"name": "c"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1, 'ig_reel', 'A', 'draft', 'x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    # Assign all three
+    c.post(f"/api/ahb/social/posts/{pid}/tags", json={"tag_ids": [t1, t2, t3]})
+    # Replace with just t2
+    c.post(f"/api/ahb/social/posts/{pid}/tags", json={"tag_ids": [t2]})
+    j = c.get(f"/api/ahb/social/posts/{pid}/tags").get_json()
+    ids = sorted(t["id"] for t in j["tags"])
+    assert ids == [t2]
