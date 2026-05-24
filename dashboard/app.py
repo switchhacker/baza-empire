@@ -468,6 +468,13 @@ def _init_ahb_tables_inner():
         c.execute("UPDATE ahb_receipt_queue SET status='ready' WHERE status='done'")
     except Exception:
         pass
+    try:
+        # Recover items the worker was processing when the dashboard last
+        # exited — without this they sit in 'processing' forever because
+        # _drain only picks WHERE status='pending'.
+        c.execute("UPDATE ahb_receipt_queue SET status='pending' WHERE status='processing'")
+    except Exception:
+        pass
     c.executescript("""
         CREATE TABLE IF NOT EXISTS ahb_quotes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -10423,8 +10430,12 @@ def _spawn_receipt_queue_worker():
                 try:
                     env = os.environ.copy()
                     env['SKILL_ARGS'] = json.dumps({'image_path': row['image_path'], 'mode': 'full'})
+                    # 420s outer > 180s inner ollama wait + tesseract + llava
+                    # fallback. Equal timeouts (the old 180/180) killed the
+                    # subprocess at the exact moment qwen3-vl returned, so
+                    # slow vision calls always errored out.
                     result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True,
-                                            text=True, timeout=180, env=env)
+                                            text=True, timeout=420, env=env)
                     conn = _ahb_db()
                     if result.returncode == 0:
                         conn.execute("UPDATE ahb_receipt_queue SET status='ready', result_json=? WHERE id=?",
@@ -10625,7 +10636,7 @@ def api_ahb_receipts_queue_run():
             try:
                 env = os.environ.copy()
                 env['SKILL_ARGS'] = json.dumps({'image_path': item['image_path'], 'mode': 'full'})
-                result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True, text=True, timeout=120, env=env)
+                result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True, text=True, timeout=420, env=env)
                 if result.returncode == 0:
                     conn.execute("UPDATE ahb_receipt_queue SET status = 'ready', result_json = ? WHERE id = ?",
                                  (result.stdout.strip(), qid))
@@ -10633,7 +10644,7 @@ def api_ahb_receipts_queue_run():
                     conn.execute("UPDATE ahb_receipt_queue SET status = 'error', error = ? WHERE id = ?",
                                  (result.stderr.strip()[:500], qid))
             except subprocess.TimeoutExpired:
-                conn.execute("UPDATE ahb_receipt_queue SET status = 'error', error = 'Timeout (120s)' WHERE id = ?", (qid,))
+                conn.execute("UPDATE ahb_receipt_queue SET status = 'error', error = 'Timeout (420s)' WHERE id = ?", (qid,))
             except Exception as e:
                 conn.execute("UPDATE ahb_receipt_queue SET status = 'error', error = ? WHERE id = ?", (str(e)[:500], qid))
             conn.commit()
@@ -14142,6 +14153,13 @@ except ImportError:
     from email_studio import _ensure_email_schema, email_bp as _email_bp
 _ensure_email_schema()
 app.register_blueprint(_email_bp)
+
+# ── Scaffold (Live Build Tree) blueprint ─────────────────────────────────────
+try:
+    from dashboard.scaffold import scaffold_bp
+except ImportError:
+    from scaffold import scaffold_bp
+app.register_blueprint(scaffold_bp)
 
 # ── Vendor locations KB — table init + idempotent seed ───────────────────────
 # Powers the receipt-OCR address resolver (replaces hallucinated placeholders
