@@ -103,10 +103,13 @@ def register(bp):
     def social_templates_delete(tid: int):
         con = _db()
         try:
-            con.execute("DELETE FROM ahb_social_post_templates WHERE id=?", (tid,))
+            cur = con.execute("DELETE FROM ahb_social_post_templates WHERE id=?", (tid,))
             con.commit()
+            deleted = cur.rowcount
         finally:
             con.close()
+        if deleted == 0:
+            return jsonify({"error": "not found"}), 404
         return jsonify({"ok": True})
 
     @bp.route("/api/ahb/social/templates/<int:tid>/apply", methods=["POST"])

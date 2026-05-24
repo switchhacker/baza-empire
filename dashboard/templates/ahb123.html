@@ -18844,6 +18844,7 @@ SocialStudio.modules.library = (function(){
 })();
 
 SocialStudio.modules.postdetail = (function(){
+  let _currentPost = null;
   function _esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -18855,6 +18856,7 @@ SocialStudio.modules.postdetail = (function(){
     const list = await fetch('/api/ahb/social/posts').then(x => x.json());
     const p = (list.items || []).find(x => x.id === id);
     if (!p) { SocialStudio.modules.toast.error('Not found'); return; }
+    _currentPost = p;
     const m = document.getElementById('socialPostDetail');
     m.style.display = 'flex';
     m.innerHTML = `
@@ -18927,20 +18929,25 @@ SocialStudio.modules.postdetail = (function(){
     }
   }
   async function saveAsTemplate(id) {
+    if (!_currentPost || _currentPost.id !== id) {
+      SocialStudio.modules.toast.error('Re-open the post first');
+      return;
+    }
     const name = window.prompt('Template name:', 'New template');
     if (!name) return;
-    const items = (await (await fetch('/api/ahb/social/posts')).json()).items || [];
-    const p = items.find(x => x.id === id);
-    if (!p) return;
+    // Capture live edits from the modal; fall back to cached values
+    const captionEl = document.getElementById('pd-caption');
+    const hashtagsEl = document.getElementById('pd-hashtags');
+    const firstCommentEl = document.getElementById('pd-firstcomment');
     await fetch('/api/ahb/social/templates', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         name,
-        caption_template: p.caption,
-        hashtag_set: p.hashtags,
-        first_comment_template: p.first_comment,
-        platform_targets: [p.platform],
-        music_id: p.music_id || null,
+        caption_template: captionEl ? captionEl.value : (_currentPost.caption || ''),
+        hashtag_set: hashtagsEl ? hashtagsEl.value : (_currentPost.hashtags || ''),
+        first_comment_template: firstCommentEl ? firstCommentEl.value : (_currentPost.first_comment || ''),
+        platform_targets: [_currentPost.platform],
+        music_id: _currentPost.music_id || null,
       }),
     });
     SocialStudio.modules.toast.success('Saved as template');

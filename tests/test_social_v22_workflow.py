@@ -103,3 +103,9 @@ def test_template_apply_returns_draft(client):
     assert r.status_code == 200
     j = r.get_json()
     assert "Brooklyn Reno" in j["caption"]
+
+
+def test_template_delete_unknown_returns_404(client):
+    c, _ = client
+    r = c.delete("/api/ahb/social/templates/999999")
+    assert r.status_code == 404
