@@ -374,3 +374,17 @@ def test_bulk_empty_ids_returns_400(client):
     c, _ = client
     r = c.post("/api/ahb/social/posts/bulk", json={"ids": [], "action": "set_status", "params": {"status": "draft"}})
     assert r.status_code == 400
+
+
+def test_bulk_schedule_rejects_garbage_datetime(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post("/api/ahb/social/posts/bulk",
+               json={"ids": [pid], "action": "schedule",
+                     "params": {"scheduled_at": "tomorrow at noon"}})
+    assert r.status_code == 400

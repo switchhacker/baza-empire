@@ -7,7 +7,6 @@ import os
 import re
 import sqlite3
 import tempfile
-import urllib.request
 import zipfile
 from datetime import datetime
 
@@ -295,7 +294,7 @@ def register(bp):
 
     @bp.route("/api/ahb/social/posts/bulk", methods=["POST"])
     def social_posts_bulk():
-        from flask import send_file, after_this_request
+        from flask import send_file
 
         data = request.get_json(silent=True) or {}
         raw_ids = data.get("ids")
@@ -350,6 +349,10 @@ def register(bp):
             sched = (params.get("scheduled_at") or "").strip()
             if not sched:
                 return jsonify({"error": "scheduled_at required"}), 400
+            try:
+                datetime.fromisoformat(sched)
+            except ValueError:
+                return jsonify({"error": "scheduled_at must be ISO 8601"}), 400
             con = _db()
             try:
                 cur = con.execute(
@@ -440,42 +443,18 @@ def register(bp):
 
         # ---- telegram (per-post send) ------------------------------------
         if action == "telegram":
-            bridge = os.environ.get("BAZA_SPECTER_BRIDGE", "http://127.0.0.1:8765")
-            con = _db()
+            # Local import to avoid circular import at module load
             try:
-                rows = con.execute(
-                    f"SELECT * FROM ahb_social_posts WHERE id IN ({ph})",
-                    ids,
-                ).fetchall()
-            finally:
-                con.close()
+                from dashboard import social_studio as _ss
+            except ImportError:
+                import social_studio as _ss
             sent = 0
             failed = 0
-            for r in rows:
-                d = dict(r)
-                payload = {
-                    "kind": "social_draft",
-                    "post_id": d.get("id"),
-                    "platform": d.get("platform"),
-                    "caption": d.get("caption") or "",
-                    "hashtags": d.get("hashtags") or "",
-                    "cover_path": d.get("cover_path"),
-                    "asset_path": d.get("asset_path"),
-                    "score": d.get("score"),
-                    "status": d.get("status"),
-                }
-                try:
-                    req = urllib.request.Request(
-                        f"{bridge}/notify",
-                        data=json.dumps(payload).encode(),
-                        headers={"Content-Type": "application/json"},
-                    )
-                    with urllib.request.urlopen(req, timeout=8) as resp:
-                        if resp.status == 200:
-                            sent += 1
-                        else:
-                            failed += 1
-                except Exception:
+            for pid in ids:
+                ok, _err = _ss._send_post_to_telegram(pid)
+                if ok:
+                    sent += 1
+                else:
                     failed += 1
             return jsonify({
                 "ok": True, "action": action,
@@ -542,17 +521,20 @@ def register(bp):
                     pass
                 return jsonify({"error": f"bundle build failed: {e}"}), 500
 
-            @after_this_request
-            def _cleanup(response):
+            # Buffer zip into memory and unlink temp file before returning to
+            # avoid orphaned files on client disconnect mid-download.
+            try:
+                with open(tmp_path, "rb") as f:
+                    buf = io.BytesIO(f.read())
+            finally:
                 try:
                     os.unlink(tmp_path)
                 except OSError:
                     pass
-                return response
-
+            buf.seek(0)
             ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
             return send_file(
-                tmp_path,
+                buf,
                 mimetype="application/zip",
                 as_attachment=True,
                 download_name=f"social-bulk-bundle-{ts}.zip",

@@ -1816,17 +1816,22 @@ def social_preset_run(pid: int):
     return jsonify({"post_id": new_pid})
 
 
-@social_bp.route("/api/ahb/social/posts/<int:pid>/telegram", methods=["POST"])
-def social_post_telegram(pid: int):
-    """Drop the bundle (or caption + cover) to Serge's Telegram via the
-    Specter bridge /notify endpoint."""
+def _send_post_to_telegram(pid: int) -> tuple[bool, str]:
+    """Load post `pid`, build the Specter bridge payload, POST to /notify.
+
+    Returns (ok, error_msg). On 404 or any failure, ok=False with a
+    human-readable error string; on success, error is "".
+
+    Shared by single-post `social_post_telegram` route and the bulk
+    telegram action in social_workflow.
+    """
     con = _conn()
     try:
         r = con.execute("SELECT * FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
     finally:
         con.close()
     if not r:
-        return jsonify({"error": "not found"}), 404
+        return False, "not found"
     post = _row_to_post(r)
     payload = {
         "kind": "social_draft",
@@ -1848,7 +1853,19 @@ def social_post_telegram(pid: int):
         with urllib.request.urlopen(req, timeout=8) as resp:
             ok = resp.status == 200
     except Exception as e:
-        return jsonify({"error": f"bridge unavailable: {e}"}), 502
+        return False, f"bridge unavailable: {e}"
+    return ok, "" if ok else "bridge returned non-200"
+
+
+@social_bp.route("/api/ahb/social/posts/<int:pid>/telegram", methods=["POST"])
+def social_post_telegram(pid: int):
+    """Drop the bundle (or caption + cover) to Serge's Telegram via the
+    Specter bridge /notify endpoint."""
+    ok, err = _send_post_to_telegram(pid)
+    if not ok and err == "not found":
+        return jsonify({"error": "not found"}), 404
+    if not ok and err.startswith("bridge unavailable"):
+        return jsonify({"error": err}), 502
     return jsonify({"ok": ok})
 
 
