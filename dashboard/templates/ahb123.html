@@ -1104,6 +1104,11 @@
       <div class="page-sub">Quick receipt filing — snap, log, done</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-sm btn-secondary" onclick="openQrfVendorsModal()" title="Browse known vendors + locations; see which ones you've used before"
+              style="background:#1a3a5a;color:#9fcfff;border:1px solid #2a5a8a">📋 Vendors</button>
+      <button class="btn btn-sm btn-secondary" id="rv-compact-toggle" onclick="toggleReceiptCompact()"
+              title="Collapse cards to one-liner (vendor · total). Click again to expand."
+              style="background:#2a1a4a;color:#c4b5fd;border:1px solid #5a3a7a">🗜 Compact</button>
       <div class="view-toggle">
         <button class="active" onclick="setReceiptView('kanban')" id="rv-kanban">Board</button>
         <button onclick="setReceiptView('table')" id="rv-table">Table</button>
@@ -3170,9 +3175,14 @@
   <div style="margin-bottom:24px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:14px;font-weight:800;color:#fff">🤝 Vendors &amp; Subcontractors</div>
-      <div style="font-size:11px;color:#555" id="vendor-count"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:11px;color:#555" id="vendor-count"></span>
+        <input class="search-box" type="text" id="vendor-search" placeholder="Search vendor or city..."
+               oninput="renderVendors()" style="font-size:11px;padding:4px 8px;min-width:200px">
+        <button class="btn-secondary btn-sm" onclick="syncVendorsFromData()" title="Auto-create vendor rows from locations DB + receipt history">↻ Sync</button>
+      </div>
     </div>
-    <div id="vendors-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px"></div>
+    <div id="vendors-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px"></div>
   </div>
 
   <!-- Tracked Files (manual file records) -->
@@ -7823,6 +7833,129 @@ function setReceiptView(mode){
   document.getElementById('receipts-table-view').style.display=mode==='table'?'':'none';
   renderReceiptsCurrentView();
 }
+
+// ── QuickRF · Vendor directory modal ─────────────────────────────────────
+let qrfAllVendors=[], qrfExpandedVendors=new Set();
+
+async function openQrfVendorsModal(){
+  const m=document.getElementById('qrfVendorsModal');
+  if(!m)return;
+  m.classList.add('show'); m.style.display='flex';
+  document.getElementById('qrf-vendor-list').innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px">Loading vendors…</div>';
+  try{
+    const r=await fetch('/api/ahb/vendors');
+    qrfAllVendors=await r.json();
+    renderQrfVendors();
+  }catch(e){
+    document.getElementById('qrf-vendor-list').innerHTML='<div style="padding:30px;text-align:center;color:#a44;font-size:12px">Failed to load vendors.</div>';
+  }
+}
+
+function _qrfMatchesQuery(v,q){
+  if(!q) return true;
+  const hay=[(v.name||''),(v.vendor_type||''),(v.contact_name||''),(v.address||'')].join(' ').toLowerCase();
+  if(hay.indexOf(q)!==-1) return true;
+  return (v.locations||[]).some(l=>(
+    (l.city||'').toLowerCase().indexOf(q)!==-1 ||
+    (l.street||'').toLowerCase().indexOf(q)!==-1 ||
+    (l.state||'').toLowerCase().indexOf(q)!==-1 ||
+    (l.zip||'').indexOf(q)!==-1 ||
+    (l.name||'').toLowerCase().indexOf(q)!==-1
+  ));
+}
+
+function renderQrfVendors(){
+  const list=document.getElementById('qrf-vendor-list');
+  const strip=document.getElementById('qrf-vendor-az-strip');
+  if(!list)return;
+  const q=((document.getElementById('qrf-vendor-search')||{}).value||'').toLowerCase().trim();
+  const onlyUsed=!!(document.getElementById('qrf-vendor-only-used')||{}).checked;
+  let vendors=(qrfAllVendors||[]).slice().sort((a,b)=>(a.name||'').toLowerCase().localeCompare((b.name||'').toLowerCase()));
+  if(onlyUsed) vendors=vendors.filter(v=>(v.receipt_count||0)>0 || (v.locations||[]).some(l=>(l.usage_count||0)>0));
+  vendors=vendors.filter(v=>_qrfMatchesQuery(v,q));
+  const cnt=document.getElementById('qrf-vendor-count');
+  if(cnt)cnt.textContent=`${vendors.length} of ${qrfAllVendors.length}`;
+
+  // Build A–Z strip (jumps to first vendor with that letter)
+  if(strip){
+    const letters=new Set(vendors.map(v=>((v.name||'?')[0]||'?').toUpperCase()));
+    strip.innerHTML='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(L=>{
+      const has=letters.has(L);
+      return `<button onclick="qrfScrollToLetter('${L}')" style="padding:3px 7px;border:1px solid ${has?'#2a3a5a':'#1a1a2e'};background:${has?'#0a1a2a':'#06060c'};color:${has?'#9fcfff':'#333'};border-radius:4px;cursor:${has?'pointer':'default'};font-size:10px;font-family:monospace;font-weight:700">${L}</button>`;
+    }).join('');
+  }
+
+  if(!vendors.length){
+    list.innerHTML='<div style="padding:30px;text-align:center;color:#555;font-size:12px">No vendors match the current filter.</div>';
+    return;
+  }
+  // Group by first letter for the A–Z anchor jumps
+  const byLetter={};
+  vendors.forEach(v=>{
+    const L=((v.name||'?')[0]||'?').toUpperCase();
+    (byLetter[L]=byLetter[L]||[]).push(v);
+  });
+  const typeIcon={insurance:'🛡',contractor:'🪪',vendor:'📋',materials:'🧱',tools:'🛠',electronics:'🔌',online:'🌐',subcontractor:'👷',other:'🤝',food:'🍔',fuel:'⛽'};
+  const html=Object.keys(byLetter).sort().map(L=>{
+    const rows=byLetter[L].map(v=>{
+      const used=(v.receipt_count||0)>0;
+      const locs=v.locations||[];
+      const usedLocs=locs.filter(l=>(l.usage_count||0)>0);
+      const isExpanded=qrfExpandedVendors.has(v.id);
+      const headerExtra=`
+        ${used?`<span title="Used on ${v.receipt_count} filed receipt${v.receipt_count===1?'':'s'} · $${(v.receipt_total||0).toFixed(2)}" style="padding:2px 7px;border-radius:6px;background:#0a3a1a;color:#5cdc99;font-size:10px;font-weight:700;border:1px solid #1a5a2e">✓ used ${v.receipt_count}</span>`:''}
+        ${locs.length?`<span style="font-size:10px;color:#888">📍 ${locs.length} location${locs.length===1?'':'s'}${usedLocs.length?` · <span style="color:#5cdc99">${usedLocs.length} ★</span>`:''}</span>`:''}
+        <span style="font-size:9px;color:#666">${v.vendor_type?escHtml(v.vendor_type):''}</span>`;
+      const locsHtml=locs.length?(
+        `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #1a1a2e;display:${isExpanded?'block':'none'}">
+           ${locs.map(l=>{
+             const wasUsed=(l.usage_count||0)>0;
+             return `<div style="font-size:11px;color:${wasUsed?'#5cdc99':'#888'};line-height:1.4;margin-bottom:3px;padding:3px 6px;${wasUsed?'background:#0a1a14;border-left:2px solid #5cdc99;':''}border-radius:3px">
+               ${wasUsed?'<span title="Used on '+l.usage_count+' filed receipt'+(l.usage_count===1?'':'s')+'">★</span> ':'  '}${l.name?`<b>${escHtml(l.name)}</b> · `:''}${escHtml([l.street,[l.city,l.state].filter(Boolean).join(', '),l.zip].filter(Boolean).join(', '))}
+               ${l.phone?` · <span style="color:#666">${escHtml(l.phone)}</span>`:''}
+               ${l.store_number?` · <span style="color:#444">#${escHtml(l.store_number)}</span>`:''}
+             </div>`;
+           }).join('')}
+         </div>`
+      ):'';
+      return `<div data-vid="${v.id}" style="background:#0a0a16;border:1px solid ${used?'#1a3a2e':'#1a1a2e'};border-radius:8px;padding:9px 11px;margin-bottom:6px;cursor:pointer" onclick="qrfToggleVendorExpand(${v.id})">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:16px">${typeIcon[(v.vendor_type||'').toLowerCase()]||'🤝'}</span>
+          <span style="font-weight:700;color:${used?'#fff':'#bbb'};font-size:13px;flex:1">${escHtml(v.name)}</span>
+          ${headerExtra}
+          <span style="color:#444;font-size:10px">${isExpanded?'▾':'▸'}</span>
+        </div>
+        ${locsHtml}
+      </div>`;
+    }).join('');
+    return `<div data-letter="${L}" style="margin-bottom:4px"><div style="font-size:10px;color:#666;font-weight:700;letter-spacing:2px;padding:6px 4px 4px;border-bottom:1px solid #1a1a2e;margin-bottom:4px">${L}</div>${rows}</div>`;
+  }).join('');
+  list.innerHTML=html;
+}
+
+function qrfToggleVendorExpand(vid){
+  if(qrfExpandedVendors.has(vid)) qrfExpandedVendors.delete(vid);
+  else qrfExpandedVendors.add(vid);
+  renderQrfVendors();
+}
+
+function qrfScrollToLetter(L){
+  const list=document.getElementById('qrf-vendor-list');
+  const el=list && list.querySelector(`[data-letter="${L}"]`);
+  if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function qrfVendorsSync(){
+  showToast('Syncing vendors…');
+  try{
+    const r=await fetch('/api/ahb/vendors/sync-from-data',{method:'POST'});
+    const d=await r.json();
+    showToast(`+${(d.created_from_locations||0)+(d.created_from_receipts||0)} vendors`);
+    const r2=await fetch('/api/ahb/vendors');
+    qrfAllVendors=await r2.json();
+    renderQrfVendors();
+  }catch(e){showToast('Sync failed','error');}
+}
 function filterReceiptsView(){
   const q=document.getElementById('receipt-search').value.toLowerCase();
   const c=document.getElementById('receipt-cat-filter').value;
@@ -7839,28 +7972,94 @@ function filterReceiptsView(){
   if(receiptViewMode==='kanban') renderReceiptKanban(filtered);
   else renderReceiptTable(filtered);
 }
+// Compact mode + per-category collapse state. Persisted to localStorage so
+// the toggle survives page reloads.
+let receiptCompactMode = (localStorage.getItem('qrf_compact_mode')==='1');
+let receiptCollapsedCats = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('qrf_collapsed_cats')||'[]')); }
+  catch(e) { return new Set(); }
+})();
+
+function _saveCollapsedCats(){
+  try { localStorage.setItem('qrf_collapsed_cats', JSON.stringify([...receiptCollapsedCats])); } catch(e){}
+}
+
+function toggleReceiptCompact(){
+  receiptCompactMode = !receiptCompactMode;
+  try { localStorage.setItem('qrf_compact_mode', receiptCompactMode?'1':'0'); } catch(e){}
+  const btn=document.getElementById('rv-compact-toggle');
+  if(btn){
+    btn.textContent = receiptCompactMode ? '🗜 Compact ✓' : '🗜 Compact';
+    btn.style.background = receiptCompactMode ? '#5a3a7a' : '#2a1a4a';
+  }
+  renderReceiptsCurrentView();
+}
+
+function toggleReceiptCategory(cat, ev){
+  if(ev) ev.stopPropagation();
+  if(receiptCollapsedCats.has(cat)) receiptCollapsedCats.delete(cat);
+  else receiptCollapsedCats.add(cat);
+  _saveCollapsedCats();
+  renderReceiptsCurrentView();
+}
+
 function renderReceiptKanban(receipts){
   const board=document.getElementById('receipts-kanban');
   const cats=[...new Set(receipts.map(r=>r.category||'Uncategorized'))];
   if(!cats.length){board.innerHTML='<div style="text-align:center;padding:40px;color:#333;width:100%">No receipts</div>';return;}
+  // Reflect compact state on the button on every render (handles initial load)
+  const ctBtn=document.getElementById('rv-compact-toggle');
+  if(ctBtn){
+    ctBtn.textContent = receiptCompactMode ? '🗜 Compact ✓' : '🗜 Compact';
+    ctBtn.style.background = receiptCompactMode ? '#5a3a7a' : '#2a1a4a';
+  }
   board.innerHTML=cats.map(cat=>{
     const cards=receipts.filter(r=>(r.category||'Uncategorized')===cat);
     const total=cards.reduce((s,r)=>s+(r.total||r.amount||0),0);
+    const collapsed=receiptCollapsedCats.has(cat);
+    const arrow=collapsed?'▸':'▾';
+    let bodyHtml='';
+    if(!collapsed){
+      const showLimit = receiptCompactMode ? 200 : 50;
+      const shown=cards.slice(0, showLimit);
+      bodyHtml = shown.map(r => receiptCompactMode ? _renderReceiptCardCompact(r) : _renderReceiptCardFull(r)).join('');
+      if(cards.length>showLimit){
+        bodyHtml += `<div style="text-align:center;color:#555;font-size:11px;padding:8px">+${cards.length-showLimit} more</div>`;
+      }
+    }
+    const catJsArg = JSON.stringify(cat); // safely escapes quotes for inline onclick
     return `<div class="kanban-col">
-      <div class="kanban-col-header"><span>${escHtml(cat)}</span><span class="col-count">${cards.length} &middot; ${fmtCurrency(total)}</span></div>
-      <div class="kanban-col-body">${cards.slice(0,50).map(r=>`
-        <div class="kanban-card" onclick="openReceiptDetail('${r.id}')" style="cursor:pointer">
-          ${r.image_path?'<div style="font-size:10px;color:#7c3aed;margin-bottom:2px">&#128247; has image</div>':''}
-          <div class="kanban-card-title" style="display:flex;align-items:center;gap:6px">
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escHtml(r.store_name||r.vendor||'Unknown')}</span>
-            <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:#1a1a2e;border:1px solid #2a2a4a;color:#8ab4ff;cursor:pointer;padding:3px 7px;font-size:12px;border-radius:5px">&#9998;</button>
-            <button onclick="deleteReceiptInline('${r.id}',event)" title="Delete receipt" style="background:#3a0f14;border:1px solid #5a1a22;color:#ff8a8a;cursor:pointer;padding:3px 7px;font-size:12px;border-radius:5px">&#128465;</button>
-          </div>
-          <div class="kanban-card-meta">${fmtDate(r.receipt_date)}${r.payment_method?' &middot; '+escHtml(r.payment_method):''}</div>
-          <div class="kanban-card-amount">${fmtCurrency(r.total||r.amount)}</div>
-        </div>`).join('')}${cards.length>50?'<div style="text-align:center;color:#555;font-size:11px;padding:8px">+'+(cards.length-50)+' more</div>':''}</div>
+      <div class="kanban-col-header" style="cursor:pointer;user-select:none" onclick='toggleReceiptCategory(${escHtml(catJsArg)},event)' title="Click to ${collapsed?'expand':'collapse'} this category">
+        <span><span style="color:#888;margin-right:4px;font-size:10px">${arrow}</span>${escHtml(cat)}</span>
+        <span class="col-count">${cards.length} &middot; ${fmtCurrency(total)}</span>
+      </div>
+      <div class="kanban-col-body" style="${collapsed?'display:none':''}">${bodyHtml}</div>
     </div>`;
   }).join('');
+}
+
+function _renderReceiptCardFull(r){
+  return `<div class="kanban-card" onclick="openReceiptDetail('${r.id}')" style="cursor:pointer">
+    ${r.image_path?'<div style="font-size:10px;color:#7c3aed;margin-bottom:2px">&#128247; has image</div>':''}
+    <div class="kanban-card-title" style="display:flex;align-items:center;gap:6px">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${escHtml(r.store_name||r.vendor||'Unknown')}</span>
+      <button onclick="renameReceiptInline('${r.id}',event)" title="Rename" style="background:#1a1a2e;border:1px solid #2a2a4a;color:#8ab4ff;cursor:pointer;padding:3px 7px;font-size:12px;border-radius:5px">&#9998;</button>
+      <button onclick="deleteReceiptInline('${r.id}',event)" title="Delete receipt" style="background:#3a0f14;border:1px solid #5a1a22;color:#ff8a8a;cursor:pointer;padding:3px 7px;font-size:12px;border-radius:5px">&#128465;</button>
+    </div>
+    <div class="kanban-card-meta">${fmtDate(r.receipt_date)}${r.payment_method?' &middot; '+escHtml(r.payment_method):''}</div>
+    <div class="kanban-card-amount">${fmtCurrency(r.total||r.amount)}</div>
+  </div>`;
+}
+
+function _renderReceiptCardCompact(r){
+  // One-liner: tag (vendor) + total. Camera + date as light meta, no buttons.
+  const vendor = escHtml(r.store_name||r.vendor||'Unknown');
+  const amt = fmtCurrency(r.total||r.amount);
+  return `<div class="kanban-card" onclick="openReceiptDetail('${r.id}')" style="cursor:pointer;padding:5px 9px;margin-bottom:3px;display:flex;align-items:center;gap:8px;min-height:0">
+    ${r.image_path?'<span style="font-size:10px;color:#7c3aed">&#128247;</span>':'<span style="width:10px"></span>'}
+    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:#ddd;font-size:12px">${vendor}</span>
+    <span style="font-size:12px;font-weight:700;color:#00d084;font-variant-numeric:tabular-nums">${amt}</span>
+  </div>`;
 }
 // Agent registry — loaded once so 'created_by' IDs map to friendly names
 // ("phil_hass" → "Phil", "specter_voss" → "Specter"). Populated by fetchAgents()
@@ -14773,34 +14972,102 @@ async function loadDocPrep(){
   await Promise.all([loadCuratedDocs(), loadPackages(), loadVendors(), loadFiles()]);
 }
 
+let allVendors=[];
+
 async function loadVendors(){
   try{
     const r=await fetch('/api/ahb/vendors');
-    const vendors=await r.json();
-    document.getElementById('vendor-count').textContent=vendors.length+' vendor'+(vendors.length!==1?'s':'');
-    const list=document.getElementById('vendors-list');
-    if(!vendors.length){
-      list.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px;color:#444;font-size:12px">No vendors yet. Phil auto-extracts them from incoming COIs and W9s.</div>';
-      return;
-    }
-    const typeIcon={insurance:'🛡',contractor:'🪪',vendor:'📋',other:'🤝'};
-    list.innerHTML=vendors.map(v=>`<div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;padding:12px">
+    allVendors=await r.json();
+    renderVendors();
+  }catch(e){console.error(e);}
+}
+
+function renderVendors(){
+  const list=document.getElementById('vendors-list');
+  if(!list)return;
+  const q=((document.getElementById('vendor-search')||{}).value||'').toLowerCase();
+  let vendors=allVendors||[];
+  if(q){
+    vendors=vendors.filter(v=>{
+      const hay=[(v.name||''),(v.contact_name||''),(v.address||''),(v.vendor_type||'')].join(' ').toLowerCase();
+      if(hay.indexOf(q)!==-1)return true;
+      return (v.locations||[]).some(l=>(
+        (l.city||'').toLowerCase().indexOf(q)!==-1 ||
+        (l.street||'').toLowerCase().indexOf(q)!==-1 ||
+        (l.state||'').toLowerCase().indexOf(q)!==-1 ||
+        (l.zip||'').indexOf(q)!==-1 ||
+        (l.name||'').toLowerCase().indexOf(q)!==-1
+      ));
+    });
+  }
+  const cntEl=document.getElementById('vendor-count');
+  if(cntEl)cntEl.textContent=vendors.length+' vendor'+(vendors.length!==1?'s':'')+(q?` (filtered from ${allVendors.length})`:'');
+  if(!vendors.length){
+    list.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px;color:#444;font-size:12px">'
+      +(allVendors.length?'No vendors match the filter.':'No vendors yet. Click <b>↻ Sync</b> to import from receipts + locations DB, or Phil will auto-extract from incoming COIs/W9s.')
+      +'</div>';
+    return;
+  }
+  const typeIcon={insurance:'🛡',contractor:'🪪',vendor:'📋',materials:'🧱',tools:'🛠',electronics:'🔌',online:'🌐',subcontractor:'👷',other:'🤝',food:'🍔',fuel:'⛽'};
+  list.innerHTML=vendors.map(v=>{
+    const locs=v.locations||[];
+    const showLocs=locs.slice(0,3);
+    const moreCount=locs.length-showLocs.length;
+    const locsHtml=locs.length?(
+      `<div style="margin-top:8px;border-top:1px dashed #1a1a2e;padding-top:6px">
+         <div style="font-size:10px;color:#666;font-weight:700;letter-spacing:.5px;margin-bottom:4px">${locs.length} LOCATION${locs.length===1?'':'S'}</div>
+         ${showLocs.map(l=>`<div style="font-size:10px;color:#888;line-height:1.3;margin-bottom:3px">
+           ${l.name?`<span style="color:#aaa">${escHtml(l.name)}</span> · `:''}${escHtml([l.street,[l.city,l.state].filter(Boolean).join(', '),l.zip].filter(Boolean).join(', '))}
+           ${l.phone?` · <span style="color:#666">${escHtml(l.phone)}</span>`:''}
+         </div>`).join('')}
+         ${moreCount>0?`<div style="font-size:10px;color:#4da6ff;cursor:pointer;margin-top:3px" onclick="showAllVendorLocs(${v.id})">+${moreCount} more</div>`:''}
+       </div>`
+    ):(v.locations===undefined||locs.length===0?'':''); // empty array = online vendor
+    const usageHtml=(v.receipt_count||0)>0?
+      `<div style="font-size:10px;color:#666;margin-top:4px">📊 ${v.receipt_count} receipt${v.receipt_count===1?'':'s'} · $${(v.receipt_total||0).toFixed(2)}</div>`:'';
+    return `<div style="background:#0a0a16;border:1px solid #1a1a2e;border-radius:10px;padding:12px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="font-size:18px">${typeIcon[v.vendor_type]||'🤝'}</span>
+        <span style="font-size:18px">${typeIcon[(v.vendor_type||'').toLowerCase()]||'🤝'}</span>
         <div style="font-size:13px;font-weight:700;color:#fff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(v.name)}</div>
+        ${v.vendor_type?`<span style="font-size:9px;color:#666;padding:1px 6px;border:1px solid #1a1a2e;border-radius:6px">${escHtml(v.vendor_type)}</span>`:''}
       </div>
       ${v.contact_name?`<div style="font-size:11px;color:#aaa">${escHtml(v.contact_name)}</div>`:''}
       ${v.phone?`<div style="font-size:11px;color:#888">📞 ${escHtml(v.phone)}</div>`:''}
       ${v.email?`<div style="font-size:11px;color:#888">✉ ${escHtml(v.email)}</div>`:''}
       ${v.address?`<div style="font-size:10px;color:#555;margin-top:4px">${escHtml(v.address)}</div>`:''}
       ${v.ein_or_ssn?`<div style="font-size:10px;color:#444;font-family:monospace;margin-top:4px">EIN: ${escHtml(v.ein_or_ssn)}</div>`:''}
+      ${usageHtml}
       <div style="display:flex;gap:6px;margin-top:8px">
         ${v.coi_doc_id?`<a href="/api/ahb/documents/file/${v.coi_doc_id}" target="_blank" style="padding:2px 7px;border-radius:8px;background:#0a1a2a;color:#4da6ff;font-size:9px;font-weight:700;text-decoration:none">COI</a>`:''}
         ${v.w9_doc_id?`<a href="/api/ahb/documents/file/${v.w9_doc_id}" target="_blank" style="padding:2px 7px;border-radius:8px;background:#0a1a2a;color:#4da6ff;font-size:9px;font-weight:700;text-decoration:none">W9</a>`:''}
         ${v.license_doc_id?`<a href="/api/ahb/documents/file/${v.license_doc_id}" target="_blank" style="padding:2px 7px;border-radius:8px;background:#0a1a2a;color:#4da6ff;font-size:9px;font-weight:700;text-decoration:none">LICENSE</a>`:''}
       </div>
-    </div>`).join('');
-  }catch(e){console.error(e);}
+      ${locsHtml}
+    </div>`;
+  }).join('');
+}
+
+function showAllVendorLocs(vid){
+  const v=(allVendors||[]).find(x=>x.id===vid);
+  if(!v)return;
+  const locs=v.locations||[];
+  const html='<div style="font-family:monospace;font-size:11px;line-height:1.5">'
+    +locs.map((l,i)=>`${(i+1).toString().padStart(2,' ')}. ${[l.name,l.street,[l.city,l.state].filter(Boolean).join(', '),l.zip,l.phone].filter(Boolean).join(' · ')}`).join('<br>')
+    +'</div>';
+  // Quick-and-dirty modal: reuse alert-ish toast or open a new window.
+  const w=window.open('','_blank','width=720,height=520');
+  if(w){w.document.write(`<title>${v.name} — ${locs.length} locations</title><body style="background:#0a0a16;color:#ccc;font-family:system-ui;padding:18px"><h2 style="color:#fff;margin-top:0">${v.name}</h2>${html}</body>`);w.document.close();}
+  else alert(`${v.name} — ${locs.length} locations:\n\n`+locs.map((l,i)=>`${i+1}. ${[l.name,l.street,l.city,l.state,l.zip,l.phone].filter(Boolean).join(' · ')}`).join('\n'));
+}
+
+async function syncVendorsFromData(){
+  showToast('Syncing vendors from locations DB + receipt history...');
+  try{
+    const r=await fetch('/api/ahb/vendors/sync-from-data',{method:'POST'});
+    const d=await r.json();
+    showToast(`Created ${d.created_from_locations||0} from locations, ${d.created_from_receipts||0} from receipts`);
+    await loadVendors();
+  }catch(e){showToast('Sync failed','error');}
 }
 
 async function loadCuratedDocs(){
@@ -17686,6 +17953,31 @@ async function bpLoadRenders(){
   </div>
 </div>
 
+<!-- Vendor Directory modal (QuickRF) — A–Z list with location detail + used-before mark -->
+<div class="modal-bg" id="qrfVendorsModal" style="z-index:1100">
+  <div class="modal" style="max-width:880px;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">📋 Vendor Directory</h2>
+      <button class="btn-secondary btn-sm" onclick="closeModal('qrfVendorsModal')">✕ Close</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <input class="search-box" type="text" id="qrf-vendor-search" placeholder="Search vendor or city…"
+             oninput="renderQrfVendors()" style="font-size:12px;padding:6px 10px;flex:1;min-width:200px">
+      <label style="font-size:11px;color:#888;display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="checkbox" id="qrf-vendor-only-used" onchange="renderQrfVendors()"> Only used before
+      </label>
+      <button class="btn-secondary btn-sm" onclick="qrfVendorsSync()" title="Re-sync vendor rows from locations DB + receipt history">↻ Sync</button>
+      <span id="qrf-vendor-count" style="font-size:10px;color:#555"></span>
+    </div>
+    <div id="qrf-vendor-az-strip" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;padding:6px;background:#0a0a16;border-radius:6px;font-size:10px"></div>
+    <div id="qrf-vendor-list" style="flex:1;overflow-y:auto;border:1px solid #1a1a2e;border-radius:8px;background:#06060c;padding:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:10px;color:#555">
+      <span>✓ = used on at least one filed receipt &middot; star = a location matched on a receipt</span>
+      <span>Tap a vendor to expand all locations</span>
+    </div>
+  </div>
+</div>
+
 <!-- Adjust Split modal (QuickRF) -->
 <div id="rq-adjust-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;align-items:center;justify-content:center">
   <div style="background:#0a0a18;border:1px solid #2a2a4a;border-radius:10px;padding:18px;max-width:90vw;max-height:90vh;overflow:auto">
@@ -18728,7 +19020,7 @@ SocialStudio.modules.composer = (function(){
             <button class="btn-secondary ss-tip" data-tip="Suggest B-roll shots to fill gaps" onclick="SocialStudio.modules.composer.aiBroll()">📸 B-roll</button>
           </div>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
-          <button class="btn-secondary" style="width:100%;margin-top:6px" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
+          <button class="btn-secondary" style="width:100%;margin-top:6px;color:#FFD700;font-weight:700" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
         </div>
       </div>
     `;
@@ -18753,6 +19045,8 @@ SocialStudio.modules.library = (function(){
   let allTags = [];
   let f = { status: '', platform: '', q: '', tag: '' };
   let _t = null;
+  // T5: bulk selection state
+  const state = { selected: new Set(), lastClickedId: null };
 
   function _esc(s) {
     return String(s == null ? '' : s)
@@ -18772,6 +19066,11 @@ SocialStudio.modules.library = (function(){
     ]);
     items = (await postsR.json()).items || [];
     try { allTags = tagsR ? ((await tagsR.json()).items || []) : []; } catch(e) { allTags = []; }
+    // prune selection of ids no longer present in visible list
+    const visible = new Set(items.map(p => p.id));
+    for (const id of Array.from(state.selected)) {
+      if (!visible.has(id)) state.selected.delete(id);
+    }
     paint();
   }
 
@@ -18780,8 +19079,13 @@ SocialStudio.modules.library = (function(){
   }
 
   function paint() {
-    const grid = items.map(p => `
-      <div class="ss-card" style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+    const grid = items.map(p => {
+      const checked = state.selected.has(p.id) ? 'checked' : '';
+      return `
+      <div class="ss-card" data-post-id="${p.id}" style="position:relative;display:flex;gap:10px;align-items:center;margin-bottom:8px;padding-left:30px">
+        <input type="checkbox" data-bulk-check="${p.id}" ${checked}
+               style="position:absolute;top:8px;left:8px;width:16px;height:16px;cursor:pointer;z-index:2"
+               title="Select (shift-click for range)">
         <img src="${p.cover_path ? '/api/ahb/social/posts/' + p.id + '/cover' : ''}"
              style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:6px;background:#070712;cursor:pointer"
              onerror="this.style.opacity='0.2'"
@@ -18804,10 +19108,11 @@ SocialStudio.modules.library = (function(){
           <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.telegram(${p.id})">&#x1F4F2;</button>
         </div>
       </div>
-    `).join('');
+    `;}).join('');
     const tagOpts = allTags.map(t =>
       `<option value="${_esc(t.name)}" ${f.tag === t.name ? 'selected' : ''}>${_esc(t.name)}</option>`
     ).join('');
+    const allVisibleSelected = items.length > 0 && items.every(p => state.selected.has(p.id));
     root().innerHTML = `
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <select onchange="SocialStudio.modules.library.setFilter('status', this.value)" style="background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
@@ -18833,10 +19138,204 @@ SocialStudio.modules.library = (function(){
           ${tagOpts}
         </select>
         <input placeholder="Search caption/hashtags" oninput="SocialStudio.modules.library.setFilter('q', this.value)" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+        <label style="display:flex;gap:4px;align-items:center;color:#aaa;font-size:12px;cursor:pointer" title="Select all visible">
+          <input type="checkbox" ${allVisibleSelected ? 'checked' : ''} onchange="SocialStudio.modules.library.selectAllVisible(this.checked)">
+          All
+        </label>
         <button class="btn-secondary" style="padding:6px 10px" title="Manage tags" onclick="SocialStudio.modules.tags.manager()">&#x1F3F7; Tags</button>
       </div>
-      <div>${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'composer\')">Pick media in Composer →</button></div>'}</div>
+      <div id="ss-library-grid">${grid || '<div style="color:#444;padding:40px;text-align:center">No posts yet. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'composer\')">Pick media in Composer →</button></div>'}</div>
     `;
+    // wire shift-aware checkbox handler
+    root().querySelectorAll('[data-bulk-check]').forEach(el => {
+      el.addEventListener('click', _onCheckboxClick);
+    });
+    _paintBulkBar();
+  }
+
+  function _onCheckboxClick(e) {
+    const el = e.currentTarget;
+    const id = parseInt(el.dataset.bulkCheck, 10);
+    if (!Number.isFinite(id)) return;
+    const checked = el.checked;
+    if (e.shiftKey && state.lastClickedId != null) {
+      const idx = items.findIndex(p => p.id === id);
+      const lastIdx = items.findIndex(p => p.id === state.lastClickedId);
+      if (idx >= 0 && lastIdx >= 0) {
+        const [lo, hi] = idx < lastIdx ? [idx, lastIdx] : [lastIdx, idx];
+        for (let i = lo; i <= hi; i++) {
+          if (checked) state.selected.add(items[i].id);
+          else state.selected.delete(items[i].id);
+        }
+        paint();
+        state.lastClickedId = id;
+        return;
+      }
+    }
+    if (checked) state.selected.add(id);
+    else state.selected.delete(id);
+    state.lastClickedId = id;
+    _paintBulkBar();
+  }
+
+  function selectAllVisible(on) {
+    if (on) items.forEach(p => state.selected.add(p.id));
+    else items.forEach(p => state.selected.delete(p.id));
+    paint();
+  }
+
+  function clearSelection() {
+    state.selected.clear();
+    state.lastClickedId = null;
+    paint();
+  }
+
+  function _ensureBulkBar() {
+    let bar = document.getElementById('ss-bulk-bar');
+    if (bar) return bar;
+    bar = document.createElement('div');
+    bar.id = 'ss-bulk-bar';
+    bar.style.cssText = [
+      'position:fixed', 'bottom:0', 'left:0', 'right:0',
+      'background:#0d0d20', 'border-top:1px solid #2a2a4a',
+      'padding:10px 16px', 'display:flex', 'gap:8px',
+      'align-items:center', 'flex-wrap:wrap',
+      'z-index:1100', 'box-shadow:0 -4px 12px rgba(0,0,0,0.4)',
+      'transform:translateY(100%)',
+      'transition:transform 0.2s ease',
+    ].join(';');
+    document.body.appendChild(bar);
+    return bar;
+  }
+
+  function _paintBulkBar() {
+    const bar = _ensureBulkBar();
+    const n = state.selected.size;
+    if (n < 1) {
+      bar.style.transform = 'translateY(100%)';
+      bar.innerHTML = '';
+      return;
+    }
+    bar.innerHTML = `
+      <span style="color:#fff;font-weight:700;margin-right:8px">${n} selected</span>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="approve">&#x2705; Approve</button>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="reject">&#x274C; Reject</button>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="schedule">&#x1F4C5; Schedule</button>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="tag">&#x1F3F7; Tag</button>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="telegram">&#x1F4F2; Telegram</button>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="bundle">&#x1F4E5; Bundle</button>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px;color:#f87171" data-act="delete">&#x1F5D1; Delete</button>
+      <div style="flex:1"></div>
+      <button class="btn-secondary" style="padding:6px 10px;font-size:12px" data-act="clear">Clear</button>
+    `;
+    bar.querySelectorAll('[data-act]').forEach(b => {
+      b.addEventListener('click', () => _bulkAction(b.dataset.act));
+    });
+    requestAnimationFrame(() => { bar.style.transform = 'translateY(0)'; });
+  }
+
+  async function _bulkPost(payload) {
+    const r = await fetch('/api/ahb/social/posts/bulk', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    return { r, j: await r.json().catch(() => ({})) };
+  }
+
+  async function _bulkAction(act) {
+    const ids = Array.from(state.selected);
+    if (!ids.length) return;
+    if (act === 'clear') { clearSelection(); return; }
+    if (act === 'approve') {
+      const { r, j } = await _bulkPost({ ids, action: 'set_status', params: { status: 'approved' } });
+      if (r.ok) {
+        SocialStudio.modules.toast.success(`Approved ${j.affected || 0}`);
+        clearSelection(); load();
+      } else SocialStudio.modules.toast.error(j.error || 'Failed');
+      return;
+    }
+    if (act === 'reject') {
+      const { r, j } = await _bulkPost({ ids, action: 'set_status', params: { status: 'rejected' } });
+      if (r.ok) {
+        SocialStudio.modules.toast.success(`Rejected ${j.affected || 0}`);
+        clearSelection(); load();
+      } else SocialStudio.modules.toast.error(j.error || 'Failed');
+      return;
+    }
+    if (act === 'delete') {
+      if (!confirm(`Delete ${ids.length} post(s)? This cannot be undone.`)) return;
+      const { r, j } = await _bulkPost({ ids, action: 'delete' });
+      if (r.ok) {
+        SocialStudio.modules.toast.success(`Deleted ${j.affected || 0}`);
+        clearSelection(); load();
+      } else SocialStudio.modules.toast.error(j.error || 'Failed');
+      return;
+    }
+    if (act === 'schedule') {
+      const when = window.prompt('Schedule at (YYYY-MM-DDTHH:MM):',
+        new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16));
+      if (!when) return;
+      const { r, j } = await _bulkPost({ ids, action: 'schedule', params: { scheduled_at: when } });
+      if (r.ok) {
+        SocialStudio.modules.toast.success(`Scheduled ${j.affected || 0}`);
+        clearSelection(); load();
+      } else SocialStudio.modules.toast.error(j.error || 'Failed');
+      return;
+    }
+    if (act === 'tag') {
+      if (!SocialStudio.modules.tags || !SocialStudio.modules.tags.picker) {
+        SocialStudio.modules.toast.error('Tag picker unavailable');
+        return;
+      }
+      SocialStudio.modules.tags.picker([], async (newTagIds) => {
+        const { r, j } = await _bulkPost({ ids, action: 'tag', params: { tag_ids: newTagIds } });
+        if (r.ok) {
+          SocialStudio.modules.toast.success(`Tagged ${j.affected || 0}`);
+          clearSelection(); load();
+        } else SocialStudio.modules.toast.error(j.error || 'Failed');
+      });
+      return;
+    }
+    if (act === 'telegram') {
+      const tid = SocialStudio.modules.toast.progress(`Sending ${ids.length} to Telegram…`);
+      const { r, j } = await _bulkPost({ ids, action: 'telegram' });
+      if (r.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'success',
+          `Sent ${j.sent || 0}, failed ${j.failed || 0}`);
+        clearSelection(); load();
+      } else SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Failed');
+      return;
+    }
+    if (act === 'bundle') {
+      const tid = SocialStudio.modules.toast.progress('Building bundle…');
+      try {
+        const r = await fetch('/api/ahb/social/posts/bulk', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ ids, action: 'bundle' }),
+        });
+        if (!r.ok) {
+          let err = 'Bundle failed';
+          try { err = (await r.json()).error || err; } catch(e) {}
+          SocialStudio.modules.toast.resolve(tid, 'error', err);
+          return;
+        }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m = /filename="?([^"]+)"?/.exec(cd);
+        a.download = m ? m[1] : `social-bulk-bundle-${Date.now()}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        SocialStudio.modules.toast.resolve(tid, 'success', 'Bundle downloaded');
+      } catch (e) {
+        SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+      }
+      return;
+    }
   }
 
   function setFilter(k, v) {
@@ -18859,7 +19358,8 @@ SocialStudio.modules.library = (function(){
     else SocialStudio.modules.toast.error('Telegram bridge unavailable');
   }
 
-  return { render: load, setFilter, setStatus, telegram };
+  return { render: load, setFilter, setStatus, telegram,
+           state, selectAllVisible, clearSelection };
 })();
 
 SocialStudio.modules.postdetail = (function(){

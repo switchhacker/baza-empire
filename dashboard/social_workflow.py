@@ -1,15 +1,28 @@
 """Social Studio v2.2 — templates, tags, bulk ops, versions, approval log."""
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import sqlite3
+import tempfile
+import urllib.request
+import zipfile
 from datetime import datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+
+_ALLOWED_STATUSES = {
+    "draft", "pending_review", "approved", "scheduled",
+    "posted", "rejected", "failed",
+}
+
+_BULK_ACTIONS = {
+    "set_status", "schedule", "delete", "tag", "telegram", "bundle",
+}
 
 
 def _db():
@@ -277,3 +290,273 @@ def register(bp):
         finally:
             con.close()
         return jsonify({"ok": True, "applied": applied})
+
+    # ---- T5: bulk operations ---------------------------------------------
+
+    @bp.route("/api/ahb/social/posts/bulk", methods=["POST"])
+    def social_posts_bulk():
+        from flask import send_file, after_this_request
+
+        data = request.get_json(silent=True) or {}
+        raw_ids = data.get("ids")
+        action = (data.get("action") or "").strip()
+        params = data.get("params") or {}
+
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": "ids must be a non-empty list"}), 400
+        # coerce ids → int; reject non-ints (don't silently drop)
+        ids = []
+        for v in raw_ids:
+            if isinstance(v, bool):
+                return jsonify({"error": "ids must be integers"}), 400
+            try:
+                ids.append(int(v))
+            except (TypeError, ValueError):
+                return jsonify({"error": "ids must be integers"}), 400
+        # dedupe while preserving order
+        seen = set()
+        unique_ids = []
+        for i in ids:
+            if i not in seen:
+                seen.add(i)
+                unique_ids.append(i)
+        ids = unique_ids
+
+        if action not in _BULK_ACTIONS:
+            return jsonify({"error": f"unknown action: {action}"}), 400
+
+        ph = ",".join("?" * len(ids))
+
+        # ---- set_status ---------------------------------------------------
+        if action == "set_status":
+            status = (params.get("status") or "").strip()
+            if status not in _ALLOWED_STATUSES:
+                return jsonify({"error": f"invalid status: {status}"}), 400
+            con = _db()
+            try:
+                cur = con.execute(
+                    f"UPDATE ahb_social_posts SET status=?, "
+                    f"updated_at=? WHERE id IN ({ph})",
+                    [status, datetime.utcnow().isoformat(timespec="seconds"), *ids],
+                )
+                con.commit()
+                affected = cur.rowcount
+            finally:
+                con.close()
+            return jsonify({"ok": True, "action": action, "affected": affected})
+
+        # ---- schedule -----------------------------------------------------
+        if action == "schedule":
+            sched = (params.get("scheduled_at") or "").strip()
+            if not sched:
+                return jsonify({"error": "scheduled_at required"}), 400
+            con = _db()
+            try:
+                cur = con.execute(
+                    f"UPDATE ahb_social_posts SET scheduled_at=?, "
+                    f"status='scheduled', updated_at=? WHERE id IN ({ph})",
+                    [sched, datetime.utcnow().isoformat(timespec="seconds"), *ids],
+                )
+                con.commit()
+                affected = cur.rowcount
+            finally:
+                con.close()
+            return jsonify({"ok": True, "action": action, "affected": affected})
+
+        # ---- delete -------------------------------------------------------
+        if action == "delete":
+            con = _db()
+            try:
+                # cascade: drop post_tags first
+                con.execute(
+                    f"DELETE FROM ahb_social_post_tags WHERE post_id IN ({ph})",
+                    ids,
+                )
+                cur = con.execute(
+                    f"DELETE FROM ahb_social_posts WHERE id IN ({ph})",
+                    ids,
+                )
+                con.commit()
+                affected = cur.rowcount
+            finally:
+                con.close()
+            return jsonify({"ok": True, "action": action, "affected": affected})
+
+        # ---- tag (replace-set) -------------------------------------------
+        if action == "tag":
+            tag_ids_raw = params.get("tag_ids")
+            if not isinstance(tag_ids_raw, list):
+                return jsonify({"error": "params.tag_ids must be a list"}), 400
+            clean_tags = []
+            seen_t = set()
+            for v in tag_ids_raw:
+                try:
+                    i = int(v)
+                except (TypeError, ValueError):
+                    continue
+                if i not in seen_t:
+                    seen_t.add(i)
+                    clean_tags.append(i)
+            con = _db()
+            try:
+                # filter to existing tag ids
+                if clean_tags:
+                    tph = ",".join("?" * len(clean_tags))
+                    valid_tags = {
+                        r[0] for r in con.execute(
+                            f"SELECT id FROM ahb_social_tags WHERE id IN ({tph})",
+                            clean_tags,
+                        ).fetchall()
+                    }
+                else:
+                    valid_tags = set()
+                # only operate on existing posts
+                existing = [
+                    r[0] for r in con.execute(
+                        f"SELECT id FROM ahb_social_posts WHERE id IN ({ph})",
+                        ids,
+                    ).fetchall()
+                ]
+                affected = 0
+                for pid in existing:
+                    # wipe prior tag set
+                    con.execute(
+                        "DELETE FROM ahb_social_post_tags WHERE post_id=?",
+                        (pid,),
+                    )
+                    for tid in clean_tags:
+                        if tid not in valid_tags:
+                            continue
+                        con.execute(
+                            "INSERT OR IGNORE INTO ahb_social_post_tags "
+                            "(post_id, tag_id) VALUES (?, ?)",
+                            (pid, tid),
+                        )
+                    affected += 1
+                con.commit()
+            finally:
+                con.close()
+            return jsonify({"ok": True, "action": action, "affected": affected})
+
+        # ---- telegram (per-post send) ------------------------------------
+        if action == "telegram":
+            bridge = os.environ.get("BAZA_SPECTER_BRIDGE", "http://127.0.0.1:8765")
+            con = _db()
+            try:
+                rows = con.execute(
+                    f"SELECT * FROM ahb_social_posts WHERE id IN ({ph})",
+                    ids,
+                ).fetchall()
+            finally:
+                con.close()
+            sent = 0
+            failed = 0
+            for r in rows:
+                d = dict(r)
+                payload = {
+                    "kind": "social_draft",
+                    "post_id": d.get("id"),
+                    "platform": d.get("platform"),
+                    "caption": d.get("caption") or "",
+                    "hashtags": d.get("hashtags") or "",
+                    "cover_path": d.get("cover_path"),
+                    "asset_path": d.get("asset_path"),
+                    "score": d.get("score"),
+                    "status": d.get("status"),
+                }
+                try:
+                    req = urllib.request.Request(
+                        f"{bridge}/notify",
+                        data=json.dumps(payload).encode(),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        if resp.status == 200:
+                            sent += 1
+                        else:
+                            failed += 1
+                except Exception:
+                    failed += 1
+            return jsonify({
+                "ok": True, "action": action,
+                "affected": sent, "sent": sent, "failed": failed,
+            })
+
+        # ---- bundle (zip of per-post sub-dirs) ---------------------------
+        if action == "bundle":
+            con = _db()
+            try:
+                rows = con.execute(
+                    f"SELECT * FROM ahb_social_posts WHERE id IN ({ph})",
+                    ids,
+                ).fetchall()
+            finally:
+                con.close()
+            if not rows:
+                return jsonify({"error": "no matching posts"}), 404
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=".zip", prefix="social-bulk-", delete=False,
+            )
+            tmp.close()
+            tmp_path = tmp.name
+            included = 0
+            try:
+                with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as z:
+                    for r in rows:
+                        d = dict(r)
+                        pid = d["id"]
+                        sub = f"post-{pid}"
+                        asset = d.get("asset_path")
+                        if asset and os.path.exists(asset):
+                            z.write(asset, arcname=f"{sub}/{os.path.basename(asset)}")
+                        cover = d.get("cover_path")
+                        if cover and os.path.exists(cover) and cover != asset:
+                            z.write(cover, arcname=f"{sub}/cover.jpg")
+                        caption_block = (d.get("caption") or "") + "\n\n" + (d.get("hashtags") or "")
+                        first_comment = d.get("first_comment")
+                        if first_comment:
+                            caption_block += "\n\n---\n" + first_comment
+                        plat = d.get("platform") or "post"
+                        z.writestr(f"{sub}/caption_{plat}.txt", caption_block)
+                        # per-language translations if present
+                        translations_raw = d.get("translations") or "{}"
+                        try:
+                            tr = json.loads(translations_raw) if isinstance(translations_raw, str) else translations_raw
+                        except Exception:
+                            tr = {}
+                        if isinstance(tr, dict):
+                            for lang, payload in tr.items():
+                                if not isinstance(payload, dict):
+                                    continue
+                                block = (payload.get("caption") or "") + "\n\n" + (payload.get("hashtags") or "")
+                                z.writestr(f"{sub}/caption_{plat}.{lang}.txt", block)
+                        z.writestr(
+                            f"{sub}/manifest.json",
+                            json.dumps(d, default=str, indent=2),
+                        )
+                        included += 1
+            except Exception as e:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                return jsonify({"error": f"bundle build failed: {e}"}), 500
+
+            @after_this_request
+            def _cleanup(response):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                return response
+
+            ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+            return send_file(
+                tmp_path,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name=f"social-bulk-bundle-{ts}.zip",
+            )
+
+        # Should never reach (action validated above)
+        return jsonify({"error": "unhandled action"}), 400

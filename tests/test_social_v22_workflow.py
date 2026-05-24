@@ -276,3 +276,101 @@ def test_search_q_combines_with_tag_filter(client):
     items = c.get("/api/ahb/social/posts?q=brooklyn&tag=launch").get_json()["items"]
     assert len(items) == 1
     assert items[0]["id"] == pid_kitchen
+
+
+# ---- T5: bulk operations ------------------------------------------------
+
+
+def test_bulk_set_status_updates_rows(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    for cap in ("a","b","c"):
+        con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft',?)", (cap,))
+    con.commit()
+    ids = [r[0] for r in con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 3").fetchall()]
+    con.close()
+    r = c.post("/api/ahb/social/posts/bulk", json={"ids": ids, "action": "set_status", "params": {"status": "approved"}})
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["affected"] == 3
+    con = sqlite3.connect(db)
+    statuses = [r[0] for r in con.execute(f"SELECT status FROM ahb_social_posts WHERE id IN ({','.join(['?']*len(ids))})", ids).fetchall()]
+    con.close()
+    assert all(s == "approved" for s in statuses)
+
+
+def test_bulk_set_status_rejects_unknown_status(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/posts/bulk", json={"ids": [1], "action": "set_status", "params": {"status": "garbage"}})
+    assert r.status_code == 400
+
+
+def test_bulk_delete_removes_rows_and_tags(client):
+    c, db = client
+    tid = c.post("/api/ahb/social/tags", json={"name": "del"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','to-del')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    c.post(f"/api/ahb/social/posts/{pid}/tags", json={"tag_ids": [tid]})
+    r = c.post("/api/ahb/social/posts/bulk", json={"ids": [pid], "action": "delete"})
+    assert r.status_code == 200
+    assert r.get_json()["affected"] == 1
+    con = sqlite3.connect(db)
+    n_posts = con.execute("SELECT COUNT(*) FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()[0]
+    n_tags = con.execute("SELECT COUNT(*) FROM ahb_social_post_tags WHERE post_id=?", (pid,)).fetchone()[0]
+    con.close()
+    assert n_posts == 0
+    assert n_tags == 0
+
+
+def test_bulk_schedule_sets_scheduled_at(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','sched-me')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post("/api/ahb/social/posts/bulk",
+               json={"ids": [pid], "action": "schedule",
+                     "params": {"scheduled_at": "2026-06-01T15:30:00"}})
+    assert r.status_code == 200
+    con = sqlite3.connect(db)
+    row = con.execute("SELECT scheduled_at, status FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    con.close()
+    assert row[0] == "2026-06-01T15:30:00"
+    assert row[1] == "scheduled"
+
+
+def test_bulk_tag_replace_set_for_each_post(client):
+    c, db = client
+    t = c.post("/api/ahb/social/tags", json={"name": "blk"}).get_json()["id"]
+    import sqlite3
+    con = sqlite3.connect(db)
+    for cap in ("p1","p2"):
+        con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft',?)", (cap,))
+    con.commit()
+    ids = [r[0] for r in con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 2").fetchall()]
+    con.close()
+    r = c.post("/api/ahb/social/posts/bulk",
+               json={"ids": ids, "action": "tag", "params": {"tag_ids": [t]}})
+    assert r.status_code == 200
+    for pid in ids:
+        j = c.get(f"/api/ahb/social/posts/{pid}/tags").get_json()
+        assert any(tt["id"] == t for tt in j["tags"])
+
+
+def test_bulk_unknown_action_returns_400(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/posts/bulk", json={"ids": [1], "action": "ufo"})
+    assert r.status_code == 400
+
+
+def test_bulk_empty_ids_returns_400(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/posts/bulk", json={"ids": [], "action": "set_status", "params": {"status": "draft"}})
+    assert r.status_code == 400
