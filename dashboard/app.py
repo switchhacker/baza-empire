@@ -16984,5 +16984,15 @@ except Exception as _e:
     print(f"[dashboard] legacy meta sweep failed (non-fatal): {_e}")
 
 
+# Kick the receipt queue on startup so items left in 'pending' (including the
+# 'processing' rows we just recovered above) start draining immediately —
+# without this the worker only spawns on the next upload / send-batch /
+# manual run, leaving the queue idle after every dashboard restart.
+try:
+    _spawn_receipt_queue_worker()
+except Exception as _e:
+    print(f"[dashboard] startup queue worker spawn failed (non-fatal): {_e}")
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8888, debug=False)
