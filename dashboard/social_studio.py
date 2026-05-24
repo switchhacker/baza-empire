@@ -150,6 +150,8 @@ PRESET_WRITABLE = {
     "hashtag_pool", "tone", "length", "style", "music_style",
     "voiceover_style", "source_filter", "cadence", "n_per_week",
     "max_per_day", "auto_approve", "score_threshold", "active",
+    # T8: approval workflow + recurring schedule fields.
+    "requires_review", "schedule_dow", "schedule_time",
 }
 
 
@@ -709,6 +711,18 @@ def social_posts_patch(pid: int):
                 (pid, json.dumps(snap, default=str)),
             )
         con.execute(f"UPDATE ahb_social_posts SET {','.join(sets)} WHERE id=?", vals)
+        # T8: log approval event ONLY if status actually changed.
+        if "status" in data and prior is not None:
+            new_status = data.get("status")
+            old_status = prior["status"]
+            if new_status and new_status != old_status:
+                try:
+                    from dashboard import social_workflow as _swf
+                except ImportError:
+                    import social_workflow as _swf
+                _swf._log_approval_event(
+                    con, pid, f"status:{new_status}", "serge", "",
+                )
         con.commit()
     finally:
         con.close()
@@ -1731,6 +1745,10 @@ def _generate_one_post_from_preset(preset: dict, source_ids: list):
     status = "pending_review"
     if preset.get("auto_approve") and score >= int(preset.get("score_threshold") or 75):
         status = "approved"
+    # T8: requires_review HARD-overrides auto_approve — anything generated
+    # under a "needs human review" preset must wait in pending_review.
+    if preset.get("requires_review"):
+        status = "pending_review"
     con = _conn()
     try:
         cur = con.execute(
@@ -1748,6 +1766,40 @@ def _generate_one_post_from_preset(preset: dict, source_ids: list):
         return cur.lastrowid
     finally:
         con.close()
+
+
+def _preset_schedule_allows(preset: dict, now=None) -> bool:
+    """T8: recurring schedule gate.
+
+    `schedule_dow` is a CSV of integers in JS getDay() convention (0=Sun..6=Sat).
+    `schedule_time` is "HH:MM" in UTC. If set, the tick must fire within
+    +/-30min of that time. Both fields optional — absent means no gate.
+    """
+    now = now or datetime.utcnow()
+    dow_csv = (preset.get("schedule_dow") or "").strip()
+    if dow_csv:
+        try:
+            allowed = {int(x) for x in dow_csv.split(",") if x.strip() != ""}
+        except ValueError:
+            allowed = set()
+        # Python weekday(): 0=Mon..6=Sun ; convert to JS getDay() 0=Sun..6=Sat.
+        js_dow = (now.weekday() + 1) % 7
+        if allowed and js_dow not in allowed:
+            return False
+    sched_t = (preset.get("schedule_time") or "").strip()
+    if sched_t:
+        try:
+            hh, mm = sched_t.split(":")
+            target_minutes = int(hh) * 60 + int(mm)
+        except ValueError:
+            return True  # malformed — don't block
+        cur_minutes = now.hour * 60 + now.minute
+        # ±30 min window, wrap-safe by checking min distance modulo 24h.
+        diff = abs(cur_minutes - target_minutes)
+        diff = min(diff, 24 * 60 - diff)
+        if diff > 30:
+            return False
+    return True
 
 
 @social_bp.route("/api/ahb/social/autopilot/tick", methods=["POST"])
@@ -1775,6 +1827,9 @@ def autopilot_tick():
                 break
             preset = _row_to_preset(r)
             if _count_posts_today(con, preset_id=preset["id"]) >= int(preset.get("max_per_day") or 1):
+                continue
+            # T8: recurring DOW / time-of-day gate (optional per preset).
+            if not _preset_schedule_allows(preset):
                 continue
             try:
                 source_filter = preset.get("source_filter") or {}

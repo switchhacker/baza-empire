@@ -4758,6 +4758,7 @@
 <div id="socialSettings"     class="modal-bg" style="display:none"></div>
 <div id="socialPostDetail"   class="modal-bg" style="display:none"></div>
 <div id="socialPostHistory"  class="modal-bg" style="display:none"></div>
+<div id="socialPostApprovalLog" class="modal-bg" style="display:none"></div>
 
 <!-- Social Studio toast stack (body-level, bottom-right) -->
 <div id="socialToastStack" style="position:fixed;bottom:16px;right:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none"></div>
@@ -19884,6 +19885,7 @@ SocialStudio.modules.postdetail = (function(){
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.saveAsTemplate(${p.id})">&#x1F4CB; Save as template</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.editTags(${p.id})">&#x1F3F7; Tags</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.history(${p.id})">&#x1F4DC; History</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.approvalLog(${p.id})">&#x2705; Approval log</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
           <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
@@ -19931,6 +19933,69 @@ SocialStudio.modules.postdetail = (function(){
       `;
     } catch (e) {
       m.innerHTML = `<div class="modal" style="max-width:480px"><div style="color:#f87171;padding:20px;text-align:center">Failed to load history: ${_esc(e.message)}</div></div>`;
+    }
+  }
+
+  async function approvalLog(id) {
+    const m = document.getElementById('socialPostApprovalLog');
+    m.style.display = 'flex';
+    m.innerHTML = `<div class="modal" style="max-width:720px"><div style="color:#888;padding:20px;text-align:center">Loading approval log…</div></div>`;
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id + '/approval-events');
+      const j = await r.json();
+      const events = (j && j.events) || [];
+      const rowsHtml = events.length === 0
+        ? '<tr><td colspan="4" style="color:#666;padding:20px;text-align:center">No events yet. Status changes appear here.</td></tr>'
+        : events.map(e => `
+            <tr style="border-bottom:1px solid #1a1a3a">
+              <td style="padding:6px 8px;color:#888;font-size:11px;white-space:nowrap">${_esc(e.at || '')}</td>
+              <td style="padding:6px 8px;color:#10b981;font-size:11px;font-weight:600">${_esc(e.action || '')}</td>
+              <td style="padding:6px 8px;color:#aaa;font-size:11px">${_esc(e.actor || '')}</td>
+              <td style="padding:6px 8px;color:#ccc;font-size:11px">${_esc(e.note || '')}</td>
+            </tr>
+          `).join('');
+      m.innerHTML = `
+        <div class="modal" style="max-width:720px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:15px;font-weight:800">Approval log &middot; #${_esc(id)}</div>
+            <button onclick="document.getElementById('socialPostApprovalLog').style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+          </div>
+          <div style="margin-bottom:10px;display:flex;gap:6px;align-items:center">
+            <input id="pal-note" placeholder="Add a note…" style="flex:1;background:#0b0b18;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px">
+            <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.addApprovalNote(${id})" style="padding:6px 10px;font-size:11px">+ Note</button>
+          </div>
+          <div style="max-height:60vh;overflow-y:auto;border:1px solid #1a1a3a;border-radius:6px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead style="background:#070712;position:sticky;top:0">
+                <tr>
+                  <th style="text-align:left;padding:6px 8px;font-size:10px;color:#666;text-transform:uppercase">When</th>
+                  <th style="text-align:left;padding:6px 8px;font-size:10px;color:#666;text-transform:uppercase">Action</th>
+                  <th style="text-align:left;padding:6px 8px;font-size:10px;color:#666;text-transform:uppercase">Actor</th>
+                  <th style="text-align:left;padding:6px 8px;font-size:10px;color:#666;text-transform:uppercase">Note</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      m.innerHTML = `<div class="modal" style="max-width:480px"><div style="color:#f87171;padding:20px;text-align:center">Failed to load approval log: ${_esc(e.message)}</div></div>`;
+    }
+  }
+
+  async function addApprovalNote(id) {
+    const note = (document.getElementById('pal-note').value || '').trim();
+    if (!note) { SocialStudio.modules.toast.info('Note is empty'); return; }
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id + '/approval-events', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'noted', note: note }),
+      });
+      if (!r.ok) { SocialStudio.modules.toast.error('Save failed'); return; }
+      approvalLog(id);  // refresh
+    } catch (e) {
+      SocialStudio.modules.toast.error('Network: ' + e.message);
     }
   }
 
@@ -20035,7 +20100,7 @@ SocialStudio.modules.postdetail = (function(){
     });
   }
   return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate, editTags,
-           history, restore, _scheduleAutosave };
+           history, restore, approvalLog, addApprovalNote, _scheduleAutosave };
 })();
 
 SocialStudio.modules.presets = (function(){
@@ -20092,7 +20157,23 @@ SocialStudio.modules.presets = (function(){
   function edit(id) {
     const p = id ? items.find(x => x.id === id) : { name: '', description: '', tone: 'pro',
         length: 'medium', style: 'trade', cadence: 'off', max_per_day: 1,
-        auto_approve: 0, score_threshold: 75, active: 1 };
+        auto_approve: 0, score_threshold: 75, active: 1,
+        requires_review: 0, schedule_dow: '', schedule_time: '' };
+    // Parse DOW CSV ("0,2,4") into a Set of ints for chip toggling
+    const dowSet = new Set(
+      String(p.schedule_dow || '').split(',')
+        .map(s => parseInt(s.trim(), 10))
+        .filter(n => !isNaN(n) && n >= 0 && n <= 6)
+    );
+    const dowLabels = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+    const dowChips = dowLabels.map((lbl, i) => `
+      <button type="button" data-dow="${i}"
+        onclick="this.dataset.on = this.dataset.on === '1' ? '0' : '1'; this.style.background = this.dataset.on === '1' ? '#7c3aed' : '#070712'; this.style.color = this.dataset.on === '1' ? '#fff' : '#aaa';"
+        data-on="${dowSet.has(i) ? '1' : '0'}"
+        style="padding:6px 10px;border:1px solid #2a2a4a;border-radius:6px;font-size:11px;cursor:pointer;background:${dowSet.has(i) ? '#7c3aed' : '#070712'};color:${dowSet.has(i) ? '#fff' : '#aaa'}">
+        ${lbl}
+      </button>
+    `).join('');
     const m = document.getElementById('socialPresetEditor');
     m.style.display = 'flex';
     m.innerHTML = `
@@ -20115,6 +20196,17 @@ SocialStudio.modules.presets = (function(){
         <label style="display:block;font-size:12px;color:#aaa;margin-bottom:6px">
           <input id="pe-autoapprove" type="checkbox" ${p.auto_approve ? 'checked' : ''}> Auto-approve when score &ge; threshold
         </label>
+        <label style="display:block;font-size:12px;color:#aaa;margin-bottom:6px">
+          <input id="pe-requiresreview" type="checkbox" ${p.requires_review ? 'checked' : ''}> Requires review (forces pending_review, overrides auto-approve)
+        </label>
+        <div style="border:1px solid #1a1a3a;border-radius:6px;padding:8px;margin-bottom:10px;background:#070712">
+          <div style="font-size:11px;color:#7c3aed;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Recurring schedule (optional)</div>
+          <div style="font-size:11px;color:#666;margin-bottom:6px">Days of week (UTC)</div>
+          <div id="pe-dow-chips" style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">${dowChips}</div>
+          <label style="font-size:12px;color:#aaa;display:block">Time (UTC, &plusmn;30 min window)
+            <input id="pe-schedule-time" type="time" value="${_esc(p.schedule_time || '')}" style="width:100%;margin-top:4px;background:#0b0b18;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff">
+          </label>
+        </div>
         <label style="display:block;font-size:12px;color:#aaa;margin-bottom:10px">
           <input id="pe-active" type="checkbox" ${p.active ? 'checked' : ''}> Active
         </label>
@@ -20132,6 +20224,12 @@ SocialStudio.modules.presets = (function(){
   }
 
   async function save(id) {
+    // Collect active DOW chips → CSV like "0,2,4"
+    const dowChips = document.querySelectorAll('#pe-dow-chips button[data-dow]');
+    const dowCsv = Array.from(dowChips)
+      .filter(b => b.dataset.on === '1')
+      .map(b => b.dataset.dow)
+      .join(',');
     const body = {
       name: document.getElementById('pe-name').value,
       description: document.getElementById('pe-desc').value,
@@ -20142,6 +20240,9 @@ SocialStudio.modules.presets = (function(){
       score_threshold: parseInt(document.getElementById('pe-threshold').value, 10) || 75,
       auto_approve: document.getElementById('pe-autoapprove').checked ? 1 : 0,
       active: document.getElementById('pe-active').checked ? 1 : 0,
+      requires_review: document.getElementById('pe-requiresreview').checked ? 1 : 0,
+      schedule_dow: dowCsv,
+      schedule_time: document.getElementById('pe-schedule-time').value || '',
     };
     const r = id
       ? await fetch('/api/ahb/social/presets/' + id, {

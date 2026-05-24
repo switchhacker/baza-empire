@@ -47,6 +47,15 @@ def _row_to_template(r):
     return d
 
 
+def _log_approval_event(con, pid, action, actor, note):
+    """Append a row to ahb_social_approval_events. Caller owns the txn/commit."""
+    con.execute(
+        "INSERT INTO ahb_social_approval_events (post_id, action, actor, note) "
+        "VALUES (?, ?, ?, ?)",
+        (pid, action or "", actor or "", note or ""),
+    )
+
+
 def _interpolate(template: str, variables: dict) -> str:
     if not template:
         return ""
@@ -338,8 +347,14 @@ def register(bp):
                     f"updated_at=? WHERE id IN ({ph})",
                     [status, datetime.utcnow().isoformat(timespec="seconds"), *ids],
                 )
-                con.commit()
                 affected = cur.rowcount
+                # T8: log approval event for each id whose status actually changed.
+                if affected:
+                    for pid in ids:
+                        _log_approval_event(
+                            con, pid, f"status:{status}", "serge", "",
+                        )
+                con.commit()
             finally:
                 con.close()
             return jsonify({"ok": True, "action": action, "affected": affected})
@@ -624,6 +639,44 @@ def register(bp):
             con.execute(
                 f"UPDATE ahb_social_posts SET {','.join(sets)} WHERE id=?", vals
             )
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True})
+
+    # ---- T8: approval workflow event log ---------------------------------
+
+    @bp.route("/api/ahb/social/posts/<int:pid>/approval-events",
+              methods=["GET"])
+    def social_post_approval_events_list(pid: int):
+        con = _db()
+        try:
+            rows = con.execute(
+                "SELECT id, action, actor, note, at "
+                "FROM ahb_social_approval_events "
+                "WHERE post_id=? ORDER BY id DESC",
+                (pid,),
+            ).fetchall()
+        finally:
+            con.close()
+        return jsonify({"events": [dict(r) for r in rows]})
+
+    @bp.route("/api/ahb/social/posts/<int:pid>/approval-events",
+              methods=["POST"])
+    def social_post_approval_events_create(pid: int):
+        data = request.get_json(silent=True) or {}
+        action = (data.get("action") or "").strip()
+        if not action:
+            return jsonify({"error": "action required"}), 400
+        # Cap lengths defensively to keep the event log render predictable.
+        action = action[:128]
+        note = (data.get("note") or "")
+        if not isinstance(note, str):
+            note = str(note)
+        note = note[:1000]
+        con = _db()
+        try:
+            _log_approval_event(con, pid, action, "serge", note)
             con.commit()
         finally:
             con.close()

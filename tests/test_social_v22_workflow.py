@@ -451,6 +451,69 @@ def test_versions_for_unknown_post_returns_empty(client):
     assert j["versions"] == []
 
 
+# ---- T8: approval workflow + recurring schedules ------------------------
+
+
+def test_approval_event_logged_on_status_patch(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    c.patch(f"/api/ahb/social/posts/{pid}", json={"status": "approved"})
+    j = c.get(f"/api/ahb/social/posts/{pid}/approval-events").get_json()
+    assert any(e["action"] == "status:approved" for e in j["events"])
+
+
+def test_approval_event_logged_on_bulk_set_status(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    for cap in ("a","b"):
+        con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft',?)", (cap,))
+    con.commit()
+    ids = [r[0] for r in con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 2").fetchall()]
+    con.close()
+    c.post("/api/ahb/social/posts/bulk", json={"ids": ids, "action": "set_status", "params": {"status": "rejected"}})
+    for pid in ids:
+        j = c.get(f"/api/ahb/social/posts/{pid}/approval-events").get_json()
+        assert any(e["action"] == "status:rejected" for e in j["events"])
+
+
+def test_manual_approval_event(client):
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post(f"/api/ahb/social/posts/{pid}/approval-events",
+               json={"action": "noted", "note": "looks good"})
+    assert r.status_code == 200
+    j = c.get(f"/api/ahb/social/posts/{pid}/approval-events").get_json()
+    assert any(e["action"] == "noted" and e["note"] == "looks good" for e in j["events"])
+
+
+def test_no_status_change_no_event(client):
+    """PATCH with same status, or PATCH without status, should not log an event."""
+    c, db = client
+    import sqlite3
+    con = sqlite3.connect(db)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','x')")
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    # PATCH caption only
+    c.patch(f"/api/ahb/social/posts/{pid}", json={"caption": "y"})
+    # PATCH status to its CURRENT value
+    c.patch(f"/api/ahb/social/posts/{pid}", json={"status": "draft"})
+    j = c.get(f"/api/ahb/social/posts/{pid}/approval-events").get_json()
+    assert len(j["events"]) == 0
+
+
 def test_patch_scheduled_at_preserves_time(client):
     """T7 regression-pin: when the calendar UI drag updates scheduled_at
     by changing only the date portion, the backend just writes whatever
