@@ -14031,6 +14031,7 @@ def _ensure_scaffold_tables(con):
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_edges_pid ON project_scaffold_edges(project_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_edges_from ON project_scaffold_edges(from_node)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_edges_to ON project_scaffold_edges(to_node)")
 
     cur.execute("""
@@ -14103,21 +14104,28 @@ def _ensure_scaffold_tables(con):
     # ALTER projects to add scaffold_paused
     try:
         cur.execute("ALTER TABLE projects ADD COLUMN scaffold_paused INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass  # already exists or table missing (test fixtures)
+    except sqlite3.OperationalError as e:
+        msg = str(e).lower()
+        # Allow duplicate column (already migrated) and missing table (test fixtures
+        # intentionally skip creating `projects`). Anything else is a real error.
+        if "duplicate column" not in msg and "no such table" not in msg:
+            raise
 
     con.commit()
 
 
 def _ensure_scaffold_tables_startup():
     """Run scaffold migration against the real baza_projects.db at startup."""
+    conn = None
     try:
         conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
         conn.execute("PRAGMA busy_timeout = 8000")
         _ensure_scaffold_tables(conn)
-        conn.close()
     except sqlite3.OperationalError as e:
         print(f"[startup] _ensure_scaffold_tables deferred — DB busy: {e}", flush=True)
+    finally:
+        if conn is not None:
+            conn.close()
 _ensure_scaffold_tables_startup()
 
 

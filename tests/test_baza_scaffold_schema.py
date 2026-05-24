@@ -30,6 +30,14 @@ def test_scaffold_tables_created():
         assert "project_bom" in names
         assert "baza_inventory" in names
         assert "baza_equipment" in names
+
+        # Critical indices must exist (hot-path queries depend on them)
+        indices = {r[0] for r in cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'"
+        )}
+        assert "idx_scaffold_nodes_pid" in indices
+        assert "idx_scaffold_edges_from" in indices
+        assert "idx_scaffold_edges_to" in indices
         con.close()
     finally:
         os.unlink(path)
