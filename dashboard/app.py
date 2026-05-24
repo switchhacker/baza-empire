@@ -10399,8 +10399,23 @@ def api_ahb_receipts_process():
 
 # ── Background OCR worker ────────────────────────────────────────────────────
 import threading as _ahb_threading
+import ctypes as _ahb_ctypes
 _ahb_worker_lock = _ahb_threading.Lock()
 _ahb_worker_running = {'flag': False}
+
+def _ahb_die_with_parent():
+    """preexec_fn for OCR subprocesses — kernel sends SIGKILL to the child
+    if its parent dies (Linux PR_SET_PDEATHSIG). Without this, dashboard
+    restarts orphan running OCR subprocesses to systemd-user and they pile
+    up blocked on Ollama (50+ accumulated during a single afternoon's
+    debugging session)."""
+    try:
+        _PR_SET_PDEATHSIG = 1
+        _SIGKILL = 9
+        libc = _ahb_ctypes.CDLL('libc.so.6', use_errno=True)
+        libc.prctl(_PR_SET_PDEATHSIG, _SIGKILL, 0, 0, 0)
+    except Exception:
+        pass
 
 def _spawn_receipt_queue_worker():
     """Start a background thread that drains the receipt queue through OCR.
@@ -10435,7 +10450,8 @@ def _spawn_receipt_queue_worker():
                     # subprocess at the exact moment qwen3-vl returned, so
                     # slow vision calls always errored out.
                     result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True,
-                                            text=True, timeout=420, env=env)
+                                            text=True, timeout=420, env=env,
+                                            preexec_fn=_ahb_die_with_parent)
                     conn = _ahb_db()
                     if result.returncode == 0:
                         conn.execute("UPDATE ahb_receipt_queue SET status='ready', result_json=? WHERE id=?",
@@ -10615,7 +10631,29 @@ def api_ahb_receipts_queue_edit_image(qid):
 
 @app.route('/api/ahb/receipts/queue/run', methods=['POST'])
 def api_ahb_receipts_queue_run():
-    """Process pending queue items through OCR. Runs synchronously for up to ?limit=10 items."""
+    """Kick the background OCR worker to drain pending items.
+    Returns immediately — the worker drains in a single background thread
+    so concurrent endpoint hits can't pile up dozens of subprocesses
+    blocked on Ollama (which only serves one vision request at a time)."""
+    try:
+        conn = _ahb_db()
+        pending_count = conn.execute(
+            "SELECT COUNT(*) FROM ahb_receipt_queue WHERE status = 'pending'"
+        ).fetchone()[0]
+        conn.close()
+        if not pending_count:
+            return jsonify({'success': True, 'processed': 0, 'message': 'No pending items'})
+        _spawn_receipt_queue_worker()
+        return jsonify({'success': True, 'processed': 0, 'queued': pending_count,
+                        'message': f'Worker draining {pending_count} pending item(s) in background'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _legacy_unused_queue_run():
+    """Old synchronous queue/run body — kept as dead code for reference.
+    Hammering this from the UI piled up 50+ subprocesses all blocked on
+    Ollama; replaced by the worker-lock kick above."""
     try:
         limit = int(request.args.get('limit', 10))
         conn = _ahb_db()
