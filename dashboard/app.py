@@ -13988,6 +13988,139 @@ def _ensure_docprep_tables():
     print(f"[startup] _ensure_docprep_tables deferred — DB busy: {e}", flush=True)
 _ensure_docprep_tables()
 
+
+def _ensure_scaffold_tables(con):
+    """Idempotent migration for the live build-tree scaffold subsystem."""
+    cur = con.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS project_scaffold_nodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            parent_id INTEGER,
+            node_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            agent_assigned TEXT,
+            payload_json TEXT,
+            weight INTEGER NOT NULL DEFAULT 1,
+            depth INTEGER NOT NULL DEFAULT 0,
+            x REAL,
+            y REAL,
+            auto_decided INTEGER NOT NULL DEFAULT 0,
+            chosen_option TEXT,
+            started_at TEXT,
+            completed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_nodes_pid ON project_scaffold_nodes(project_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_nodes_status ON project_scaffold_nodes(project_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_nodes_parent ON project_scaffold_nodes(parent_id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS project_scaffold_edges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            from_node INTEGER NOT NULL,
+            to_node INTEGER NOT NULL,
+            edge_type TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_edges_pid ON project_scaffold_edges(project_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_edges_to ON project_scaffold_edges(to_node)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS project_scaffold_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            node_id INTEGER,
+            event_type TEXT NOT NULL,
+            actor TEXT,
+            payload TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_scaffold_events_pid ON project_scaffold_events(project_id, id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS project_bom (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            node_id INTEGER,
+            name TEXT NOT NULL,
+            part_number TEXT,
+            vendor TEXT,
+            url TEXT,
+            qty INTEGER NOT NULL DEFAULT 1,
+            unit_price REAL,
+            status TEXT NOT NULL DEFAULT 'researched',
+            in_hand INTEGER NOT NULL DEFAULT 0,
+            in_hand_at TEXT,
+            notes TEXT,
+            inventory_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_bom_pid ON project_bom(project_id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS baza_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            name TEXT NOT NULL,
+            part_number TEXT,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            location TEXT,
+            condition TEXT DEFAULT 'good',
+            unit_price REAL,
+            vendor TEXT,
+            url TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS baza_equipment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT,
+            location TEXT,
+            status TEXT NOT NULL DEFAULT 'available',
+            in_use_by TEXT,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
+        )
+    """)
+
+    # ALTER projects to add scaffold_paused
+    try:
+        cur.execute("ALTER TABLE projects ADD COLUMN scaffold_paused INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # already exists or table missing (test fixtures)
+
+    con.commit()
+
+
+def _ensure_scaffold_tables_startup():
+    """Run scaffold migration against the real baza_projects.db at startup."""
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+        conn.execute("PRAGMA busy_timeout = 8000")
+        _ensure_scaffold_tables(conn)
+        conn.close()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_scaffold_tables deferred — DB busy: {e}", flush=True)
+_ensure_scaffold_tables_startup()
+
+
 try:
     from dashboard.social_studio import _ensure_social_tables, social_bp as _social_bp
 except ImportError:
