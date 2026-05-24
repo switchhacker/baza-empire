@@ -13780,6 +13780,27 @@ except ImportError:
 _ensure_email_schema()
 app.register_blueprint(_email_bp)
 
+# ── Vendor locations KB — table init + idempotent seed ───────────────────────
+# Powers the receipt-OCR address resolver (replaces hallucinated placeholders
+# like "123 Main St, Anytown, USA" with a real, known location) and the
+# Vendors tab's location list.
+try:
+    import sys as _sys_vloc
+    _vloc_path = os.path.join(os.path.dirname(DASHBOARD_DIR), 'skills', 'shared')
+    if _vloc_path not in _sys_vloc.path:
+        _sys_vloc.path.insert(0, _vloc_path)
+    from vendor_locations import (
+        init_vendor_locations_table,
+        seed_vendor_locations,
+    )
+    _vloc_conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    init_vendor_locations_table(_vloc_conn)
+    _vloc_result = seed_vendor_locations(_vloc_conn)
+    _vloc_conn.close()
+    print(f"[startup] vendor_locations seed: {_vloc_result}", flush=True)
+except Exception as _vloc_err:
+    print(f"[startup] vendor_locations init failed: {_vloc_err}", flush=True)
+
 
 @app.route('/api/ahb/documents', methods=['GET'])
 def api_ahb_documents_list():
@@ -15091,9 +15112,76 @@ def api_ahb_vendors():
     conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
     conn.row_factory = sqlite3.Row
     if request.method == 'GET':
-        rows = conn.execute("SELECT * FROM ahb_vendors ORDER BY name").fetchall()
+        rows = [dict(r) for r in conn.execute("SELECT * FROM ahb_vendors ORDER BY name").fetchall()]
+        # Enrich each vendor with its known locations from ahb_vendor_locations.
+        # Match by vendor name first; fall back to a few common aliases so
+        # "Sherwin Williams" (no hyphen) finds "Sherwin-Williams" rows.
+        try:
+            loc_rows = conn.execute("SELECT * FROM ahb_vendor_locations ORDER BY vendor_canonical, name").fetchall()
+        except Exception:
+            loc_rows = []
+        loc_by_canon: dict = {}
+        for lr in loc_rows:
+            d = dict(lr)
+            loc_by_canon.setdefault(d['vendor_canonical'], []).append(d)
+        # Receipt counts per normalized vendor — surface "used X times" in the UI
+        receipt_counts: dict = {}
+        try:
+            for rc in conn.execute(
+                "SELECT COALESCE(NULLIF(store_name,''), vendor) AS name, COUNT(*) AS n, COALESCE(SUM(total),0) AS spent "
+                "FROM ahb_receipts WHERE COALESCE(NULLIF(store_name,''), vendor) IS NOT NULL "
+                "GROUP BY name"
+            ).fetchall():
+                receipt_counts[(rc['name'] or '').lower()] = {'count': int(rc['n']), 'spent': float(rc['spent'])}
+        except Exception:
+            pass
+        # Per-location usage: how many filed receipts have a store_location
+        # containing this location's street (case-insensitive, normalized).
+        # Cheap precompute: pull (store_location, count) once, then match each
+        # location's street against the lowercased keys.
+        loc_usage: dict = {}
+        try:
+            for lu in conn.execute(
+                "SELECT LOWER(store_location) AS loc, COUNT(*) AS n "
+                "FROM ahb_receipts WHERE store_location IS NOT NULL AND store_location != '' "
+                "GROUP BY LOWER(store_location)"
+            ).fetchall():
+                loc_usage[lu['loc']] = int(lu['n'])
+        except Exception:
+            pass
+
+        def _count_for_location(street: str | None, zipc: str | None) -> int:
+            if not street:
+                return 0
+            key_street = street.lower().strip()
+            total = 0
+            for stored_loc, n in loc_usage.items():
+                if key_street in stored_loc:
+                    total += n
+                elif zipc and zipc in stored_loc and any(
+                    tok in stored_loc for tok in key_street.split()[:2] if len(tok) >= 4
+                ):
+                    total += n
+            return total
+
+        for v in rows:
+            name = v.get('name') or ''
+            v['locations'] = loc_by_canon.get(name, [])
+            if not v['locations']:
+                # alias-style match — try a few simple normalizations
+                key_norm = re.sub(r'[^a-z0-9]', '', name.lower())
+                for cn, locs in loc_by_canon.items():
+                    if re.sub(r'[^a-z0-9]', '', cn.lower()) == key_norm:
+                        v['locations'] = locs
+                        break
+            rc = receipt_counts.get(name.lower())
+            v['receipt_count'] = rc['count'] if rc else 0
+            v['receipt_total'] = round(rc['spent'], 2) if rc else 0.0
+            # Annotate each location with its usage count
+            for loc in (v['locations'] or []):
+                loc['usage_count'] = _count_for_location(loc.get('street'), loc.get('zip'))
         conn.close()
-        return jsonify([dict(r) for r in rows])
+        return jsonify(rows)
     body = request.get_json() or {}
     cur = conn.execute("""INSERT INTO ahb_vendors
         (name, vendor_type, contact_name, phone, email, address, ein_or_ssn, notes)
@@ -15114,6 +15202,378 @@ def api_ahb_vendors():
     conn.commit()
     conn.close()
     return jsonify({'success': True, 'id': vid})
+
+
+@app.route('/api/ahb/vendor-locations', methods=['GET', 'POST'])
+def api_ahb_vendor_locations():
+    """List or add vendor location rows.
+
+    GET supports filters: ?canonical=Home+Depot, ?zip=19020, ?state=PA
+    POST body: {vendor_canonical, vendor_type, store_number, name,
+                street, city, state, zip, phone, notes, is_online, source}
+    """
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    if request.method == 'GET':
+        q = "SELECT * FROM ahb_vendor_locations WHERE 1=1"
+        params = []
+        if request.args.get('canonical'):
+            q += " AND vendor_canonical = ?"; params.append(request.args['canonical'])
+        if request.args.get('zip'):
+            q += " AND zip = ?"; params.append(request.args['zip'])
+        if request.args.get('state'):
+            q += " AND state = ?"; params.append(request.args['state'])
+        q += " ORDER BY vendor_canonical, name"
+        rows = conn.execute(q, params).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    body = request.get_json() or {}
+    canon = (body.get('vendor_canonical') or '').strip()
+    if not canon:
+        conn.close()
+        return jsonify({'success': False, 'error': 'vendor_canonical required'}), 400
+    try:
+        cur = conn.execute("""
+            INSERT INTO ahb_vendor_locations
+                (vendor_canonical, vendor_type, is_online, store_number, name,
+                 street, city, state, zip, phone, notes, source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(vendor_canonical, street, city, state, zip) DO UPDATE SET
+                vendor_type=excluded.vendor_type,
+                is_online=excluded.is_online,
+                store_number=excluded.store_number,
+                name=excluded.name,
+                phone=excluded.phone,
+                notes=excluded.notes,
+                source=excluded.source,
+                updated_at=CURRENT_TIMESTAMP
+        """, (canon, body.get('vendor_type'),
+              1 if body.get('is_online') else 0,
+              body.get('store_number'), body.get('name'),
+              body.get('street'), body.get('city'), body.get('state'),
+              body.get('zip'), body.get('phone'), body.get('notes'),
+              body.get('source') or 'manual'))
+        lid = cur.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({'success': True, 'id': lid})
+
+
+@app.route('/api/ahb/vendor-locations/<int:lid>', methods=['PATCH', 'DELETE'])
+def api_ahb_vendor_location_one(lid):
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM ahb_vendor_locations WHERE id=?", (lid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    body = request.get_json() or {}
+    sets, vals = [], []
+    for k in ('vendor_canonical', 'vendor_type', 'is_online', 'store_number',
+              'name', 'street', 'city', 'state', 'zip', 'phone', 'notes', 'source'):
+        if k in body:
+            sets.append(f"{k}=?"); vals.append(body[k])
+    if sets:
+        sets.append("updated_at=CURRENT_TIMESTAMP")
+        vals.append(lid)
+        conn.execute(f"UPDATE ahb_vendor_locations SET {','.join(sets)} WHERE id=?", vals)
+        conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/vendors/discover', methods=['POST'])
+def api_ahb_vendors_discover():
+    """LLM-powered vendor discovery. Given a free-form query (vendor name,
+    field, niche, "tile distributor near Bensalem", etc.) returns up to
+    `max_results` suggestions the user can add.
+
+    Body: {query, near_zip?, vendor_type?, max_results?, model?}
+    Returns: {results: [{name, category, why, suggested_locations: []}],
+              query, model}
+    """
+    body = request.get_json() or {}
+    query = (body.get('query') or '').strip()
+    if not query:
+        return jsonify({'success': False, 'error': 'query required'}), 400
+    near_zip = (body.get('near_zip') or '19020').strip()
+    vendor_type = (body.get('vendor_type') or '').strip()
+    max_results = max(1, min(int(body.get('max_results') or 12), 25))
+    # gemma3:12b is non-reasoning, fast, and reliably honors format=json.
+    # Avoid Qwen3 reasoning models (they emit JSON into a `thinking` field
+    # that we never read), and avoid `*-cloud` models per Serge's local-only rule.
+    model = body.get('model') or 'gemma3:12b'
+
+    type_hint = f" Filter to vendor type: {vendor_type}." if vendor_type else ""
+    prompt = f"""You are a business directory assistant for a Pennsylvania
+construction company based in Bensalem PA (ZIP {near_zip}). The user is
+looking for vendors matching this query:
+
+Query: {query}{type_hint}
+
+Return up to {max_results} real, well-known vendors that match. Prefer
+businesses with a physical presence within 250 miles of {near_zip} (greater
+Philadelphia, NJ, NYC metro, MD/DE/VA). Include national chains AND
+independent regional vendors when relevant.
+
+Respond with ONLY a JSON array, no prose:
+[
+  {{
+    "name": "Vendor canonical name",
+    "category": "Materials | Tools | Fuel | Food | Electronics | Subcontractor | Online | Office supplies | Clothes | Insurance | Other",
+    "why": "1 sentence: why this matches the query",
+    "suggested_locations": [
+      {{"city": "Bensalem", "state": "PA", "notes": "regional or known location hint"}}
+    ]
+  }}
+]
+
+Rules:
+- Real companies only. No made-up names.
+- One entry per company. Multiple physical stores belong in suggested_locations.
+- 'suggested_locations' may be empty for online-only vendors.
+- Keep 'why' under 90 chars.
+"""
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json",
+        "options": {"temperature": 0.2, "num_predict": 2000},
+    }
+    import urllib.request as _ur
+    import urllib.error as _ue
+    try:
+        req = _ur.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _ur.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except _ue.HTTPError as e:
+        return jsonify({'success': False, 'error': f'ollama HTTP {e.code}: {e.read().decode(errors="replace")[:200]}'}), 502
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'ollama call failed: {e}'}), 502
+
+    # Reasoning models like Qwen3 put structured output in `thinking`.
+    # Try `response` first, fall back to `thinking`.
+    raw = (data.get('response') or '').strip()
+    if not raw:
+        raw = (data.get('thinking') or '').strip()
+    # JSON-mode usually returns a clean JSON value but the model occasionally
+    # wraps it in {"results":[...]}, {"companies":[...]}, or in code fences.
+    # Be tolerant.
+    parsed: list = []
+    try:
+        v = json.loads(raw)
+        if isinstance(v, list):
+            parsed = v
+        elif isinstance(v, dict):
+            for key in ('results', 'vendors', 'companies', 'businesses',
+                        'suggestions', 'data', 'items'):
+                if isinstance(v.get(key), list):
+                    parsed = v[key]
+                    break
+            # Last resort — if the dict has a single value that's a list, use it
+            if not parsed:
+                list_vals = [val for val in v.values() if isinstance(val, list)]
+                if len(list_vals) == 1:
+                    parsed = list_vals[0]
+            # Or it might be a single vendor object instead of an array
+            if not parsed and v.get('name'):
+                parsed = [v]
+    except Exception:
+        # Try to extract first JSON array from the response
+        m = re.search(r"\[\s*\{.*\}\s*\]", raw, re.S)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except Exception:
+                parsed = []
+
+    # Annotate results with whether they're already in our vendor table
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    have = {(r['name'] or '').lower(): r['id']
+            for r in conn.execute("SELECT id, name FROM ahb_vendors").fetchall()}
+    conn.close()
+    results = []
+    for r in parsed[:max_results]:
+        if not isinstance(r, dict):
+            continue
+        name = (r.get('name') or '').strip()
+        if not name:
+            continue
+        existing_id = have.get(name.lower())
+        results.append({
+            'name': name,
+            'category': r.get('category') or '',
+            'why': (r.get('why') or '')[:200],
+            'suggested_locations': r.get('suggested_locations') or [],
+            'already_in_db': bool(existing_id),
+            'existing_id': existing_id,
+        })
+    return jsonify({
+        'success': True,
+        'query': query,
+        'model': model,
+        'results': results,
+        'count': len(results),
+    })
+
+
+@app.route('/api/ahb/vendors/sync-from-data', methods=['POST'])
+def api_ahb_vendors_sync_from_data():
+    """One-shot reconciliation: create missing ahb_vendors rows for
+       1. every canonical vendor in ahb_vendor_locations, and
+       2. every distinct store_name appearing in ahb_receipts
+    so the Vendors tab actually reflects who we buy from. Idempotent —
+    existing vendor rows are left untouched. Returns counts."""
+    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
+    conn.row_factory = sqlite3.Row
+    existing = {(r['name'] or '').lower(): True
+                for r in conn.execute("SELECT name FROM ahb_vendors").fetchall()}
+    created_loc = 0
+    created_rcpt = 0
+    # From vendor_locations
+    try:
+        for r in conn.execute(
+            "SELECT vendor_canonical, vendor_type, MAX(is_online) AS is_online, "
+            "       MIN(street||', '||COALESCE(city,'')||', '||COALESCE(state,'')||' '||COALESCE(zip,'')) AS sample_addr "
+            "FROM ahb_vendor_locations GROUP BY vendor_canonical"
+        ).fetchall():
+            name = (r['vendor_canonical'] or '').strip()
+            if not name or name.lower() in existing:
+                continue
+            vtype = (r['vendor_type'] or '').lower() or 'vendor'
+            addr = '' if r['is_online'] else (r['sample_addr'] or '').strip(' ,')
+            conn.execute(
+                "INSERT OR IGNORE INTO ahb_vendors (name, vendor_type, address, notes) "
+                "VALUES (?,?,?,?)",
+                (name, vtype, addr, 'Auto-created from vendor_locations seed.'))
+            existing[name.lower()] = True
+            created_loc += 1
+    except Exception as e:
+        print(f"[sync-vendors] location pass error: {e}", flush=True)
+    # From receipts — strict gate. Vision OCR routinely mislabels street names,
+    # payment-method strings, and random fragments as the store name; auto-
+    # creating a vendor for every distinct one floods the tab with garbage.
+    # Accept only:
+    #   (a) vendor_kb resolves the raw name to a canonical at conf >= 0.85, OR
+    #   (b) the same raw name appears on at least MIN_RECEIPTS_TO_PROMOTE
+    #       distinct receipts (frequency filters one-off OCR noise), AND
+    #       the string passes structural sanity checks.
+    MIN_RECEIPTS_TO_PROMOTE = 3
+    try:
+        import sys as _vksys
+        _vk_path = os.path.join(os.path.dirname(DASHBOARD_DIR), 'skills', 'shared')
+        if _vk_path not in _vksys.path:
+            _vksys.path.insert(0, _vk_path)
+        from vendor_kb import match_vendor as _match_vendor  # type: ignore
+    except Exception:
+        _match_vendor = None
+
+    # Substrings that disqualify a string from being a vendor name. These show
+    # up in OCR when the vision model grabbed a street, city, payment method,
+    # or unrelated form text instead of the actual brand line.
+    _BAN_PHRASES = (
+        "cardholder", "chip read", "purchase", "receipt", "balance",
+        "code:", "status:", "deluxe checks", "act #", "ape", "acua",
+        "free offer", "your copy", "merchant copy", "have a nice",
+        "see details", "since 19", "our store", "thank you", "thanks for",
+        "please come", "recall", "retolution", "drive bensalem",
+    )
+    _BAN_PREFIXES = (
+        "mgr ", "sir mgr", "cashier ", "server ", "operator ", "cshr ",
+        "store mgr", "str mgr", "asst mgr",
+    )
+    _STREET_SUFFIX = re.compile(
+        r"\b(st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|"
+        r"way|pkwy|parkway|hwy|highway|pl|place|tpke|turnpike)\b\.?$",
+        re.I,
+    )
+
+    def _looks_like_vendor_name(name: str) -> bool:
+        if not name or len(name) < 3:
+            return False
+        s = name.strip()
+        if not s[0].isalpha():
+            return False
+        ls = s.lower()
+        if any(p in ls for p in _BAN_PHRASES):
+            return False
+        if any(ls.startswith(p) for p in _BAN_PREFIXES):
+            return False
+        # Reject what look like personal names alone (firstname lastname,
+        # two Title-case words, no commercial word). Customer/cashier names
+        # show up as store_name often.
+        if re.match(r"^[A-Z][a-z]+\s+[A-Z][a-z]+$", s) and not any(
+            kw in ls for kw in ("inc", "llc", "corp", "co", "company", "ltd", "store")
+        ):
+            return False
+        # Ends with a street suffix (e.g. "Castor Ave", "Astor Ave.") — that's
+        # a street name pretending to be a vendor name.
+        if _STREET_SUFFIX.search(s):
+            return False
+        # PA city / state fragments like "Bensalem Pa.", "Bensalem,"
+        if re.match(r"^(bensalem|philadelphia|phila|trevose|levittown|warrington|"
+                    r"doylestown|cherry hill|mt laurel|fairless hills)\b[,\s.]*(pa|nj)?\.?\s*\d{0,5}\s*$",
+                    s, re.I):
+            return False
+        # Single-word too-short fragments
+        if " " not in s and len(s) < 5:
+            return False
+        # Too few letters (mostly punctuation or numbers)
+        letters = sum(1 for c in s if c.isalpha())
+        if letters < 4 or letters / len(s) < 0.5:
+            return False
+        return True
+
+    try:
+        for r in conn.execute(
+            "SELECT COALESCE(NULLIF(store_name,''), vendor) AS name, COUNT(*) AS n "
+            "FROM ahb_receipts WHERE COALESCE(NULLIF(store_name,''), vendor) NOT NULL "
+            "GROUP BY LOWER(name) HAVING name != ''"
+        ).fetchall():
+            name = (r['name'] or '').strip()
+            count = int(r['n'])
+            if not name or name.lower() in existing:
+                continue
+
+            # Path (a): canonical match
+            canon_match = False
+            canon_name = name
+            if _match_vendor:
+                cn, _cat, conf = _match_vendor(name)
+                if cn and conf >= 0.85:
+                    canon_match = True
+                    canon_name = cn
+            # Path (b): frequency + structure
+            if not canon_match:
+                if count < MIN_RECEIPTS_TO_PROMOTE:
+                    continue
+                if not _looks_like_vendor_name(name):
+                    continue
+
+            # Don't double-insert if a canonical version is already present
+            if canon_name.lower() in existing:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO ahb_vendors (name, vendor_type, notes) VALUES (?,?,?)",
+                (canon_name, 'vendor',
+                 f"Auto-created from receipt history ({count} receipt(s))."))
+            existing[canon_name.lower()] = True
+            created_rcpt += 1
+    except Exception as e:
+        print(f"[sync-vendors] receipt pass error: {e}", flush=True)
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True,
+                    'created_from_locations': created_loc,
+                    'created_from_receipts': created_rcpt})
 
 
 @app.route('/api/ahb/vendors/<int:vid>', methods=['PATCH','DELETE'])
