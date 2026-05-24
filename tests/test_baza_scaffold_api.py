@@ -98,3 +98,30 @@ def test_node_not_found_404(client):
     r = client.patch("/api/baza/projects/p1/scaffold/node/9999",
                      json={"title": "x"})
     assert r.status_code == 404
+
+
+def test_sse_hello_event(client):
+    """Subscribe to SSE and verify hello frame is delivered."""
+    rv = client.get("/api/baza/projects/p1/scaffold/stream",
+                    headers={"Accept": "text/event-stream"},
+                    buffered=False)
+    # Read just the first chunk
+    chunks = []
+    for chunk in rv.response:
+        chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+        if len("".join(chunks)) > 0:
+            break
+    rv.close()
+    out = "".join(chunks)
+    assert "hello" in out
+
+
+def test_sse_event_after_node_create(client):
+    """Create a node via API; verify the event bus published the right shape."""
+    from core.scaffold_engine import event_bus
+    received = []
+    event_bus.subscribe("p1", lambda e: received.append(e))
+    client.post("/api/baza/projects/p1/scaffold/node",
+                json={"node_type": "research", "title": "x"})
+    types = [e["event_type"] for e in received]
+    assert "created" in types
