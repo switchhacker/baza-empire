@@ -163,6 +163,86 @@ def test_analytics_hashtags_case_insensitive_merge(client):
     assert items["#pool"]["total_views"] == 300
 
 
+def test_cleanup_list_filters_old_posted_posts(client):
+    c, db = client
+    import sqlite3
+    from datetime import datetime, timedelta
+    con = sqlite3.connect(db)
+    # Old posted post (180 days ago)
+    old = (datetime.utcnow() - timedelta(days=180)).isoformat(timespec="seconds")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, posted_at) VALUES (1,'ig_reel','A','posted','old', ?)", (old,))
+    pid_old = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    # Recent posted post (10 days ago)
+    recent = (datetime.utcnow() - timedelta(days=10)).isoformat(timespec="seconds")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, posted_at) VALUES (1,'ig_reel','A','posted','recent', ?)", (recent,))
+    pid_recent = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    # Draft (not eligible)
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption) VALUES (1,'ig_reel','A','draft','draft')")
+    con.commit()
+    con.close()
+    items = c.get("/api/ahb/social/analytics/cleanup?older_than_days=90").get_json()["items"]
+    ids = [it["id"] for it in items]
+    assert pid_old in ids
+    assert pid_recent not in ids
+    assert all(it["status"] == "posted" for it in items)
+
+
+def test_cleanup_archive_stamps_archived_at(client):
+    c, db = client
+    import sqlite3
+    from datetime import datetime, timedelta
+    con = sqlite3.connect(db)
+    old = (datetime.utcnow() - timedelta(days=200)).isoformat(timespec="seconds")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, posted_at) VALUES (1,'ig_reel','A','posted','x', ?)", (old,))
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.post("/api/ahb/social/analytics/cleanup/archive", json={"ids": [pid]})
+    assert r.status_code == 200
+    assert r.get_json()["archived"] == 1
+    con = sqlite3.connect(db)
+    a = con.execute("SELECT archived_at FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()[0]
+    con.close()
+    assert a is not None
+    # Already archived: cleanup list excludes
+    items = c.get("/api/ahb/social/analytics/cleanup?older_than_days=90").get_json()["items"]
+    assert pid not in [it["id"] for it in items]
+
+
+def test_cleanup_delete_removes_post_and_related(client):
+    c, db = client
+    tid = c.post("/api/ahb/social/tags", json={"name": "old"}).get_json()["id"]
+    import sqlite3
+    from datetime import datetime, timedelta
+    con = sqlite3.connect(db)
+    old = (datetime.utcnow() - timedelta(days=200)).isoformat(timespec="seconds")
+    con.execute("INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, posted_at) VALUES (1,'ig_reel','A','posted','del', ?)", (old,))
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    c.post(f"/api/ahb/social/posts/{pid}/tags", json={"tag_ids": [tid]})
+    c.put(f"/api/ahb/social/posts/{pid}/analytics", json={"views": 100})
+    r = c.post("/api/ahb/social/analytics/cleanup/delete", json={"ids": [pid]})
+    assert r.status_code == 200
+    assert r.get_json()["deleted"] == 1
+    con = sqlite3.connect(db)
+    n_posts = con.execute("SELECT COUNT(*) FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()[0]
+    n_tags = con.execute("SELECT COUNT(*) FROM ahb_social_post_tags WHERE post_id=?", (pid,)).fetchone()[0]
+    n_an = con.execute("SELECT COUNT(*) FROM ahb_social_analytics WHERE post_id=?", (pid,)).fetchone()[0]
+    con.close()
+    assert n_posts == 0
+    assert n_tags == 0
+    assert n_an == 0
+
+
+def test_cleanup_empty_ids_returns_400(client):
+    c, _ = client
+    r = c.post("/api/ahb/social/analytics/cleanup/archive", json={"ids": []})
+    assert r.status_code == 400
+    r = c.post("/api/ahb/social/analytics/cleanup/delete", json={"ids": []})
+    assert r.status_code == 400
+
+
 def test_upsert_analytics_rejects_unknown_column(client):
     """Defense-in-depth: the helper rejects disallowed column names."""
     import social_analytics as sa

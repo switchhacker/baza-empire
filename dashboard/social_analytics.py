@@ -5,10 +5,12 @@ import csv
 import io
 import os
 import re
+import shutil
 import sqlite3
 from datetime import datetime, timedelta
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_ARCHIVE_ROOT = os.path.join(_HERE, "artifacts", "social", "archive")
 
 _COUNT_FIELDS = ("views", "likes", "comments", "saves", "shares")
 _OPTIONAL_FIELDS = ("posted_at", "post_url")
@@ -492,3 +494,182 @@ def register(bp):
             "inserted": inserted,
             "errors": errors,
         })
+
+    # ---------------- 6. Library cleanup (T11) ----------------
+
+    def _file_size(path: str | None) -> int:
+        if not path:
+            return 0
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return 0
+
+    def _coerce_ids(data) -> list[int]:
+        """Pull ids list from request body. Returns [] on any malformed input."""
+        if not isinstance(data, dict):
+            return []
+        ids = data.get("ids")
+        if not isinstance(ids, list):
+            return []
+        out: list[int] = []
+        for v in ids:
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                out.append(v)
+            elif isinstance(v, str) and v.strip().isdigit():
+                out.append(int(v.strip()))
+        return out
+
+    @bp.route("/api/ahb/social/analytics/cleanup", methods=["GET"])
+    def cleanup_list():
+        raw = (request.args.get("older_than_days") or "90").strip()
+        try:
+            days = int(raw)
+        except ValueError:
+            days = 90
+        if days < 0:
+            days = 0
+        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat(
+            timespec="seconds"
+        )
+        con = _db()
+        try:
+            rows = con.execute(
+                "SELECT id, platform, variant, status, caption, posted_at, "
+                "updated_at, asset_path, cover_path, archived_at "
+                "FROM ahb_social_posts "
+                "WHERE status='posted' "
+                "  AND archived_at IS NULL "
+                "  AND COALESCE(posted_at, updated_at) IS NOT NULL "
+                "  AND COALESCE(posted_at, updated_at) < ? "
+                "ORDER BY COALESCE(posted_at, updated_at) ASC",
+                (cutoff,),
+            ).fetchall()
+        finally:
+            con.close()
+        items = []
+        for r in rows:
+            d = dict(r)
+            asset_sz = _file_size(d.get("asset_path"))
+            cover_sz = _file_size(d.get("cover_path"))
+            d["total_bytes"] = asset_sz + cover_sz
+            items.append(d)
+        return jsonify({
+            "items": items,
+            "older_than_days": days,
+            "count": len(items),
+        })
+
+    @bp.route("/api/ahb/social/analytics/cleanup/archive", methods=["POST"])
+    def cleanup_archive():
+        data = request.get_json(silent=True) or {}
+        ids = _coerce_ids(data)
+        if not ids:
+            return jsonify({"error": "ids required (non-empty list)"}), 400
+        # Determine cleanup-eligible set so we only move files for items that
+        # actually qualify; ids outside this set still get archived_at stamped
+        # but no file moves.
+        con = _db()
+        try:
+            placeholders = ",".join("?" * len(ids))
+            elig_rows = con.execute(
+                f"SELECT id, asset_path, cover_path FROM ahb_social_posts "
+                f"WHERE id IN ({placeholders}) "
+                f"  AND status='posted' "
+                f"  AND archived_at IS NULL",
+                ids,
+            ).fetchall()
+            eligible = {r["id"]: r for r in elig_rows}
+            date_str = datetime.utcnow().strftime("%Y-%m-%d")
+            archive_dir = os.path.join(_ARCHIVE_ROOT, date_str)
+            errors: list = []
+            archived = 0
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            for pid in ids:
+                # Stamp archived_at regardless of file presence (don't lose
+                # data on a file error — the row mark is the source of truth).
+                try:
+                    con.execute(
+                        "UPDATE ahb_social_posts SET archived_at=?, updated_at=? "
+                        "WHERE id=? AND archived_at IS NULL",
+                        (now, now, pid),
+                    )
+                except sqlite3.Error as e:
+                    errors.append(f"id {pid}: db update failed ({e})")
+                    continue
+                # Move files only for cleanup-eligible posts.
+                row = eligible.get(pid)
+                if row is not None:
+                    for col in ("asset_path", "cover_path"):
+                        src = row[col]
+                        if not src or not isinstance(src, str):
+                            continue
+                        try:
+                            if not os.path.exists(src):
+                                continue
+                            os.makedirs(archive_dir, exist_ok=True)
+                            base = os.path.basename(src)
+                            # Prefix with post id to avoid collisions inside
+                            # the per-day archive bucket.
+                            dst = os.path.join(
+                                archive_dir, f"{pid}_{base}"
+                            )
+                            shutil.move(src, dst)
+                        except (OSError, shutil.Error) as e:
+                            errors.append(
+                                f"id {pid}: move {col} failed ({e})"
+                            )
+                archived += 1
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"archived": archived, "errors": errors})
+
+    @bp.route("/api/ahb/social/analytics/cleanup/delete", methods=["POST"])
+    def cleanup_delete():
+        data = request.get_json(silent=True) or {}
+        ids = _coerce_ids(data)
+        if not ids:
+            return jsonify({"error": "ids required (non-empty list)"}), 400
+        con = _db()
+        try:
+            placeholders = ",".join("?" * len(ids))
+            rows = con.execute(
+                f"SELECT id, asset_path, cover_path FROM ahb_social_posts "
+                f"WHERE id IN ({placeholders})",
+                ids,
+            ).fetchall()
+            errors: list = []
+            deleted = 0
+            for r in rows:
+                pid = r["id"]
+                for col in ("asset_path", "cover_path"):
+                    p = r[col]
+                    if not p or not isinstance(p, str):
+                        continue
+                    try:
+                        if os.path.exists(p):
+                            os.unlink(p)
+                    except OSError as e:
+                        errors.append(f"id {pid}: unlink {col} failed ({e})")
+                try:
+                    con.execute(
+                        "DELETE FROM ahb_social_post_tags WHERE post_id=?",
+                        (pid,),
+                    )
+                    con.execute(
+                        "DELETE FROM ahb_social_analytics WHERE post_id=?",
+                        (pid,),
+                    )
+                    con.execute(
+                        "DELETE FROM ahb_social_posts WHERE id=?", (pid,)
+                    )
+                    deleted += 1
+                except sqlite3.Error as e:
+                    errors.append(f"id {pid}: db delete failed ({e})")
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"deleted": deleted, "errors": errors})

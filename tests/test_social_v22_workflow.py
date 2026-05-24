@@ -76,6 +76,8 @@ def test_v22_tables_exist(db_path):
         assert "requires_review" in preset_cols
         assert "schedule_dow" in preset_cols
         assert "schedule_time" in preset_cols
+        post_cols = {r[1] for r in con.execute("PRAGMA table_info(ahb_social_posts)")}
+        assert "archived_at" in post_cols
     finally:
         con.close()
 

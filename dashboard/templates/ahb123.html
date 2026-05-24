@@ -21408,7 +21408,21 @@ SocialStudio.modules.stats = (function(){
         <div id="ss-stats-platform" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px"></div>
       </div>
       <div id="ss-stats-heatmap" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px;margin-bottom:12px"></div>
-      <div id="ss-stats-hashtags" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px"></div>
+      <div id="ss-stats-hashtags" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px;margin-bottom:12px"></div>
+      <details id="ss-stats-cleanup" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px">
+        <summary style="cursor:pointer;font-size:13px;font-weight:700;color:#fff">🧹 Admin — Library cleanup</summary>
+        <div style="margin-top:12px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+            <label style="font-size:11px;color:#888">Older than (days)
+              <input id="ss-cleanup-days" type="number" min="0" value="90" style="background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:6px;padding:4px 8px;font-size:12px;width:90px;margin-left:4px">
+            </label>
+            <button class="btn-secondary" onclick="SocialStudio.modules.stats.cleanupFind()">🔍 Find</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.stats.cleanupArchive()">📦 Archive selected</button>
+            <button class="btn-secondary" onclick="SocialStudio.modules.stats.cleanupDelete()" style="color:#f87171">🗑 Delete selected</button>
+          </div>
+          <div id="ss-cleanup-results" style="font-size:11px;color:#666">Click <b>Find</b> to list posts older than the threshold.</div>
+        </div>
+      </details>
     `;
   }
 
@@ -21728,7 +21742,140 @@ SocialStudio.modules.stats = (function(){
     }
   }
 
-  return { render, changeWindow, uploadCsv, _sort: _sortHandler };
+  // ---------- T11: Library cleanup ----------
+  const _cleanup = {
+    items: [],
+    selected: new Set(),
+  };
+
+  function _fmtKB(bytes) {
+    const n = Number(bytes) || 0;
+    if (n <= 0) return '0';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    return (n / 1024 / 1024).toFixed(2) + ' MB';
+  }
+
+  function _renderCleanup() {
+    const el = document.getElementById('ss-cleanup-results');
+    if (!el) return;
+    if (!_cleanup.items.length) {
+      el.innerHTML = '<div style="font-size:11px;color:#666;padding:8px 0">No eligible posts.</div>';
+      return;
+    }
+    const rows = _cleanup.items.map(it => {
+      const cap = (it.caption || '(no caption)').slice(0, 60);
+      const when = it.posted_at || it.updated_at || '';
+      const checked = _cleanup.selected.has(it.id) ? 'checked' : '';
+      return `
+        <tr style="border-top:1px solid #1a1a3a">
+          <td style="padding:6px"><input type="checkbox" data-cleanup-id="${it.id}" ${checked} onchange="SocialStudio.modules.stats._toggleCleanup(${it.id}, this.checked)"></td>
+          <td style="padding:6px;color:#9fcfff;font-size:11px">#${it.id}</td>
+          <td style="padding:6px;color:#fff;font-size:11px">${_esc(it.platform || '')}</td>
+          <td style="padding:6px;color:#ddd;font-size:11px">${_esc(cap)}</td>
+          <td style="padding:6px;color:#888;font-size:10px">${_esc(when)}</td>
+          <td style="padding:6px;color:#fff;font-size:11px;text-align:right">${_fmtKB(it.total_bytes)}</td>
+        </tr>
+      `;
+    }).join('');
+    el.innerHTML = `
+      <div style="font-size:11px;color:#888;margin-bottom:6px">${_cleanup.items.length} eligible · ${_cleanup.selected.size} selected</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#070712">
+            <th style="padding:6px;width:24px"><input type="checkbox" onchange="SocialStudio.modules.stats._toggleAllCleanup(this.checked)"></th>
+            <th style="padding:6px;text-align:left;font-size:10px;color:#888">ID</th>
+            <th style="padding:6px;text-align:left;font-size:10px;color:#888">Platform</th>
+            <th style="padding:6px;text-align:left;font-size:10px;color:#888">Caption</th>
+            <th style="padding:6px;text-align:left;font-size:10px;color:#888">Posted</th>
+            <th style="padding:6px;text-align:right;font-size:10px;color:#888">Size</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function _toggleCleanup(id, on) {
+    if (on) _cleanup.selected.add(id);
+    else _cleanup.selected.delete(id);
+    // Update count line cheaply.
+    const head = document.querySelector('#ss-cleanup-results > div');
+    if (head) head.textContent = `${_cleanup.items.length} eligible · ${_cleanup.selected.size} selected`;
+  }
+
+  function _toggleAllCleanup(on) {
+    _cleanup.selected.clear();
+    if (on) _cleanup.items.forEach(it => _cleanup.selected.add(it.id));
+    _renderCleanup();
+  }
+
+  async function cleanupFind() {
+    const inp = document.getElementById('ss-cleanup-days');
+    const days = Math.max(0, parseInt((inp && inp.value) || '90', 10) || 90);
+    try {
+      const r = await fetch('/api/ahb/social/analytics/cleanup?older_than_days=' + days);
+      const j = await r.json();
+      _cleanup.items = j.items || [];
+      _cleanup.selected = new Set();
+      _renderCleanup();
+    } catch (e) {
+      _toast().error('Cleanup find failed: ' + (e && e.message || e));
+    }
+  }
+
+  async function cleanupArchive() {
+    const ids = Array.from(_cleanup.selected);
+    if (!ids.length) { _toast().info('Nothing selected.'); return; }
+    const tid = _toast().progress('Archiving ' + ids.length + ' post(s)…');
+    try {
+      const r = await fetch('/api/ahb/social/analytics/cleanup/archive', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        _toast().resolve(tid, 'error', j.error || ('HTTP ' + r.status));
+        return;
+      }
+      const errs = (j.errors || []).length;
+      _toast().resolve(tid, errs ? 'info' : 'success',
+        'Archived ' + j.archived + (errs ? ' · ' + errs + ' error(s)' : ''));
+      cleanupFind();
+    } catch (e) {
+      _toast().resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  async function cleanupDelete() {
+    const ids = Array.from(_cleanup.selected);
+    if (!ids.length) { _toast().info('Nothing selected.'); return; }
+    if (!confirm('Permanently delete ' + ids.length + ' post(s) + their files + analytics? This cannot be undone.')) return;
+    const tid = _toast().progress('Deleting ' + ids.length + ' post(s)…');
+    try {
+      const r = await fetch('/api/ahb/social/analytics/cleanup/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        _toast().resolve(tid, 'error', j.error || ('HTTP ' + r.status));
+        return;
+      }
+      const errs = (j.errors || []).length;
+      _toast().resolve(tid, errs ? 'info' : 'success',
+        'Deleted ' + j.deleted + (errs ? ' · ' + errs + ' error(s)' : ''));
+      cleanupFind();
+    } catch (e) {
+      _toast().resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  return {
+    render, changeWindow, uploadCsv, _sort: _sortHandler,
+    cleanupFind, cleanupArchive, cleanupDelete,
+    _toggleCleanup, _toggleAllCleanup,
+  };
 })();
 </script>
 

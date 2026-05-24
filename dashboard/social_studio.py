@@ -1962,6 +1962,14 @@ def _ensure_social_v22_tables(db_path: Optional[str] = None) -> None:
                 con.execute(f"ALTER TABLE ahb_social_presets ADD COLUMN {col_def}")
             except sqlite3.OperationalError:
                 pass
+        # T11: library cleanup — archived_at on posts marks moved-to-archive items.
+        for col_def in [
+            "archived_at TEXT",
+        ]:
+            try:
+                con.execute(f"ALTER TABLE ahb_social_posts ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
         con.executescript("""
             CREATE TABLE IF NOT EXISTS ahb_social_post_templates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
