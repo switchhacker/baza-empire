@@ -3246,6 +3246,7 @@
       <button class="btn-secondary ss-subnav" data-sub="presets">Presets</button>
       <button class="btn-secondary ss-subnav" data-sub="autopilot">Auto-Pilot</button>
       <button class="btn-secondary ss-subnav" data-sub="inspo">💡 Inspo</button>
+      <button class="btn-secondary ss-subnav" data-sub="stats">📊 Stats</button>
       <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
     </div>
   </div>
@@ -3255,6 +3256,7 @@
   <div id="ss-sub-presets" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-autopilot" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-inspo" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-stats" class="ss-sub" style="display:none"></div>
 </div>
 
 <!-- ============================ EMAIL ============================ -->
@@ -19809,10 +19811,110 @@ SocialStudio.modules.postdetail = (function(){
   let _currentPost = null;
   let _autosaveTimer = null;
   let _badgeTimer = null;
+  let _statsAutosaveTimer = null;
+  let _statsBadgeTimer = null;
   function _esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _flashStatsSaved(kind) {
+    const b = document.getElementById('pd-stats-saved');
+    if (!b) return;
+    if (_statsBadgeTimer) { clearTimeout(_statsBadgeTimer); _statsBadgeTimer = null; }
+    b.style.opacity = '1';
+    if (kind === 'error') {
+      b.style.color = '#f87171';
+      b.textContent = 'Error';
+    } else {
+      b.style.color = '#10b981';
+      b.textContent = 'Saved ✓';
+    }
+    _statsBadgeTimer = setTimeout(() => {
+      b.style.opacity = '0.45';
+      b.style.color = '#666';
+      b.textContent = 'Idle';
+    }, 1000);
+  }
+
+  function _renderEngagement() {
+    const el = document.getElementById('pd-stats-engagement');
+    if (!el) return;
+    const v = parseInt(document.getElementById('pd-st-views')?.value || '0', 10) || 0;
+    const l = parseInt(document.getElementById('pd-st-likes')?.value || '0', 10) || 0;
+    const c = parseInt(document.getElementById('pd-st-comments')?.value || '0', 10) || 0;
+    const s = parseInt(document.getElementById('pd-st-saves')?.value || '0', 10) || 0;
+    const sh = parseInt(document.getElementById('pd-st-shares')?.value || '0', 10) || 0;
+    if (v <= 0) { el.textContent = 'Engagement rate: — (no views yet)'; return; }
+    const rate = ((l + c + s + sh) / v) * 100;
+    el.textContent = `Engagement rate: ${rate.toFixed(2)}%`;
+  }
+
+  async function _loadStats(pid) {
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + pid + '/analytics');
+      const j = await r.json();
+      const set = (id, val) => { const e = document.getElementById(id); if (e) e.value = val == null ? '' : val; };
+      set('pd-st-views', j.views || 0);
+      set('pd-st-likes', j.likes || 0);
+      set('pd-st-comments', j.comments || 0);
+      set('pd-st-saves', j.saves || 0);
+      set('pd-st-shares', j.shares || 0);
+      // posted_at: format for datetime-local (strip seconds/tz)
+      let pa = j.posted_at || '';
+      if (pa) {
+        // Truncate to YYYY-MM-DDTHH:MM
+        pa = String(pa).slice(0, 16);
+      }
+      set('pd-st-posted-at', pa);
+      set('pd-st-post-url', j.post_url || '');
+      _renderEngagement();
+    } catch (e) { /* swallow */ }
+  }
+
+  function _scheduleStatsAutosave() {
+    if (!_currentPost) return;
+    _renderEngagement();
+    if (_statsAutosaveTimer) { clearTimeout(_statsAutosaveTimer); _statsAutosaveTimer = null; }
+    const id = _currentPost.id;
+    _statsAutosaveTimer = setTimeout(async () => {
+      _statsAutosaveTimer = null;
+      const body = {};
+      const pick = (key, elId, asInt) => {
+        const el = document.getElementById(elId);
+        if (!el) return;
+        const raw = (el.value || '').trim();
+        if (raw === '') {
+          if (key === 'posted_at' || key === 'post_url') body[key] = null;
+          return;
+        }
+        if (asInt) {
+          const n = parseInt(raw, 10);
+          if (!Number.isFinite(n) || n < 0) return;
+          body[key] = n;
+        } else {
+          body[key] = raw;
+        }
+      };
+      pick('views', 'pd-st-views', true);
+      pick('likes', 'pd-st-likes', true);
+      pick('comments', 'pd-st-comments', true);
+      pick('saves', 'pd-st-saves', true);
+      pick('shares', 'pd-st-shares', true);
+      pick('posted_at', 'pd-st-posted-at', false);
+      pick('post_url', 'pd-st-post-url', false);
+      if (Object.keys(body).length === 0) return;
+      try {
+        const r = await fetch('/api/ahb/social/posts/' + id + '/analytics', {
+          method: 'PUT', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        _flashStatsSaved(r.ok ? 'ok' : 'error');
+      } catch (e) {
+        _flashStatsSaved('error');
+      }
+    }, 500);
   }
 
   function _flashSaved() {
@@ -19880,6 +19982,26 @@ SocialStudio.modules.postdetail = (function(){
         <textarea id="pd-caption" oninput="SocialStudio.modules.postdetail._scheduleAutosave()" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">${_esc(p.caption || '')}</textarea>
         <input id="pd-hashtags" oninput="SocialStudio.modules.postdetail._scheduleAutosave()" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" value="${_esc(p.hashtags || '')}">
         <textarea id="pd-firstcomment" oninput="SocialStudio.modules.postdetail._scheduleAutosave()" style="width:100%;height:60px;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" placeholder="First comment (IG convention)">${_esc(p.first_comment || '')}</textarea>
+        ${p.status === 'posted' ? `
+          <div id="pd-stats-panel" style="margin-top:12px;padding:10px;background:#0a1424;border:1px solid #1a3a5a;border-radius:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-size:12px;font-weight:700;color:#9fcfff">📊 Performance stats</div>
+              <span id="pd-stats-saved" style="font-size:10px;color:#666;opacity:0.45;transition:opacity .2s, color .2s">Idle</span>
+            </div>
+            <div id="pd-stats-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px">
+              <label style="font-size:10px;color:#888">Views<input id="pd-st-views" type="number" min="0" oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+              <label style="font-size:10px;color:#888">Likes<input id="pd-st-likes" type="number" min="0" oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+              <label style="font-size:10px;color:#888">Comments<input id="pd-st-comments" type="number" min="0" oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+              <label style="font-size:10px;color:#888">Saves<input id="pd-st-saves" type="number" min="0" oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+              <label style="font-size:10px;color:#888">Shares<input id="pd-st-shares" type="number" min="0" oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:6px">
+              <label style="font-size:10px;color:#888">Posted at<input id="pd-st-posted-at" type="datetime-local" oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+              <label style="font-size:10px;color:#888">Post URL<input id="pd-st-post-url" type="url" placeholder="https://..." oninput="SocialStudio.modules.postdetail._scheduleStatsAutosave()" style="width:100%;background:#070712;border:1px solid #2a2a4a;color:#fff;border-radius:4px;padding:6px;font-size:12px"></label>
+            </div>
+            <div id="pd-stats-engagement" style="margin-top:6px;font-size:10px;color:#666"></div>
+          </div>
+        ` : ''}
         <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap">
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.subtitles(${p.id})">&#x1F4DD; Subtitles</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.voiceover && SocialStudio.modules.voiceover.open(${p.id}, document.getElementById('pd-caption').value)">&#x1F50A; VO</button>
@@ -19894,6 +20016,9 @@ SocialStudio.modules.postdetail = (function(){
         </div>
       </div>
     `;
+    if (p.status === 'posted') {
+      _loadStats(p.id);
+    }
   }
 
   async function history(id) {
@@ -20102,7 +20227,8 @@ SocialStudio.modules.postdetail = (function(){
     });
   }
   return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate, editTags,
-           history, restore, approvalLog, addApprovalNote, _scheduleAutosave };
+           history, restore, approvalLog, addApprovalNote, _scheduleAutosave,
+           _scheduleStatsAutosave };
 })();
 
 SocialStudio.modules.presets = (function(){
@@ -21208,6 +21334,392 @@ SocialStudio.modules.inspo = (function(){
     render, analyzeUrl, suggestSimilarHook,
     addHashtag, addCompetitor, deleteCompetitor, addSound,
   };
+})();
+
+SocialStudio.modules.stats = (function(){
+  const root = () => document.getElementById('ss-sub-stats');
+  const state = {
+    window: '30d',
+    summary: null,
+    summaryPrev: null,
+    heatmap: null,
+    hashtags: [],
+    topPosts: [],
+    hashtagSort: { key: 'total_views', dir: 'desc' },
+  };
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _toast() {
+    return (SocialStudio.modules.toast || {
+      info(){}, error(){}, success(){}, progress(){return 0}, resolve(){},
+    });
+  }
+
+  function _fmtNum(n) {
+    n = Number(n) || 0;
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+    return String(Math.round(n));
+  }
+
+  function _fmtPct(p) {
+    return (Number(p) * 100).toFixed(2) + '%';
+  }
+
+  function _deltaArrow(now, prev) {
+    if (prev == null || prev === 0) {
+      if (now > 0) return { arrow: '↑', color: '#10b981', pct: '∞%' };
+      return { arrow: '—', color: '#666', pct: '0%' };
+    }
+    const diff = now - prev;
+    const pct = (diff / prev) * 100;
+    if (diff > 0) return { arrow: '↑', color: '#10b981', pct: pct.toFixed(1) + '%' };
+    if (diff < 0) return { arrow: '↓', color: '#f87171', pct: pct.toFixed(1) + '%' };
+    return { arrow: '—', color: '#666', pct: '0%' };
+  }
+
+  function shell() {
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div style="font-size:13px;color:#888">📊 Manual analytics — enter stats per post or import CSV.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:11px;color:#888">Window
+            <select id="ss-stats-window" onchange="SocialStudio.modules.stats.changeWindow(this.value)" style="background:#0a0a16;border:1px solid #2a2a4a;color:#fff;border-radius:6px;padding:4px 8px;font-size:12px;margin-left:4px">
+              <option value="7d">7 days</option>
+              <option value="30d" selected>30 days</option>
+              <option value="90d">90 days</option>
+              <option value="all">All time</option>
+            </select>
+          </label>
+          <label class="btn-secondary" style="cursor:pointer">📥 Import CSV
+            <input id="ss-stats-csv" type="file" accept=".csv" onchange="SocialStudio.modules.stats.uploadCsv(this)" style="display:none">
+          </label>
+          <button class="btn-secondary" onclick="SocialStudio.modules.stats.render()">↻</button>
+        </div>
+      </div>
+      <div id="ss-stats-wow" style="margin-bottom:12px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div id="ss-stats-top" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px"></div>
+        <div id="ss-stats-platform" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px"></div>
+      </div>
+      <div id="ss-stats-heatmap" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px;margin-bottom:12px"></div>
+      <div id="ss-stats-hashtags" style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px"></div>
+    `;
+  }
+
+  function changeWindow(w) {
+    state.window = w;
+    render();
+  }
+
+  async function _fetchSummary(window) {
+    const r = await fetch('/api/ahb/social/analytics/summary?window=' + encodeURIComponent(window));
+    return await r.json();
+  }
+
+  async function _fetchTopPosts(window) {
+    // Reuse summary's row set but we need ordered post list — go via /posts
+    // and intersect with analytics. For simplicity, fetch all posts + their
+    // analytics individually if list is short; otherwise rely on summary.
+    try {
+      const r = await fetch('/api/ahb/social/posts');
+      const j = await r.json();
+      const posts = (j.items || []).filter(p => p.status === 'posted');
+      const withStats = await Promise.all(posts.slice(0, 200).map(async p => {
+        try {
+          const a = await fetch('/api/ahb/social/posts/' + p.id + '/analytics').then(x => x.json());
+          return { ...p, stats: a };
+        } catch (e) { return { ...p, stats: { views: 0 } }; }
+      }));
+      // Apply window filter on stats.posted_at if present
+      let filtered = withStats;
+      if (window && window !== 'all') {
+        const m = window.match(/^(\d+)d$/);
+        if (m) {
+          const cutoff = new Date(Date.now() - parseInt(m[1], 10) * 86400_000);
+          filtered = withStats.filter(p => {
+            const pa = p.stats && (p.stats.posted_at || p.stats.updated_at);
+            if (!pa) return false;
+            return new Date(pa) >= cutoff;
+          });
+        }
+      }
+      filtered.sort((a, b) => (b.stats.views || 0) - (a.stats.views || 0));
+      return filtered.slice(0, 10);
+    } catch (e) { return []; }
+  }
+
+  function renderWow() {
+    const el = document.getElementById('ss-stats-wow');
+    if (!el) return;
+    const now = state.summary || { totals: { views: 0 }, avg_engagement_rate: 0 };
+    const prev = state.summaryPrev || { totals: { views: 0 }, avg_engagement_rate: 0 };
+    const viewsNow = now.totals.views || 0;
+    const viewsPrev = prev.totals.views || 0;
+    const engNow = now.avg_engagement_rate || 0;
+    const engPrev = prev.avg_engagement_rate || 0;
+    const dv = _deltaArrow(viewsNow, viewsPrev);
+    const de = _deltaArrow(engNow, engPrev);
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
+        <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px">
+          <div style="font-size:11px;color:#666;text-transform:uppercase">Views (this week)</div>
+          <div style="font-size:22px;font-weight:800;color:#fff;margin-top:4px">${_fmtNum(viewsNow)}</div>
+          <div style="font-size:11px;color:${dv.color};margin-top:2px">${dv.arrow} ${dv.pct} vs prev week</div>
+        </div>
+        <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px">
+          <div style="font-size:11px;color:#666;text-transform:uppercase">Avg engagement</div>
+          <div style="font-size:22px;font-weight:800;color:#fff;margin-top:4px">${_fmtPct(engNow)}</div>
+          <div style="font-size:11px;color:${de.color};margin-top:2px">${de.arrow} ${de.pct} vs prev week</div>
+        </div>
+        <div style="background:#0a0a16;border:1px solid #1a1a3a;border-radius:8px;padding:12px">
+          <div style="font-size:11px;color:#666;text-transform:uppercase">Posts (${_esc(state.window)})</div>
+          <div style="font-size:22px;font-weight:800;color:#fff;margin-top:4px">${_fmtNum(now.totals.posts || 0)}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">${_fmtNum(now.totals.likes || 0)} likes · ${_fmtNum(now.totals.comments || 0)} comments</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTopPosts() {
+    const el = document.getElementById('ss-stats-top');
+    if (!el) return;
+    const rows = state.topPosts.length
+      ? state.topPosts.map((p, i) => `
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #1a1a3a;cursor:pointer" onclick="SocialStudio.modules.postdetail.open(${p.id})">
+            <div style="width:22px;color:#666;font-size:11px;text-align:right">${i + 1}.</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc((p.caption || '(no caption)').slice(0, 80))}</div>
+              <div style="font-size:10px;color:#888">${_esc(p.platform || '')} · #${p.id}</div>
+            </div>
+            <div style="font-size:12px;color:#9fcfff;font-weight:700">${_fmtNum(p.stats.views || 0)}</div>
+          </div>
+        `).join('')
+      : '<div style="font-size:11px;color:#666;padding:10px 0">No posts with stats in window.</div>';
+    el.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px">🏆 Top performers (${_esc(state.window)})</div>
+      ${rows}
+    `;
+  }
+
+  function renderPlatform() {
+    const el = document.getElementById('ss-stats-platform');
+    if (!el) return;
+    const by = (state.summary && state.summary.by_platform) || {};
+    const entries = Object.entries(by).sort((a, b) => (b[1].views || 0) - (a[1].views || 0));
+    const max = entries.reduce((m, [, v]) => Math.max(m, v.views || 0), 0) || 1;
+    const rows = entries.length
+      ? entries.map(([plat, v]) => {
+          const pct = ((v.views || 0) / max) * 100;
+          return `
+            <div style="padding:6px 0;border-top:1px solid #1a1a3a">
+              <div style="display:flex;justify-content:space-between;font-size:12px;color:#ddd;margin-bottom:4px">
+                <span>${_esc(plat)}</span>
+                <span style="color:#9fcfff">${_fmtNum(v.views || 0)} views · ${v.posts} posts</span>
+              </div>
+              <div style="background:#070712;border-radius:4px;height:10px;overflow:hidden">
+                <div style="background:linear-gradient(90deg,#10b981,#9fcfff);height:100%;width:${pct.toFixed(1)}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('')
+      : '<div style="font-size:11px;color:#666;padding:10px 0">No platform data.</div>';
+    el.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px">📱 Per-platform views</div>
+      ${rows}
+    `;
+  }
+
+  function renderHeatmap() {
+    const el = document.getElementById('ss-stats-heatmap');
+    if (!el) return;
+    const cells = (state.heatmap && state.heatmap.cells) || [];
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    // Find max engagement to scale color
+    let max = 0;
+    for (let d = 0; d < 7; d++) {
+      for (let h = 0; h < 24; h++) {
+        const cell = (cells[d] && cells[d][h]) || [0, 0];
+        if (cell[0] > max) max = cell[0];
+      }
+    }
+    if (max <= 0) max = 1;
+    const cellHtml = (er, cnt) => {
+      const intensity = Math.min(60, Math.max(8, Math.round((er / max) * 60)));
+      const bg = cnt > 0 ? `hsl(150, 70%, ${intensity}%)` : '#0a0a16';
+      const title = `er ${(er * 100).toFixed(2)}% · ${cnt} post${cnt === 1 ? '' : 's'}`;
+      return `<div title="${title}" style="width:18px;height:18px;background:${bg};border:1px solid #0d0d1e;border-radius:2px"></div>`;
+    };
+    const hourHeaders = '<div style="width:32px"></div>' + Array.from({ length: 24 }, (_, h) =>
+      `<div style="width:18px;font-size:9px;color:#666;text-align:center">${h}</div>`).join('');
+    const rows = days.map((label, d) => {
+      const rowCells = Array.from({ length: 24 }, (_, h) => {
+        const cell = (cells[d] && cells[d][h]) || [0, 0];
+        return cellHtml(cell[0], cell[1]);
+      }).join('');
+      return `
+        <div style="display:flex;gap:2px;align-items:center;margin-top:2px">
+          <div style="width:32px;font-size:10px;color:#888">${label}</div>
+          ${rowCells}
+        </div>
+      `;
+    }).join('');
+    el.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px">🔥 When you post matters (avg engagement rate by hour)</div>
+      <div style="overflow-x:auto">
+        <div style="display:flex;gap:2px;align-items:center">${hourHeaders}</div>
+        ${rows}
+      </div>
+      <div style="font-size:10px;color:#666;margin-top:6px">Hover cells for engagement rate &amp; post count. Empty cells render as zero.</div>
+    `;
+  }
+
+  function _sortHashtags() {
+    const k = state.hashtagSort.key;
+    const dir = state.hashtagSort.dir === 'asc' ? 1 : -1;
+    state.hashtags.sort((a, b) => {
+      const av = a[k]; const bv = b[k];
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return ((av || 0) - (bv || 0)) * dir;
+    });
+  }
+
+  function _sortHandler(key) {
+    if (state.hashtagSort.key === key) {
+      state.hashtagSort.dir = state.hashtagSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      state.hashtagSort.key = key;
+      state.hashtagSort.dir = 'desc';
+    }
+    _sortHashtags();
+    renderHashtagsTable();
+  }
+
+  function renderHashtagsTable() {
+    const el = document.getElementById('ss-stats-hashtags');
+    if (!el) return;
+    const sortIcon = (k) =>
+      state.hashtagSort.key === k
+        ? (state.hashtagSort.dir === 'asc' ? ' ▲' : ' ▼')
+        : '';
+    const rows = state.hashtags.length
+      ? state.hashtags.map(h => `
+          <tr style="border-top:1px solid #1a1a3a">
+            <td style="padding:6px;color:#9fcfff;font-size:12px">${_esc(h.tag)}</td>
+            <td style="padding:6px;color:#fff;font-size:12px;text-align:right">${_fmtNum(h.total_views)}</td>
+            <td style="padding:6px;color:#fff;font-size:12px;text-align:right">${h.post_count}</td>
+            <td style="padding:6px;color:#fff;font-size:12px;text-align:right">${_fmtPct(h.avg_engagement_rate || 0)}</td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="4" style="padding:10px;color:#666;font-size:11px;text-align:center">No hashtags tracked yet.</td></tr>';
+    el.innerHTML = `
+      <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px">#️⃣ Hashtag performance</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#070712">
+            <th style="padding:6px;text-align:left;font-size:10px;color:#888;cursor:pointer" onclick="SocialStudio.modules.stats._sort('tag')">Tag${sortIcon('tag')}</th>
+            <th style="padding:6px;text-align:right;font-size:10px;color:#888;cursor:pointer" onclick="SocialStudio.modules.stats._sort('total_views')">Views${sortIcon('total_views')}</th>
+            <th style="padding:6px;text-align:right;font-size:10px;color:#888;cursor:pointer" onclick="SocialStudio.modules.stats._sort('post_count')">Posts${sortIcon('post_count')}</th>
+            <th style="padding:6px;text-align:right;font-size:10px;color:#888;cursor:pointer" onclick="SocialStudio.modules.stats._sort('avg_engagement_rate')">Avg ER${sortIcon('avg_engagement_rate')}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  async function render() {
+    const el = root();
+    if (!el) return;
+    if (!el._inited) {
+      el.innerHTML = shell();
+      el._inited = true;
+    }
+    const sel = document.getElementById('ss-stats-window');
+    if (sel) sel.value = state.window;
+    try {
+      const [summary, heatmap, hashtags, topPosts] = await Promise.all([
+        _fetchSummary(state.window),
+        fetch('/api/ahb/social/analytics/heatmap').then(r => r.json()),
+        fetch('/api/ahb/social/analytics/hashtags').then(r => r.json()),
+        _fetchTopPosts(state.window),
+      ]);
+      state.summary = summary;
+      state.heatmap = heatmap;
+      state.hashtags = hashtags.items || [];
+      state.topPosts = topPosts;
+      // Try to compute previous-window summary (only meaningful for "Nd" windows)
+      // For "this week vs last week" we always compare 7d vs prior 7d (after this).
+      try {
+        const m = state.window.match(/^(\d+)d$/);
+        if (m) {
+          // Fetch a wider window for prev: 2*days, then subtract current
+          // Simplification: hit summary?window=14d and approximate
+          // Cheaper: we just use the prior-period total = (2N window) - (N window).
+          // To keep it simple, just call summary with prev window length approximated.
+          // For week-over-week, force 7d / prev 7d.
+          const days = parseInt(m[1], 10);
+          if (days <= 30) {
+            const doubled = await _fetchSummary((days * 2) + 'd');
+            const prev = { totals: {}, avg_engagement_rate: 0 };
+            ['views', 'likes', 'comments', 'saves', 'shares', 'posts'].forEach(k => {
+              prev.totals[k] = (doubled.totals[k] || 0) - (summary.totals[k] || 0);
+            });
+            // Engagement rate approximated as doubled avg - current avg, clamped at 0
+            const prevEng = (doubled.avg_engagement_rate * 2) - summary.avg_engagement_rate;
+            prev.avg_engagement_rate = Math.max(0, prevEng);
+            state.summaryPrev = prev;
+          } else {
+            state.summaryPrev = null;
+          }
+        } else {
+          state.summaryPrev = null;
+        }
+      } catch (e) {
+        state.summaryPrev = null;
+      }
+      _sortHashtags();
+      renderWow();
+      renderTopPosts();
+      renderPlatform();
+      renderHeatmap();
+      renderHashtagsTable();
+    } catch (e) {
+      _toast().error('Stats load failed: ' + (e && e.message || e));
+    }
+  }
+
+  async function uploadCsv(input) {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const tid = _toast().progress('Uploading ' + f.name + '…');
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const r = await fetch('/api/ahb/social/analytics/import-csv', {
+        method: 'POST', body: fd,
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        _toast().resolve(tid, 'error', j.error || ('HTTP ' + r.status));
+        return;
+      }
+      const errs = (j.errors || []).length;
+      const msg = 'Imported ' + j.inserted + ' row(s)' + (errs ? ', ' + errs + ' error(s)' : '');
+      _toast().resolve(tid, errs ? 'info' : 'success', msg);
+      input.value = '';
+      render();
+    } catch (e) {
+      _toast().resolve(tid, 'error', 'Network: ' + e.message);
+    }
+  }
+
+  return { render, changeWindow, uploadCsv, _sort: _sortHandler };
 })();
 </script>
 
