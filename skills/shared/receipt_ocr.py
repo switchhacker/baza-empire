@@ -91,13 +91,19 @@ def _looks_like_garbage(s: str) -> bool:
     short_tokens = sum(1 for t in tokens if len(t) <= 2)
     if len(tokens) >= 3 and short_tokens / len(tokens) >= 0.55:
         return True
-    # At least one ≥4-char run of letters with a vowel — real words have these.
-    long_words = re.findall(r"[A-Za-z]{4,}", s)
-    has_vowel_word = any(re.search(r"[AEIOUaeiou]", w) for w in long_words)
-    # Vendor names like "AT&T" survive (uppercase letters around & or ').
+    # Leading-punct lines (rotated thermal paper) — "(haat,", "— P4300 Rising"
+    if s[0] in "(),.;:!?-—_=+/\\\"'`~*<>{}[]|&^%$#@":
+        return True
+    # Lone short words with surrounding punct: "Z 'Tati'", "Bradoc", "Be Secret"
+    # — Tesseract junk. Real vendor strings either have ≥2 strong words OR
+    # a recognizable brand-format token.
+    alpha_words = re.findall(r"[A-Za-z']{3,}", s)
+    strong_words = [w for w in alpha_words if re.search(r"[AEIOUaeiou]", w) and len(w) >= 4]
     looks_like_brand = bool(re.search(r"[A-Z]{2,}(?:\s*[&'\-]\s*[A-Z]+)+", s)) \
-        or bool(re.search(r"[A-Z]{3,}", s))
-    if not (has_vowel_word or looks_like_brand):
+        or bool(re.search(r"\b[A-Z]{4,}\b", s))
+    if not strong_words and not looks_like_brand:
+        return True
+    if len(strong_words) < 2 and not looks_like_brand:
         return True
     # Mostly punctuation/whitespace
     alnum = sum(1 for c in s if c.isalnum())
@@ -508,14 +514,21 @@ def _preprocess_for_vision(image_path: str) -> tuple[bytes, str]:
         im = im.convert('RGB')
         w, h = im.size
         target_long = 1800
+        max_long = 2400
         long_edge = max(w, h)
         if long_edge < target_long:
             scale = target_long / long_edge
             im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
             im = im.filter(ImageFilter.UnsharpMask(radius=1.5, percent=130, threshold=2))
             im = ImageEnhance.Contrast(im).enhance(1.15)
+        elif long_edge > max_long:
+            # Full-res phone photos (4032 px / 3-4 MB) make qwen3-vl either
+            # silently return '' or push the subprocess past the timeout.
+            # 2400 px is still well above what the model can usefully read.
+            scale = max_long / long_edge
+            im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         buf = io.BytesIO()
-        im.save(buf, 'JPEG', quality=95, subsampling=0)
+        im.save(buf, 'JPEG', quality=92, subsampling=0)
         return buf.getvalue(), 'image/jpeg'
     except Exception:
         img_path = Path(image_path)
@@ -713,7 +726,11 @@ def _normalize_vendor_and_category(merged: dict, raw_text: str = "") -> None:
         format_location = lambda _l: ""             # noqa: E731
         vendor_is_online = lambda _c: False         # noqa: E731
 
-    # Normalize vendor (store_name) using the knowledge base
+    # Normalize vendor (store_name) using the knowledge base.
+    # If the only source for store_name was Tesseract (no vision JSON), we
+    # often see garbage like "Z 'Tati'" or "(haat,". Drop unrecognized
+    # short/junk names so the review modal shows an empty field instead
+    # of nonsense — easier for the user than editing over garbage.
     raw_name = merged.get("store_name") or ""
     canon: str = ""
     if raw_name:
@@ -722,6 +739,8 @@ def _normalize_vendor_and_category(merged: dict, raw_text: str = "") -> None:
             merged["store_name"] = canon
             if not merged.get("category") and cat_hint:
                 merged["category"] = cat_hint
+        elif conf < 0.55 and _looks_like_garbage(raw_name):
+            merged["store_name"] = ""
 
     # Address pipeline:
     #   1. Discard placeholder strings ("123 Main St / Anytown / USA") the
