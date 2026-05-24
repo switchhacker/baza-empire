@@ -126,3 +126,53 @@ def test_analytics_csv_import(client):
     assert j["inserted"] == 2
     j1 = c.get(f"/api/ahb/social/posts/{p1}/analytics").get_json()
     assert j1["views"] == 500
+
+
+def test_csv_import_partial_errors_dont_block_good_rows(client):
+    """CSV with one bad row + one good row: good row commits, bad row reports error."""
+    c, db = client
+    p1 = _seed_post(db)
+    csv = (
+        "post_id,views,likes,comments,saves,shares,posted_at,post_url\n"
+        f"{p1},500,50,5,5,5,2026-05-10T12:00:00,\n"
+        "999999,1,1,1,1,1,2026-05-10T12:00:00,\n"  # bad: unknown post_id
+        "abc,1,1,1,1,1,2026-05-10T12:00:00,\n"     # bad: non-int post_id
+    )
+    r = c.post("/api/ahb/social/analytics/import-csv",
+               data={"file": (io.BytesIO(csv.encode("utf-8")), "stats.csv")},
+               content_type="multipart/form-data")
+    j = r.get_json()
+    assert r.status_code == 200
+    assert j["inserted"] == 1
+    assert len(j["errors"]) == 2
+    # Good row landed
+    j1 = c.get(f"/api/ahb/social/posts/{p1}/analytics").get_json()
+    assert j1["views"] == 500
+
+
+def test_analytics_hashtags_case_insensitive_merge(client):
+    c, db = client
+    p1 = _seed_post(db, hashtags="#Pool #AHB")
+    p2 = _seed_post(db, hashtags="#pool")
+    c.put(f"/api/ahb/social/posts/{p1}/analytics", json={"views": 100})
+    c.put(f"/api/ahb/social/posts/{p2}/analytics", json={"views": 200})
+    j = c.get("/api/ahb/social/analytics/hashtags").get_json()
+    items = {it["tag"]: it for it in j["items"]}
+    # Both #Pool and #pool should aggregate to a single key (lowercase)
+    assert "#pool" in items
+    assert items["#pool"]["total_views"] == 300
+
+
+def test_upsert_analytics_rejects_unknown_column(client):
+    """Defense-in-depth: the helper rejects disallowed column names."""
+    import social_analytics as sa
+    c, db = client
+    con = sqlite3.connect(db)
+    try:
+        try:
+            sa._upsert_analytics(con, 1, {"views": 100, "evil": "x"})
+            assert False, "expected ValueError"
+        except ValueError as e:
+            assert "disallowed" in str(e)
+    finally:
+        con.close()

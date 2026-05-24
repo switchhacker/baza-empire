@@ -21670,8 +21670,17 @@ SocialStudio.modules.stats = (function(){
             ['views', 'likes', 'comments', 'saves', 'shares', 'posts'].forEach(k => {
               prev.totals[k] = (doubled.totals[k] || 0) - (summary.totals[k] || 0);
             });
-            // Engagement rate approximated as doubled avg - current avg, clamped at 0
-            const prevEng = (doubled.avg_engagement_rate * 2) - summary.avg_engagement_rate;
+            // Weighted-average engagement: derive interaction sums via avg*posts,
+            // then subtract current sums and divide by prior post count.
+            const curPosts  = (summary.totals && summary.totals.posts) || 0;
+            const dblPosts  = (doubled.totals && doubled.totals.posts) || 0;
+            const prevPosts = dblPosts - curPosts;
+            let prevEng = 0;
+            if (prevPosts > 0) {
+              const curSum = (summary.avg_engagement_rate || 0) * curPosts;
+              const dblSum = (doubled.avg_engagement_rate || 0) * dblPosts;
+              prevEng = (dblSum - curSum) / prevPosts;
+            }
             prev.avg_engagement_rate = Math.max(0, prevEng);
             state.summaryPrev = prev;
           } else {

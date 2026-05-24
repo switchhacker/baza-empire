@@ -12,6 +12,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 _COUNT_FIELDS = ("views", "likes", "comments", "saves", "shares")
 _OPTIONAL_FIELDS = ("posted_at", "post_url")
+_UPSERT_ALLOWED_COLS = frozenset(list(_COUNT_FIELDS) + list(_OPTIONAL_FIELDS))
 _HASHTAG_RE = re.compile(r"#\w+")
 _MAX_CSV_BYTES = 1024 * 1024  # 1MB cap
 
@@ -91,6 +92,11 @@ def _parse_window(w: str) -> int | None:
 
 def _upsert_analytics(con, pid: int, fields: dict) -> None:
     """Upsert a row into ahb_social_analytics. Caller owns txn."""
+    # Defense-in-depth: reject any column not on the allow-list, since
+    # `fields.keys()` flow straight into f-string SQL below.
+    for k in fields:
+        if k not in _UPSERT_ALLOWED_COLS:
+            raise ValueError(f"disallowed analytics column: {k}")
     # Determine if row exists
     existing = con.execute(
         "SELECT post_id FROM ahb_social_analytics WHERE post_id=?",
@@ -352,8 +358,8 @@ def register(bp):
                 if t_norm in seen:
                     continue
                 seen.add(t_norm)
-                bucket = agg.setdefault(t, {
-                    "tag": t,
+                bucket = agg.setdefault(t_norm, {
+                    "tag": t_norm,
                     "post_count": 0,
                     "total_views": 0,
                     "total_likes": 0,
@@ -463,10 +469,19 @@ def register(bp):
                 if not fields:
                     errors.append(f"row {idx}: no updatable fields")
                     continue
+                # Per-row SAVEPOINT so one bad row rolls back individually
+                # without aborting the rest of the import.
                 try:
+                    con.execute("SAVEPOINT csv_row")
                     _upsert_analytics(con, pid, fields)
+                    con.execute("RELEASE csv_row")
                     inserted += 1
-                except sqlite3.Error as e:
+                except Exception as e:
+                    try:
+                        con.execute("ROLLBACK TO csv_row")
+                        con.execute("RELEASE csv_row")
+                    except sqlite3.Error:
+                        pass
                     errors.append(f"row {idx}: db error ({e})")
             con.commit()
         finally:
