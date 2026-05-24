@@ -23,6 +23,14 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
+- 2026-05-23 Social Studio v2 — mega-spec + 3 plans written
+- 2026-05-23 Social Studio v2 execution — substantial progress
+- 2026-05-23 Social Studio v2 — paused at user request
+- 2026-05-23 Social Studio v2.1 — T6 + T7 shipped
+- 2026-05-23 Social Studio v2.1 — T8/T9/T11 shipped
+- 2026-05-23 Social Studio v2.1 — T10/T14/T18 shipped
+- 2026-05-23 Social v2.1 — T12/T13/T15/T17/T19/T20/T21/T22 + Data Hub/Media bridge
+- 2026-05-23 Social v2.1 — T16 image editor — v2.1 COMPLETE (22/22)
 - 2026-05-22 ahb123 — Social Media Studio spec written
 - 2026-05-22 ahb123 — Social Media Studio plan written
 - 2026-05-22 Pulled SuperGemma4-26B-Uncensored Q4_K_M + made settings model selector dynamic
@@ -30,14 +38,6 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - 2026-05-22 Social Media Studio — Phase 1 shipped (14-task plan)
 - 2026-05-22 Comms — John Doe model tester (pick ANY model per chat)
 - 2026-05-22 Social Media Studio — merged into main
-- 2026-05-22 Email tab — modern 3-pane AI-infused mail client (Phase 1)
-- 2026-05-22 Email — multi-account + cleanup tools
-- 2026-05-21 AHB123 — W-9 / 1099 subcontractor support on employees
-- 2026-05-21 ahb123 receipts — address search, project sum, printable PDF
-- 2026-05-21 Recent Receipts — reviewed-checkmark column + zoom lightbox
-- 2026-05-21 Receipt zoom lightbox — center image + floating close button
-- 2026-05-21 QuickRF — add receipt images from Baza Data Hub
-- 2026-05-20 Sam Axe photo bursts — investigation, no drops on Sam side
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
