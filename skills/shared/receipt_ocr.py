@@ -549,7 +549,10 @@ def run_llm_analysis(image_path: str) -> dict:
         "OCR typos like 'The homedepot' → 'Home Depot' are expected.\n\n"
         "Fields to extract:\n"
         "- store_name: vendor name, canonicalized\n"
-        "- store_location: full street address + city/state if printed\n"
+        "- store_location: full street address + city/state if PRINTED on the "
+        "  receipt. NEVER invent a generic placeholder like '123 Main St', "
+        "  'Anytown', 'Your City', '00000', 'Sample St'. If the address is "
+        "  not legible or not on the receipt, return an empty string.\n"
         "- teller_name: cashier/server name; often labeled Cashier/CSHR/Server/Op/By; "
         "  strip leading IDs; leave empty if not clearly a person's name\n"
         "- purchase_date: YYYY-MM-DD. The date the customer PAID — usually printed\n"
@@ -690,20 +693,71 @@ def merge_results(ocr_data: dict, llm_data: dict, raw_text: str = "") -> dict:
 # ── Vendor + category post-processing ─────────────────────────────────────────
 
 def _normalize_vendor_and_category(merged: dict, raw_text: str = "") -> None:
-    """In-place: normalize store_name via vendor_kb, apply fuel-detection override."""
+    """In-place: normalize store_name via vendor_kb, resolve store_location
+    against the vendor_locations KB, and apply fuel-detection override."""
     try:
         from vendor_kb import match_vendor, suggest_category_from_items
     except Exception:
         return
 
+    try:
+        from vendor_locations import (
+            is_placeholder_address,
+            lookup_location,
+            format_location,
+            vendor_is_online,
+        )
+    except Exception:
+        is_placeholder_address = lambda _t: False  # noqa: E731
+        lookup_location = lambda *_a, **_k: None    # noqa: E731
+        format_location = lambda _l: ""             # noqa: E731
+        vendor_is_online = lambda _c: False         # noqa: E731
+
     # Normalize vendor (store_name) using the knowledge base
     raw_name = merged.get("store_name") or ""
+    canon: str = ""
     if raw_name:
         canon, cat_hint, conf = match_vendor(raw_name)
         if canon and conf >= 0.85:
             merged["store_name"] = canon
             if not merged.get("category") and cat_hint:
                 merged["category"] = cat_hint
+
+    # Address pipeline:
+    #   1. Discard placeholder strings ("123 Main St / Anytown / USA") the
+    #      vision model fabricates when it cannot read the printed address.
+    #   2. If we know the canonical vendor and have raw OCR, ask the locations
+    #      KB whether one of the known addresses matches (phone / ZIP / store#
+    #      / street). If yes, replace store_location with the canonical form.
+    #   3. For online-only vendors (Amazon, eBay), null the store_location —
+    #      a shipping address is not a "store" address and tends to leak
+    #      Serge's home address into analytics.
+    canon_for_lookup = merged.get("store_name") or canon or ""
+    addr_in = (merged.get("store_location") or "").strip()
+    placeholder = is_placeholder_address(addr_in) if addr_in else False
+
+    if canon_for_lookup and vendor_is_online(canon_for_lookup):
+        # Online vendor — there is no physical store address.
+        merged["store_location"] = ""
+    else:
+        # If the vision-extracted address is a placeholder, treat it as missing.
+        addr_candidate = "" if placeholder else addr_in
+        # Try resolver if (a) we have no address, or (b) only a placeholder.
+        if not addr_candidate and canon_for_lookup:
+            resolved = lookup_location(canon_for_lookup, raw_text)
+            if resolved:
+                merged["store_location"] = format_location(resolved)
+            else:
+                # No legitimate address available. Don't keep fabricated text.
+                merged["store_location"] = ""
+        elif addr_candidate and canon_for_lookup:
+            # We have what looks like a real printed address — but the vision
+            # model sometimes reads digits wrong (19134 → 19194). If the raw
+            # text also matches a known location for this vendor strongly,
+            # prefer the canonical form (it's authoritative).
+            resolved = lookup_location(canon_for_lookup, raw_text)
+            if resolved and format_location(resolved):
+                merged["store_location"] = format_location(resolved)
 
     # Fuel detection — if OCR text shows "X.XX gal" / "gallons" / pump keywords,
     # force category=Fuel regardless of what LLM said. Wawa/Sheetz/7-Eleven

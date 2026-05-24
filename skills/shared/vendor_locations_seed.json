@@ -1,0 +1,170 @@
+{
+  "_meta": {
+    "center_zip": "19020",
+    "center": "Bensalem PA",
+    "radius_mi": 250,
+    "notes": "Initial seed focused on Greater Philly / Bucks County / South Jersey / NYC metro — the region Serge's receipts will most often come from. Extend by editing this file and re-running scripts/sync_vendor_locations.py (or by POSTing to /api/ahb/vendor-locations). Source 'web' = web search, 'ocr' = recovered from a real receipt, 'manual' = entered by hand."
+  },
+  "vendors": [
+    {
+      "canonical": "Home Depot",
+      "vendor_type": "Materials",
+      "is_online": false,
+      "locations": [
+        {"store_number": "4103", "name": "Bensalem (Rockhill)",        "street": "900 Rockhill Dr",       "city": "Bensalem",      "state": "PA", "zip": "19020", "phone": "215-942-4779", "source": "web"},
+        {"store_number": "4134", "name": "Neshaminy (Bristol Pike)",   "street": "1336 Bristol Pike",     "city": "Bensalem",      "state": "PA", "zip": "19020", "phone": "215-638-3510", "source": "ocr"},
+        {"store_number": "4101", "name": "Philadelphia (Castor Ave)",  "street": "2539 Castor Ave",       "city": "Philadelphia",  "state": "PA", "zip": "19134", "phone": "215-744-1126", "source": "ocr"},
+        {"store_number": null,    "name": "Philadelphia (Bustleton)",   "street": "11725 Bustleton Ave",   "city": "Philadelphia",  "state": "PA", "zip": "19116", "phone": "215-676-7029", "source": "web"},
+        {"store_number": null,    "name": "Fairless Hills",             "street": "400 Commerce Blvd",     "city": "Fairless Hills","state": "PA", "zip": "19030", "phone": "215-943-1900", "source": "web"},
+        {"store_number": null,    "name": "Philadelphia (Roosevelt Mall)", "street": "2200 W Oregon Ave", "city": "Philadelphia",  "state": "PA", "zip": "19145", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Warrington",                 "street": "1336 Easton Rd",        "city": "Warrington",    "state": "PA", "zip": "18976", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Cottman Ave",                "street": "1830 Cottman Ave",      "city": "Philadelphia",  "state": "PA", "zip": "19111", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Cherry Hill NJ",             "street": "1750 Marlton Pike E",   "city": "Cherry Hill",   "state": "NJ", "zip": "08003", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Mt Laurel NJ",               "street": "1075 Nixon Dr",         "city": "Mt Laurel",     "state": "NJ", "zip": "08054", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Hamilton NJ",                "street": "1090 Whitehorse Mercerville Rd", "city": "Hamilton","state": "NJ","zip": "08619","phone": null,        "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Lowe's",
+      "vendor_type": "Materials",
+      "is_online": false,
+      "locations": [
+        {"store_number": "1980", "name": "Trevose/Bensalem",            "street": "2106 Lincoln Hwy",      "city": "Trevose",       "state": "PA", "zip": "19053", "phone": null,          "source": "web"},
+        {"store_number": "1848", "name": "NE Philadelphia",             "street": "9701 E Roosevelt Blvd", "city": "Philadelphia",  "state": "PA", "zip": "19114", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Levittown",                  "street": "1501 Lincoln Hwy",      "city": "Levittown",     "state": "PA", "zip": "19056", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Warrington",                 "street": "100 Lacey Blvd",        "city": "Warrington",    "state": "PA", "zip": "18976", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Philadelphia (S 25th)",      "street": "2200 S Christopher Columbus Blvd", "city": "Philadelphia", "state": "PA", "zip": "19148", "phone": null, "source": "web"},
+        {"store_number": null,    "name": "Cherry Hill NJ",             "street": "2106 Marlton Pike E",   "city": "Cherry Hill",   "state": "NJ", "zip": "08003", "phone": null,          "source": "web"},
+        {"store_number": null,    "name": "Hamilton NJ",                "street": "150 Marketplace Blvd",  "city": "Hamilton",      "state": "NJ", "zip": "08691", "phone": null,          "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Sherwin-Williams",
+      "vendor_type": "Materials",
+      "is_online": false,
+      "locations": [
+        {"store_number": "703791", "name": "Bensalem (Bristol Pike)",   "street": "1336 Bristol Pike Ste 600", "city": "Cornwell Heights", "state": "PA", "zip": "19020", "phone": null,        "source": "ocr"},
+        {"store_number": "705147", "name": "Bensalem (Street Rd)",      "street": "2866 Street Rd",        "city": "Bensalem",      "state": "PA", "zip": "19020", "phone": "215-639-7575", "source": "web"},
+        {"store_number": "703776", "name": "Feasterville-Trevose",      "street": "317 E Street Rd",       "city": "Feasterville",  "state": "PA", "zip": "19053", "phone": null,          "source": "web"},
+        {"store_number": null,      "name": "Philadelphia (Castor Ave)","street": "2431B Castor Ave",      "city": "Philadelphia",  "state": "PA", "zip": "19134", "phone": "215-743-7894", "source": "ocr"},
+        {"store_number": "703842", "name": "Philadelphia (Bustleton)",  "street": "10775 Bustleton Ave",   "city": "Philadelphia",  "state": "PA", "zip": "19116", "phone": null,          "source": "web"},
+        {"store_number": "705287", "name": "Philadelphia (Rising Sun)", "street": "6814 Rising Sun Ave",   "city": "Philadelphia",  "state": "PA", "zip": "19111", "phone": null,          "source": "web"},
+        {"store_number": "703732", "name": "Philadelphia (Roosevelt Blvd)", "street": "9912 Roosevelt Blvd","city": "Philadelphia", "state": "PA", "zip": "19115", "phone": null,          "source": "web"},
+        {"store_number": null,      "name": "Cherry Hill NJ",           "street": "1736 Springdale Rd",    "city": "Cherry Hill",   "state": "NJ", "zip": "08003", "phone": null,          "source": "web"},
+        {"store_number": null,      "name": "Mt Laurel NJ",             "street": "1310 Rt 73",            "city": "Mt Laurel",     "state": "NJ", "zip": "08054", "phone": null,          "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Appliance Solutions LLC",
+      "vendor_type": "Subcontractor",
+      "is_online": false,
+      "aliases": ["Appliances Solution LLC", "Appliance Solutions"],
+      "locations": [
+        {"store_number": null, "name": "Service area — Philadelphia metro", "street": null, "city": "Philadelphia", "state": "PA", "zip": null, "phone": null, "source": "web", "notes": "Mobile service area covering Philly + Bucks County."}
+      ]
+    },
+    {
+      "canonical": "Best Buy",
+      "vendor_type": "Electronics",
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Neshaminy Mall",               "street": "501 Neshaminy Mall",    "city": "Bensalem",      "state": "PA", "zip": "19020", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Langhorne (Oxford Valley)",    "street": "180 Oxford Valley Rd",  "city": "Langhorne",     "state": "PA", "zip": "19047", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Philadelphia (Roosevelt Blvd)","street": "9281 Roosevelt Blvd",   "city": "Philadelphia",  "state": "PA", "zip": "19114", "phone": null, "source": "web"},
+        {"store_number": null, "name": "King of Prussia",              "street": "500 W DeKalb Pike",     "city": "King of Prussia","state":"PA","zip": "19406", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Cherry Hill NJ",               "street": "2135 Rt 38",            "city": "Cherry Hill",   "state": "NJ", "zip": "08002", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Deptford NJ",                  "street": "1750 Clements Bridge Rd","city": "Deptford",     "state": "NJ", "zip": "08096", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Micro Center",
+      "vendor_type": "Electronics",
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Philadelphia (St. Davids)",    "street": "550 E Lancaster Ave",   "city": "St Davids",     "state": "PA", "zip": "19087", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Parsippany NJ",                "street": "2 Powdermill Rd",       "city": "Parsippany",    "state": "NJ", "zip": "07054", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Brooklyn NY",                  "street": "445 Albee Sq W",        "city": "Brooklyn",      "state": "NY", "zip": "11201", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Floor & Decor",
+      "vendor_type": "Materials",
+      "aliases": ["Floor and Decor", "Floors and Decor"],
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Langhorne",                     "street": "2424 E Lincoln Hwy",   "city": "Langhorne",     "state": "PA", "zip": "19047", "phone": null, "source": "web"},
+        {"store_number": null, "name": "King of Prussia",               "street": "2050 N Gulph Rd",     "city": "King of Prussia","state":"PA","zip":"19406","phone": null, "source": "web"},
+        {"store_number": null, "name": "Maple Shade NJ",                "street": "2870 Rt 73",           "city": "Maple Shade",   "state": "NJ", "zip": "08052", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Deptford NJ",                   "street": "1500 Almonesson Rd",   "city": "Deptford",      "state": "NJ", "zip": "08096", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Tractor Supply",
+      "vendor_type": "Materials",
+      "aliases": ["Tractor Supply Co", "Tractor Supply Company", "TSC"],
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Quakertown",                    "street": "195 N West End Blvd",  "city": "Quakertown",    "state": "PA", "zip": "18951", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Newtown",                       "street": "2845 S Eagle Rd",      "city": "Newtown",       "state": "PA", "zip": "18940", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Doylestown",                    "street": "4275 W Swamp Rd",      "city": "Doylestown",    "state": "PA", "zip": "18902", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Pemberton NJ",                  "street": "300 Pemberton Browns Mills Rd", "city": "Pemberton", "state":"NJ","zip":"08068", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "True Value Hardware",
+      "vendor_type": "Materials",
+      "aliases": ["True Value", "Tru Value", "TrueValue"],
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Newtown True Value",            "street": "9 N State St",         "city": "Newtown",       "state": "PA", "zip": "18940", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Yardley Hardware",              "street": "39 S Main St",         "city": "Yardley",       "state": "PA", "zip": "19067", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Doylestown Hardware",           "street": "150 W State St",       "city": "Doylestown",    "state": "PA", "zip": "18901", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Avalon Flooring",
+      "vendor_type": "Materials",
+      "aliases": ["Avalon Floors", "Avalon Carpet Tile and Flooring"],
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Cherry Hill NJ",                "street": "1855 Marlton Pike E",  "city": "Cherry Hill",   "state": "NJ", "zip": "08003", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Cinnaminson NJ",                "street": "2200 Rt 130 N",        "city": "Cinnaminson",   "state": "NJ", "zip": "08077", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Princeton NJ",                  "street": "3489 Rt 1",            "city": "Lawrenceville", "state": "NJ", "zip": "08648", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Bensalem (Neshaminy Mall area)","street": "1761 Lincoln Hwy",     "city": "Langhorne",     "state": "PA", "zip": "19047", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Amazon",
+      "vendor_type": "Online",
+      "aliases": ["Amazon.com", "AMZN Mktp", "Amazon Marketplace", "Amazon Prime"],
+      "is_online": true,
+      "locations": []
+    },
+    {
+      "canonical": "eBay",
+      "vendor_type": "Online",
+      "aliases": ["EBAY", "ebay.com"],
+      "is_online": true,
+      "locations": []
+    },
+    {
+      "canonical": "Harbor Freight",
+      "vendor_type": "Tools",
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Bensalem",                      "street": "3411 Hulmeville Rd",   "city": "Bensalem",      "state": "PA", "zip": "19020", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Philadelphia (NE)",             "street": "9981 Roosevelt Blvd",  "city": "Philadelphia",  "state": "PA", "zip": "19115", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Levittown",                     "street": "8919 New Falls Rd",    "city": "Levittown",     "state": "PA", "zip": "19054", "phone": null, "source": "web"}
+      ]
+    },
+    {
+      "canonical": "Ace Hardware",
+      "vendor_type": "Materials",
+      "is_online": false,
+      "locations": [
+        {"store_number": null, "name": "Doylestown (Provincetown Ace)", "street": "1492 Easton Rd",       "city": "Warrington",    "state": "PA", "zip": "18976", "phone": null, "source": "web"},
+        {"store_number": null, "name": "Yardley Ace",                   "street": "1645 Big Oak Rd",      "city": "Yardley",       "state": "PA", "zip": "19067", "phone": null, "source": "web"}
+      ]
+    }
+  ]
+}
