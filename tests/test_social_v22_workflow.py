@@ -449,3 +449,28 @@ def test_versions_for_unknown_post_returns_empty(client):
     c, _ = client
     j = c.get("/api/ahb/social/posts/999999/versions").get_json()
     assert j["versions"] == []
+
+
+def test_patch_scheduled_at_preserves_time(client):
+    """T7 regression-pin: when the calendar UI drag updates scheduled_at
+    by changing only the date portion, the backend just writes whatever
+    the client sends. The UI is responsible for combining new date +
+    old time-of-day into a full ISO string. This test locks in the
+    round-trip so future PATCH refactors can't silently drop or
+    rewrite the timestamp."""
+    c, db = client
+    con = sqlite3.connect(db)
+    con.execute(
+        "INSERT INTO ahb_social_posts (project_id, platform, variant, status, caption, scheduled_at) "
+        "VALUES (1,'ig_reel','A','scheduled','x','2026-06-01T15:30:00')"
+    )
+    con.commit()
+    pid = con.execute("SELECT id FROM ahb_social_posts ORDER BY id DESC LIMIT 1").fetchone()[0]
+    con.close()
+    r = c.patch(f"/api/ahb/social/posts/{pid}",
+                json={"scheduled_at": "2026-06-15T15:30:00"})
+    assert r.status_code == 200
+    con = sqlite3.connect(db)
+    sched = con.execute("SELECT scheduled_at FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()[0]
+    con.close()
+    assert sched == "2026-06-15T15:30:00"

@@ -20336,6 +20336,8 @@ SocialStudio.modules.brandkit = (function(){
 
 SocialStudio.modules.scheduler = (function(){
   const root = () => document.getElementById('ss-sub-scheduler');
+  // View toggle persists across sub-tab switches (module-scoped).
+  let _view = 'list';
 
   function _esc(s) {
     return String(s == null ? '' : s)
@@ -20343,7 +20345,22 @@ SocialStudio.modules.scheduler = (function(){
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  async function load() {
+  function _toggleHtml() {
+    const btn = (v, label) => `
+      <button class="btn-secondary"
+              data-sched-view="${v}"
+              onclick="SocialStudio.modules.scheduler.setView('${v}')"
+              style="${_view===v
+                ? 'background:#10b981;color:#0a0a18;border-color:#10b981;font-weight:700'
+                : ''}">${label}</button>`;
+    return `
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        ${btn('list', 'List')}
+        ${btn('calendar', 'Calendar')}
+      </div>`;
+  }
+
+  async function _renderList() {
     let items = [];
     try {
       const r = await fetch('/api/ahb/social/posts?status=scheduled');
@@ -20359,16 +20376,303 @@ SocialStudio.modules.scheduler = (function(){
       <div class="ss-card" style="margin-bottom:8px">
         <div style="font-weight:700;color:#10b981;margin-bottom:6px">${_esc(d)}</div>
         ${days[d].map(p => `
-          <div style="display:flex;gap:8px;padding:4px 0;border-top:1px solid #1a1a2e">
+          <div style="display:flex;gap:8px;padding:4px 0;border-top:1px solid #1a1a2e;cursor:pointer"
+               onclick="SocialStudio.modules.postdetail.open(${p.id})">
             <div style="color:#aaa;font-size:12px;min-width:120px">${_esc(p.platform)}</div>
             <div style="flex:1;color:#ddd;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((p.caption||'').slice(0,140))}</div>
           </div>
         `).join('')}
       </div>
     `).join('');
-    root().innerHTML = html || '<div style="color:#444;padding:40px;text-align:center">Nothing scheduled. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'library\')">Pick from Library →</button></div>';
+    const empty = '<div style="color:#444;padding:40px;text-align:center">Nothing scheduled. <button class="btn-primary" style="margin-left:8px" onclick="SocialStudio.switchSub(\'library\')">Pick from Library →</button></div>';
+    root().innerHTML = _toggleHtml() + (html || empty);
   }
-  return { render: load };
+
+  async function load() {
+    if (_view === 'calendar') {
+      root().innerHTML = _toggleHtml() + '<div id="ss-cal-mount"></div>';
+      await SocialStudio.modules.calendar.render();
+    } else {
+      await _renderList();
+    }
+  }
+
+  function setView(v) {
+    if (v !== 'list' && v !== 'calendar') return;
+    if (_view === v) return;
+    _view = v;
+    load();
+  }
+
+  return { render: load, setView };
+})();
+
+SocialStudio.modules.calendar = (function(){
+  const mount = () => document.getElementById('ss-cal-mount');
+
+  // Module state: current month + cached posts.
+  const today = new Date();
+  let _year = today.getFullYear();
+  let _month = today.getMonth(); // 0-11
+  let _posts = [];
+
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const STATUS_COLORS = {
+    scheduled: '#3b82f6',
+    posted: '#10b981',
+    pending_review: '#f59e0b',
+    approved: '#14b8a6',
+    draft: '#6b7280',
+    rejected: '#7f1d1d',
+  };
+  const PLATFORM_SHORT = {
+    ig_reel: 'IG',
+    ig_post: 'IG',
+    ig_story: 'IGs',
+    tiktok: 'TT',
+    youtube: 'YT',
+    yt_short: 'YT',
+    facebook: 'FB',
+    twitter: 'X',
+    x: 'X',
+    threads: 'TH',
+  };
+
+  function _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function _ymd(d) {
+    return d.getFullYear() + '-' + _pad(d.getMonth() + 1) + '-' + _pad(d.getDate());
+  }
+  function _sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear()
+        && a.getMonth() === b.getMonth()
+        && a.getDate() === b.getDate();
+  }
+  function _platformShort(p) {
+    return PLATFORM_SHORT[p] || (p ? p.slice(0,2).toUpperCase() : '??');
+  }
+  function _chipColor(status) {
+    return STATUS_COLORS[status] || '#6b7280';
+  }
+
+  async function _fetchPosts() {
+    try {
+      const r = await fetch('/api/ahb/social/posts?limit=500');
+      if (r.ok) _posts = (await r.json()).items || [];
+    } catch (e) {
+      _posts = [];
+    }
+  }
+
+  function _groupByDay() {
+    const map = {};
+    _posts.forEach(p => {
+      const s = (p.scheduled_at || '').trim();
+      if (!s) return;
+      const key = s.slice(0, 10);
+      (map[key] = map[key] || []).push(p);
+    });
+    return map;
+  }
+
+  async function render() {
+    if (!mount()) return;
+    if (_posts.length === 0) await _fetchPosts();
+    _draw();
+  }
+
+  function _draw() {
+    const root = mount();
+    if (!root) return;
+    const dayMap = _groupByDay();
+
+    const firstOfMonth = new Date(_year, _month, 1);
+    const startDow = firstOfMonth.getDay(); // 0=Sun
+    const gridStart = new Date(_year, _month, 1 - startDow);
+    const cells = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      cells.push(d);
+    }
+    const now = new Date();
+
+    const headerHtml = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <button class="btn-secondary" onclick="SocialStudio.modules.calendar.prev()">← prev</button>
+        <div style="flex:1;text-align:center;font-weight:800;font-size:16px;color:#ddd">
+          ${MONTHS[_month]} ${_year}
+        </div>
+        <button class="btn-secondary" onclick="SocialStudio.modules.calendar.today()">Today</button>
+        <button class="btn-secondary" onclick="SocialStudio.modules.calendar.next()">next →</button>
+      </div>`;
+
+    const dowHtml = `
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">
+        ${DOW.map(d => `<div style="text-align:center;color:#888;font-size:11px;text-transform:uppercase;font-weight:700;padding:4px 0">${d}</div>`).join('')}
+      </div>`;
+
+    const cellsHtml = cells.map(d => {
+      const key = _ymd(d);
+      const inMonth = d.getMonth() === _month;
+      const isToday = _sameDay(d, now);
+      const posts = dayMap[key] || [];
+      const dayNumColor = isToday ? '#3b82f6' : (inMonth ? '#ddd' : '#444');
+      const dayNumWeight = isToday ? '800' : '600';
+      const cellBg = isToday ? '#0a1430' : '#070712';
+      const cellBorder = isToday ? '#3b82f6' : '#1a1a2e';
+
+      const visible = posts.slice(0, 3);
+      const overflow = posts.length - visible.length;
+      const chipsHtml = visible.map(p => {
+        const color = _chipColor(p.status);
+        const plat = _platformShort(p.platform);
+        const captionShort = (p.caption || '').slice(0, 30);
+        return `
+          <div draggable="true"
+               data-post-id="${p.id}"
+               ondragstart="SocialStudio.modules.calendar._dragStart(event, ${p.id})"
+               onclick="event.stopPropagation(); SocialStudio.modules.postdetail.open(${p.id})"
+               title="${_esc(p.caption || '')}"
+               style="background:${color};color:#fff;font-size:10px;padding:2px 4px;border-radius:3px;margin-top:2px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">
+            [${_esc(plat)}] ${_esc(captionShort)}
+          </div>`;
+      }).join('');
+
+      const moreHtml = overflow > 0
+        ? `<div onclick="event.stopPropagation(); SocialStudio.modules.calendar._showMore('${key}')"
+               style="color:#3b82f6;font-size:10px;margin-top:2px;cursor:pointer;text-decoration:underline">+${overflow} more</div>`
+        : '';
+
+      return `
+        <div data-date="${key}"
+             ondragover="event.preventDefault()"
+             ondrop="SocialStudio.modules.calendar._drop(event, '${key}')"
+             style="background:${cellBg};border:1px solid ${cellBorder};border-radius:6px;min-height:88px;padding:4px;overflow:hidden">
+          <div style="color:${dayNumColor};font-weight:${dayNumWeight};font-size:12px">${d.getDate()}</div>
+          ${chipsHtml}
+          ${moreHtml}
+        </div>`;
+    }).join('');
+
+    const gridHtml = `
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+        ${cellsHtml}
+      </div>`;
+
+    root.innerHTML = headerHtml + dowHtml + gridHtml;
+  }
+
+  function _dragStart(e, id) {
+    e.dataTransfer.setData('text/post-id', String(id));
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  async function _drop(e, dateKey) {
+    e.preventDefault();
+    const id = parseInt(e.dataTransfer.getData('text/post-id'), 10);
+    if (!id) return;
+    const post = _posts.find(p => p.id === id);
+    if (!post) return;
+
+    // Build new scheduled_at, preserving time-of-day.
+    const oldSched = (post.scheduled_at || '').trim();
+    const oldDate = oldSched.slice(0, 10);
+    if (oldDate === dateKey) return; // no-op drop on same day
+    let timePart = '12:00:00';
+    if (oldSched.length >= 19) {
+      timePart = oldSched.slice(11, 19);
+    } else if (oldSched.includes('T') && oldSched.length > 11) {
+      timePart = oldSched.slice(11) || '12:00:00';
+    }
+    const newSched = dateKey + 'T' + timePart;
+
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ scheduled_at: newSched }),
+      });
+      if (r.ok) {
+        SocialStudio.modules.toast.success('Rescheduled to ' + dateKey);
+        post.scheduled_at = newSched;
+        _draw();
+      } else {
+        SocialStudio.modules.toast.error('Reschedule failed');
+      }
+    } catch (err) {
+      SocialStudio.modules.toast.error('Reschedule failed');
+    }
+  }
+
+  function _showMore(dateKey) {
+    const posts = _posts.filter(p => (p.scheduled_at || '').slice(0, 10) === dateKey);
+    if (!posts.length) return;
+    // Lightweight overlay popup. Click backdrop to close.
+    const existing = document.getElementById('ss-cal-more');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'ss-cal-more';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    const rows = posts.map(p => {
+      const color = _chipColor(p.status);
+      const plat = _platformShort(p.platform);
+      const cap = (p.caption || '').slice(0, 80);
+      const time = (p.scheduled_at || '').slice(11, 16) || '--:--';
+      return `
+        <div onclick="document.getElementById('ss-cal-more').remove(); SocialStudio.modules.postdetail.open(${p.id})"
+             style="display:flex;gap:8px;align-items:center;padding:8px;border-top:1px solid #1a1a2e;cursor:pointer">
+          <span style="background:${color};color:#fff;font-size:10px;padding:2px 6px;border-radius:3px">${_esc(plat)}</span>
+          <span style="color:#888;font-size:11px;min-width:42px">${_esc(time)}</span>
+          <span style="flex:1;color:#ddd;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(cap)}</span>
+          <span style="color:#666;font-size:10px">${_esc(p.status || '')}</span>
+        </div>`;
+    }).join('');
+    overlay.innerHTML = `
+      <div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:14px;max-width:520px;width:90%;max-height:70vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700;color:#10b981">${_esc(dateKey)} — ${posts.length} posts</div>
+          <button class="btn-secondary" onclick="document.getElementById('ss-cal-more').remove()">Close</button>
+        </div>
+        ${rows}
+      </div>`;
+    document.body.appendChild(overlay);
+  }
+
+  function prev() {
+    _month -= 1;
+    if (_month < 0) { _month = 11; _year -= 1; }
+    _draw();
+  }
+  function next() {
+    _month += 1;
+    if (_month > 11) { _month = 0; _year += 1; }
+    _draw();
+  }
+  function goToday() {
+    const now = new Date();
+    _year = now.getFullYear();
+    _month = now.getMonth();
+    _draw();
+  }
+  // Allow forced refresh from outside (e.g. after PATCH from List view).
+  async function refresh() {
+    await _fetchPosts();
+    _draw();
+  }
+
+  return {
+    render, prev, next, today: goToday, refresh,
+    _dragStart, _drop, _showMore,
+  };
 })();
 
 SocialStudio.modules.autopilot = (function(){
