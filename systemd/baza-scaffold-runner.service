@@ -1,0 +1,13 @@
+[Unit]
+Description=Baza scaffold runner — dispatches unblocked scaffold nodes to agents
+After=network.target
+
+[Service]
+Type=oneshot
+User=switchhacker
+Group=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+Environment="PATH=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin:/usr/bin:/bin"
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python /home/switchhacker/baza-empire/agent-framework-v3/core/scaffold_runner.py --once
+StandardOutput=append:/var/log/baza/scaffold-runner.log
+StandardError=append:/var/log/baza/scaffold-runner.log

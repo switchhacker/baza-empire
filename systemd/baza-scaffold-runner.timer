@@ -1,0 +1,11 @@
+[Unit]
+Description=Run baza scaffold runner every 30s
+Requires=baza-scaffold-runner.service
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
