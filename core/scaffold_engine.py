@@ -10,6 +10,7 @@ NODE_TYPES = {
     "root", "research", "decision", "hardware_component",
     "firmware", "software_module", "integration",
     "test", "deploy", "result", "manual_step",
+    "schematic",
 }
 
 DEFAULT_WEIGHTS = {
@@ -24,6 +25,7 @@ DEFAULT_WEIGHTS = {
     "deploy": 2,
     "manual_step": 2,
     "result": 0,
+    "schematic": 2,
 }
 
 _AGENT_BY_TYPE = {
@@ -38,6 +40,7 @@ _AGENT_BY_TYPE = {
     "manual_step": None,
     "root": None,
     "result": "claw_batto",
+    "schematic": "rex_smasher",
 }
 
 
