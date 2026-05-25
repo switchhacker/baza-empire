@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-05-23 Social Studio v2 — mega-spec + 3 plans written
-- 2026-05-23 Social Studio v2 execution — substantial progress
-- 2026-05-23 Social Studio v2 — paused at user request
-- 2026-05-23 Social Studio v2.1 — T6 + T7 shipped
-- 2026-05-23 Social Studio v2.1 — T8/T9/T11 shipped
-- 2026-05-23 Social Studio v2.1 — T10/T14/T18 shipped
-- 2026-05-23 Social v2.1 — T12/T13/T15/T17/T19/T20/T21/T22 + Data Hub/Media bridge
-- 2026-05-23 Social v2.1 — T16 image editor — v2.1 COMPLETE (22/22)
-- 2026-05-22 ahb123 — Social Media Studio spec written
-- 2026-05-22 ahb123 — Social Media Studio plan written
-- 2026-05-22 Pulled SuperGemma4-26B-Uncensored Q4_K_M + made settings model selector dynamic
-- 2026-05-22 Dual-GPU Ollama instance for SuperGemma4-26B (AMD + NVIDIA via Vulkan)
-- 2026-05-22 Social Media Studio — Phase 1 shipped (14-task plan)
-- 2026-05-22 Comms — John Doe model tester (pick ANY model per chat)
-- 2026-05-22 Social Media Studio — merged into main
+- 2026-05-24 Social Studio v2.2 — kickoff
+- 2026-05-24 v2.2 T1 shipped — schema + scaffolds
+- 2026-05-24 QuickRF receipts — vendor/address/total fix kickoff
+- 2026-05-24 v2.2 T2 shipped — templates CRUD + apply
+- 2026-05-24 UI: Render-ALL button yellow
+- 2026-05-24 v2.2 T3 shipped — tags / collections
+- 2026-05-24 v2.2 T4 shipped — FTS5 search with LIKE fallback
+- 2026-05-24 QuickRF — vendor_locations KB + address resolver shipped
+- 2026-05-24 QuickRF — compact toggle + per-category collapse
+- 2026-05-24 v2.2 T5 shipped — bulk operations
+- 2026-05-24 Vendors moved to Treasury → Vendors + LLM discovery
+- 2026-05-24 v2.2 T6 shipped — auto-save + version history
+- 2026-05-24 v2.2 T7 shipped — month calendar
+- 2026-05-24 v2.2 T8 shipped — approval workflow + recurring
+- 2026-05-24 v2.2 T9 shipped — trends sub-tab
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
