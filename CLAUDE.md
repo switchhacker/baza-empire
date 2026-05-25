@@ -33,6 +33,22 @@ systemctl start baza-task-runner.timer
 systemctl status baza-agents.service
 ```
 
+## Background Reviewer (Claw Batto, always-on)
+
+**Heads up: anything you save in this tree gets reviewed.** Two user systemd units watch this repo:
+
+- `baza-claw-review.service` — `scripts/claw_continuous_review.py`. Four cadences: fast 60s (systemd/processes), medium 5m (git commits → LLM diff review), slow 15m (journal errors + FIXME scan), hourly (digest to `~/Desktop/baza-session-log.md` + infra-delta snapshot).
+- `baza-claw-fs-watcher.service` — `scripts/claw_fs_watcher.py`. inotify per-file review on save (8s debounce, 12s LLM floor, file truncated >800 lines).
+
+Findings: `dashboard/claw_reviews.db` (SQLite — separate from `baza_projects.db`). Severity ∈ `{info,warn,bug,regression,security}`; free-form labels (`security`, `regression-risk`, `complexity-high`, `commit-review`, `fs-event`, `infra-map`, …).
+
+```bash
+venv/bin/python -c "from core.claw_review_db import recent; [print(r['severity'], r['target'], r['title']) for r in recent(20)]"
+journalctl --user -u baza-claw-review.service -u baza-claw-fs-watcher.service -f
+```
+
+Full subsystem map: `~/.claude/projects/-home-switchhacker/memory/project_claw_continuous_review.md`.
+
 ## Required Services
 
 All must be running before agents start:
@@ -170,3 +186,4 @@ litellm --config configs/litellm.yaml --port 4000
 2. Read args from `os.environ.get("SKILL_ARGS")` (JSON string)
 3. Print result to stdout — this becomes the skill output
 4. Agents invoke via `##SKILL:skill_name{"key":"val"}##` in LLM response
+
