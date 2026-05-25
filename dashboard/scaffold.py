@@ -255,6 +255,112 @@ def bom_list(pid):
     return jsonify({"items": [dict(r) for r in rows]})
 
 
+def _build_schematic_from_bom(eng, pid, schematic_node_id, preserve_existing=True):
+    """Build/refresh the schematic payload for `schematic_node_id` from
+    the project's current BOM. If preserve_existing=True, keep the
+    positions and labels of components that already exist in the schematic
+    (matched by component_id), and only APPEND newly-matched BOM rows
+    that aren't yet represented. Returns dict with counts.
+    """
+    import json as _json
+    import sqlite3 as _sq
+    from core.baza_components_library import match_component, get_component
+
+    # Fetch BOM
+    cur = _sq.connect(_db_path()); cur.row_factory = _sq.Row
+    try:
+        bom_rows = cur.execute(
+            "SELECT * FROM project_bom WHERE project_id=?", (pid,)
+        ).fetchall()
+    finally:
+        cur.close()
+
+    # Load existing schematic (so we preserve user positions/labels)
+    node = eng.get_node(schematic_node_id)
+    existing_payload = _json.loads(node.get("payload_json") or "{}")
+    existing_schem = existing_payload.get("schematic") or {"components": [], "wires": [], "notes": ""}
+    existing_components = existing_schem.get("components", [])
+    existing_wires = existing_schem.get("wires", [])
+
+    # Index existing by component_id (first occurrence kept)
+    seen_component_ids = {c.get("component_id") for c in existing_components}
+    components_out = list(existing_components) if preserve_existing else []
+    newly_added_instance_ids = []
+
+    # Append newly-matched BOM rows that aren't already represented
+    added_count = 0
+    for b in bom_rows:
+        matched = match_component(b["name"] or "")
+        if not matched:
+            continue
+        if matched["id"] in seen_component_ids and preserve_existing:
+            continue  # already in schematic
+        # Position new component to the right of existing ones
+        i = len(components_out)
+        new_inst_id = f"c{i+1}"
+        components_out.append({
+            "instance_id": new_inst_id,
+            "component_id": matched["id"],
+            "x": 60 + (i % 4) * 250,
+            "y": 60 + (i // 4) * 250,
+            "label": (b["name"] or matched["name"])[:40],
+        })
+        seen_component_ids.add(matched["id"])
+        newly_added_instance_ids.append(new_inst_id)
+        added_count += 1
+        if len(components_out) >= 16:
+            break
+
+    # Build/extend wire layout from MCU to each non-MCU component.
+    # On a fresh schematic (no existing wires), wire ALL components.
+    # On append (existing wires present), wire only the NEW components.
+    wires_out = list(existing_wires) if preserve_existing else []
+    if components_out:
+        mcu = next((c for c in components_out
+                    if (get_component(c["component_id"]) or {}).get("category") == "mcu"), None)
+        if mcu:
+            mcu_def = get_component(mcu["component_id"]) or {"pins": []}
+            mcu_power = next((p["name"] for p in mcu_def["pins"] if p["kind"] == "power"), None)
+            mcu_gnd = next((p["name"] for p in mcu_def["pins"] if p["kind"] == "ground"), None)
+            gpio_pool = [p["name"] for p in mcu_def["pins"] if p["kind"] == "gpio"]
+            # Count gpio slots already consumed by existing wires
+            gpio_idx = sum(1 for w in existing_wires if w.get("color") == "signal")
+            # Decide which components need wiring this pass
+            if existing_wires:
+                wire_targets = [c for c in components_out
+                                if c["instance_id"] in newly_added_instance_ids
+                                and c["instance_id"] != mcu["instance_id"]]
+            else:
+                wire_targets = [c for c in components_out
+                                if c["instance_id"] != mcu["instance_id"]]
+            for c in wire_targets:
+                comp_def = get_component(c["component_id"]) or {"pins": []}
+                for p in comp_def["pins"]:
+                    if p["kind"] == "ground" and mcu_gnd:
+                        wires_out.append({"from": f"{mcu['instance_id']}.{mcu_gnd}",
+                                          "to": f"{c['instance_id']}.{p['name']}",
+                                          "color": "ground"})
+                    elif p["kind"] == "power" and mcu_power:
+                        wires_out.append({"from": f"{mcu['instance_id']}.{mcu_power}",
+                                          "to": f"{c['instance_id']}.{p['name']}",
+                                          "color": "power"})
+                    elif p["kind"] in ("signal", "gpio", "pwm") and gpio_idx < len(gpio_pool):
+                        wires_out.append({"from": f"{mcu['instance_id']}.{gpio_pool[gpio_idx]}",
+                                          "to": f"{c['instance_id']}.{p['name']}",
+                                          "color": "signal"})
+                        gpio_idx += 1
+                        break
+
+    schematic = {
+        "components": components_out,
+        "wires": wires_out,
+        "notes": existing_schem.get("notes") or "Auto-proposed from BOM. Drag to rearrange; click pins to wire."
+    }
+    existing_payload["schematic"] = schematic
+    eng.update_node(schematic_node_id, payload_json=_json.dumps(existing_payload, default=str))
+    return {"total_components": len(components_out), "added": added_count}
+
+
 @scaffold_bp.route("/api/baza/projects/<pid>/bom", methods=["POST"])
 def bom_create(pid):
     body = request.get_json(silent=True) or {}
@@ -277,105 +383,61 @@ def bom_create(pid):
     finally:
         con.close()
 
-    # Auto-spawn a schematic node on first hardware BOM addition (one-shot per project)
+    # Schematic sync: create on first hw BOM, append on subsequent hw BOMs
     try:
         eng = _engine()
         import sqlite3 as _sq
-        _con = _sq.connect(_db_path()); _con.row_factory = _sq.Row
-        try:
-            # Does a schematic node already exist for this project?
-            has_schem = _con.execute(
-                "SELECT 1 FROM project_scaffold_nodes WHERE project_id=? AND node_type='schematic' LIMIT 1",
-                (pid,)
-            ).fetchone()
-            # Is this BOM row hardware-ish (matches a known component)?
-            from core.baza_components_library import match_component
-            is_hw = match_component(name) is not None
-        finally:
-            _con.close()
-        if not has_schem and is_hw:
-            # Find the root node to attach to (or use no parent if root missing)
-            rn = eng.get_nodes(pid)
-            root = next((n for n in rn if n["node_type"] == "root"), None)
-            schem_id = eng.create_node(
-                pid,
-                node_type="schematic",
-                title="Wiring schematic",
-                description="Auto-generated from your BOM. Drag components to rearrange; click pins to wire.",
-                parent_id=(root["id"] if root else None),
-                status="in_progress",
-                payload={"description": f"Initial wiring for project {pid}"}
-            )
-            # Trigger the propose-schematic skill in-process (don't subprocess — we have the engine here)
+        from core.baza_components_library import match_component
+        is_hw = match_component(name) is not None
+        if is_hw:
+            _con = _sq.connect(_db_path()); _con.row_factory = _sq.Row
             try:
-                from core.baza_components_library import list_components, get_component
-                # Inline a tiny version of the propose logic: collect BOM, match components, lay out grid, write payload
-                cur = _sq.connect(_db_path())
-                cur.row_factory = _sq.Row
+                existing_schem_row = _con.execute(
+                    "SELECT id FROM project_scaffold_nodes "
+                    "WHERE project_id=? AND node_type='schematic' "
+                    "ORDER BY id ASC LIMIT 1",
+                    (pid,)
+                ).fetchone()
+            finally:
+                _con.close()
+
+            if existing_schem_row is None:
+                # First hw BOM — create schematic node, then build payload
+                rn = eng.get_nodes(pid)
+                root = next((n for n in rn if n["node_type"] == "root"), None)
+                schem_id = eng.create_node(
+                    pid,
+                    node_type="schematic",
+                    title="Wiring schematic",
+                    description="Auto-generated from your BOM. Drag components to rearrange; click pins to wire.",
+                    parent_id=(root["id"] if root else None),
+                    status="in_progress",
+                    payload={"description": f"Initial wiring for project {pid}"}
+                )
                 try:
-                    bom_rows = cur.execute(
-                        "SELECT * FROM project_bom WHERE project_id=?", (pid,)
-                    ).fetchall()
-                finally:
-                    cur.close()
-                components_out = []
-                seen_ids = set()
-                for i, b in enumerate(bom_rows[:16]):
-                    matched = match_component(b["name"] or "")
-                    if not matched:
-                        continue
-                    inst_id = f"u{len(components_out)+1}"
-                    components_out.append({
-                        "instance_id": inst_id,
-                        "component_id": matched["id"],
-                        "x": 60 + (len(components_out) % 4) * 250,
-                        "y": 60 + (len(components_out) // 4) * 250,
-                        "label": b["name"][:40],
-                    })
-                    seen_ids.add(matched["id"])
-                # Simple wiring: power/ground rails to first MCU
-                wires = []
-                mcu = next((c for c in components_out if get_component(c["component_id"])["category"] == "mcu"), None)
-                if mcu:
-                    mcu_pins = {p["name"]: p for p in get_component(mcu["component_id"])["pins"]}
-                    mcu_power = next((p["name"] for p in get_component(mcu["component_id"])["pins"] if p["kind"] == "power"), None)
-                    mcu_gnd = next((p["name"] for p in get_component(mcu["component_id"])["pins"] if p["kind"] == "ground"), None)
-                    gpio_pool = [p["name"] for p in get_component(mcu["component_id"])["pins"] if p["kind"] == "gpio"]
-                    gpio_idx = 0
-                    for c in components_out:
-                        if c["instance_id"] == mcu["instance_id"]:
-                            continue
-                        comp_def = get_component(c["component_id"])
-                        for p in comp_def["pins"]:
-                            if p["kind"] == "ground" and mcu_gnd:
-                                wires.append({"from": f"{mcu['instance_id']}.{mcu_gnd}",
-                                             "to": f"{c['instance_id']}.{p['name']}", "color": "ground"})
-                            elif p["kind"] == "power" and mcu_power:
-                                wires.append({"from": f"{mcu['instance_id']}.{mcu_power}",
-                                             "to": f"{c['instance_id']}.{p['name']}", "color": "power"})
-                            elif p["kind"] in ("signal", "gpio", "pwm") and gpio_idx < len(gpio_pool):
-                                wires.append({"from": f"{mcu['instance_id']}.{gpio_pool[gpio_idx]}",
-                                             "to": f"{c['instance_id']}.{p['name']}", "color": "signal"})
-                                gpio_idx += 1
-                                break  # one signal wire per non-MCU component
-                schematic = {
-                    "components": components_out,
-                    "wires": wires,
-                    "notes": "Auto-proposed from BOM. Drag components to rearrange; click pins to wire."
-                }
-                import json as _json
-                existing = eng.get_node(schem_id)
-                payload = _json.loads(existing.get("payload_json") or "{}")
-                payload["schematic"] = schematic
-                eng.update_node(schem_id, payload_json=_json.dumps(payload, default=str))
-                eng.emit_event(pid, node_id=schem_id, event_type="schematic_proposed",
-                               actor="system", payload={"component_count": len(components_out)})
-            except Exception as e:
-                eng.emit_event(pid, node_id=schem_id, event_type="note", actor="system",
-                               payload={"warning": f"auto-propose failed: {e}"})
+                    result = _build_schematic_from_bom(eng, pid, schem_id, preserve_existing=True)
+                    eng.emit_event(pid, node_id=schem_id, event_type="schematic_proposed",
+                                   actor="system",
+                                   payload={"component_count": result["total_components"]})
+                except Exception as e:
+                    eng.emit_event(pid, node_id=schem_id, event_type="note", actor="system",
+                                   payload={"warning": f"auto-propose failed: {e}"})
+            else:
+                # Subsequent hw BOM — append to existing schematic
+                schem_id = existing_schem_row["id"]
+                try:
+                    result = _build_schematic_from_bom(eng, pid, schem_id, preserve_existing=True)
+                    if result["added"] > 0:
+                        eng.emit_event(pid, node_id=schem_id, event_type="schematic_updated",
+                                       actor="system",
+                                       payload={"added": result["added"],
+                                                "total_components": result["total_components"]})
+                except Exception as e:
+                    eng.emit_event(pid, node_id=schem_id, event_type="note", actor="system",
+                                   payload={"warning": f"auto-append failed: {e}"})
     except Exception as e:
         # Never crash the BOM POST because of schematic logic
-        print(f"[schematic auto-spawn] {e}", flush=True)
+        print(f"[schematic sync] {e}", flush=True)
 
     _engine().emit_event(pid, node_id=body.get("node_id"), event_type="bom_added",
                          actor="user", payload={"bom_id": bid, "name": name})
