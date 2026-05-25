@@ -1985,6 +1985,1750 @@ register("trash-bot-esp32", type_="esp-firmware", name="Trash bot (ESP32 + HC-SR
          files=_trash_bot_esp32)
 
 
+# ── nuxt-min ──────────────────────────────────────────────────────────────────
+def _nuxt_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "scripts": {{
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview"
+  }},
+  "devDependencies": {{
+    "nuxt": "^3.11.0"
+  }}
+}}
+'''),
+        ("nuxt.config.ts",
+            f'''// {project_id} — Nuxt 3 config
+export default defineNuxtConfig({{
+  devtools: {{ enabled: true }},
+  app: {{
+    head: {{ title: "{project_id}" }}
+  }}
+}})
+'''),
+        ("app.vue",
+            f'''<template>
+  <div class="app">
+    <h1>{{{{ title }}}}</h1>
+    <p>Nuxt 3 scaffold for <code>{project_id}</code></p>
+  </div>
+</template>
+
+<script setup lang="ts">
+const title = ref("{project_id}")
+</script>
+
+<style>
+.app {{ font-family: system-ui, sans-serif; padding: 2rem; }}
+</style>
+'''),
+        ("README.md", f"# {project_id}\n\nNuxt 3 scaffold.\n\n```\nnpm install\nnpm run dev\n```\n"),
+        (".gitignore", "node_modules/\n.nuxt/\n.output/\ndist/\n.env\n"),
+    ]
+
+
+register("nuxt-min", type_="web-app", name="Nuxt 3 minimal",
+         description="Minimal Nuxt 3 single-page scaffold with TypeScript config.",
+         files=_nuxt_min)
+
+
+# ── astro-min ─────────────────────────────────────────────────────────────────
+def _astro_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "type": "module",
+  "scripts": {{
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  }},
+  "devDependencies": {{
+    "astro": "^4.5.0"
+  }}
+}}
+'''),
+        ("astro.config.mjs",
+            f'''// {project_id} — Astro config
+import {{ defineConfig }} from 'astro/config';
+
+export default defineConfig({{
+  site: 'https://example.com',
+}});
+'''),
+        ("src/pages/index.astro",
+            f'''---
+const title = "{project_id}";
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{title}}</title>
+  </head>
+  <body>
+    <h1>{{title}}</h1>
+    <p>Astro static scaffold.</p>
+  </body>
+</html>
+'''),
+        ("README.md", f"# {project_id}\n\nAstro static-site scaffold.\n\n```\nnpm install\nnpm run dev\n```\n"),
+        (".gitignore", "node_modules/\ndist/\n.astro/\n.env\n"),
+    ]
+
+
+register("astro-min", type_="web-app", name="Astro minimal",
+         description="Static Astro scaffold with a single index page.",
+         files=_astro_min)
+
+
+# ── solidjs-min ───────────────────────────────────────────────────────────────
+def _solidjs_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "type": "module",
+  "scripts": {{
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }},
+  "dependencies": {{
+    "solid-js": "^1.8.0"
+  }},
+  "devDependencies": {{
+    "vite": "^5.0.0",
+    "vite-plugin-solid": "^2.10.0"
+  }}
+}}
+'''),
+        ("vite.config.js",
+            f'''import {{ defineConfig }} from 'vite';
+import solid from 'vite-plugin-solid';
+
+// {project_id} — SolidJS + Vite
+export default defineConfig({{
+  plugins: [solid()],
+}});
+'''),
+        ("index.html",
+            f'''<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>{project_id}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>
+'''),
+        ("src/index.jsx",
+            f'''import {{ render }} from 'solid-js/web';
+import App from './App';
+
+render(() => <App />, document.getElementById('root'));
+'''),
+        ("src/App.jsx",
+            f'''import {{ createSignal }} from 'solid-js';
+
+export default function App() {{
+  const [count, setCount] = createSignal(0);
+  return (
+    <div style={{{{ "font-family": "system-ui", padding: "2rem" }}}}>
+      <h1>{project_id}</h1>
+      <button onClick={{() => setCount(count() + 1)}}>clicks: {{count()}}</button>
+    </div>
+  );
+}}
+'''),
+        (".gitignore", "node_modules/\ndist/\n.env\n"),
+    ]
+
+
+register("solidjs-min", type_="web-app", name="SolidJS + Vite minimal",
+         description="SolidJS counter app with Vite bundler.",
+         files=_solidjs_min)
+
+
+# ── remix-min ─────────────────────────────────────────────────────────────────
+def _remix_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "type": "module",
+  "scripts": {{
+    "dev": "remix dev",
+    "build": "remix build",
+    "start": "remix-serve build"
+  }},
+  "dependencies": {{
+    "@remix-run/node": "^2.8.0",
+    "@remix-run/react": "^2.8.0",
+    "@remix-run/serve": "^2.8.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }},
+  "devDependencies": {{
+    "typescript": "^5.3.0"
+  }}
+}}
+'''),
+        ("remix.config.js",
+            f'''/** @type {{import('@remix-run/dev').AppConfig}} */
+export default {{
+  ignoredRouteFiles: ["**/.*"],
+  // {project_id} Remix config
+}};
+'''),
+        ("app/root.tsx",
+            f'''import {{ Links, Meta, Outlet, Scripts }} from "@remix-run/react";
+
+export default function App() {{
+  return (
+    <html lang="en">
+      <head>
+        <title>{project_id}</title>
+        <Meta />
+        <Links />
+      </head>
+      <body>
+        <Outlet />
+        <Scripts />
+      </body>
+    </html>
+  );
+}}
+'''),
+        ("app/routes/_index.tsx",
+            f'''export default function Index() {{
+  return (
+    <main style={{{{ fontFamily: "system-ui", padding: "2rem" }}}}>
+      <h1>{project_id}</h1>
+      <p>Remix scaffold.</p>
+    </main>
+  );
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nRemix minimal scaffold.\n\n```\nnpm install\nnpm run dev\n```\n"),
+        (".gitignore", "node_modules/\n.cache/\nbuild/\npublic/build/\n.env\n"),
+    ]
+
+
+register("remix-min", type_="web-app", name="Remix minimal",
+         description="Minimal Remix app with a single index route.",
+         files=_remix_min)
+
+
+# ── nextjs-tailwind ───────────────────────────────────────────────────────────
+def _nextjs_tailwind(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "scripts": {{
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  }},
+  "dependencies": {{
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }},
+  "devDependencies": {{
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0"
+  }}
+}}
+'''),
+        ("tailwind.config.js",
+            f'''/** @type {{import('tailwindcss').Config}} */
+// {project_id} — Tailwind config
+module.exports = {{
+  content: ["./app/**/*.{{js,jsx,ts,tsx}}"],
+  theme: {{ extend: {{}} }},
+  plugins: [],
+}};
+'''),
+        ("postcss.config.js",
+            '''module.exports = {
+  plugins: { tailwindcss: {}, autoprefixer: {} },
+};
+'''),
+        ("app/layout.jsx",
+            f'''import "./globals.css";
+
+export const metadata = {{ title: "{project_id}" }};
+
+export default function RootLayout({{ children }}) {{
+  return (
+    <html lang="en">
+      <body className="bg-gray-50 text-gray-900">{{children}}</body>
+    </html>
+  );
+}}
+'''),
+        ("app/page.jsx",
+            f'''export default function Page() {{
+  return (
+    <main className="p-8">
+      <h1 className="text-3xl font-bold">{project_id}</h1>
+      <p className="mt-2 text-gray-600">Next.js 14 + Tailwind scaffold.</p>
+    </main>
+  );
+}}
+'''),
+        ("app/globals.css", "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n"),
+        ("README.md", f"# {project_id}\n\nNext.js 14 with Tailwind CSS.\n\n```\nnpm install\nnpm run dev\n```\n"),
+        (".gitignore", "node_modules/\n.next/\nout/\n.env*\n"),
+    ]
+
+
+register("nextjs-tailwind", type_="web-app", name="Next.js 14 + Tailwind",
+         description="Next.js 14 app-router scaffold with Tailwind CSS preconfigured.",
+         files=_nextjs_tailwind)
+
+
+# ── dash-plotly ───────────────────────────────────────────────────────────────
+def _dash_plotly(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("requirements.txt", "dash>=2.16\nplotly>=5.20\n"),
+        ("app.py",
+            f'''"""{project_id} — Plotly Dash demo."""
+from dash import Dash, dcc, html, Input, Output
+import plotly.express as px
+
+app = Dash(__name__)
+app.title = "{project_id}"
+
+app.layout = html.Div([
+    html.H1("{project_id}"),
+    dcc.Slider(1, 20, 1, value=5, id="n"),
+    dcc.Graph(id="g"),
+])
+
+
+@app.callback(Output("g", "figure"), Input("n", "value"))
+def update(n):
+    return px.line(x=list(range(n)), y=[i * i for i in range(n)],
+                   title=f"y = x^2 (n={{n}})")
+
+
+if __name__ == "__main__":
+    app.run(debug=False, port=8050)
+'''),
+        ("README.md", f"# {project_id}\n\nPlotly Dash slider + line graph demo.\n"),
+        (".gitignore", "venv/\n__pycache__/\n*.pyc\n"),
+    ]
+
+
+register("dash-plotly", type_="dashboard", name="Plotly Dash demo",
+         description="Plotly Dash app with a slider-driven line graph.",
+         files=_dash_plotly)
+
+
+# ── nicegui-min ───────────────────────────────────────────────────────────────
+def _nicegui_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("requirements.txt", "nicegui>=1.4\n"),
+        ("app.py",
+            f'''"""{project_id} — NiceGUI button + label demo."""
+from nicegui import ui
+
+count = {{"n": 0}}
+
+ui.label(f"{project_id}").style("font-size: 1.5rem; font-weight: 700;")
+counter = ui.label("clicks: 0")
+
+
+def bump():
+    count["n"] += 1
+    counter.text = f"clicks: {{count['n']}}"
+
+
+ui.button("click me", on_click=bump)
+ui.run(title="{project_id}", port=8080, reload=False)
+'''),
+        ("README.md", f"# {project_id}\n\nNiceGUI button + label counter.\n"),
+        (".gitignore", "venv/\n__pycache__/\n*.pyc\n"),
+    ]
+
+
+register("nicegui-min", type_="dashboard", name="NiceGUI minimal",
+         description="NiceGUI button/label counter demo.",
+         files=_nicegui_min)
+
+
+# ── nodejs-express ────────────────────────────────────────────────────────────
+def _nodejs_express(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "main": "app.js",
+  "scripts": {{
+    "start": "node app.js",
+    "test": "node --test test/"
+  }},
+  "dependencies": {{
+    "express": "^4.19.0"
+  }},
+  "devDependencies": {{
+    "supertest": "^6.3.0"
+  }}
+}}
+'''),
+        ("app.js",
+            f'''const express = require("express");
+const app = express();
+
+app.get("/healthz", (req, res) => res.json({{ ok: true, service: "{project_id}" }}));
+app.get("/", (req, res) => res.json({{ message: "hello from {project_id}" }}));
+
+if (require.main === module) {{
+  const port = process.env.PORT || 3000;
+  app.listen(port, () => console.log(`{project_id} on :${{port}}`));
+}}
+module.exports = app;
+'''),
+        ("test/app.test.js",
+            f'''const test = require("node:test");
+const assert = require("node:assert");
+const request = require("supertest");
+const app = require("../app");
+
+test("{project_id} /healthz", async () => {{
+  const r = await request(app).get("/healthz");
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(r.body.ok, true);
+}});
+'''),
+        ("README.md", f"# {project_id}\n\nExpress minimal with /healthz + supertest.\n"),
+        (".gitignore", "node_modules/\n.env\nnpm-debug.log\n"),
+    ]
+
+
+register("nodejs-express", type_="dashboard", name="Node.js Express minimal",
+         description="Express server with /healthz and a supertest smoke test.",
+         files=_nodejs_express)
+
+
+# ── nestjs-min ────────────────────────────────────────────────────────────────
+def _nestjs_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "scripts": {{
+    "start": "ts-node src/main.ts",
+    "build": "tsc"
+  }},
+  "dependencies": {{
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "reflect-metadata": "^0.2.0",
+    "rxjs": "^7.8.0"
+  }},
+  "devDependencies": {{
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }}
+}}
+'''),
+        ("tsconfig.json",
+            '''{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "commonjs",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "outDir": "dist"
+  }
+}
+'''),
+        ("src/main.ts",
+            f'''import "reflect-metadata";
+import {{ NestFactory }} from "@nestjs/core";
+import {{ AppModule }} from "./app.module";
+
+async function bootstrap() {{
+  const app = await NestFactory.create(AppModule);
+  await app.listen(3000);
+  console.log("{project_id} listening on :3000");
+}}
+bootstrap();
+'''),
+        ("src/app.module.ts",
+            f'''import {{ Module }} from "@nestjs/common";
+import {{ AppController }} from "./app.controller";
+
+@Module({{ controllers: [AppController] }})
+export class AppModule {{}}
+'''),
+        ("src/app.controller.ts",
+            f'''import {{ Controller, Get }} from "@nestjs/common";
+
+@Controller()
+export class AppController {{
+  @Get("healthz")
+  healthz() {{ return {{ ok: true, service: "{project_id}" }}; }}
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nNestJS minimal with /healthz.\n"),
+        (".gitignore", "node_modules/\ndist/\n.env\n"),
+    ]
+
+
+register("nestjs-min", type_="dashboard", name="NestJS minimal",
+         description="NestJS scaffold with a single /healthz controller.",
+         files=_nestjs_min)
+
+
+# ── hono-cloudflare ───────────────────────────────────────────────────────────
+def _hono_cloudflare(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "scripts": {{
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }},
+  "dependencies": {{
+    "hono": "^4.0.0"
+  }},
+  "devDependencies": {{
+    "wrangler": "^3.30.0",
+    "typescript": "^5.3.0"
+  }}
+}}
+'''),
+        ("wrangler.toml",
+            f'''name = "{project_id}"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+'''),
+        ("src/index.ts",
+            f'''import {{ Hono }} from "hono";
+
+const app = new Hono();
+app.get("/", (c) => c.json({{ service: "{project_id}", ok: true }}));
+app.get("/healthz", (c) => c.json({{ ok: true }}));
+
+export default app;
+'''),
+        ("README.md", f"# {project_id}\n\nHono on Cloudflare Workers.\n\n```\nnpm install\nnpm run dev\n```\n"),
+        (".gitignore", "node_modules/\n.wrangler/\ndist/\n.env\n"),
+    ]
+
+
+register("hono-cloudflare", type_="dashboard", name="Hono on Cloudflare Workers",
+         description="Hono framework targeting Cloudflare Workers via Wrangler.",
+         files=_hono_cloudflare)
+
+
+# ── gin-go ────────────────────────────────────────────────────────────────────
+def _gin_go(project_id: str) -> list[tuple[str, str]]:
+    safe_mod = project_id.replace("_", "-")
+    return [
+        ("go.mod",
+            f'''module {safe_mod}
+
+go 1.21
+
+require github.com/gin-gonic/gin v1.9.1
+'''),
+        ("main.go",
+            f'''package main
+
+import (
+\t"net/http"
+
+\t"github.com/gin-gonic/gin"
+)
+
+func newRouter() *gin.Engine {{
+\tr := gin.Default()
+\tr.GET("/healthz", func(c *gin.Context) {{
+\t\tc.JSON(http.StatusOK, gin.H{{"ok": true, "service": "{project_id}"}})
+\t}})
+\treturn r
+}}
+
+func main() {{
+\tnewRouter().Run(":8080")
+}}
+'''),
+        ("main_test.go",
+            f'''package main
+
+import (
+\t"net/http"
+\t"net/http/httptest"
+\t"testing"
+)
+
+func TestHealthz(t *testing.T) {{
+\tw := httptest.NewRecorder()
+\treq, _ := http.NewRequest("GET", "/healthz", nil)
+\tnewRouter().ServeHTTP(w, req)
+\tif w.Code != 200 {{
+\t\tt.Fatalf("{project_id}: expected 200, got %d", w.Code)
+\t}}
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nGin HTTP server with /healthz.\n\n```\ngo mod tidy && go run .\n```\n"),
+        (".gitignore", "bin/\n*.test\n*.out\n.env\n"),
+    ]
+
+
+register("gin-go", type_="dashboard", name="Gin (Go) HTTP server",
+         description="Go Gin server exposing /healthz, with a unit test.",
+         files=_gin_go)
+
+
+# ── actix-rust ────────────────────────────────────────────────────────────────
+def _actix_rust(project_id: str) -> list[tuple[str, str]]:
+    safe_name = project_id.replace("-", "_")
+    return [
+        ("Cargo.toml",
+            f'''[package]
+name = "{safe_name}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4"
+'''),
+        ("src/main.rs",
+            f'''use actix_web::{{get, App, HttpServer, Responder, HttpResponse}};
+
+#[get("/healthz")]
+async fn healthz() -> impl Responder {{
+    HttpResponse::Ok().json(serde_json::json!({{ "ok": true, "service": "{project_id}" }}))
+}}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {{
+    HttpServer::new(|| App::new().service(healthz))
+        .bind(("127.0.0.1", 8080))?
+        .run()
+        .await
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nActix-web /healthz server.\n\n```\ncargo run\n```\n"),
+        (".gitignore", "target/\nCargo.lock\n.env\n"),
+    ]
+
+
+register("actix-rust", type_="dashboard", name="Actix-web (Rust) server",
+         description="Actix-web /healthz server in Rust.",
+         files=_actix_rust)
+
+
+# ── rails-min ─────────────────────────────────────────────────────────────────
+def _rails_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("Gemfile",
+            f'''source "https://rubygems.org"
+
+ruby "~> 3.2"
+
+# {project_id} — Rails 7 scaffold
+gem "rails", "~> 7.1"
+'''),
+        ("config.ru",
+            f'''# {project_id} — Rack config
+require_relative "config/environment"
+run Rails.application
+Rails.application.load_server
+'''),
+        ("README.md",
+            f"# {project_id}\n\nRails 7 placeholder. To bootstrap:\n\n```\nbundle install\nbundle exec rails new . --force --skip-bundle\nbundle install\nbin/rails server\n```\n"),
+        (".gitignore", "tmp/\nlog/\n*.sqlite3\n.bundle/\nvendor/bundle/\n.env\n"),
+    ]
+
+
+register("rails-min", type_="dashboard", name="Ruby on Rails minimal",
+         description="Rails 7 Gemfile + config.ru placeholder (run `rails new .` to expand).",
+         files=_rails_min)
+
+
+# ── esp32-deep-sleep ──────────────────────────────────────────────────────────
+def _esp32_deep_sleep(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP32 deep sleep
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — wake on timer, log, deep-sleep again
+#include <Arduino.h>
+
+#define SLEEP_SECONDS 10ULL
+
+RTC_DATA_ATTR int boot_count = 0;
+
+void setup() {{
+  Serial.begin(115200);
+  delay(200);
+  ++boot_count;
+  Serial.printf("[{project_id}] boot #%d — sleeping %llu s\\n", boot_count, SLEEP_SECONDS);
+  esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000ULL);
+  Serial.flush();
+  esp_deep_sleep_start();
+}}
+
+void loop() {{}}
+'''),
+        ("README.md", f"# {project_id}\n\nESP32 deep-sleep cycle every 10s. Boot count persists in RTC memory.\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp32-deep-sleep", type_="esp-firmware", name="ESP32 deep sleep",
+         description="ESP32 deep-sleep wake-on-timer with RTC-backed boot counter.",
+         files=_esp32_deep_sleep)
+
+
+# ── esp32-ota-update ──────────────────────────────────────────────────────────
+def _esp32_ota_update(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP32 ArduinoOTA
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+lib_deps =
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — WiFi + ArduinoOTA
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+
+const char* SSID = "your-ssid";
+const char* PASS = "your-pass";
+
+void setup() {{
+  Serial.begin(115200);
+  WiFi.begin(SSID, PASS);
+  while (WiFi.status() != WL_CONNECTED) {{ delay(200); Serial.print("."); }}
+  Serial.printf("\\n[{project_id}] IP %s\\n", WiFi.localIP().toString().c_str());
+
+  ArduinoOTA.setHostname("{project_id}");
+  ArduinoOTA.begin();
+}}
+
+void loop() {{
+  ArduinoOTA.handle();
+}}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nESP32 OTA via ArduinoOTA.\n\nWorkflow:\n1. Flash once over USB\n2. Set SSID/PASS\n3. Subsequent uploads: `pio run -t upload --upload-port {project_id}.local`\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp32-ota-update", type_="esp-firmware", name="ESP32 OTA (ArduinoOTA)",
+         description="ESP32 firmware with WiFi + ArduinoOTA mDNS-discoverable updates.",
+         files=_esp32_ota_update)
+
+
+# ── esp32-i2c-oled ────────────────────────────────────────────────────────────
+def _esp32_i2c_oled(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP32 + SSD1306 OLED
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+lib_deps =
+  adafruit/Adafruit SSD1306 @ ^2.5.0
+  adafruit/Adafruit GFX Library @ ^1.11.0
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — SSD1306 0.96" OLED text demo
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+void setup() {{
+  Serial.begin(115200);
+  Wire.begin();
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {{
+    Serial.println("OLED init failed");
+    while (true) delay(1000);
+  }}
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("{project_id}");
+  display.println("SSD1306 OK");
+  display.display();
+}}
+
+void loop() {{ delay(1000); }}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nESP32 + SSD1306 OLED.\n\nWiring (I2C, addr 0x3C):\n- SDA → GPIO 21\n- SCL → GPIO 22\n- VCC → 3V3, GND → GND\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp32-i2c-oled", type_="esp-firmware", name="ESP32 + SSD1306 OLED",
+         description="ESP32 I2C OLED text demo using Adafruit SSD1306.",
+         files=_esp32_i2c_oled)
+
+
+# ── esp32-rfid-rc522 ──────────────────────────────────────────────────────────
+def _esp32_rfid_rc522(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP32 + MFRC522 RFID
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+lib_deps =
+  miguelbalboa/MFRC522 @ ^1.4.10
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — RFID UID reader
+#include <SPI.h>
+#include <MFRC522.h>
+
+#define SS_PIN 5
+#define RST_PIN 22
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+void setup() {{
+  Serial.begin(115200);
+  SPI.begin();
+  rfid.PCD_Init();
+  Serial.println("[{project_id}] tap a card...");
+}}
+
+void loop() {{
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) return;
+  Serial.print("UID:");
+  for (byte i = 0; i < rfid.uid.size; i++) Serial.printf(" %02X", rfid.uid.uidByte[i]);
+  Serial.println();
+  rfid.PICC_HaltA();
+}}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nESP32 + MFRC522 RFID UID reader.\n\nWiring (SPI):\n- SDA → 5, SCK → 18, MOSI → 23, MISO → 19\n- RST → 22, 3V3, GND\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp32-rfid-rc522", type_="esp-firmware", name="ESP32 + MFRC522 RFID",
+         description="ESP32 MFRC522 RFID reader logging UIDs over serial.",
+         files=_esp32_rfid_rc522)
+
+
+# ── esp32-relay-control ───────────────────────────────────────────────────────
+def _esp32_relay_control(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP32 4-channel relay (serial commands)
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — 4-relay control via serial: "1 on", "3 off"
+#include <Arduino.h>
+
+const int RELAYS[4] = {{16, 17, 18, 19}};
+
+void setup() {{
+  Serial.begin(115200);
+  for (int i = 0; i < 4; i++) {{ pinMode(RELAYS[i], OUTPUT); digitalWrite(RELAYS[i], HIGH); }}
+  Serial.println("[{project_id}] commands: <1-4> <on|off>");
+}}
+
+void loop() {{
+  if (!Serial.available()) return;
+  String line = Serial.readStringUntil('\\n');
+  int ch = line.substring(0, 1).toInt();
+  String state = line.substring(2);
+  state.trim();
+  if (ch < 1 || ch > 4) return;
+  digitalWrite(RELAYS[ch - 1], state == "on" ? LOW : HIGH);
+  Serial.printf("relay %d -> %s\\n", ch, state.c_str());
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nESP32 4-channel relay via serial. Active-low module assumed.\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp32-relay-control", type_="esp-firmware", name="ESP32 4-channel relay",
+         description="ESP32 4-channel relay control via serial commands.",
+         files=_esp32_relay_control)
+
+
+# ── esp32-stepper-motor ───────────────────────────────────────────────────────
+def _esp32_stepper_motor(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP32 + A4988 stepper
+[env:esp32dev]
+platform = espressif32
+board = esp32dev
+framework = arduino
+monitor_speed = 115200
+lib_deps =
+  waspinator/AccelStepper @ ^1.64
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — A4988 stepper sweep with AccelStepper
+#include <AccelStepper.h>
+
+#define STEP_PIN 14
+#define DIR_PIN  27
+
+AccelStepper stepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
+
+void setup() {{
+  Serial.begin(115200);
+  stepper.setMaxSpeed(800);
+  stepper.setAcceleration(400);
+  Serial.println("[{project_id}] sweeping");
+}}
+
+void loop() {{
+  if (stepper.distanceToGo() == 0) {{
+    stepper.moveTo(stepper.currentPosition() == 0 ? 800 : 0);
+  }}
+  stepper.run();
+}}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nESP32 + A4988 stepper driver sweep.\n\nWiring:\n- STEP → GPIO 14, DIR → GPIO 27\n- A4988 VMOT (8-35V), GND; logic VDD → 3V3\n- MS1/MS2/MS3 left floating = full step\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp32-stepper-motor", type_="esp-firmware", name="ESP32 + A4988 stepper",
+         description="ESP32 stepper sweep via AccelStepper and A4988 driver.",
+         files=_esp32_stepper_motor)
+
+
+# ── esp8266-pio-blink ─────────────────────────────────────────────────────────
+def _esp8266_pio_blink(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — ESP8266 blink
+[env:nodemcuv2]
+platform = espressif8266
+board = nodemcuv2
+framework = arduino
+monitor_speed = 115200
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — ESP8266 onboard LED blink (active-low)
+#include <Arduino.h>
+
+void setup() {{
+  pinMode(LED_BUILTIN, OUTPUT);
+  Serial.begin(115200);
+  Serial.println("[{project_id}] blinking");
+}}
+
+void loop() {{
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(500);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(500);
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nESP8266 NodeMCU blink (PlatformIO).\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("esp8266-pio-blink", type_="esp-firmware", name="ESP8266 PlatformIO blink",
+         description="ESP8266 NodeMCU onboard-LED blink using PlatformIO + Arduino.",
+         files=_esp8266_pio_blink)
+
+
+# ── stm32f4-hal-blink ─────────────────────────────────────────────────────────
+def _stm32f4_hal_blink(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("Makefile",
+            f'''# {project_id} — STM32F4 Discovery blink (LD3 on PD12)
+TARGET = {project_id}
+PREFIX = arm-none-eabi-
+CC     = $(PREFIX)gcc
+SRCS   = src/main.c src/system_init.c
+CFLAGS = -mcpu=cortex-m4 -mthumb -O2 -Wall -DSTM32F407xx
+
+all:
+\t@echo "stub — configure HAL/CubeMX include paths and link script before building"
+clean:
+\trm -f *.elf *.o
+'''),
+        ("src/main.c",
+            f'''/* {project_id} — STM32F407 HAL blink stub (PD12 LD3) */
+#include "stm32f4xx_hal.h"
+
+void SystemClock_Config(void);
+
+int main(void) {{
+  HAL_Init();
+  SystemClock_Config();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  GPIO_InitTypeDef g = {{0}};
+  g.Pin = GPIO_PIN_12;
+  g.Mode = GPIO_MODE_OUTPUT_PP;
+  g.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOD, &g);
+  while (1) {{
+    HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+    HAL_Delay(500);
+  }}
+}}
+'''),
+        ("src/system_init.c",
+            f'''/* {project_id} — clock config stub. Replace with CubeMX-generated SystemClock_Config(). */
+#include "stm32f4xx_hal.h"
+
+void SystemClock_Config(void) {{
+  /* Generated by STM32CubeMX in real projects. */
+}}
+
+void SysTick_Handler(void) {{ HAL_IncTick(); }}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nSTM32F4 Discovery (LD3) blink via HAL.\n\nGenerate HAL drivers + linker script via STM32CubeMX, then build with `make`.\n"),
+        (".gitignore", "*.o\n*.elf\n*.bin\nbuild/\n"),
+    ]
+
+
+register("stm32f4-hal-blink", type_="stm-firmware", name="STM32F4 HAL blink",
+         description="STM32F407 Discovery LD3 blink using HAL (CubeMX scaffold).",
+         files=_stm32f4_hal_blink)
+
+
+# ── stm32-freertos-min ────────────────────────────────────────────────────────
+def _stm32_freertos_min(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("Makefile",
+            f'''# {project_id} — STM32F4 + FreeRTOS
+TARGET = {project_id}
+PREFIX = arm-none-eabi-
+CFLAGS = -mcpu=cortex-m4 -mthumb -O2 -Wall -DSTM32F407xx
+
+all:
+\t@echo "stub — wire FreeRTOS source + HAL via CubeMX, then build"
+clean:
+\trm -f *.elf *.o
+'''),
+        ("src/main.c",
+            f'''/* {project_id} — FreeRTOS single-task blink on STM32F4 */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "stm32f4xx_hal.h"
+
+static void blink_task(void *arg) {{
+  (void)arg;
+  for (;;) {{
+    HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }}
+}}
+
+int main(void) {{
+  HAL_Init();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  GPIO_InitTypeDef g = {{ .Pin = GPIO_PIN_12, .Mode = GPIO_MODE_OUTPUT_PP }};
+  HAL_GPIO_Init(GPIOD, &g);
+  xTaskCreate(blink_task, "blink", 128, NULL, 1, NULL);
+  vTaskStartScheduler();
+  for (;;) {{}}
+}}
+'''),
+        ("src/freertos_hooks.c",
+            f'''/* {project_id} — FreeRTOS hooks */
+#include "FreeRTOS.h"
+#include "task.h"
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *name) {{ (void)xTask; (void)name; for (;;) {{}} }}
+void vApplicationMallocFailedHook(void) {{ for (;;) {{}} }}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nFreeRTOS on STM32F4 with one blink task. Bring in FreeRTOS kernel + HAL via CubeMX or a submodule before building.\n"),
+        (".gitignore", "*.o\n*.elf\nbuild/\n"),
+    ]
+
+
+register("stm32-freertos-min", type_="stm-firmware", name="STM32F4 + FreeRTOS",
+         description="STM32F407 FreeRTOS scaffold with a single blink task.",
+         files=_stm32_freertos_min)
+
+
+# ── meshtastic-node-stub ──────────────────────────────────────────────────────
+def _meshtastic_node_stub(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("README.md",
+            f"# {project_id}\n\nMeshtastic firmware fork stub.\n\n1. `git clone --recurse-submodules https://github.com/meshtastic/firmware.git`\n2. Apply your `platformio_overlay.ini` over the upstream config\n3. Tweak `userPrefs.h` (region, role) per `build_instructions.md`\n"),
+        ("build_instructions.md",
+            f"# Build {project_id}\n\n```\n# from inside firmware/\npio run -e tbeam -t upload\n```\n\nEdit `src/mesh/RadioInterface.h` then re-flash.\n"),
+        ("platformio_overlay.ini",
+            f'''; {project_id} — overlay for Meshtastic upstream build
+[env:tbeam]
+build_flags =
+  -DMESHTASTIC_PROJECT="{project_id}"
+'''),
+        (".gitignore", "firmware/\n.pio/\n*.bin\n"),
+    ]
+
+
+register("meshtastic-node-stub", type_="lora-test", name="Meshtastic node stub",
+         description="Pointer + overlay for forking and rebuilding meshtastic/firmware.",
+         files=_meshtastic_node_stub)
+
+
+# ── ttn-uplink-node ───────────────────────────────────────────────────────────
+def _ttn_uplink_node(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("platformio.ini",
+            f'''; {project_id} — TTN OTAA uplink (LMIC)
+[env:ttgo-lora32-v1]
+platform = espressif32
+board = ttgo-lora32-v1
+framework = arduino
+monitor_speed = 115200
+lib_deps =
+  mcci-catena/MCCI LoRaWAN LMIC library @ ^4.1.1
+build_flags =
+  -D CFG_us915=1
+  -D CFG_sx1276_radio=1
+'''),
+        ("src/main.cpp",
+            f'''// {project_id} — TTN OTAA join + uplink every 60s
+#include <lmic.h>
+#include <hal/hal.h>
+#include <SPI.h>
+
+// ZERO these out for compile-time scaffolding; provision real values from TTN console.
+static const u1_t PROGMEM APPEUI[8] = {{0}};
+static const u1_t PROGMEM DEVEUI[8] = {{0}};
+static const u1_t PROGMEM APPKEY[16] = {{0}};
+
+void os_getArtEui(u1_t* buf) {{ memcpy_P(buf, APPEUI, 8); }}
+void os_getDevEui(u1_t* buf) {{ memcpy_P(buf, DEVEUI, 8); }}
+void os_getDevKey(u1_t* buf) {{ memcpy_P(buf, APPKEY, 16); }}
+
+static osjob_t sendjob;
+
+void do_send(osjob_t* j) {{
+  uint8_t payload[3] = {{ 0xA1, 0xB2, 0xC3 }};
+  LMIC_setTxData2(1, payload, sizeof(payload), 0);
+}}
+
+void onEvent(ev_t ev) {{
+  if (ev == EV_TXCOMPLETE) os_setTimedCallback(&sendjob, os_getTime() + sec2osticks(60), do_send);
+}}
+
+void setup() {{
+  Serial.begin(115200);
+  Serial.println("[{project_id}] LMIC init");
+  os_init();
+  LMIC_reset();
+  do_send(&sendjob);
+}}
+
+void loop() {{ os_runloop_once(); }}
+'''),
+        ("README.md",
+            f"# {project_id}\n\nTTN LoRaWAN OTAA uplink for ESP32 + SX1276 (TTGO LoRa32 v1).\n\nSet correct region in `platformio.ini` (`CFG_us915` / `CFG_eu868` / `CFG_au915`).\nFill in `APPEUI`, `DEVEUI`, `APPKEY` from your TTN application.\n"),
+        (".gitignore", ".pio/\n.vscode/\n"),
+    ]
+
+
+register("ttn-uplink-node", type_="lora-test", name="TTN LoRaWAN uplink node",
+         description="ESP32 + SX1276 LoRaWAN OTAA uplink to The Things Network.",
+         files=_ttn_uplink_node)
+
+
+# ── node-typescript-lib ───────────────────────────────────────────────────────
+def _node_typescript_lib(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {{
+    "build": "tsc",
+    "test": "vitest run"
+  }},
+  "devDependencies": {{
+    "typescript": "^5.3.0",
+    "vitest": "^1.4.0"
+  }}
+}}
+'''),
+        ("tsconfig.json",
+            '''{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "declaration": true,
+    "strict": true,
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
+'''),
+        ("src/index.ts",
+            f'''/** {project_id} — typed library entry point */
+export const NAME = "{project_id}";
+export function greet(name: string): string {{
+  return `hello ${{name}} from ${{NAME}}`;
+}}
+'''),
+        ("tests/index.test.ts",
+            f'''import {{ describe, it, expect }} from "vitest";
+import {{ greet, NAME }} from "../src/index";
+
+describe("{project_id}", () => {{
+  it("greets", () => {{
+    expect(greet("world")).toBe(`hello world from ${{NAME}}`);
+  }});
+}});
+'''),
+        ("README.md", f"# {project_id}\n\nTypeScript library with vitest.\n"),
+        (".gitignore", "node_modules/\ndist/\n.vitest/\n"),
+    ]
+
+
+register("node-typescript-lib", type_="library", name="Node TypeScript library",
+         description="TypeScript library skeleton with vitest tests.",
+         files=_node_typescript_lib)
+
+
+# ── cpp-cmake-lib ─────────────────────────────────────────────────────────────
+def _cpp_cmake_lib(project_id: str) -> list[tuple[str, str]]:
+    safe_name = project_id.replace("-", "_")
+    return [
+        ("CMakeLists.txt",
+            f'''cmake_minimum_required(VERSION 3.20)
+project({safe_name} CXX)
+set(CMAKE_CXX_STANDARD 20)
+
+add_library({safe_name} STATIC src/lib.cpp)
+target_include_directories({safe_name} PUBLIC include)
+
+enable_testing()
+include(FetchContent)
+FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip)
+FetchContent_MakeAvailable(googletest)
+
+add_executable(test_{safe_name} tests/test_lib.cpp)
+target_link_libraries(test_{safe_name} PRIVATE {safe_name} GTest::gtest_main)
+add_test(NAME test_{safe_name} COMMAND test_{safe_name})
+'''),
+        ("include/lib.hpp",
+            f'''#pragma once
+#include <string>
+
+namespace {safe_name} {{
+inline constexpr const char* NAME = "{project_id}";
+int add(int a, int b);
+std::string banner();
+}}
+'''),
+        ("src/lib.cpp",
+            f'''#include "lib.hpp"
+
+namespace {safe_name} {{
+int add(int a, int b) {{ return a + b; }}
+std::string banner() {{ return std::string("hello from ") + NAME; }}
+}}
+'''),
+        ("tests/test_lib.cpp",
+            f'''#include <gtest/gtest.h>
+#include "lib.hpp"
+
+TEST({safe_name}, Add) {{
+  EXPECT_EQ({safe_name}::add(2, 3), 5);
+}}
+
+TEST({safe_name}, Banner) {{
+  EXPECT_NE({safe_name}::banner().find("{project_id}"), std::string::npos);
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nC++20 static library with GoogleTest.\n\n```\ncmake -S . -B build\ncmake --build build\nctest --test-dir build\n```\n"),
+        (".gitignore", "build/\n*.o\n*.a\n.cache/\n"),
+    ]
+
+
+register("cpp-cmake-lib", type_="library", name="C++ CMake library",
+         description="Modern C++20 static library with GoogleTest via FetchContent.",
+         files=_cpp_cmake_lib)
+
+
+# ── deno-module ───────────────────────────────────────────────────────────────
+def _deno_module(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("deno.json",
+            f'''{{
+  "name": "{project_id}",
+  "tasks": {{
+    "test": "deno test",
+    "fmt": "deno fmt"
+  }}
+}}
+'''),
+        ("mod.ts",
+            f'''/** {project_id} — Deno module */
+export const NAME = "{project_id}";
+
+export function greet(name: string): string {{
+  return `hello ${{name}} from ${{NAME}}`;
+}}
+'''),
+        ("mod_test.ts",
+            f'''import {{ assertEquals }} from "https://deno.land/std@0.220.0/assert/mod.ts";
+import {{ greet }} from "./mod.ts";
+
+Deno.test("{project_id} greet", () => {{
+  assertEquals(greet("world"), "hello world from {project_id}");
+}});
+'''),
+        ("README.md", f"# {project_id}\n\nDeno module.\n\n```\ndeno task test\n```\n"),
+        (".gitignore", ".deno/\ncoverage/\n"),
+    ]
+
+
+register("deno-module", type_="library", name="Deno module",
+         description="Deno TypeScript module with built-in test task.",
+         files=_deno_module)
+
+
+# ── ruby-gem ──────────────────────────────────────────────────────────────────
+def _ruby_gem(project_id: str) -> list[tuple[str, str]]:
+    safe_name = project_id.replace("-", "_")
+    return [
+        (f"{safe_name}.gemspec",
+            f'''require_relative "lib/{safe_name}/version"
+
+Gem::Specification.new do |spec|
+  spec.name          = "{project_id}"
+  spec.version       = {safe_name.capitalize()}::VERSION
+  spec.authors       = ["Baza Empire"]
+  spec.summary       = "{project_id} ruby gem skeleton"
+  spec.files         = Dir["lib/**/*.rb"]
+  spec.require_paths = ["lib"]
+  spec.add_development_dependency "rspec", "~> 3.12"
+end
+'''),
+        (f"lib/{safe_name}.rb",
+            f'''require_relative "{safe_name}/version"
+
+module {safe_name.capitalize()}
+  NAME = "{project_id}".freeze
+
+  def self.greet(name)
+    "hello #{{name}} from #{{NAME}}"
+  end
+end
+'''),
+        (f"lib/{safe_name}/version.rb",
+            f'''module {safe_name.capitalize()}
+  VERSION = "0.1.0".freeze
+end
+'''),
+        (f"spec/{safe_name}_spec.rb",
+            f'''require "{safe_name}"
+
+RSpec.describe {safe_name.capitalize()} do
+  it "greets" do
+    expect({safe_name.capitalize()}.greet("world")).to eq("hello world from {project_id}")
+  end
+end
+'''),
+        ("README.md", f"# {project_id}\n\nRuby gem skeleton.\n\n```\nbundle exec rspec\ngem build {safe_name}.gemspec\n```\n"),
+        (".gitignore", "*.gem\nGemfile.lock\npkg/\n.rspec_status\n"),
+    ]
+
+
+register("ruby-gem", type_="library", name="Ruby gem skeleton",
+         description="Ruby gem skeleton with version module and RSpec test.",
+         files=_ruby_gem)
+
+
+# ── aws-lambda-py ─────────────────────────────────────────────────────────────
+def _aws_lambda_py(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("requirements.txt", "# add runtime deps here\n"),
+        ("lambda_function.py",
+            f'''"""{project_id} — AWS Lambda handler."""
+import json
+
+
+def lambda_handler(event, context):
+    return {{
+        "statusCode": 200,
+        "body": json.dumps({{"ok": True, "service": "{project_id}", "event": event}}),
+    }}
+'''),
+        ("template.yaml",
+            f'''AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: {project_id}
+
+Resources:
+  {project_id.replace("-", "")}Fn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.12
+      CodeUri: .
+      Timeout: 10
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: get
+'''),
+        ("README.md", f"# {project_id}\n\nAWS Lambda function packaged with SAM.\n\n```\nsam build && sam deploy --guided\n```\n"),
+        (".gitignore", ".aws-sam/\n__pycache__/\n*.pyc\n.env\n"),
+    ]
+
+
+register("aws-lambda-py", type_="other", name="AWS Lambda (Python)",
+         description="Python AWS Lambda function with SAM template for HTTP API.",
+         files=_aws_lambda_py)
+
+
+# ── cloudflare-worker-ts ──────────────────────────────────────────────────────
+def _cloudflare_worker_ts(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "scripts": {{
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }},
+  "devDependencies": {{
+    "wrangler": "^3.30.0",
+    "typescript": "^5.3.0"
+  }}
+}}
+'''),
+        ("wrangler.toml",
+            f'''name = "{project_id}"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+'''),
+        ("src/index.ts",
+            f'''export default {{
+  async fetch(request: Request): Promise<Response> {{
+    const url = new URL(request.url);
+    return new Response(JSON.stringify({{
+      service: "{project_id}",
+      path: url.pathname,
+      ok: true,
+    }}), {{ headers: {{ "content-type": "application/json" }} }});
+  }},
+}};
+'''),
+        ("README.md", f"# {project_id}\n\nCloudflare Worker (TypeScript).\n\n```\nnpm install\nnpm run dev\n```\n"),
+        (".gitignore", "node_modules/\n.wrangler/\ndist/\n.env\n"),
+    ]
+
+
+register("cloudflare-worker-ts", type_="other", name="Cloudflare Worker (TS)",
+         description="TypeScript Cloudflare Worker with a JSON fetch handler.",
+         files=_cloudflare_worker_ts)
+
+
+# ── github-action-py ──────────────────────────────────────────────────────────
+def _github_action_py(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("action.yml",
+            f'''name: "{project_id}"
+description: "Custom composite GitHub Action — {project_id}"
+inputs:
+  who:
+    description: "Name to greet"
+    required: false
+    default: "world"
+outputs:
+  greeting:
+    description: "Greeting string"
+    value: ${{{{ steps.run.outputs.greeting }}}}
+runs:
+  using: "composite"
+  steps:
+    - id: run
+      shell: bash
+      run: python ${{{{ github.action_path }}}}/scripts/main.py "${{{{ inputs.who }}}}"
+'''),
+        ("scripts/main.py",
+            f'''"""{project_id} — GitHub Action entrypoint."""
+import os
+import sys
+
+who = sys.argv[1] if len(sys.argv) > 1 else "world"
+msg = f"hello {{who}} from {project_id}"
+print(msg)
+out = os.environ.get("GITHUB_OUTPUT")
+if out:
+    with open(out, "a") as f:
+        f.write(f"greeting={{msg}}\\n")
+'''),
+        ("README.md", f"# {project_id}\n\nComposite GitHub Action.\n\nUse with:\n\n```yaml\n- uses: ./\n  with:\n    who: serge\n```\n"),
+        (".gitignore", "__pycache__/\n*.pyc\n.env\n"),
+    ]
+
+
+register("github-action-py", type_="other", name="GitHub Action (Python)",
+         description="Composite GitHub Action with a Python entrypoint.",
+         files=_github_action_py)
+
+
+# ── langchain-agent-py ────────────────────────────────────────────────────────
+def _langchain_agent_py(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("requirements.txt", "langchain>=0.1\nlangchain-openai>=0.1\npython-dotenv>=1.0\n"),
+        ("agent.py",
+            f'''"""{project_id} — LangChain agent skeleton."""
+import os
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+
+load_dotenv()
+
+
+def build_agent():
+    return ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        temperature=0.2,
+    )
+
+
+def main():
+    llm = build_agent()
+    prompt = "In one sentence, describe the project {project_id}."
+    resp = llm.invoke(prompt)
+    print(resp.content)
+
+
+if __name__ == "__main__":
+    main()
+'''),
+        (".env.example", "OPENAI_API_KEY=sk-...\n"),
+        ("README.md", f"# {project_id}\n\nLangChain agent skeleton.\n\n```\npip install -r requirements.txt\ncp .env.example .env\npython agent.py\n```\n"),
+        (".gitignore", "venv/\n__pycache__/\n*.pyc\n.env\n"),
+    ]
+
+
+register("langchain-agent-py", type_="other", name="LangChain agent (Python)",
+         description="LangChain agent skeleton driven by an OpenAI key.",
+         files=_langchain_agent_py)
+
+
+# ── playwright-e2e ────────────────────────────────────────────────────────────
+def _playwright_e2e(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("package.json",
+            f'''{{
+  "name": "{project_id}",
+  "private": true,
+  "scripts": {{
+    "test": "playwright test",
+    "report": "playwright show-report"
+  }},
+  "devDependencies": {{
+    "@playwright/test": "^1.42.0"
+  }}
+}}
+'''),
+        ("playwright.config.ts",
+            f'''import {{ defineConfig, devices }} from "@playwright/test";
+
+// {project_id} — Playwright E2E config
+export default defineConfig({{
+  testDir: "./tests",
+  retries: 1,
+  use: {{ baseURL: "https://example.com" }},
+  projects: [
+    {{ name: "chromium", use: {{ ...devices["Desktop Chrome"] }} }},
+  ],
+}});
+'''),
+        ("tests/example.spec.ts",
+            f'''import {{ test, expect }} from "@playwright/test";
+
+test("{project_id} — homepage loads", async ({{ page }}) => {{
+  await page.goto("/");
+  await expect(page).toHaveTitle(/Example/);
+}});
+'''),
+        ("README.md", f"# {project_id}\n\nPlaywright E2E suite.\n\n```\nnpm install\nnpx playwright install\nnpm test\n```\n"),
+        (".gitignore", "node_modules/\ntest-results/\nplaywright-report/\n.env\n"),
+    ]
+
+
+register("playwright-e2e", type_="other", name="Playwright E2E suite",
+         description="Playwright E2E test suite targeting Chromium.",
+         files=_playwright_e2e)
+
+
+# ── flutter-app-min ───────────────────────────────────────────────────────────
+def _flutter_app_min(project_id: str) -> list[tuple[str, str]]:
+    safe_name = project_id.replace("-", "_")
+    return [
+        ("pubspec.yaml",
+            f'''name: {safe_name}
+description: {project_id} Flutter starter
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+'''),
+        ("lib/main.dart",
+            f'''import 'package:flutter/material.dart';
+
+void main() => runApp(const {safe_name.capitalize()}App());
+
+class {safe_name.capitalize()}App extends StatelessWidget {{
+  const {safe_name.capitalize()}App({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return MaterialApp(
+      title: '{project_id}',
+      home: const Counter(),
+    );
+  }}
+}}
+
+class Counter extends StatefulWidget {{
+  const Counter({{super.key}});
+  @override
+  State<Counter> createState() => _CounterState();
+}}
+
+class _CounterState extends State<Counter> {{
+  int n = 0;
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(title: const Text('{project_id}')),
+      body: Center(child: Text('clicks: $n', style: const TextStyle(fontSize: 24))),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => setState(() => n++),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }}
+}}
+'''),
+        ("README.md", f"# {project_id}\n\nFlutter counter starter.\n\n```\nflutter pub get\nflutter run\n```\n"),
+        (".gitignore", ".dart_tool/\n.packages\nbuild/\n.flutter-plugins\n.flutter-plugins-dependencies\n"),
+    ]
+
+
+register("flutter-app-min", type_="other", name="Flutter starter",
+         description="Flutter counter app with MaterialApp scaffold.",
+         files=_flutter_app_min)
+
+
+# ── godot-4-game ──────────────────────────────────────────────────────────────
+def _godot_4_game(project_id: str) -> list[tuple[str, str]]:
+    return [
+        ("project.godot",
+            f'''; Godot 4 project — {project_id}
+config_version=5
+
+[application]
+config/name="{project_id}"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.2")
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+'''),
+        ("scenes/main.tscn",
+            f'''[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
+'''),
+        ("scripts/main.gd",
+            f'''extends Node2D
+
+func _ready() -> void:
+\tprint("{project_id} — Godot 4 main scene loaded")
+'''),
+        ("README.md", f"# {project_id}\n\nGodot 4 starter project. Open `project.godot` in the Godot editor.\n"),
+        (".gitignore", ".godot/\n.import/\nexport_presets.cfg\n*.translation\n"),
+    ]
+
+
+register("godot-4-game", type_="other", name="Godot 4 starter",
+         description="Godot 4 starter project with a Node2D main scene.",
+         files=_godot_4_game)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def list_templates() -> list[dict[str, Any]]:
