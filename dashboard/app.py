@@ -10229,22 +10229,26 @@ def api_ahb_files_serve(fid):
 # ── AHB123 — Receipt Processing Queue ───────────────────────────────────────
 
 def _find_split_column(img):
-    """Return the x-column index that best separates two side-by-side receipts.
-    Strategy: brightest column ('white valley') in the middle 60% of width.
-    Falls back to image midpoint when no clear valley exists.
+    """Return the x-column index of a clear white valley between two side-by-side
+    receipts, or None if no convincing valley exists (caller should NOT split).
 
-    img: PIL.Image (any mode; will be converted to L)
-    returns: int column index in [0, w)
+    Strategy: brightest column in the middle 60% of width must
+      (1) be at least `valley_min` (very bright — paper, not text),
+      (2) be `min_lift` brighter than the typed-area baseline (median col mean),
+      (3) sit in a sustained bright band, not a one-pixel spike.
+
+    img: PIL.Image (any mode; converted to L)
+    returns: int column index in [0, w), or None
     """
     gray = img.convert('L')
     w, h = gray.size
-    if w < 4:
-        return w // 2
+    if w < 8:
+        return None
     pixels = gray.load()
     lo = int(w * 0.20)
     hi = int(w * 0.80)
     if hi <= lo:
-        return w // 2
+        return None
     row_step = max(1, h // 64)
     col_means = []
     for x in range(lo, hi):
@@ -10255,12 +10259,21 @@ def _find_split_column(img):
             n += 1
         col_means.append((x, s / max(1, n)))
     if not col_means:
-        return w // 2
-    vals = [m for _, m in col_means]
-    spread = max(vals) - min(vals)
-    if spread < 20:
-        return w // 2
-    return max(col_means, key=lambda t: t[1])[0]
+        return None
+    vals = sorted(m for _, m in col_means)
+    median = vals[len(vals) // 2]
+    best_x, best_v = max(col_means, key=lambda t: t[1])
+    # Tighter thresholds: paper-bright peak, big lift over text baseline,
+    # and a sustained bright band (peak ± 5 columns also bright).
+    valley_min = 235
+    min_lift = 50
+    band_min = 220
+    if best_v < valley_min or (best_v - median) < min_lift:
+        return None
+    band_vals = [m for x, m in col_means if abs(x - best_x) <= 5]
+    if len(band_vals) < 3 or sum(1 for v in band_vals if v >= band_min) < max(3, len(band_vals) // 2):
+        return None
+    return best_x
 
 
 def _detect_and_queue(file_storage, conn, queue_dir, status='pending'):
@@ -10295,7 +10308,11 @@ def _detect_and_queue(file_storage, conn, queue_dir, status='pending'):
 
     w, h = img.size
 
-    if h >= w:
+    # Only consider 2-up if the image is clearly landscape (≥ 1.35× wider than tall)
+    # AND a real bright valley is detected. Otherwise treat as a single receipt.
+    split_col = _find_split_column(img) if w >= int(h * 1.35) else None
+
+    if split_col is None:
         qid = str(uuid.uuid4())
         fpath = os.path.join(queue_dir, f"{qid}.jpg")
         img.save(fpath, 'JPEG', quality=90)
@@ -10308,7 +10325,6 @@ def _detect_and_queue(file_storage, conn, queue_dir, status='pending'):
     pair_id = str(uuid.uuid4())
     parent_fpath = os.path.join(queue_dir, f"{pair_id}_parent.jpg")
     img.save(parent_fpath, 'JPEG', quality=90)
-    split_col = _find_split_column(img)
     new_ids = []
     for side, box in [('left', (0, 0, split_col, h)),
                       ('right', (split_col, 0, w, h))]:
