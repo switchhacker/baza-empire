@@ -571,6 +571,14 @@ scaffold_bp.add_url_rule("/api/baza/equipment/<int:item_id>", "eq_patch", _eq_pa
 scaffold_bp.add_url_rule("/api/baza/equipment/<int:item_id>", "eq_delete", _eq_delete, methods=["DELETE"])
 
 
+# ---------------- Components catalog ----------------
+
+@scaffold_bp.route("/api/baza/components", methods=["GET"])
+def components_catalog():
+    from core.baza_components_library import list_components
+    return jsonify({"items": list_components()})
+
+
 # ---------------- Supplies needed (Phase 3 stub returning real data) ----------------
 
 @scaffold_bp.route("/api/baza/supplies/needed", methods=["GET"])

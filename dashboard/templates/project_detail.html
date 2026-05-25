@@ -851,13 +851,19 @@ reload();
       .on('zoom', evt => g.attr('transform', evt.transform)));
   }
 
-  function openSidePanel(nodeId) {
+  async function openSidePanel(nodeId) {
     const n = _graph.nodes.find(x => String(x.id) === String(nodeId));
     if (!n) return;
     const panel = document.getElementById('scaffold-side-panel');
     const body = document.getElementById('scaffold-node-detail');
     if (!panel || !body) return;
     const payload = n.payload || {};
+    if (n.node_type === 'schematic') {
+      await renderSchematicEditor(n, body, panel);
+      return;
+    }
+    // Reset panel to default width for non-schematic nodes
+    panel.style.width = '420px';
     body.innerHTML = `
       <h3 style="margin-top:0;">${escapeHtml(ICONS[n.node_type] || '•')} ${escapeHtml(n.title)}</h3>
       <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
@@ -885,7 +891,412 @@ reload();
 
   function closeSidePanel() {
     const panel = document.getElementById('scaffold-side-panel');
-    if (panel) panel.style.right = '-440px';
+    if (panel) {
+      panel.style.right = '-440px';
+      // Reset width so the next non-schematic open uses the original width
+      setTimeout(() => { panel.style.width = '420px'; }, 260);
+    }
+    // Cancel any pending schematic auto-save
+    if (_schemSaveTimer) { clearTimeout(_schemSaveTimer); _schemSaveTimer = null; }
+  }
+
+  // ---- Schematic editor state ----
+  let _componentsCatalog = null;     // lazy-loaded /api/baza/components
+  let _schemSaveTimer = null;        // debounce handle
+
+  async function _loadComponentsCatalog() {
+    if (_componentsCatalog) return _componentsCatalog;
+    try {
+      const r = await fetch('/api/baza/components');
+      const j = await r.json();
+      _componentsCatalog = (j && j.items) ? j.items : [];
+    } catch (e) {
+      console.error('components catalog fetch failed', e);
+      _componentsCatalog = [];
+    }
+    return _componentsCatalog;
+  }
+
+  function _getComponentDef(catalog, id) {
+    return catalog.find(c => c.id === id) || null;
+  }
+
+  // Map a pin's index along its edge to absolute SVG coordinates.
+  function _pinXY(comp, def, pin) {
+    const w = (def && def.width) || 120;
+    const h = (def && def.height) || 80;
+    const pins = (def && def.pins) || [];
+    const peers = pins.filter(p => p.position === pin.position);
+    const idx = peers.findIndex(p => p === pin || (p.name === pin.name && p.kind === pin.kind));
+    const i = idx < 0 ? 0 : idx;
+    const n = peers.length || 1;
+    if (pin.position === 'left') {
+      return { x: comp.x, y: comp.y + (i + 1) * (h / (n + 1)) };
+    } else if (pin.position === 'right') {
+      return { x: comp.x + w, y: comp.y + (i + 1) * (h / (n + 1)) };
+    } else if (pin.position === 'top') {
+      return { x: comp.x + (i + 1) * (w / (n + 1)), y: comp.y };
+    } else { // bottom (or unknown)
+      return { x: comp.x + (i + 1) * (w / (n + 1)), y: comp.y + h };
+    }
+  }
+
+  function _pinColor(kind) {
+    if (kind === 'power') return '#ef4444';
+    if (kind === 'ground') return '#1f2937';
+    if (kind === 'i2c_sda' || kind === 'i2c_scl') return '#8b5cf6';
+    if (kind && kind.indexOf('spi_') === 0) return '#06b6d4';
+    if (kind && kind.indexOf('uart_') === 0) return '#f59e0b';
+    return '#9ca3af';
+  }
+
+  function _wireColor(name) {
+    if (name === 'power') return '#ef4444';
+    if (name === 'ground') return '#1f2937';
+    if (name === 'signal') return '#3b82f6';
+    return '#9ca3af';
+  }
+
+  function _categoryFill(cat) {
+    return ({
+      mcu: '#1e3a5f', sensor: '#3a5f1e', actuator: '#5f1e3a',
+      display: '#3a3a5f', communication: '#5f3a1e',
+      power: '#5f5f1e', passive: '#3a3a3a', module: '#3a5f5f'
+    }[cat]) || '#333';
+  }
+
+  // Choose a wire color from two pin kinds.
+  function _autoWireColor(k1, k2) {
+    if (k1 === 'power' || k2 === 'power') return 'power';
+    if (k1 === 'ground' || k2 === 'ground') return 'ground';
+    return 'signal';
+  }
+
+  async function renderSchematicEditor(n, body, panel) {
+    panel.style.width = 'min(820px, 92vw)';
+    panel.style.right = '0';
+    const catalog = await _loadComponentsCatalog();
+    const payload = n.payload || {};
+    // Local mutable copy
+    const _schem = JSON.parse(JSON.stringify(payload.schematic || { components: [], wires: [], notes: '' }));
+    if (!_schem.components) _schem.components = [];
+    if (!_schem.wires) _schem.wires = [];
+    let _selectedPin = null;   // { instance_id, pin_name, kind }
+    let _savedBadgeTimer = null;
+
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <h3 style="margin:0;flex:1;">🔌 Wiring schematic — ${escapeHtml(n.title || '')}</h3>
+        <span id="schem-saved-badge" style="display:none;background:#22c55e;color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">✓ Saved</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+        <button id="schem-add-btn" class="btn-sm">➕ Add Component</button>
+        <button id="schem-save-btn" class="btn-sm" style="background:#1e3a5f;color:#fff;">💾 Save</button>
+        <button id="schem-clear-btn" class="btn-sm" style="background:#7a1d1d;color:#fff;">🗑 Clear Wires</button>
+        <button id="schem-close-btn" class="btn-sm">✕ Close</button>
+      </div>
+      ${(_schem.components.length === 0) ? `
+        <div style="background:#1f2a1f;border:1px solid #2a4a2a;padding:8px;border-radius:4px;color:#bef0be;font-size:12px;margin-bottom:8px;">
+          No schematic yet — add components manually or add a hardware BOM row to auto-populate.
+        </div>` : ''}
+      <div id="schem-palette" style="display:none;background:#1a1a1a;border:1px solid #333;border-radius:4px;padding:6px;margin-bottom:8px;max-height:240px;overflow-y:auto;"></div>
+      <div style="border:1px solid #333;border-radius:4px;background:#0d0d0d;overflow:auto;">
+        <svg id="schem-svg" width="760" height="500" style="display:block;background:#0d0d0d;">
+          <defs>
+            <pattern id="schem-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="0.7" fill="#222"></circle>
+            </pattern>
+          </defs>
+          <rect x="0" y="0" width="760" height="500" fill="url(#schem-grid)"></rect>
+          <g id="schem-wires"></g>
+          <g id="schem-components"></g>
+        </svg>
+      </div>
+      <div style="color:#888;font-size:11px;margin-top:6px;">
+        Drag components to move; click a pin then another pin to connect; right-click a wire to delete.
+      </div>
+      <details style="margin-top:10px;">
+        <summary style="cursor:pointer;color:#888;font-size:12px;">Notes / raw payload</summary>
+        <textarea id="schem-notes" style="width:100%;min-height:60px;background:#0a0a0a;color:#ddd;border:1px solid #333;padding:6px;font-size:12px;">${escapeHtml(_schem.notes || '')}</textarea>
+      </details>
+    `;
+
+    function _flashSaved() {
+      const badge = document.getElementById('schem-saved-badge');
+      if (!badge) return;
+      badge.style.display = 'inline-block';
+      if (_savedBadgeTimer) clearTimeout(_savedBadgeTimer);
+      _savedBadgeTimer = setTimeout(() => { badge.style.display = 'none'; }, 2000);
+    }
+
+    async function _save() {
+      // Pull latest notes from textarea
+      const noteEl = document.getElementById('schem-notes');
+      if (noteEl) _schem.notes = noteEl.value;
+      const newPayload = Object.assign({}, payload, { schematic: _schem });
+      try {
+        await _api(`/scaffold/node/${n.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ payload: newPayload })
+        });
+        // Update local node payload so a re-open sees latest
+        n.payload = newPayload;
+        _flashSaved();
+      } catch (e) {
+        console.error('schematic save failed', e);
+      }
+    }
+
+    function _scheduleAutoSave() {
+      if (_schemSaveTimer) clearTimeout(_schemSaveTimer);
+      _schemSaveTimer = setTimeout(() => {
+        _schemSaveTimer = null;
+        _save();
+      }, 1000);
+    }
+
+    function _renderCanvas() {
+      const wiresG = document.getElementById('schem-wires');
+      const compsG = document.getElementById('schem-components');
+      if (!wiresG || !compsG) return;
+      wiresG.innerHTML = '';
+      compsG.innerHTML = '';
+
+      // Build lookup for components + pin coords
+      const compByInst = {};
+      const pinCoord = {};   // "instId.pinName" -> {x,y,kind}
+      _schem.components.forEach(c => {
+        const def = _getComponentDef(catalog, c.component_id);
+        compByInst[c.instance_id] = { c, def };
+        if (def && def.pins) {
+          def.pins.forEach(p => {
+            const xy = _pinXY(c, def, p);
+            pinCoord[c.instance_id + '.' + p.name] = { x: xy.x, y: xy.y, kind: p.kind };
+          });
+        }
+      });
+
+      // Wires first (under components)
+      _schem.wires.forEach((w, wi) => {
+        const a = pinCoord[w.from];
+        const b = pinCoord[w.to];
+        if (!a || !b) return;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+        line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+        line.setAttribute('stroke', _wireColor(w.color || 'signal'));
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('stroke-linecap', 'round');
+        line.style.cursor = 'pointer';
+        line.addEventListener('contextmenu', evt => {
+          evt.preventDefault();
+          _schem.wires.splice(wi, 1);
+          _renderCanvas();
+          _scheduleAutoSave();
+        });
+        wiresG.appendChild(line);
+      });
+
+      // Components
+      _schem.components.forEach(c => {
+        const def = _getComponentDef(catalog, c.component_id);
+        const w = (def && def.width) || 120;
+        const h = (def && def.height) || 80;
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('transform', `translate(${c.x}, ${c.y})`);
+        // Body rect
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', 0); rect.setAttribute('y', 0);
+        rect.setAttribute('width', w); rect.setAttribute('height', h);
+        rect.setAttribute('rx', 6); rect.setAttribute('ry', 6);
+        rect.setAttribute('fill', _categoryFill(def && def.category));
+        rect.setAttribute('stroke', '#000');
+        rect.setAttribute('stroke-width', 1);
+        rect.style.cursor = 'move';
+        rect.dataset.kind = 'rect';
+        g.appendChild(rect);
+        // Label (centered near top)
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', w / 2);
+        label.setAttribute('y', 14);
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('fill', '#fff');
+        label.setAttribute('font-size', '11px');
+        label.setAttribute('pointer-events', 'none');
+        label.textContent = (c.label || (def && def.name) || c.component_id || '?').slice(0, 18);
+        g.appendChild(label);
+
+        // Pins
+        if (def && def.pins) {
+          def.pins.forEach(p => {
+            const xy = _pinXY({ x: 0, y: 0 }, def, p);  // local coords
+            const pinCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            pinCircle.setAttribute('cx', xy.x); pinCircle.setAttribute('cy', xy.y);
+            pinCircle.setAttribute('r', 4);
+            pinCircle.setAttribute('fill', _pinColor(p.kind));
+            pinCircle.setAttribute('stroke', '#000');
+            pinCircle.setAttribute('stroke-width', 0.5);
+            pinCircle.style.cursor = 'crosshair';
+            pinCircle.dataset.kind = 'pin';
+            const isSelected = _selectedPin
+              && _selectedPin.instance_id === c.instance_id
+              && _selectedPin.pin_name === p.name;
+            if (isSelected) {
+              pinCircle.setAttribute('stroke', '#f97316');
+              pinCircle.setAttribute('stroke-width', 2);
+              pinCircle.setAttribute('r', 5);
+            }
+            pinCircle.addEventListener('mousedown', evt => {
+              evt.stopPropagation();
+            });
+            pinCircle.addEventListener('click', evt => {
+              evt.stopPropagation();
+              if (!_selectedPin) {
+                _selectedPin = { instance_id: c.instance_id, pin_name: p.name, kind: p.kind };
+              } else if (_selectedPin.instance_id === c.instance_id && _selectedPin.pin_name === p.name) {
+                _selectedPin = null;  // toggle off
+              } else {
+                const color = _autoWireColor(_selectedPin.kind, p.kind);
+                _schem.wires.push({
+                  from: _selectedPin.instance_id + '.' + _selectedPin.pin_name,
+                  to: c.instance_id + '.' + p.name,
+                  color: color
+                });
+                _selectedPin = null;
+                _scheduleAutoSave();
+              }
+              _renderCanvas();
+            });
+            g.appendChild(pinCircle);
+
+            // Pin label (tiny, outside rect)
+            const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            lbl.setAttribute('font-size', '9px');
+            lbl.setAttribute('fill', '#bbb');
+            lbl.setAttribute('pointer-events', 'none');
+            if (p.position === 'left') {
+              lbl.setAttribute('x', xy.x - 6); lbl.setAttribute('y', xy.y + 3);
+              lbl.setAttribute('text-anchor', 'end');
+            } else if (p.position === 'right') {
+              lbl.setAttribute('x', xy.x + 6); lbl.setAttribute('y', xy.y + 3);
+              lbl.setAttribute('text-anchor', 'start');
+            } else if (p.position === 'top') {
+              lbl.setAttribute('x', xy.x); lbl.setAttribute('y', xy.y - 6);
+              lbl.setAttribute('text-anchor', 'middle');
+            } else {
+              lbl.setAttribute('x', xy.x); lbl.setAttribute('y', xy.y + 12);
+              lbl.setAttribute('text-anchor', 'middle');
+            }
+            lbl.textContent = p.name;
+            g.appendChild(lbl);
+          });
+        }
+
+        // Drag handling on the rect (only — pins handle their own clicks)
+        let _dragging = false, _dragOffX = 0, _dragOffY = 0;
+        rect.addEventListener('mousedown', evt => {
+          if (evt.button !== 0) return;
+          // Only initiate drag if target is the rect itself (not a pin)
+          if (!evt.target || evt.target.dataset.kind !== 'rect') return;
+          _dragging = true;
+          const svgEl = document.getElementById('schem-svg');
+          const pt = svgEl.createSVGPoint();
+          pt.x = evt.clientX; pt.y = evt.clientY;
+          const local = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+          _dragOffX = local.x - c.x;
+          _dragOffY = local.y - c.y;
+          evt.preventDefault();
+        });
+        function _onMove(evt) {
+          if (!_dragging) return;
+          const svgEl = document.getElementById('schem-svg');
+          if (!svgEl) return;
+          const pt = svgEl.createSVGPoint();
+          pt.x = evt.clientX; pt.y = evt.clientY;
+          const local = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+          c.x = Math.max(0, Math.min(760 - w, local.x - _dragOffX));
+          c.y = Math.max(0, Math.min(500 - h, local.y - _dragOffY));
+          _renderCanvas();
+        }
+        function _onUp() {
+          if (_dragging) {
+            _dragging = false;
+            _scheduleAutoSave();
+            window.removeEventListener('mousemove', _onMove);
+            window.removeEventListener('mouseup', _onUp);
+          }
+        }
+        rect.addEventListener('mousedown', () => {
+          window.addEventListener('mousemove', _onMove);
+          window.addEventListener('mouseup', _onUp);
+        });
+
+        compsG.appendChild(g);
+      });
+    }
+
+    function _renderPalette() {
+      const pal = document.getElementById('schem-palette');
+      if (!pal) return;
+      if (pal.style.display === 'block') {
+        pal.style.display = 'none';
+        return;
+      }
+      // Group by category
+      const byCat = {};
+      catalog.forEach(c => {
+        (byCat[c.category] = byCat[c.category] || []).push(c);
+      });
+      const cats = Object.keys(byCat).sort();
+      let html = '';
+      cats.forEach(cat => {
+        html += `<div style="margin-bottom:6px;">
+          <div style="color:#888;font-size:11px;text-transform:uppercase;margin-bottom:2px;">${escapeHtml(cat)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">`;
+        byCat[cat].forEach(c => {
+          html += `<button class="btn-sm" data-comp-id="${escapeHtml(c.id)}"
+              style="background:${_categoryFill(cat)};color:#fff;font-size:11px;">
+              ${escapeHtml(c.name)}</button>`;
+        });
+        html += `</div></div>`;
+      });
+      pal.innerHTML = html;
+      pal.style.display = 'block';
+      pal.querySelectorAll('button[data-comp-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const cid = btn.dataset.compId;
+          const def = _getComponentDef(catalog, cid);
+          const instId = 'c' + (_schem.components.length + 1);
+          _schem.components.push({
+            instance_id: instId,
+            component_id: cid,
+            x: 60, y: 60,
+            label: (def && def.name) ? def.name.slice(0, 24) : cid
+          });
+          pal.style.display = 'none';
+          _renderCanvas();
+          _scheduleAutoSave();
+        });
+      });
+    }
+
+    // Wire toolbar buttons
+    document.getElementById('schem-add-btn').addEventListener('click', _renderPalette);
+    document.getElementById('schem-save-btn').addEventListener('click', () => {
+      if (_schemSaveTimer) { clearTimeout(_schemSaveTimer); _schemSaveTimer = null; }
+      _save();
+    });
+    document.getElementById('schem-clear-btn').addEventListener('click', () => {
+      if (!confirm('Clear all wires?')) return;
+      _schem.wires = [];
+      _renderCanvas();
+      if (_schemSaveTimer) { clearTimeout(_schemSaveTimer); _schemSaveTimer = null; }
+      _save();
+    });
+    document.getElementById('schem-close-btn').addEventListener('click', closeSidePanel);
+    document.getElementById('schem-notes').addEventListener('input', _scheduleAutoSave);
+
+    _renderCanvas();
   }
 
   // ---- BOM ----
@@ -1020,7 +1431,8 @@ reload();
   window.ScaffoldUI = {
     init, loadGraph, openSidePanel, closeSidePanel, teardown,
     runNode, addNote, markDone, deleteNode, overrideDecision,
-    toggleHand, promoteBom, deleteBom, addBom
+    toggleHand, promoteBom, deleteBom, addBom,
+    renderSchematicEditor
   };
 
   // Init when scaffold tab becomes active. The existing setTab() shows panels by
