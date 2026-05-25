@@ -276,6 +276,107 @@ def bom_create(pid):
         con.commit()
     finally:
         con.close()
+
+    # Auto-spawn a schematic node on first hardware BOM addition (one-shot per project)
+    try:
+        eng = _engine()
+        import sqlite3 as _sq
+        _con = _sq.connect(_db_path()); _con.row_factory = _sq.Row
+        try:
+            # Does a schematic node already exist for this project?
+            has_schem = _con.execute(
+                "SELECT 1 FROM project_scaffold_nodes WHERE project_id=? AND node_type='schematic' LIMIT 1",
+                (pid,)
+            ).fetchone()
+            # Is this BOM row hardware-ish (matches a known component)?
+            from core.baza_components_library import match_component
+            is_hw = match_component(name) is not None
+        finally:
+            _con.close()
+        if not has_schem and is_hw:
+            # Find the root node to attach to (or use no parent if root missing)
+            rn = eng.get_nodes(pid)
+            root = next((n for n in rn if n["node_type"] == "root"), None)
+            schem_id = eng.create_node(
+                pid,
+                node_type="schematic",
+                title="Wiring schematic",
+                description="Auto-generated from your BOM. Drag components to rearrange; click pins to wire.",
+                parent_id=(root["id"] if root else None),
+                status="in_progress",
+                payload={"description": f"Initial wiring for project {pid}"}
+            )
+            # Trigger the propose-schematic skill in-process (don't subprocess — we have the engine here)
+            try:
+                from core.baza_components_library import list_components, get_component
+                # Inline a tiny version of the propose logic: collect BOM, match components, lay out grid, write payload
+                cur = _sq.connect(_db_path())
+                cur.row_factory = _sq.Row
+                try:
+                    bom_rows = cur.execute(
+                        "SELECT * FROM project_bom WHERE project_id=?", (pid,)
+                    ).fetchall()
+                finally:
+                    cur.close()
+                components_out = []
+                seen_ids = set()
+                for i, b in enumerate(bom_rows[:16]):
+                    matched = match_component(b["name"] or "")
+                    if not matched:
+                        continue
+                    inst_id = f"u{len(components_out)+1}"
+                    components_out.append({
+                        "instance_id": inst_id,
+                        "component_id": matched["id"],
+                        "x": 60 + (len(components_out) % 4) * 250,
+                        "y": 60 + (len(components_out) // 4) * 250,
+                        "label": b["name"][:40],
+                    })
+                    seen_ids.add(matched["id"])
+                # Simple wiring: power/ground rails to first MCU
+                wires = []
+                mcu = next((c for c in components_out if get_component(c["component_id"])["category"] == "mcu"), None)
+                if mcu:
+                    mcu_pins = {p["name"]: p for p in get_component(mcu["component_id"])["pins"]}
+                    mcu_power = next((p["name"] for p in get_component(mcu["component_id"])["pins"] if p["kind"] == "power"), None)
+                    mcu_gnd = next((p["name"] for p in get_component(mcu["component_id"])["pins"] if p["kind"] == "ground"), None)
+                    gpio_pool = [p["name"] for p in get_component(mcu["component_id"])["pins"] if p["kind"] == "gpio"]
+                    gpio_idx = 0
+                    for c in components_out:
+                        if c["instance_id"] == mcu["instance_id"]:
+                            continue
+                        comp_def = get_component(c["component_id"])
+                        for p in comp_def["pins"]:
+                            if p["kind"] == "ground" and mcu_gnd:
+                                wires.append({"from": f"{mcu['instance_id']}.{mcu_gnd}",
+                                             "to": f"{c['instance_id']}.{p['name']}", "color": "ground"})
+                            elif p["kind"] == "power" and mcu_power:
+                                wires.append({"from": f"{mcu['instance_id']}.{mcu_power}",
+                                             "to": f"{c['instance_id']}.{p['name']}", "color": "power"})
+                            elif p["kind"] in ("signal", "gpio", "pwm") and gpio_idx < len(gpio_pool):
+                                wires.append({"from": f"{mcu['instance_id']}.{gpio_pool[gpio_idx]}",
+                                             "to": f"{c['instance_id']}.{p['name']}", "color": "signal"})
+                                gpio_idx += 1
+                                break  # one signal wire per non-MCU component
+                schematic = {
+                    "components": components_out,
+                    "wires": wires,
+                    "notes": "Auto-proposed from BOM. Drag components to rearrange; click pins to wire."
+                }
+                import json as _json
+                existing = eng.get_node(schem_id)
+                payload = _json.loads(existing.get("payload_json") or "{}")
+                payload["schematic"] = schematic
+                eng.update_node(schem_id, payload_json=_json.dumps(payload, default=str))
+                eng.emit_event(pid, node_id=schem_id, event_type="schematic_proposed",
+                               actor="system", payload={"component_count": len(components_out)})
+            except Exception as e:
+                eng.emit_event(pid, node_id=schem_id, event_type="note", actor="system",
+                               payload={"warning": f"auto-propose failed: {e}"})
+    except Exception as e:
+        # Never crash the BOM POST because of schematic logic
+        print(f"[schematic auto-spawn] {e}", flush=True)
+
     _engine().emit_event(pid, node_id=body.get("node_id"), event_type="bom_added",
                          actor="user", payload={"bom_id": bid, "name": name})
     return jsonify({"id": bid}), 201
