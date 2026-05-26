@@ -38,6 +38,13 @@ VISION_DIR     = ROOT.parent / "agent-framework-v3-vision"
 HOME           = Path.home()
 SESSION_LOG    = HOME / "Desktop" / "baza-session-log.md"
 INFRA_SNAPSHOT = ROOT / "dashboard" / ".claw_infra_snapshot.json"
+INFRA_DELTAS   = ROOT / "dashboard" / ".claw_infra_deltas.json"
+BAZA_MAP       = HOME / ".claude" / "projects" / "-home-switchhacker" / "memory" / "baza-map.md"
+BAZA_MAP_BACKUPS = BAZA_MAP.parent / ".backups"
+SENTINEL_START = "<!-- claw-auto:infra-deltas-start -->"
+SENTINEL_END   = "<!-- claw-auto:infra-deltas-end -->"
+DELTAS_MAX     = 50
+BACKUP_KEEP    = 7
 
 WATCHED_SERVICES = [
     "baza-dashboard.service", "baza-tool-server.service", "baza-litellm.service",
@@ -351,8 +358,98 @@ def _infra_snapshot() -> dict:
         except Exception:
             pass
     if FRAMEWORK.exists():
-        snap["top_dirs"] = sorted(p.name for p in FRAMEWORK.iterdir() if p.is_dir())
+        snap["top_dirs"] = sorted(
+            p.name for p in FRAMEWORK.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+            and p.name not in {"venv", "__pycache__", "node_modules",
+                               "logs", "backups", "artifacts"}
+        )
     return snap
+
+
+def _load_deltas() -> list[dict]:
+    if not INFRA_DELTAS.exists():
+        return []
+    try:
+        data = json.loads(INFRA_DELTAS.read_text())
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_deltas(deltas: list[dict]) -> None:
+    deltas = deltas[-DELTAS_MAX:]
+    tmp = INFRA_DELTAS.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(deltas, indent=2))
+    tmp.replace(INFRA_DELTAS)
+
+
+def _render_deltas_md(deltas: list[dict]) -> str:
+    if not deltas:
+        return ("_no deltas recorded yet — Claw will append here when "
+                "services/timers/ollama models/framework dirs change_")
+    # newest first for readability
+    by_day: dict[str, list[str]] = {}
+    for entry in reversed(deltas):
+        day = entry["ts"][:10]
+        by_day.setdefault(day, []).append(
+            f"- `{entry['ts'][11:16]}Z` {entry['change']}"
+        )
+    out: list[str] = []
+    for day in sorted(by_day.keys(), reverse=True):
+        out.append(f"\n**{day}**")
+        out.extend(by_day[day])
+    return "\n".join(out).lstrip("\n")
+
+
+def _backup_baza_map() -> None:
+    BAZA_MAP_BACKUPS.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = BAZA_MAP_BACKUPS / f"baza-map.md.{ts}.bak"
+    try:
+        dest.write_text(BAZA_MAP.read_text())
+    except Exception as e:
+        log(f"baza-map backup failed: {e}")
+        return
+    # rotate
+    backups = sorted(BAZA_MAP_BACKUPS.glob("baza-map.md.*.bak"))
+    for old in backups[:-BACKUP_KEEP]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+
+def _update_baza_map(deltas: list[dict]) -> tuple[bool, str]:
+    """Atomically rewrite only the content between the sentinels.
+
+    Returns (applied, message). Never edits anything outside the sentinels.
+    """
+    if not BAZA_MAP.exists():
+        return False, f"baza-map.md not found at {BAZA_MAP}"
+    try:
+        text = BAZA_MAP.read_text()
+    except Exception as e:
+        return False, f"read failed: {e}"
+    if SENTINEL_START not in text or SENTINEL_END not in text:
+        return False, "sentinels missing — add them to baza-map.md to enable auto-edit"
+    pre,  rest = text.split(SENTINEL_START, 1)
+    _mid, post = rest.split(SENTINEL_END, 1)
+    new_mid = "\n" + _render_deltas_md(deltas) + "\n"
+    new_text = pre + SENTINEL_START + new_mid + SENTINEL_END + post
+    if new_text == text:
+        return False, "no change"
+    _backup_baza_map()
+    tmp = BAZA_MAP.with_suffix(".md.tmp")
+    try:
+        tmp.write_text(new_text)
+        os.replace(tmp, BAZA_MAP)
+    except Exception as e:
+        if tmp.exists():
+            try: tmp.unlink()
+            except OSError: pass
+        return False, f"atomic write failed: {e}"
+    return True, f"wrote {len(deltas)} delta(s)"
 
 
 def tick_hourly() -> None:
@@ -374,8 +471,9 @@ def tick_hourly() -> None:
 
     # infra delta detection
     snap = _infra_snapshot()
+    first_run = not INFRA_SNAPSHOT.exists()
     prev = {}
-    if INFRA_SNAPSHOT.exists():
+    if not first_run:
         try:
             prev = json.loads(INFRA_SNAPSHOT.read_text())
         except Exception:
@@ -398,16 +496,37 @@ def tick_hourly() -> None:
     for removed in sorted(a - b):
         diffs.append(f"- framework_dir: {removed}")
 
+    if first_run:
+        log(f"hourly: first snapshot (baseline {len(snap.get('services', {}))} services, "
+            f"{len(snap.get('ollama_models', []))} models) — silently baselining, no deltas")
+        diffs = []
+
     if diffs:
+        # append to rolling list (persisted) before re-rendering baza-map
+        rolling = _load_deltas()
+        ts = iso()
+        for d in diffs:
+            rolling.append({"ts": ts, "change": d})
+        _save_deltas(rolling)
+
+        applied, msg = _update_baza_map(rolling)
+        labels = ["infra-map", "delta"]
+        if applied:
+            labels.append("auto-applied")
+        else:
+            labels.append("auto-skipped")
+
         db.add_review(
             target_kind="infra", target="baza_host",
             severity="info",
-            title=f"infra delta ({len(diffs)} change{'s' if len(diffs) != 1 else ''})",
+            title=f"infra delta ({len(diffs)} change{'s' if len(diffs) != 1 else ''}) — {msg}",
             body="```\n" + "\n".join(diffs[:50]) + "\n```",
-            labels=["infra-map", "delta"],
+            labels=labels,
             cadence="hourly",
-            meta={"diffs": diffs},
+            meta={"diffs": diffs, "baza_map_applied": applied, "baza_map_msg": msg},
         )
+        log(f"hourly: baza-map auto-edit → {applied} ({msg})")
+
     try:
         INFRA_SNAPSHOT.write_text(json.dumps(snap, indent=2))
     except Exception as e:
