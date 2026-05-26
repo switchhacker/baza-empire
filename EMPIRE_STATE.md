@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-05-24 Social Studio v2.2 — kickoff
-- 2026-05-24 v2.2 T1 shipped — schema + scaffolds
-- 2026-05-24 QuickRF receipts — vendor/address/total fix kickoff
-- 2026-05-24 v2.2 T2 shipped — templates CRUD + apply
-- 2026-05-24 UI: Render-ALL button yellow
-- 2026-05-24 v2.2 T3 shipped — tags / collections
-- 2026-05-24 v2.2 T4 shipped — FTS5 search with LIKE fallback
-- 2026-05-24 QuickRF — vendor_locations KB + address resolver shipped
-- 2026-05-24 QuickRF — compact toggle + per-category collapse
-- 2026-05-24 v2.2 T5 shipped — bulk operations
-- 2026-05-24 Vendors moved to Treasury → Vendors + LLM discovery
-- 2026-05-24 v2.2 T6 shipped — auto-save + version history
-- 2026-05-24 v2.2 T7 shipped — month calendar
-- 2026-05-24 v2.2 T8 shipped — approval workflow + recurring
-- 2026-05-24 v2.2 T9 shipped — trends sub-tab
+- 2026-05-25 Created top-level /home/switchhacker/CLAUDE.md
+- 2026-05-25 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 7 warn, 0 info)
+- 2026-05-25 Claw Batto continuous review SHIPPED — always-on labelled reviewer
+- 2026-05-25 Claw hourly digest — 78 new (0 bug, 0 regression, 0 security, 5 warn, 73 info)
+- 2026-05-25 Receipt OCR — fix wrong auto-split + recover 3 receipts
+- 2026-05-25 Claw hourly digest — 16 new (0 bug, 0 regression, 0 security, 6 warn, 10 info)
+- 2026-05-25 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 0 warn, 10 info)
+- 2026-05-25 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 2 warn, 6 info)
+- 2026-05-25 Claw hourly digest — 18 new (0 bug, 0 regression, 0 security, 5 warn, 13 info)
+- 2026-05-25 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 2 warn, 8 info)
+- 2026-05-25 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
+- 2026-05-25 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 2 warn, 7 info)
+- 2026-05-25 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 0 warn, 12 info)
+- 2026-05-25 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 0 warn, 8 info)
+- 2026-05-25 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 0 warn, 9 info)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
