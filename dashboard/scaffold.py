@@ -678,6 +678,45 @@ SKILL_PATH    = REPO_ROOT / "skills" / "shared" / "scaffold_analyze_pcb_image.py
 VENV_PY       = REPO_ROOT / "venv" / "bin" / "python"
 PCB_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".tiff"}
 
+# Browseable image roots — each is shown as a chip in the PCB picker.
+# `requires_unlock` chips are only listed/walkable when the private vault is open.
+# `project_scoped` chips substitute <pid> at request time.
+# Cloud root is split into honest sub-locations so the "Data Hub" chip means
+# what the user uploaded TO Data Hub, not the entire archive (Photos library,
+# drive imports, etc. get their own chips).
+_CLOUD_ROOT = os.environ.get("BAZA_CLOUD_ROOT", "/mnt/empirepool/cloud/1")
+
+BROWSE_ROOTS = [
+    {"key":"datahub_uploads","label":"📤 Data Hub uploads",
+     "path":f"{_CLOUD_ROOT}/Uploads", "requires_unlock":False, "max_depth":None},
+    {"key":"datahub_photos", "label":"🖼 Photos library",
+     "path":f"{_CLOUD_ROOT}/Photos",  "requires_unlock":False, "max_depth":None,
+     "follow_symlinks":True},
+    {"key":"datahub_receipts","label":"🧾 Receipts upload",
+     "path":f"{_CLOUD_ROOT}/Receipts upload", "requires_unlock":False, "max_depth":None},
+    {"key":"datahub_imports","label":"💿 Drive imports",
+     "path":f"{_CLOUD_ROOT}/Imports", "requires_unlock":False, "max_depth":None},
+    {"key":"desktop",  "label":"🖥 Desktop",     "path":str(Path.home() / "Desktop"),
+     "requires_unlock":False, "max_depth":3},
+    {"key":"documents","label":"📄 Documents",  "path":str(Path.home() / "Documents"),
+     "requires_unlock":False, "max_depth":4},
+    {"key":"downloads","label":"⬇ Downloads",   "path":str(Path.home() / "Downloads"),
+     "requires_unlock":False, "max_depth":3},
+    {"key":"pictures", "label":"🖼 Pictures",    "path":str(Path.home() / "Pictures"),
+     "requires_unlock":False, "max_depth":5},
+    {"key":"nextcloud","label":"☁ Nextcloud",   "path":str(Path.home() / "nextcloud"),
+     "requires_unlock":False, "max_depth":5},
+    {"key":"project",  "label":"🗂 This project",
+     "path":"__PROJECT__", "requires_unlock":False, "max_depth":None, "project_scoped":True},
+    {"key":"vault",    "label":"🔒 Private vault",
+     "path":str(REPO_ROOT / "dashboard" / "artifacts" / ".private-inbound"),
+     "requires_unlock":True, "max_depth":None},
+    # legacy/back-compat alias — points at the cloud root for any caller still
+    # passing root=datahub. Lists nothing useful (subdirs covered by chips above).
+    {"key":"datahub",  "label":"📁 Cloud root (legacy)",
+     "path":_CLOUD_ROOT, "requires_unlock":False, "max_depth":1, "hidden":True},
+]
+
 
 def _is_private_unlocked() -> bool:
     """Mirrors dashboard.app._is_private_unlocked without importing it (avoid cycle)."""
@@ -883,13 +922,18 @@ def _best_guess_wires(components: list) -> list:
                 return p["name"]
         return None
 
-    power_src = next((c for c in components if c.get("part_id", "").startswith("power.")
+    def _pid(c):
+        return (c.get("part_id") or "")
+
+    power_src = next((c for c in components if _pid(c).startswith("power.")
+                                              or _pid(c) == "usb-micro"
                                               or find_pin(c, "power", ["vcc", "vbus", "3v3", "5v"])),
                      None)
-    mcus = [c for c in components if c.get("part_id", "").startswith("mcu.")
-                                  or c.get("part_id", "").startswith("esp")
+    mcus = [c for c in components if _pid(c).startswith("mcu.")
+                                  or _pid(c).startswith("esp")
                                   or find_pin(c, "power", ["3v3", "vin", "5v"])]
-    sensors = [c for c in components if c.get("part_id", "").startswith("sensor.")]
+    sensors = [c for c in components if _pid(c).startswith("sensor.")
+                                     or _pid(c) in ("hc-sr04",)]
 
     # power → every component's VCC
     if power_src:
@@ -1015,10 +1059,17 @@ def pcb_vision_datahub_thumb(pid):
     if is_private and not _is_private_unlocked():
         abort(403)
 
-    # path safety: confine to known roots
-    cloud_root = Path(os.environ.get("BAZA_CLOUD_ROOT", "/mnt/empirepool/cloud/1")).resolve()
-    priv_root  = (REPO_ROOT / "dashboard" / "artifacts" / ".private-inbound").resolve()
-    if not (str(p).startswith(str(cloud_root)) or str(p).startswith(str(priv_root))):
+    # path safety: must be inside one of the configured browse roots
+    allowed_roots: list[Path] = []
+    for r in BROWSE_ROOTS:
+        cfg = _resolve_browse_root(r["key"], pid)
+        if cfg and cfg["resolved_path"].exists():
+            try:
+                allowed_roots.append(cfg["resolved_path"].resolve())
+            except OSError:
+                pass
+    if not any(str(p).startswith(str(a) + os.sep) or str(p) == str(a)
+               for a in allowed_roots):
         abort(403)
 
     import hashlib as _h
@@ -1050,58 +1101,98 @@ def pcb_vision_datahub_thumb(pid):
 
 # ---------------- Data Hub image lister ---------------------------------------
 
+def _resolve_browse_root(root_key: str, pid: str):
+    cfg = next((r for r in BROWSE_ROOTS if r["key"] == root_key), None)
+    if not cfg:
+        return None
+    if cfg.get("project_scoped"):
+        path = REPO_ROOT / "dashboard" / "artifacts" / pid
+    else:
+        path = Path(cfg["path"])
+    return {**cfg, "resolved_path": path}
+
+
+def _walk_for_images(root: Path, max_depth: int | None, cap: int = 500,
+                     follow_symlinks: bool = False) -> list[dict]:
+    """Walk a directory tree collecting image files, depth-bounded."""
+    items: list[dict] = []
+    root_depth = len(root.parts)
+    for dirpath, dirnames, files in os.walk(root, followlinks=follow_symlinks):
+        depth = len(Path(dirpath).parts) - root_depth
+        if max_depth is not None and depth >= max_depth:
+            dirnames[:] = []
+        # skip dotdirs and hidden
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")
+                       and d not in ("venv", "__pycache__", "node_modules",
+                                     ".private-inbound")]
+        for name in files:
+            p = Path(dirpath) / name
+            if p.suffix.lower() not in PCB_IMAGE_EXTS:
+                continue
+            try:
+                st = p.stat()  # follows symlinks (Photos/ entries are symlinks to Imports/)
+            except OSError:
+                continue
+            try:
+                rel = p.relative_to(root).as_posix()
+            except ValueError:
+                rel = name
+            items.append({
+                "path": str(p),
+                "name": name,
+                "rel_path": rel,
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+            })
+        if len(items) >= cap:
+            break
+    return items
+
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/datahub_roots")
+def pcb_vision_datahub_roots(pid):
+    """Return the list of browseable image roots (privacy-aware)."""
+    unlocked = _is_private_unlocked()
+    out = []
+    for r in BROWSE_ROOTS:
+        if r.get("hidden"):
+            continue
+        resolved = _resolve_browse_root(r["key"], pid)
+        if not resolved:
+            continue
+        p = resolved["resolved_path"]
+        if r["requires_unlock"] and not unlocked:
+            out.append({"key": r["key"], "label": r["label"],
+                        "available": False, "reason": "vault locked"})
+            continue
+        out.append({
+            "key": r["key"], "label": r["label"],
+            "available": p.exists() and p.is_dir(),
+            "path": str(p),
+        })
+    return jsonify({"ok": True, "roots": out})
+
+
 @scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/datahub_list")
 def pcb_vision_datahub_list(pid):
-    """List image-typed files from the cloud root + private vault (if unlocked)."""
-    cloud_root = Path(os.environ.get("BAZA_CLOUD_ROOT", "/mnt/empirepool/cloud/1"))
-    public_items: list[dict] = []
-    if cloud_root.exists():
-        for root, _, files in os.walk(cloud_root):
-            # skip private/hidden
-            rel = Path(root).relative_to(cloud_root).as_posix()
-            if rel.startswith(".") or "/.private-inbound" in "/" + rel:
-                continue
-            for name in files:
-                p = Path(root) / name
-                if p.suffix.lower() not in PCB_IMAGE_EXTS:
-                    continue
-                try:
-                    st = p.stat()
-                except OSError:
-                    continue
-                public_items.append({
-                    "path": str(p),
-                    "name": name,
-                    "rel_path": str(p.relative_to(cloud_root)),
-                    "size": st.st_size,
-                    "mtime": int(st.st_mtime),
-                    "is_private": False,
-                })
-            # bound the walk to a reasonable count to keep the UI snappy
-            if len(public_items) >= 500:
-                break
-
-    private_items: list[dict] = []
-    if _is_private_unlocked():
-        priv_root = REPO_ROOT / "dashboard" / "artifacts" / ".private-inbound"
-        if priv_root.exists():
-            for root, _, files in os.walk(priv_root):
-                for name in files:
-                    p = Path(root) / name
-                    if p.suffix.lower() not in PCB_IMAGE_EXTS:
-                        continue
-                    try:
-                        st = p.stat()
-                    except OSError:
-                        continue
-                    private_items.append({
-                        "path": str(p),
-                        "name": name,
-                        "rel_path": str(p.relative_to(priv_root)),
-                        "size": st.st_size,
-                        "mtime": int(st.st_mtime),
-                        "is_private": True,
-                    })
-
-    items = sorted(public_items + private_items, key=lambda x: -x["mtime"])[:500]
-    return jsonify({"ok": True, "count": len(items), "items": items})
+    """List image files in a given root (defaults to datahub for back-compat)."""
+    root_key = request.args.get("root", "datahub")
+    cfg = _resolve_browse_root(root_key, pid)
+    if not cfg:
+        return jsonify({"ok": False, "error": f"unknown root: {root_key}"}), 400
+    if cfg.get("requires_unlock") and not _is_private_unlocked():
+        return jsonify({"ok": False, "error": "vault locked"}), 403
+    root_path = cfg["resolved_path"]
+    if not root_path.exists() or not root_path.is_dir():
+        return jsonify({"ok": True, "count": 0, "items": [], "root_path": str(root_path),
+                        "note": "root does not exist"})
+    items = _walk_for_images(root_path, cfg.get("max_depth"),
+                             follow_symlinks=bool(cfg.get("follow_symlinks")))
+    is_private = (root_key == "vault")
+    for it in items:
+        it["is_private"] = is_private
+        it["root"] = root_key
+    items.sort(key=lambda x: -x["mtime"])
+    items = items[:500]
+    return jsonify({"ok": True, "count": len(items), "root_path": str(root_path),
+                    "root_key": root_key, "items": items})
