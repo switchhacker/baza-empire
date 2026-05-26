@@ -315,6 +315,7 @@
               <span id="scaffold-progress-label" style="position:absolute;right:10px;top:0;line-height:18px;font-size:12px;font-weight:700;color:#fff;text-shadow:0 0 3px #000;">0%</span>
             </div>
           </div>
+          <button id="scaffold-pcb-vision-btn" class="btn-sm" style="background:#3b82f6;color:#fff;" title="Upload or pick a board photo for vision-based identification">📸 Add PCB photo</button>
           <button id="scaffold-open-inventory" class="btn-sm">🧰 Inventory</button>
           <button id="scaffold-open-equipment" class="btn-sm">🔧 Equipment</button>
           <button id="scaffold-open-supplies" class="btn-sm">🛒 Supplies</button>
@@ -860,6 +861,10 @@ reload();
     const payload = n.payload || {};
     if (n.node_type === 'schematic') {
       await renderSchematicEditor(n, body, panel);
+      return;
+    }
+    if (n.node_type === 'pcb_vision') {
+      await renderPCBVisionEditor(n, body, panel);
       return;
     }
     // Reset panel to default width for non-schematic nodes
@@ -1418,9 +1423,11 @@ reload();
     const invBtn = document.getElementById('scaffold-open-inventory');
     const equipBtn = document.getElementById('scaffold-open-equipment');
     const suppBtn = document.getElementById('scaffold-open-supplies');
+    const pcbBtn = document.getElementById('scaffold-pcb-vision-btn');
     if (startBtn) startBtn.addEventListener('click', startScaffold);
     if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
     if (bomAddBtn) bomAddBtn.addEventListener('click', addBom);
+    if (pcbBtn) pcbBtn.addEventListener('click', openPCBSourceModal);
     if (invBtn) invBtn.addEventListener('click', () => { if (window.InventoryModal) window.InventoryModal.open(); else alert('Inventory modal not loaded yet'); });
     if (equipBtn) equipBtn.addEventListener('click', () => { if (window.EquipmentModal) window.EquipmentModal.open(); else alert('Equipment modal not loaded yet'); });
     if (suppBtn) suppBtn.addEventListener('click', () => alert('Cross-project supplies roll-up is Phase 3.'));
@@ -1428,11 +1435,399 @@ reload();
     connectStream();
   }
 
+  // ============================================================
+  //  PCB Vision editor — photo overlays + schematic toggle
+  // ============================================================
+  let _pcbSaveTimer = null;
+  let _pcbPollTimer = null;
+
+  function _pcbStatusBadge(status) {
+    const colors = {running:'#f59e0b', completed:'#22c55e',
+                    awaiting_input:'#ef4444', failed:'#7a1d1d',
+                    pending:'#666', blocked:'#7a1d1d'};
+    return `<span style="background:${colors[status]||'#666'};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;">${escapeHtml(status||'?')}</span>`;
+  }
+
+  async function _pcbSavePayload(nodeId, payload) {
+    try {
+      await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/node/${nodeId}`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({payload})
+      });
+    } catch (e) { console.error('pcb auto-save failed', e); }
+  }
+
+  function _pcbScheduleSave(nodeId, payload) {
+    if (_pcbSaveTimer) clearTimeout(_pcbSaveTimer);
+    _pcbSaveTimer = setTimeout(() => _pcbSavePayload(nodeId, payload), 500);
+  }
+
+  async function renderPCBVisionEditor(n, body, panel) {
+    panel.style.width = 'min(900px, 94vw)';
+    panel.style.right = '0';
+    const payload = JSON.parse(JSON.stringify(n.payload || {}));
+    if (!payload.overlays) payload.overlays = [];
+    if (!payload.schematic) payload.schematic = {components:[], wires:[], notes:''};
+    let view = (payload.overlays.length === 0 && payload.schematic.components.length > 0) ? 'schematic' : 'photo';
+    let bestGuess = !!payload.best_guess_wires;
+
+    function shell() {
+      body.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <h3 style="margin:0;flex:1;">📸 ${escapeHtml(n.title || 'Board photo')}</h3>
+          ${_pcbStatusBadge(n.status)}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+          <div style="display:inline-flex;border:1px solid #333;border-radius:6px;overflow:hidden;">
+            <button id="pcb-view-photo" class="btn-sm" style="border-radius:0;background:${view==='photo'?'#3b82f6':'transparent'};color:#fff;">📷 Photo</button>
+            <button id="pcb-view-schematic" class="btn-sm" style="border-radius:0;background:${view==='schematic'?'#3b82f6':'transparent'};color:#fff;">🔌 Schematic</button>
+          </div>
+          <span style="flex:1;"></span>
+          <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#bbb;cursor:pointer;">
+            <input type="checkbox" id="pcb-best-guess" ${bestGuess?'checked':''}> best-guess wires
+          </label>
+          <button id="pcb-close-btn" class="btn-sm">✕</button>
+        </div>
+        <div id="pcb-view-host"></div>
+      `;
+      document.getElementById('pcb-close-btn').onclick = () => closeSidePanel();
+      document.getElementById('pcb-view-photo').onclick = () => { view='photo'; shell(); renderCurrentView(); };
+      document.getElementById('pcb-view-schematic').onclick = () => { view='schematic'; shell(); renderCurrentView(); };
+      document.getElementById('pcb-best-guess').onchange = (e) => {
+        bestGuess = e.target.checked;
+        payload.best_guess_wires = bestGuess;
+        _pcbScheduleSave(n.id, payload);
+      };
+    }
+
+    function renderCurrentView() {
+      const host = document.getElementById('pcb-view-host');
+      if (view === 'photo')     renderPhotoView(host);
+      else                       renderSchematicLiteView(host);
+    }
+
+    function renderPhotoView(host) {
+      const status = n.status;
+      const imgUrl = `/api/baza/projects/${PROJECT_ID}/scaffold/pcb_vision/image/${n.id}?t=${Date.now()}`;
+      host.innerHTML = `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+          <button id="pcb-add-overlay" class="btn-sm">+ Add component</button>
+          <button id="pcb-reanalyze-merge" class="btn-sm" title="Re-run vision; preserve overlays you've corrected">↻ Re-analyze (merge)</button>
+          <button id="pcb-reanalyze-reset" class="btn-sm" style="background:#7a1d1d;color:#fff;" title="Wipe all overlays and re-run vision">⟲ Re-analyze (reset)</button>
+          <button id="pcb-gen-schematic" class="btn-sm" style="background:#1e3a5f;color:#fff;">→ Generate schematic</button>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div id="pcb-canvas-wrap" style="flex:1;position:relative;background:#0a0a0a;border:1px solid #333;border-radius:4px;overflow:hidden;min-height:380px;">
+            ${status==='running' ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fbbf24;font-size:14px;z-index:9;background:rgba(0,0,0,0.55);">⏳ Analyzing image — qwen3-vl is identifying components…</div>` : ''}
+            <img id="pcb-img" src="${imgUrl}" style="display:block;max-width:100%;height:auto;" onload="window.__pcbImgLoaded&&window.__pcbImgLoaded()">
+            <div id="pcb-overlays" style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;"></div>
+          </div>
+          <div style="width:260px;flex-shrink:0;background:#0d0d0d;border:1px solid #333;border-radius:4px;padding:8px;max-height:520px;overflow-y:auto;">
+            <div style="font-size:11px;color:#888;margin-bottom:4px;">BOARD</div>
+            <div id="pcb-board-label" style="font-weight:700;font-size:14px;color:#fff;">${escapeHtml(payload.board_label||'—')}</div>
+            <div id="pcb-board-fn" style="font-size:12px;color:#bbb;margin-top:4px;">${escapeHtml(payload.board_function||'')}</div>
+            <hr style="border-color:#222;margin:8px 0;">
+            <div style="font-size:11px;color:#888;margin-bottom:4px;">COMPONENTS (${(payload.overlays||[]).length})</div>
+            <div id="pcb-legend"></div>
+            <hr style="border-color:#222;margin:8px 0;">
+            <div style="font-size:10px;color:#666;">
+              ${payload.model_used ? `model: <code>${escapeHtml(payload.model_used)}</code><br>` : ''}
+              ${payload.analyzed_at ? `at ${escapeHtml(payload.analyzed_at)}<br>` : ''}
+              ${payload.analyze_elapsed_s ? `${payload.analyze_elapsed_s}s` : ''}
+              ${payload.analyze_error ? `<div style="color:#ef4444;margin-top:4px;">⚠ ${escapeHtml(payload.analyze_error)}</div>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+      document.getElementById('pcb-add-overlay').onclick = () => {
+        const id = 'ov_' + ((payload.overlays.length||0) + 1);
+        payload.overlays.push({id, label:'New component', bbox:[0.4,0.4,0.2,0.15], confidence:1.0, user_corrected:true});
+        _pcbScheduleSave(n.id, payload);
+        renderOverlays();
+      };
+      document.getElementById('pcb-reanalyze-merge').onclick = () => _pcbReanalyze(n.id, 'merge');
+      document.getElementById('pcb-reanalyze-reset').onclick = () => {
+        if (!confirm('Wipe all overlays (including ones you corrected) and re-run vision?')) return;
+        _pcbReanalyze(n.id, 'reset');
+      };
+      document.getElementById('pcb-gen-schematic').onclick = async () => {
+        const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/pcb_vision/generate_schematic/${n.id}`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({best_guess_wires: bestGuess})
+        });
+        const j = await r.json();
+        if (j.ok) { payload.schematic = j.schematic; view='schematic'; shell(); renderCurrentView(); }
+        else alert('Generate failed: ' + (j.error||'unknown'));
+      };
+
+      window.__pcbImgLoaded = () => renderOverlays();
+      if (status !== 'running' && document.getElementById('pcb-img').complete) renderOverlays();
+
+      if (status === 'running' && !_pcbPollTimer) {
+        _pcbPollTimer = setInterval(async () => {
+          try {
+            const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/node/${n.id}`);
+            const j = await r.json();
+            if (j && j.node && j.node.status !== 'running') {
+              clearInterval(_pcbPollTimer); _pcbPollTimer = null;
+              // refresh the panel from fresh node state
+              const updated = j.node;
+              const fresh = _graph.nodes.find(x => String(x.id) === String(n.id));
+              if (fresh) Object.assign(fresh, updated);
+              openSidePanel(n.id);
+            }
+          } catch (e) { /* keep polling */ }
+        }, 2500);
+      }
+    }
+
+    function renderOverlays() {
+      const wrap = document.getElementById('pcb-canvas-wrap');
+      const overlays = document.getElementById('pcb-overlays');
+      const legend = document.getElementById('pcb-legend');
+      const img = document.getElementById('pcb-img');
+      if (!wrap || !overlays || !legend || !img) return;
+      const rect = img.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const w = rect.width, h = rect.height;
+      const offX = rect.left - wrapRect.left, offY = rect.top - wrapRect.top;
+      overlays.style.left = offX + 'px';
+      overlays.style.top = offY + 'px';
+      overlays.style.width = w + 'px';
+      overlays.style.height = h + 'px';
+      overlays.style.pointerEvents = 'auto';
+
+      overlays.innerHTML = '';
+      legend.innerHTML = '';
+      (payload.overlays||[]).forEach((ov, i) => {
+        const [bx, by, bw, bh] = ov.bbox || [0,0,0.1,0.1];
+        const el = document.createElement('div');
+        el.className = 'pcb-ov';
+        el.style.cssText = `
+          position:absolute; left:${(bx*w).toFixed(1)}px; top:${(by*h).toFixed(1)}px;
+          width:${(bw*w).toFixed(1)}px; height:${(bh*h).toFixed(1)}px;
+          border:2px solid ${ov.user_corrected?'#22c55e':'#fbbf24'};
+          background:rgba(251,191,36,0.10); border-radius:3px;
+          cursor:move; user-select:none;
+        `;
+        el.innerHTML = `<div style="position:absolute;top:-22px;left:-2px;background:${ov.user_corrected?'#22c55e':'#fbbf24'};color:#000;font-size:11px;font-weight:700;padding:1px 6px;border-radius:3px 3px 0 3px;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;">${i+1}. ${escapeHtml(ov.label||'?')}</div>`;
+        overlays.appendChild(el);
+
+        // legend row
+        const lr = document.createElement('div');
+        lr.style.cssText = 'display:flex;gap:4px;align-items:flex-start;padding:4px;border-bottom:1px solid #1a1a1a;font-size:12px;';
+        lr.innerHTML = `
+          <span style="background:${ov.user_corrected?'#22c55e':'#fbbf24'};color:#000;width:20px;height:20px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">${i+1}</span>
+          <div style="flex:1;min-width:0;">
+            <input type="text" value="${escapeHtml(ov.label||'')}" style="background:#1a1a1a;border:1px solid #333;color:#fff;font-size:12px;padding:2px 4px;width:100%;"
+                   onchange="this.value && (window.__pcbEditLabel&&window.__pcbEditLabel('${ov.id}', this.value))">
+            <div style="font-size:10px;color:#666;">${ov.suggested_part_id ? `<code>${escapeHtml(ov.suggested_part_id)}</code>` : 'free-text'} · ${(ov.confidence||0).toFixed(2)}</div>
+          </div>
+          <button class="btn-sm" style="padding:0 4px;font-size:11px;background:#7a1d1d;color:#fff;" onclick="window.__pcbDelete&&window.__pcbDelete('${ov.id}')">✕</button>
+        `;
+        legend.appendChild(lr);
+
+        // drag handler
+        let dragStart = null;
+        el.addEventListener('pointerdown', (e) => {
+          if (e.target !== el) return;
+          dragStart = {x:e.clientX, y:e.clientY, bx, by};
+          el.setPointerCapture(e.pointerId);
+        });
+        el.addEventListener('pointermove', (e) => {
+          if (!dragStart) return;
+          const dx = (e.clientX - dragStart.x) / w;
+          const dy = (e.clientY - dragStart.y) / h;
+          ov.bbox = [Math.max(0,Math.min(1-bw, dragStart.bx + dx)),
+                     Math.max(0,Math.min(1-bh, dragStart.by + dy)), bw, bh];
+          ov.user_corrected = true;
+          renderOverlays();
+        });
+        el.addEventListener('pointerup', (e) => {
+          if (!dragStart) return;
+          dragStart = null;
+          el.releasePointerCapture(e.pointerId);
+          _pcbScheduleSave(n.id, payload);
+        });
+      });
+    }
+
+    window.__pcbEditLabel = (id, label) => {
+      const ov = (payload.overlays||[]).find(o => o.id === id);
+      if (!ov) return;
+      ov.label = label; ov.user_corrected = true;
+      _pcbScheduleSave(n.id, payload);
+    };
+    window.__pcbDelete = (id) => {
+      payload.overlays = (payload.overlays||[]).filter(o => o.id !== id);
+      _pcbScheduleSave(n.id, payload);
+      renderOverlays();
+    };
+
+    function renderSchematicLiteView(host) {
+      const sc = payload.schematic || {components:[], wires:[]};
+      if (!sc.components.length) {
+        host.innerHTML = `<div style="padding:24px;text-align:center;color:#888;">
+          No schematic yet. Switch to 📷 Photo view and click <strong>→ Generate schematic</strong> to seed it from the identified components.
+        </div>`;
+        return;
+      }
+      // Read-only rendering inside this side panel; full editing happens by
+      // converting this node to a schematic via an explicit promote button later.
+      let svgComponents = '';
+      sc.components.forEach(c => {
+        const fill = '#1e3a5f';
+        svgComponents += `<g transform="translate(${c.x},${c.y})">
+          <rect width="${c.width}" height="${c.height}" fill="${fill}" stroke="#666" rx="3"></rect>
+          <text x="${c.width/2}" y="${c.height/2}" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">${escapeHtml(c.label||'?')}</text>
+        </g>`;
+      });
+      let svgWires = '';
+      sc.wires.forEach(w => {
+        const a = sc.components.find(c => c.id === w.from.component);
+        const b = sc.components.find(c => c.id === w.to.component);
+        if (!a || !b) return;
+        const color = w.kind === 'power' ? '#ef4444' : (w.kind === 'ground' ? '#374151' : '#3b82f6');
+        const x1 = a.x + a.width/2, y1 = a.y + a.height/2;
+        const x2 = b.x + b.width/2, y2 = b.y + b.height/2;
+        svgWires += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="2" ${w.auto_generated?'stroke-dasharray="4,3"':''}></line>`;
+      });
+      const stats = `${sc.components.length} components · ${sc.wires.length} wires${sc.wires.some(w=>w.auto_generated)?' (dashed = best-guess)':''}`;
+      host.innerHTML = `
+        <div style="background:#0d0d0d;border:1px solid #333;border-radius:4px;overflow:auto;">
+          <svg width="1200" height="800" style="display:block;background:#0d0d0d;">
+            <defs><pattern id="pcb-grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="0.7" fill="#222"></circle></pattern></defs>
+            <rect x="0" y="0" width="1200" height="800" fill="url(#pcb-grid)"></rect>
+            ${svgWires}
+            ${svgComponents}
+          </svg>
+        </div>
+        <div style="font-size:12px;color:#888;margin-top:6px;">${stats}</div>
+        <div style="margin-top:8px;">
+          <button class="btn-sm" onclick="(function(){view='photo';})();this.dispatchEvent(new Event('back'));" id="pcb-back-to-photo">← Back to photo view</button>
+        </div>
+      `;
+      document.getElementById('pcb-back-to-photo').onclick = () => { view='photo'; shell(); renderCurrentView(); };
+    }
+
+    shell();
+    renderCurrentView();
+  }
+
+  async function _pcbReanalyze(nodeId, mode) {
+    const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/pcb_vision/analyze/${nodeId}`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mode})
+    });
+    const j = await r.json();
+    if (!j.ok) { alert('Re-analyze failed: ' + (j.error||'unknown')); return; }
+    const fresh = _graph.nodes.find(x => String(x.id) === String(nodeId));
+    if (fresh) fresh.status = 'running';
+    openSidePanel(nodeId);
+  }
+
+  // ============================================================
+  //  PCB-source modal (Upload OR Data Hub)
+  // ============================================================
+  function openPCBSourceModal() {
+    let modal = document.getElementById('pcb-source-modal');
+    if (modal) modal.remove();
+    modal = document.createElement('div');
+    modal.id = 'pcb-source-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+      <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;width:min(640px,92vw);max-height:88vh;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;flex:1;color:#fff;">📸 Add PCB photo</h3>
+          <button class="btn-sm" onclick="document.getElementById('pcb-source-modal').remove()">✕</button>
+        </div>
+        <div style="display:flex;gap:6px;border-bottom:1px solid #333;margin-bottom:10px;">
+          <button id="pcb-src-upload-tab" class="btn-sm" style="background:#3b82f6;color:#fff;border-radius:4px 4px 0 0;">⬆ Upload</button>
+          <button id="pcb-src-datahub-tab" class="btn-sm" style="border-radius:4px 4px 0 0;">📁 Data Hub</button>
+        </div>
+        <div id="pcb-src-body" style="flex:1;overflow-y:auto;min-height:200px;"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    const body = document.getElementById('pcb-src-body');
+    const upTab = document.getElementById('pcb-src-upload-tab');
+    const dhTab = document.getElementById('pcb-src-datahub-tab');
+    function setTab(which) {
+      upTab.style.background = which==='upload' ? '#3b82f6' : '';
+      dhTab.style.background = which==='datahub' ? '#3b82f6' : '';
+      if (which === 'upload') showUpload(); else showDatahub();
+    }
+    upTab.onclick = () => setTab('upload');
+    dhTab.onclick = () => setTab('datahub');
+
+    function showUpload() {
+      body.innerHTML = `
+        <div style="padding:24px;text-align:center;color:#bbb;">
+          <input type="file" id="pcb-up-file" accept="image/*" style="display:block;margin:0 auto 12px auto;">
+          <button id="pcb-up-go" class="btn-sm" style="background:#22c55e;color:#fff;">Upload + analyze</button>
+        </div>
+      `;
+      document.getElementById('pcb-up-go').onclick = async () => {
+        const fi = document.getElementById('pcb-up-file');
+        if (!fi.files.length) { alert('Pick a file first'); return; }
+        const fd = new FormData();
+        fd.append('file', fi.files[0]);
+        body.innerHTML = '<div style="padding:32px;text-align:center;color:#fbbf24;">⏳ Uploading…</div>';
+        const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/pcb_vision/upload`, {method:'POST', body: fd});
+        const j = await r.json();
+        if (!j.ok) { alert('Upload failed: ' + (j.error||'unknown')); setTab('upload'); return; }
+        modal.remove();
+        await loadGraph();
+        openSidePanel(j.node_id);
+      };
+    }
+    async function showDatahub() {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#888;">Loading Data Hub images…</div>';
+      try {
+        const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/pcb_vision/datahub_list`);
+        const j = await r.json();
+        if (!j.ok) { body.innerHTML = `<div style="padding:24px;color:#ef4444;">Failed: ${escapeHtml(j.error||'unknown')}</div>`; return; }
+        if (!j.items.length) { body.innerHTML = '<div style="padding:24px;color:#888;">No image files found in /mnt/empirepool/cloud/1/. Use Upload instead.</div>'; return; }
+        const html = j.items.slice(0, 120).map(it => `
+          <div class="pcb-dh-card" data-path="${escapeHtml(it.path)}" data-private="${it.is_private?1:0}" style="display:inline-block;width:140px;margin:4px;padding:4px;background:#0d0d0d;border:1px solid #333;border-radius:4px;cursor:pointer;vertical-align:top;">
+            <div style="width:100%;height:90px;background:#222;display:flex;align-items:center;justify-content:center;color:#666;font-size:30px;">${it.is_private?'🔒':'🖼'}</div>
+            <div style="font-size:11px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;">${escapeHtml(it.name)}</div>
+            <div style="font-size:10px;color:#666;">${Math.round(it.size/1024)} KB</div>
+          </div>
+        `).join('');
+        body.innerHTML = `<div style="padding:6px;">${html}</div><div style="text-align:center;color:#666;font-size:11px;padding:6px;">Showing ${Math.min(120,j.items.length)} of ${j.items.length}</div>`;
+        body.querySelectorAll('.pcb-dh-card').forEach(card => {
+          card.onclick = async () => {
+            const path = card.getAttribute('data-path');
+            const isPriv = card.getAttribute('data-private') === '1';
+            body.innerHTML = '<div style="padding:32px;text-align:center;color:#fbbf24;">⏳ Creating node…</div>';
+            const r2 = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/pcb_vision/create_from_datahub`, {
+              method:'POST', headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({datahub_path: path, is_private: isPriv})
+            });
+            const j2 = await r2.json();
+            if (!j2.ok) { alert('Failed: ' + (j2.error||'unknown')); setTab('datahub'); return; }
+            modal.remove();
+            await loadGraph();
+            openSidePanel(j2.node_id);
+          };
+        });
+      } catch (e) {
+        body.innerHTML = `<div style="padding:24px;color:#ef4444;">Error: ${escapeHtml(String(e))}</div>`;
+      }
+    }
+    setTab('upload');
+  }
+
   window.ScaffoldUI = {
     init, loadGraph, openSidePanel, closeSidePanel, teardown,
     runNode, addNote, markDone, deleteNode, overrideDecision,
     toggleHand, promoteBom, deleteBom, addBom,
-    renderSchematicEditor
+    renderSchematicEditor, renderPCBVisionEditor, openPCBSourceModal
   };
 
   // Init when scaffold tab becomes active. The existing setTab() shows panels by

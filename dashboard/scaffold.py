@@ -658,3 +658,450 @@ def supplies_needed():
     finally:
         con.close()
     return jsonify({"items": [dict(r) for r in rows]})
+
+
+# ============================================================================
+#  PCB Vision — board photo → labeled overlays + clean schematic
+#  (Spec: docs/superpowers/specs/2026-05-26-pcb-vision-design.md)
+# ============================================================================
+
+import hashlib
+import mimetypes
+import subprocess
+import threading
+from pathlib import Path
+from flask import send_file, send_from_directory, abort, session
+
+REPO_ROOT     = Path(__file__).resolve().parent.parent
+ARTIFACTS_DIR = REPO_ROOT / "dashboard" / "artifacts"
+SKILL_PATH    = REPO_ROOT / "skills" / "shared" / "scaffold_analyze_pcb_image.py"
+VENV_PY       = REPO_ROOT / "venv" / "bin" / "python"
+PCB_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".tiff"}
+
+
+def _is_private_unlocked() -> bool:
+    """Mirrors dashboard.app._is_private_unlocked without importing it (avoid cycle)."""
+    try:
+        return bool(session.get("private_unlocked"))
+    except Exception:
+        return False
+
+
+def _pcb_dir(project_id: str) -> Path:
+    d = ARTIFACTS_DIR / project_id / "pcb"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _spawn_analyze(node_id: int, mode: str = "merge") -> None:
+    """Fire the vision skill subprocess and forget — UI polls/streams results."""
+    args = json.dumps({"node_id": int(node_id), "mode": mode})
+    env  = {**os.environ, "SKILL_ARGS": args, "PYTHONUNBUFFERED": "1"}
+
+    def _run():
+        try:
+            subprocess.run(
+                [str(VENV_PY), str(SKILL_PATH)],
+                env=env, cwd=str(REPO_ROOT),
+                capture_output=True, text=True, timeout=180,
+            )
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _create_pcb_vision_node(eng, project_id: str, parent_id, title: str, payload: dict):
+    return eng.create_node(
+        project_id=project_id,
+        node_type="pcb_vision",
+        title=title,
+        description="Board / circuit photo analysis",
+        parent_id=parent_id,
+        payload=payload,
+        status="running",
+    )
+
+
+# ---------------- Upload (multipart) ------------------------------------------
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/upload",
+                   methods=["POST"])
+def pcb_vision_upload(pid):
+    if not _project_exists(pid):
+        return jsonify({"ok": False, "error": "project_not_found"}), 404
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "file required"}), 400
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"ok": False, "error": "filename required"}), 400
+    ext = Path(f.filename).suffix.lower()
+    if ext not in PCB_IMAGE_EXTS:
+        return jsonify({"ok": False, "error": f"unsupported extension {ext}"}), 415
+
+    raw = f.read()
+    if not raw:
+        return jsonify({"ok": False, "error": "empty file"}), 400
+    sha = hashlib.sha256(raw).hexdigest()[:8]
+    dest = _pcb_dir(pid) / f"{sha}{ext}"
+    if not dest.exists():
+        dest.write_bytes(raw)
+
+    parent_id = (request.form.get("parent_id") or "").strip() or None
+    if parent_id:
+        try: parent_id = int(parent_id)
+        except ValueError: parent_id = None
+
+    title = (request.form.get("title") or f.filename).strip()[:200]
+    payload = {
+        "image_path": str(dest),
+        "image_source": "upload",
+        "overlays": [],
+        "schematic": {"components": [], "wires": [], "notes": ""},
+        "best_guess_wires": False,
+    }
+    eng = _engine()
+    nid = _create_pcb_vision_node(eng, pid, parent_id, title, payload)
+    _spawn_analyze(nid, mode="reset")
+    return jsonify({"ok": True, "node_id": nid})
+
+
+# ---------------- Create from Data Hub ----------------------------------------
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/create_from_datahub",
+                   methods=["POST"])
+def pcb_vision_create_from_datahub(pid):
+    if not _project_exists(pid):
+        return jsonify({"ok": False, "error": "project_not_found"}), 404
+    body = request.get_json(silent=True) or {}
+    datahub_path = (body.get("datahub_path") or "").strip()
+    is_private = bool(body.get("is_private"))
+    if not datahub_path:
+        return jsonify({"ok": False, "error": "datahub_path required"}), 400
+    p = Path(datahub_path)
+    if not p.is_absolute() or not p.exists() or not p.is_file():
+        return jsonify({"ok": False, "error": "file not found"}), 404
+    if is_private and not _is_private_unlocked():
+        return jsonify({"ok": False, "error": "vault locked"}), 403
+    if p.suffix.lower() not in PCB_IMAGE_EXTS:
+        return jsonify({"ok": False, "error": "not an image"}), 415
+
+    parent_id = body.get("parent_id")
+    if parent_id is not None:
+        try: parent_id = int(parent_id)
+        except (TypeError, ValueError): parent_id = None
+
+    title = (body.get("title") or p.name)[:200]
+    payload = {
+        "image_path": str(p),
+        "image_source": "datahub_private" if is_private else "datahub",
+        "overlays": [],
+        "schematic": {"components": [], "wires": [], "notes": ""},
+        "best_guess_wires": False,
+    }
+    eng = _engine()
+    nid = _create_pcb_vision_node(eng, pid, parent_id, title, payload)
+    _spawn_analyze(nid, mode="reset")
+    return jsonify({"ok": True, "node_id": nid})
+
+
+# ---------------- (Re-)analyze ------------------------------------------------
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/analyze/<int:nid>",
+                   methods=["POST"])
+def pcb_vision_analyze(pid, nid):
+    body = request.get_json(silent=True) or {}
+    mode = body.get("mode") or "merge"
+    if mode not in ("merge", "reset"):
+        mode = "merge"
+    eng = _engine()
+    node = eng.get_node(nid)
+    if not node or node.get("project_id") != pid:
+        return jsonify({"ok": False, "error": "node_not_found"}), 404
+    if node.get("node_type") != "pcb_vision":
+        return jsonify({"ok": False, "error": "wrong_node_type"}), 400
+    eng.update_node(nid, status="running")
+    _spawn_analyze(nid, mode=mode)
+    return jsonify({"ok": True, "node_id": nid, "mode": mode, "status": "running"})
+
+
+# ---------------- Generate schematic from overlays ----------------------------
+
+def _grid_from_overlays(overlays: list, canvas_w: int = 1200, canvas_h: int = 800) -> list:
+    """Place components in the canvas preserving relative photo geometry."""
+    out = []
+    for ov in overlays:
+        bbox = ov.get("bbox") or [0.1, 0.1, 0.2, 0.2]
+        spid = ov.get("suggested_part_id")
+        comp = None
+        if spid:
+            try:
+                from core.baza_components_library import get_component
+                comp = get_component(spid)
+            except Exception:
+                comp = None
+        width  = (comp or {}).get("width", 120)
+        height = (comp or {}).get("height", 80)
+        x = int(bbox[0] * canvas_w)
+        y = int(bbox[1] * canvas_h)
+        out.append({
+            "id": ov["id"],
+            "part_id": spid,
+            "label": ov.get("label", spid or "?"),
+            "x": x, "y": y,
+            "width": width, "height": height,
+            "pins": (comp or {}).get("pins", []),
+        })
+    return out
+
+
+def _best_guess_wires(components: list) -> list:
+    """Heuristic-only wires: power/ground rails + sensor→MCU signal hops."""
+    wires = []
+    next_wid = 1
+
+    def add(from_c, from_pin, to_c, to_pin, kind):
+        nonlocal next_wid
+        wires.append({
+            "id": f"w_{next_wid}",
+            "from": {"component": from_c, "pin": from_pin},
+            "to":   {"component": to_c,   "pin": to_pin},
+            "kind": kind,
+            "auto_generated": True,
+        })
+        next_wid += 1
+
+    # find first power source + first ground supplier
+    def find_pin(c, kind, name_substrs):
+        for p in c.get("pins") or []:
+            if p.get("kind") == kind:
+                return p["name"]
+            n = (p.get("name") or "").lower()
+            if any(s in n for s in name_substrs):
+                return p["name"]
+        return None
+
+    power_src = next((c for c in components if c.get("part_id", "").startswith("power.")
+                                              or find_pin(c, "power", ["vcc", "vbus", "3v3", "5v"])),
+                     None)
+    mcus = [c for c in components if c.get("part_id", "").startswith("mcu.")
+                                  or c.get("part_id", "").startswith("esp")
+                                  or find_pin(c, "power", ["3v3", "vin", "5v"])]
+    sensors = [c for c in components if c.get("part_id", "").startswith("sensor.")]
+
+    # power → every component's VCC
+    if power_src:
+        ps = power_src["id"]
+        ps_pin = find_pin(power_src, "power", ["vbus", "vcc", "5v", "3v3", "v+"]) or "VCC"
+        for c in components:
+            if c["id"] == ps: continue
+            vcc = find_pin(c, "power", ["3v3", "vcc", "vin", "5v"])
+            if vcc:
+                add(ps, ps_pin, c["id"], vcc, "power")
+
+    # ground bus: pick any GND-bearing component as the anchor
+    gnd_anchor = next((c for c in components if find_pin(c, "ground", ["gnd", "ground"])),
+                      None)
+    if gnd_anchor:
+        ga = gnd_anchor["id"]
+        ga_pin = find_pin(gnd_anchor, "ground", ["gnd"]) or "GND"
+        for c in components:
+            if c["id"] == ga: continue
+            g = find_pin(c, "ground", ["gnd", "ground"])
+            if g:
+                add(ga, ga_pin, c["id"], g, "ground")
+
+    # signal: each sensor's first non-power/ground pin → next free GPIO on the first MCU
+    if mcus and sensors:
+        mcu = mcus[0]
+        gpios = [p["name"] for p in (mcu.get("pins") or [])
+                 if p.get("kind") == "gpio"]
+        gi = 0
+        for sn in sensors:
+            for p in sn.get("pins") or []:
+                if p.get("kind") in ("ground", "power"):
+                    continue
+                if gi >= len(gpios):
+                    break
+                add(sn["id"], p["name"], mcu["id"], gpios[gi], "signal")
+                gi += 1
+                break
+
+    return wires
+
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/generate_schematic/<int:nid>",
+                   methods=["POST"])
+def pcb_vision_generate_schematic(pid, nid):
+    body = request.get_json(silent=True) or {}
+    best_guess = bool(body.get("best_guess_wires"))
+    eng = _engine()
+    node = eng.get_node(nid)
+    if not node or node.get("project_id") != pid:
+        return jsonify({"ok": False, "error": "node_not_found"}), 404
+    if node.get("node_type") != "pcb_vision":
+        return jsonify({"ok": False, "error": "wrong_node_type"}), 400
+
+    payload = json.loads(node.get("payload_json") or "{}")
+    overlays = payload.get("overlays") or []
+    if not overlays:
+        return jsonify({"ok": False, "error": "no_overlays_yet"}), 400
+
+    components = _grid_from_overlays(overlays)
+    existing_schem = payload.get("schematic") or {}
+    user_wires = [w for w in (existing_schem.get("wires") or [])
+                  if not w.get("auto_generated")]
+    wires = list(user_wires)
+    if best_guess:
+        wires.extend(_best_guess_wires(components))
+
+    schem = {
+        "components": components,
+        "wires": wires,
+        "notes": existing_schem.get("notes", ""),
+    }
+    payload["schematic"] = schem
+    payload["best_guess_wires"] = best_guess
+    eng.update_node(nid, payload_json=json.dumps(payload))
+    return jsonify({"ok": True, "schematic": schem})
+
+
+# ---------------- Image serving (re-checks vault lock on each fetch) ----------
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/image/<int:nid>")
+def pcb_vision_image(pid, nid):
+    eng = _engine()
+    node = eng.get_node(nid)
+    if not node or node.get("project_id") != pid:
+        abort(404)
+    if node.get("node_type") != "pcb_vision":
+        abort(404)
+    payload = json.loads(node.get("payload_json") or "{}")
+    p = Path(payload.get("image_path", ""))
+    if not p.exists():
+        abort(404)
+    src = payload.get("image_source", "")
+    if src == "datahub_private" and not _is_private_unlocked():
+        abort(403)
+    mime = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
+    resp = send_from_directory(p.parent, p.name, mimetype=mime)
+    if src == "upload":
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+# ---------------- Data Hub thumbnail (privacy-gated, cached) ------------------
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/datahub_thumb")
+def pcb_vision_datahub_thumb(pid):
+    """Serve a 200px JPEG thumbnail for any image path under the cloud root
+    (or the private vault if unlocked). Cached on disk by path+mtime."""
+    raw = request.args.get("path", "")
+    is_private = request.args.get("private", "0") == "1"
+    if not raw:
+        abort(400)
+    try:
+        p = Path(raw).resolve()
+    except OSError:
+        abort(404)
+    if not p.exists() or not p.is_file():
+        abort(404)
+    if p.suffix.lower() not in PCB_IMAGE_EXTS:
+        abort(415)
+    if is_private and not _is_private_unlocked():
+        abort(403)
+
+    # path safety: confine to known roots
+    cloud_root = Path(os.environ.get("BAZA_CLOUD_ROOT", "/mnt/empirepool/cloud/1")).resolve()
+    priv_root  = (REPO_ROOT / "dashboard" / "artifacts" / ".private-inbound").resolve()
+    if not (str(p).startswith(str(cloud_root)) or str(p).startswith(str(priv_root))):
+        abort(403)
+
+    import hashlib as _h
+    thumb_dir = REPO_ROOT / "dashboard" / "artifacts" / ".pcb_thumb_cache"
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    key = _h.md5(f"{p}|{p.stat().st_mtime}".encode()).hexdigest()[:16]
+    cached = thumb_dir / f"{key}_200.jpg"
+    if not cached.exists():
+        try:
+            try:
+                import pillow_heif; pillow_heif.register_heif_opener()
+            except ImportError:
+                pass
+            from PIL import Image, ImageOps
+        except ImportError:
+            abort(500)
+        try:
+            img = Image.open(p)
+            img = ImageOps.exif_transpose(img)
+            img = img.convert("RGB")
+            img.thumbnail((200, 200), Image.LANCZOS)
+            img.save(cached, "JPEG", quality=82)
+        except Exception:
+            abort(500)
+    resp = send_from_directory(thumb_dir, cached.name, mimetype="image/jpeg")
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
+# ---------------- Data Hub image lister ---------------------------------------
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/pcb_vision/datahub_list")
+def pcb_vision_datahub_list(pid):
+    """List image-typed files from the cloud root + private vault (if unlocked)."""
+    cloud_root = Path(os.environ.get("BAZA_CLOUD_ROOT", "/mnt/empirepool/cloud/1"))
+    public_items: list[dict] = []
+    if cloud_root.exists():
+        for root, _, files in os.walk(cloud_root):
+            # skip private/hidden
+            rel = Path(root).relative_to(cloud_root).as_posix()
+            if rel.startswith(".") or "/.private-inbound" in "/" + rel:
+                continue
+            for name in files:
+                p = Path(root) / name
+                if p.suffix.lower() not in PCB_IMAGE_EXTS:
+                    continue
+                try:
+                    st = p.stat()
+                except OSError:
+                    continue
+                public_items.append({
+                    "path": str(p),
+                    "name": name,
+                    "rel_path": str(p.relative_to(cloud_root)),
+                    "size": st.st_size,
+                    "mtime": int(st.st_mtime),
+                    "is_private": False,
+                })
+            # bound the walk to a reasonable count to keep the UI snappy
+            if len(public_items) >= 500:
+                break
+
+    private_items: list[dict] = []
+    if _is_private_unlocked():
+        priv_root = REPO_ROOT / "dashboard" / "artifacts" / ".private-inbound"
+        if priv_root.exists():
+            for root, _, files in os.walk(priv_root):
+                for name in files:
+                    p = Path(root) / name
+                    if p.suffix.lower() not in PCB_IMAGE_EXTS:
+                        continue
+                    try:
+                        st = p.stat()
+                    except OSError:
+                        continue
+                    private_items.append({
+                        "path": str(p),
+                        "name": name,
+                        "rel_path": str(p.relative_to(priv_root)),
+                        "size": st.st_size,
+                        "mtime": int(st.st_mtime),
+                        "is_private": True,
+                    })
+
+    items = sorted(public_items + private_items, key=lambda x: -x["mtime"])[:500]
+    return jsonify({"ok": True, "count": len(items), "items": items})
