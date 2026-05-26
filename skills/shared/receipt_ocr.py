@@ -390,7 +390,7 @@ def _top_vendors_hint(limit: int = 10) -> str:
             return ", ".join(names)
     except Exception:
         pass
-    return "Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's"
+    return "The Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's"
 
 
 def _parse_vision_json(content: str) -> dict | None:
@@ -559,7 +559,7 @@ def run_llm_analysis(image_path: str) -> dict:
         "Extract structured data from this receipt image as JSON.\n"
         f"Likely vendors (we see these often): {vendor_hint}. "
         "If the store matches one of these, use its canonical name; "
-        "OCR typos like 'The homedepot' → 'Home Depot' are expected.\n\n"
+        "OCR typos like 'The homedepot' → 'The Home Depot' are expected.\n\n"
         "Fields to extract:\n"
         "- store_name: vendor name, canonicalized\n"
         "- store_location: full street address + city/state if PRINTED on the "
@@ -585,7 +585,7 @@ def run_llm_analysis(image_path: str) -> dict:
         "- payment_method: Cash/Credit Card/Debit Card/Check\n"
         "- payment_details: last 4 digits if card\n"
         "- category: one of Materials, Tools, Fuel, Food, Office supplies, Clothes. "
-        "  Rules: Home Depot / Lowe's / Sherwin-Williams / Ace / 84 Lumber / "
+        "  Rules: The Home Depot / Lowe's / Sherwin-Williams / Ace / 84 Lumber / "
         "  hardware stores = Materials. Gallons/unleaded/premium/diesel = Fuel "
         "  (even at Wawa/Sheetz/7-Eleven). Grocery or coffee/food chains = Food. "
         "  Specialty tool stores (Harbor Freight / Snap-On / Matco) = Tools.\n\n"

@@ -144,7 +144,7 @@ def _top_vendor_hint(limit: int = 10) -> str:
             return ", ".join(names)
     except Exception:
         pass
-    return "Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's, Dunkin', Sheetz"
+    return "The Home Depot, Lowe's, Sherwin-Williams, Harbor Freight, Wawa, Exxon, Redner's, Dunkin', Sheetz"
 
 
 def _tesseract_text(path: str) -> str:
@@ -299,7 +299,7 @@ Read the document content below and return ONLY a JSON object with these EXACT k
 
 {
   "doc_type": "one of: coi, w9, license, permit, contract, change_order, invoice, estimate, lien_waiver, lead_form, project_photo, blueprint, receipt, correspondence, id_document, tax_document, other",
-  "entity": "primary entity this doc is for or about (e.g. 'Home Depot', 'John Smith — 123 Main St', 'Liberty Mutual', 'City of Philadelphia'). For receipts, this is the STORE name.",
+  "entity": "primary entity this doc is for or about (e.g. 'The Home Depot', 'John Smith — 123 Main St', 'Liberty Mutual', 'City of Philadelphia'). For receipts, this is the STORE name.",
   "doc_date": "YYYY-MM-DD if visible (for receipts: the date on the receipt, NOT today), else null",
   "summary": "1-3 sentence plain-English summary of what this document is and says",
   "relevance": "1-2 sentence explanation of why this matters to Baza/AHBCO operations and which agent should care most",

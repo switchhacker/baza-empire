@@ -32,7 +32,7 @@ LEARN_JSON    = Path(__file__).parent / "receipt_learn.json"
 # Category labels MUST match what's already in ahb_receipts (capitalized).
 SEED_VENDORS = {
     "Materials": [
-        "Home Depot", "Lowe's", "Menards", "84 Lumber", "Ace Hardware",
+        "The Home Depot", "Lowe's", "Menards", "84 Lumber", "Ace Hardware",
         "Harbor Freight", "Sherwin-Williams", "Ferguson", "Tractor Supply",
         "Grainger", "McMaster-Carr", "Rona", "Builders FirstSource",
     ],
