@@ -59,11 +59,6 @@
     "supergemma4:26b-uncensored-q4"
   ],
   "top_dirs": [
-    ".claude",
-    ".git",
-    ".pytest_cache",
-    ".remember",
-    "__pycache__",
     "agents",
     "baza-web",
     "config",
@@ -73,12 +68,10 @@
     "docs",
     "email-pipeline",
     "firmware",
-    "logs",
     "scripts",
     "skills",
     "systemd",
     "tests",
-    "tools",
-    "venv"
+    "tools"
   ]
 }
