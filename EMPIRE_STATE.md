@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-05-26 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 3 warn, 9 info)
-- 2026-05-26 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 1 warn, 11 info)
-- 2026-05-26 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 0 warn, 6 info)
-- 2026-05-26 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 0 warn, 10 info)
-- 2026-05-26 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 0 warn, 5 info)
-- 2026-05-26 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 2 warn, 5 info)
-- 2026-05-26 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
-- 2026-05-26 Claw hourly digest — 17 new (0 bug, 0 regression, 0 security, 1 warn, 16 info)
-- 2026-05-26 Claw hourly digest — 42 new (0 bug, 0 regression, 0 security, 3 warn, 39 info)
-- 2026-05-26 PCB Vision feature SHIPPED — board photo → labeled overlays + clean schematic
-- 2026-05-26 PCB Vision — qwen3-vl think-mode fix + Data Hub thumbnails
-- 2026-05-26 Scaffold right-click to erase — everywhere
-- 2026-05-26 PCB Vision — live smoke complete + best-guess wires bug fix + multi-root browser
-- 2026-05-26 PCB picker — split "Data Hub" into honest sub-chips
-- 2026-05-26 Claw hourly digest — 118 new (5 bug, 0 regression, 0 security, 35 warn, 78 info)
+- 2026-05-27 Claw hourly digest — 40 new (0 bug, 0 regression, 0 security, 35 warn, 5 info)
+- 2026-05-27 Claw hourly digest — 30 new (0 bug, 0 regression, 0 security, 24 warn, 6 info)
+- 2026-05-27 Claw hourly digest — 30 new (0 bug, 0 regression, 0 security, 25 warn, 5 info)
+- 2026-05-27 Claw hourly digest — 44 new (0 bug, 0 regression, 0 security, 40 warn, 4 info)
+- 2026-05-27 Claw hourly digest — 36 new (0 bug, 0 regression, 0 security, 35 warn, 1 info)
+- 2026-05-27 Claw hourly digest — 39 new (0 bug, 0 regression, 0 security, 35 warn, 4 info)
+- 2026-05-27 Claw hourly digest — 57 new (0 bug, 0 regression, 0 security, 56 warn, 1 info)
+- 2026-05-27 Claw hourly digest — 36 new (0 bug, 0 regression, 0 security, 34 warn, 2 info)
+- 2026-05-27 Post-reboot freeze — root cause: ollama running models on CPU (two bugs); 11434 fixed
+- 2026-05-27 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 2 warn, 11 info)
+- 2026-05-27 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 1 warn, 10 info)
+- 2026-05-27 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
+- 2026-05-27 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
+- 2026-05-27 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
+- 2026-05-27 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
