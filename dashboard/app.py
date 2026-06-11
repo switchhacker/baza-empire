@@ -458,6 +458,19 @@ def _init_ahb_tables_inner():
         "ALTER TABLE ahb_phase_tasks ADD COLUMN source_line_idx INTEGER",
         "ALTER TABLE ahb_events ADD COLUMN phase_id TEXT DEFAULT ''",
         "ALTER TABLE ahb_events ADD COLUMN task_id TEXT DEFAULT ''",
+        # Primary invoice per project — basis for payment terms + balance invoices
+        "ALTER TABLE ahb_invoices ADD COLUMN is_primary INTEGER DEFAULT 0",
+        # Backfill: every project with invoices but no primary gets its oldest
+        # invoice marked primary (idempotent; runs each boot, no-ops once set)
+        """UPDATE ahb_invoices SET is_primary=1 WHERE id IN (
+             SELECT i.id FROM ahb_invoices i
+             WHERE i.project_id IS NOT NULL AND TRIM(i.project_id) <> ''
+               AND NOT EXISTS (SELECT 1 FROM ahb_invoices x
+                               WHERE x.project_id = i.project_id AND x.is_primary = 1)
+               AND i.id = (SELECT y.id FROM ahb_invoices y
+                           WHERE y.project_id = i.project_id
+                           ORDER BY y.created_at ASC, y.id ASC LIMIT 1)
+           )""",
     ]
     for stmt in alter_stmts:
         try:
@@ -5629,15 +5642,16 @@ def api_ahb_projects_create():
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
                subtotal, tax, total, status, notes, client_name, project_name, terms,
-               company_name, contractor_name, client_address, client_email, client_phone, project_address)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               company_name, contractor_name, client_address, client_email, client_phone, project_address,
+               is_primary)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (iid, data.get('client_id', ''), pid, inv_num,
              json.dumps(line_items), subtotal, 0, total, 'draft',
              '',
              data.get('client_name', ''), data.get('title', ''), 'Net 30',
              'All Home Building Co', 'Sergey Tkach',
              data.get('address', ''), data.get('client_email', ''),
-             data.get('contact_info', ''), data.get('address', '')))
+             data.get('contact_info', ''), data.get('address', ''), 1))
 
         conn.commit()
         conn.close()
@@ -5769,50 +5783,14 @@ def api_ahb_invoice_move_year(iid):
 
 # ── Project Quotes ──────────────────────────────────────────────────────────
 
-def _deposit_lines(total, carry_money):
-    """The two auto-injected payment-schedule rows: 50% deposit + 50% balance.
-
-    When `carry_money` is True (quote-applied invoice with blank work-line
-    totals), the deposit/balance rows carry the money — their `total`s sum
-    to the basis. When False (manual invoice with real work-line totals),
-    the rows are informational with `total=0` and the dollar amounts shown
-    inline in the description so they don't double-count."""
-    total = float(total or 0)
-    deposit_amount = round(total * 0.5, 2)
-    balance_amount = round(total - deposit_amount, 2)
-    if carry_money:
-        d_total, b_total = deposit_amount, balance_amount
-        d_desc = '50% Deposit due before commencement of work'
-        b_desc = 'Balance (50%) due upon project completion — total due after deposit'
-    else:
-        d_total, b_total = 0, 0
-        d_desc = f'50% Deposit due before commencement of work — ${deposit_amount:,.2f}'
-        b_desc = f'Balance (50%) due upon project completion — total due after deposit ${balance_amount:,.2f}'
-    return [
-        {
-            'description': d_desc,
-            'qty': 1, 'rate': d_total, 'total': d_total,
-            'unit': 'qty', 'materials': 0, 'labor': 0,
-            'quantity': 1, 'unit_price': d_total,
-            '_auto_deposit': True,
-        },
-        {
-            'description': b_desc,
-            'qty': 1, 'rate': b_total, 'total': b_total,
-            'unit': 'qty', 'materials': 0, 'labor': 0,
-            'quantity': 1, 'unit_price': b_total,
-            '_auto_deposit': True,
-        },
-    ]
-
-
 def _line_items_from_description(description, total):
     """Build invoice line_items from a quote: each non-empty line of the
     description becomes one item carrying ONLY the description text — qty,
     rate, materials, labor, and total are blank ($0) so the contractor can
-    fill them in later. The full total is carried on the auto-appended
-    50% deposit + 50% balance rows."""
-    total = float(total or 0)
+    fill them in later. The invoice's stored subtotal/total columns carry
+    the quote money (set by _apply_quote_to_invoice). No payment-schedule
+    rows are auto-added — payment terms are entered manually as lines
+    (auto 50% deposit/balance injection removed 2026-06-11)."""
     lines = [ln.strip() for ln in (description or '').split('\n') if ln.strip()]
     items = []
     if not lines:
@@ -5830,39 +5808,12 @@ def _line_items_from_description(description, total):
                 'unit': 'qty', 'materials': 0, 'labor': 0,
                 'quantity': 1, 'unit_price': 0,
             })
-    # Quote-applied invoices have blank work-line totals, so deposit/balance
-    # carry the money.
-    items.extend(_deposit_lines(total, carry_money=True))
     return items
 
 
-_DEPOSIT_DESC_PREFIXES = (
-    '50% deposit due before',
-    'balance (50%) due upon',
-    'balance due upon',
-)
-
-
-def _is_auto_deposit_line(li):
-    """An auto-deposit row is identified by its marker OR by its canonical
-    description (the marker is dropped on frontend round-trips through the
-    invoice modal, so the description is our fallback)."""
-    if li.get('_auto_deposit'):
-        return True
-    desc = (li.get('description') or '').strip().lower()
-    return any(desc.startswith(p) for p in _DEPOSIT_DESC_PREFIXES)
-
-
-def _ensure_deposit_lines(items_or_json, fallback_total=0):
-    """Strip any prior auto-deposit lines from the payload, then append fresh
-    50% deposit + 50% balance payment-schedule rows.
-
-    - If the remaining work lines sum to > 0 (manual invoice flow), the
-      deposit/balance rows are informational with `total=0` and the dollar
-      amounts inlined in the description, so they don't double-count.
-    - If the work lines all sum to 0 (quote-driven invoice with blank work
-      totals), the deposit/balance rows carry the money split 50/50 of
-      `fallback_total` (the quote total)."""
+def _parse_line_items(items_or_json):
+    """Best-effort parse of a line_items payload (JSON string or list).
+    Returns a list, or None when the payload isn't parseable."""
     if items_or_json is None:
         return None
     items = items_or_json
@@ -5870,22 +5821,33 @@ def _ensure_deposit_lines(items_or_json, fallback_total=0):
         try:
             items = json.loads(items) if items else []
         except Exception:
-            return items_or_json
-    if not isinstance(items, list):
-        return items_or_json
-    work_items = [li for li in items if not _is_auto_deposit_line(li)]
-    work_subtotal = 0.0
-    for li in work_items:
+            return None
+    return items if isinstance(items, list) else None
+
+
+def _invoice_items_subtotal(items):
+    """Sum line totals, honoring the per-line include_in_total toggle.
+    Lines default to included — only an explicit include_in_total=False
+    drops a line out of the sum (informational/terms rows)."""
+    sub = 0.0
+    for li in items:
+        if li.get('include_in_total') is False:
+            continue
         try:
-            work_subtotal += float(li.get('total') or li.get('rate') or 0)
-        except Exception:
+            sub += float(li.get('total') or 0)
+        except (TypeError, ValueError):
             pass
-    if work_subtotal > 0:
-        return work_items + _deposit_lines(work_subtotal, carry_money=False)
-    fallback = float(fallback_total or 0)
-    if fallback > 0:
-        return work_items + _deposit_lines(fallback, carry_money=True)
-    return work_items  # nothing to schedule yet
+    return round(sub, 2)
+
+
+def _project_has_primary_invoice(conn, project_id):
+    if not project_id:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM ahb_invoices WHERE project_id = ? AND is_primary = 1 LIMIT 1",
+        (project_id,)
+    ).fetchone()
+    return bool(row)
 
 
 def _apply_quote_to_invoice(c, project_id, quote_total, quote_description):
@@ -5893,7 +5855,7 @@ def _apply_quote_to_invoice(c, project_id, quote_total, quote_description):
     and sync subtotal/total. Returns the invoice id or None if no invoice
     exists for this project."""
     inv = c.execute(
-        "SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY created_at ASC LIMIT 1",
+        "SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
         (project_id,)
     ).fetchone()
     if not inv:
@@ -6215,7 +6177,7 @@ def _ahb_project_payment_summary(conn, project_id):
     """
     row = conn.execute(
         "SELECT id, invoice_number, total FROM ahb_invoices "
-        "WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+        "WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
         (project_id,)
     ).fetchone()
     if not row:
@@ -6254,7 +6216,7 @@ def _ahb_apply_status_sync(conn, project_id, new_status):
         (canon, now, project_id)
     )
     inv = conn.execute(
-        "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+        "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
         (project_id,)
     ).fetchone()
     if not inv:
@@ -6435,29 +6397,36 @@ def api_ahb_invoices_create():
         iid = uuid.uuid4().hex[:24]
         inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
 
-        # Always inject the 50% deposit + balance payment-schedule rows and
-        # recompute subtotal/total to match the rebuilt line items.
+        # Line items are stored exactly as submitted — no auto-injected
+        # deposit/balance rows (removed 2026-06-11; payment terms are entered
+        # manually as normal lines). subtotal/total are recomputed only when
+        # the caller didn't supply them, honoring per-line include_in_total.
         items_in = data.get('line_items', [])
-        rebuilt = _ensure_deposit_lines(
-            items_in,
-            fallback_total=data.get('total') or data.get('subtotal') or 0
-        )
-        if rebuilt is not None:
-            items_in = rebuilt
-            sub = sum(float(li.get('total') or 0) for li in items_in)
+        parsed = _parse_line_items(items_in)
+        if parsed is not None and data.get('subtotal') is None and data.get('total') is None:
+            sub = _invoice_items_subtotal(parsed)
             data['subtotal'] = sub
             data['total'] = sub + float(data.get('tax') or 0)
 
         conn = _ahb_db()
+        # Tax parity: an invoice created already-Paid gets paid_date stamped so
+        # Uncle Sam's cash-basis revenue lands in the right year.
+        if str(data.get('status') or '').strip().lower() == 'paid' and not data.get('paid_date'):
+            data['paid_date'] = datetime.datetime.now().strftime('%Y-%m-%d')
         # Every invoice must belong to a project — find or auto-create one.
         data['project_id'] = _ensure_invoice_project(conn, data)
+        # First invoice on a project becomes its primary unless told otherwise.
+        if 'is_primary' in data:
+            is_primary = 1 if data.get('is_primary') else 0
+        else:
+            is_primary = 0 if _project_has_primary_invoice(conn, data['project_id']) else 1
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
                subtotal, tax, total, status, due_date, paid_date, notes,
                date, parent_invoice_id, is_change_order, overdue_since,
                overdue_interest_per_week, company_name, contractor_name,
-               client_address, client_email, client_phone, project_address)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               client_address, client_email, client_phone, project_address, is_primary)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (iid, data.get('client_id'), data.get('project_id'), inv_num,
              json.dumps(items_in) if isinstance(items_in, list) else items_in,
              data.get('subtotal'), data.get('tax'), data.get('total'),
@@ -6469,11 +6438,13 @@ def api_ahb_invoices_create():
              data.get('company_name', 'All Home Building Co'),
              data.get('contractor_name', 'Sergey Tkach'),
              data.get('client_address', ''), data.get('client_email', ''),
-             data.get('client_phone', ''), data.get('project_address', ''))
+             data.get('client_phone', ''), data.get('project_address', ''),
+             is_primary)
         )
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num})
+        return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num,
+                        'is_primary': is_primary})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -6484,18 +6455,14 @@ def api_ahb_invoices_update(iid):
         data = request.json or {}
         fields = []
         vals = []
-        # Re-inject deposit lines whenever line_items is being rewritten and
-        # recompute subtotal/total so the stored math matches the rebuilt
-        # line items (frontend-submitted subtotal/total may include the
-        # round-tripped old deposit amounts and would otherwise be stale).
-        if 'line_items' in data:
-            rebuilt = _ensure_deposit_lines(
-                data['line_items'],
-                fallback_total=data.get('total') or data.get('subtotal') or 0
-            )
-            if rebuilt is not None:
-                data['line_items'] = rebuilt
-                sub = sum(float(li.get('total') or 0) for li in rebuilt)
+        # Line items are saved exactly as submitted — no auto-injected
+        # deposit/balance rows, no rewriting (removed 2026-06-11). The editor
+        # owns the math (per-line include_in_total toggle + manual overrides);
+        # subtotal/total are only derived here when the caller omitted them.
+        if 'line_items' in data and data.get('subtotal') is None and data.get('total') is None:
+            parsed = _parse_line_items(data['line_items'])
+            if parsed is not None:
+                sub = _invoice_items_subtotal(parsed)
                 data['subtotal'] = sub
                 data['total'] = sub + float(data.get('tax') or 0)
         for k in ('client_id', 'project_id', 'line_items', 'subtotal', 'tax',
@@ -6512,6 +6479,22 @@ def api_ahb_invoices_update(iid):
         if not fields:
             return jsonify({'success': False, 'error': 'No fields to update'}), 400
         conn = _ahb_db()
+        # Tax parity (Uncle Sam runs cash-basis off paid invoices): whenever a
+        # status change makes an invoice Paid, stamp paid_date — and clear it
+        # when the invoice leaves Paid — unless the caller set paid_date
+        # explicitly. Never overwrite an existing paid_date (the original
+        # collection date is the tax-relevant one). The explicit `year` column
+        # still wins in year attribution; paid_date is the fallback.
+        if 'status' in data and 'paid_date' not in data:
+            new_status = str(data.get('status') or '').strip().lower()
+            row = conn.execute("SELECT paid_date FROM ahb_invoices WHERE id = ?", (iid,)).fetchone()
+            stored_paid = (row['paid_date'] or '').strip() if row else ''
+            if new_status == 'paid' and not stored_paid:
+                fields.append("paid_date = ?")
+                vals.append(datetime.datetime.now().strftime('%Y-%m-%d'))
+            elif new_status and new_status != 'paid' and stored_paid:
+                fields.append("paid_date = ?")
+                vals.append('')
         # If project_id is being cleared (or empty), auto-create/find one so
         # the invoice still has a project home after the update.
         if 'project_id' in data and not (data.get('project_id') or '').strip():
@@ -6565,6 +6548,116 @@ def api_ahb_invoices_backfill_projects():
             fixed += 1
         conn.commit(); conn.close()
         return jsonify({'success': True, 'fixed': fixed})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/invoices/<iid>/primary', methods=['POST'])
+def api_ahb_invoice_set_primary(iid):
+    """Mark this invoice as its project's primary — the basis for payment
+    tracking, status sync, and balance-invoice generation. Exactly one
+    primary per project (the others are demoted)."""
+    try:
+        conn = _ahb_db()
+        inv = conn.execute("SELECT id, project_id FROM ahb_invoices WHERE id = ?", (iid,)).fetchone()
+        if not inv:
+            conn.close()
+            return jsonify({'success': False, 'error': 'invoice not found'}), 404
+        pid = inv['project_id']
+        now = datetime.datetime.now().isoformat()
+        if pid:
+            conn.execute("UPDATE ahb_invoices SET is_primary = 0 WHERE project_id = ? AND id <> ?", (pid, iid))
+        conn.execute("UPDATE ahb_invoices SET is_primary = 1, updated_at = ? WHERE id = ?", (now, iid))
+        conn.commit(); conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/projects/<pid>/balance-invoice', methods=['POST'])
+def api_ahb_project_balance_invoice(pid):
+    """Generate the follow-up payment invoice from the project's primary
+    invoice without touching the primary: one line carrying the contract
+    total per the primary, then one credit line (negative) per payment
+    received against it, leaving the remaining balance due. Extras /
+    change-order lines are added by hand in the editor afterwards."""
+    try:
+        conn = _ahb_db()
+        project = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (pid,)).fetchone()
+        if not project:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Project not found'}), 404
+        project = dict(project)
+        primary = conn.execute(
+            "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
+            (pid,)
+        ).fetchone()
+        if not primary:
+            conn.close()
+            return jsonify({'success': False,
+                            'error': 'No invoice on this project yet — create the primary invoice first'}), 400
+        primary = dict(primary)
+        payments = [dict(r) for r in conn.execute(
+            "SELECT * FROM ahb_payments WHERE invoice_id = ? ORDER BY payment_date, created_at",
+            (primary['id'],)
+        ).fetchall()]
+
+        contract_total = float(primary.get('total') or 0)
+        line_items = [{
+            'description': f"Contract total per Invoice #{primary.get('invoice_number') or primary['id']}",
+            'qty': 1, 'rate': contract_total, 'total': contract_total,
+            'unit': 'qty', 'materials': 0, 'labor': 0,
+            'quantity': 1, 'unit_price': contract_total,
+            'include_in_total': True,
+        }]
+        paid = 0.0
+        for pmt in payments:
+            try:
+                amt = float(pmt.get('amount') or 0)
+            except (TypeError, ValueError):
+                amt = 0.0
+            if not amt:
+                continue
+            paid += amt
+            bits = ['Less: payment received']
+            if pmt.get('payment_date'):
+                bits.append(str(pmt['payment_date']))
+            if pmt.get('payment_method'):
+                bits.append(f"({pmt['payment_method']})")
+            line_items.append({
+                'description': ' '.join(bits),
+                'qty': 1, 'rate': -amt, 'total': -amt,
+                'unit': 'qty', 'materials': 0, 'labor': 0,
+                'quantity': 1, 'unit_price': -amt,
+                'include_in_total': True,
+            })
+        subtotal = round(contract_total - paid, 2)
+
+        iid = uuid.uuid4().hex[:24]
+        inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
+        conn.execute(
+            """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
+               subtotal, tax, total, status, notes, client_name, project_name, terms,
+               date, parent_invoice_id, is_primary, company_name, contractor_name,
+               client_address, client_email, client_phone, project_address)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (iid, primary.get('client_id') or project.get('client_id') or '',
+             pid, inv_num, json.dumps(line_items), subtotal, 0, subtotal, 'draft',
+             'Remaining balance due on contract.',
+             primary.get('client_name') or project.get('client_name') or '',
+             primary.get('project_name') or project.get('title') or '',
+             primary.get('terms') or 'Net 30',
+             datetime.datetime.now().date().isoformat(),
+             primary['id'], 0,
+             primary.get('company_name') or 'All Home Building Co',
+             primary.get('contractor_name') or 'Sergey Tkach',
+             primary.get('client_address') or '',
+             primary.get('client_email') or project.get('client_email') or '',
+             primary.get('client_phone') or '',
+             primary.get('project_address') or project.get('address') or ''))
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num,
+                        'contract_total': contract_total, 'paid': paid, 'balance': subtotal})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -8857,7 +8950,7 @@ def _sync_invoice_from_project(conn, project_id, project_data):
     Phase-driven invoices (>1 line items already from phases) are left alone unless explicitly
     rebuilt elsewhere — only single-line / description-driven invoices auto-sync from desc."""
     inv = conn.execute(
-        "SELECT id, line_items, subtotal FROM ahb_invoices WHERE project_id = ? ORDER BY created_at ASC LIMIT 1",
+        "SELECT id, line_items, subtotal FROM ahb_invoices WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
         (project_id,)
     ).fetchone()
     if not inv:
@@ -9288,13 +9381,14 @@ def api_ahb_invoice_from_project(pid):
         conn.execute(
             """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
                subtotal, tax, total, status, notes, client_name, project_name, terms,
-               project_address)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               project_address, is_primary)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (iid, project.get('client_id', ''), pid, inv_num,
              json.dumps(line_items), subtotal, 0, subtotal, 'draft',
              notes,
              project.get('client_name', ''), project.get('title', ''),
-             'Net 30', project.get('address', '')))
+             'Net 30', project.get('address', ''),
+             0 if _project_has_primary_invoice(conn, pid) else 1))
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num,
@@ -9646,6 +9740,12 @@ def api_ahb_invoice_pdf(iid):
             (float(item.get('materials') or 0) > 0) or (float(item.get('labor') or 0) > 0)
             for item in line_items
         )
+
+        def _m(v):
+            """Money — credit/negative amounts render as -$1,234.00."""
+            v = float(v or 0)
+            return f"-${abs(v):,.2f}" if v < 0 else f"${v:,.2f}"
+
         items_html = ''
         for i, item in enumerate(line_items, 1):
             desc = item.get('description', '')
@@ -9673,22 +9773,29 @@ def api_ahb_invoice_pdf(iid):
             else:
                 total_item = qty * price
             qty_display = f"{qty:g} {unit}" if unit and unit != 'qty' else f"{qty:g}"
+            # Lines excluded from the total (include_in_total=False) are
+            # informational — print the description, dash out the money cells.
+            excluded = item.get('include_in_total') is False
+            mat_cell   = '—' if excluded else _m(materials)
+            lab_cell   = '—' if excluded else _m(labor)
+            price_cell = '—' if excluded else _m(price)
+            total_cell = '—' if excluded else _m(total_item)
             if any_breakdown:
                 items_html += f'''<tr>
                     <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
                     <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
                     <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">${materials:,.2f}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">${labor:,.2f}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">{mat_cell}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">{lab_cell}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">{total_cell}</td>
                 </tr>'''
             else:
                 items_html += f'''<tr>
                     <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
                     <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
                     <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">${price:,.2f}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">${total_item:,.2f}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">{price_cell}</td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">{total_cell}</td>
                 </tr>'''
 
         # Build scope of work section for PDF.
@@ -9797,7 +9904,7 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
 <div style="display:flex;justify-content:flex-end;">
     <div style="width:250px;border-top:2px solid #333;padding-top:8px;">
         <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:20px;font-weight:700;color:#2563eb;">
-            <span>Total:</span><span>${total:,.2f}</span>
+            <span>Total:</span><span>{_m(total)}</span>
         </div>
     </div>
 </div>

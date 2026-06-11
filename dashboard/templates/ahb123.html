@@ -451,6 +451,11 @@
     .line-items-table input,.line-items-table select{width:100%;background:#0a0a18;border:1px solid #1a1a2e;border-radius:5px;padding:7px 8px;color:#e0e0e0;font-size:12px;outline:none}
     .line-items-table input:focus,.line-items-table select:focus{border-color:#7c3aed}
     .line-items-table .li-total-cell{cursor:pointer;border:1px solid transparent;border-radius:5px;padding:7px 8px;color:#00d084;font-weight:600;text-align:right;transition:border-color .15s,background .15s}
+    .li-drag-handle{cursor:grab;color:#3a3a5a;font-size:14px;user-select:none;padding:2px 4px;display:inline-block;line-height:1}
+    .li-drag-handle:hover{color:#a78bfa}
+    .li-drag-handle:active{cursor:grabbing}
+    #line-items-tbody tr.li-dragging{opacity:.35}
+    #line-items-tbody tr.li-dragging td{background:#11112a}
     .line-items-table .li-total-cell:hover{border-color:#7c3aed;background:#0a0a18}
     .line-items-table .li-total-cell.editing{background:#0a0a18;border-color:#7c3aed;padding:0}
     .line-items-table .li-total-cell input{text-align:right;font-weight:600;color:#00d084;border:none;background:transparent}
@@ -986,9 +991,12 @@
   <div class="page-header">
     <div>
       <div class="page-title">Projects</div>
-      <div class="page-sub">Track every renovation, addition, and build</div>
+      <div class="page-sub">Track every renovation, addition, and build — invoicing &amp; billing live inside each project</div>
     </div>
-    <button class="btn btn-primary" onclick="openProjectModal()">+ Add Project</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="openProjectModal()">+ Add Project</button>
+      <button class="btn btn-secondary" onclick="_invoiceReturnPid=null;openInvoiceModal()" title="Create an invoice — link it to a project in the editor">💰 + New Invoice</button>
+    </div>
   </div>
   <div class="stats-row" id="project-stats">
     <div class="stat-card stat-total"><div class="stat-val" id="ps-total-val" style="color:#00d084">$0</div><div class="stat-lbl">Total Value</div></div>
@@ -996,6 +1004,21 @@
     <div class="stat-card" style=""><div class="stat-val" id="ps-inprogress" style="color:#4da6ff">&mdash;</div><div class="stat-lbl">In Progress</div></div>
     <div class="stat-card stat-done"><div class="stat-val" id="ps-complete">&mdash;</div><div class="stat-lbl">Complete</div></div>
     <div class="stat-card"><div class="stat-val" id="ps-count" style="color:#c4b5fd">&mdash;</div><div class="stat-lbl">Total Projects</div></div>
+  </div>
+  <!-- Billing rollup (merged from the old Billing tab) — follows the year filter -->
+  <div class="stats-row" id="project-billing-stats">
+    <div class="stat-card stat-total"><div class="stat-val" id="pb-receivable" style="color:#c4b5fd">&mdash;</div><div class="stat-lbl">Total Receivable</div></div>
+    <div class="stat-card stat-pending"><div class="stat-val" id="pb-due">&mdash;</div><div class="stat-lbl">Payments Due (Sent)</div></div>
+    <div class="stat-card stat-blocked"><div class="stat-val" id="pb-overdue" style="color:#ff5555">&mdash;</div><div class="stat-lbl">Overdue + Interest</div></div>
+    <div class="stat-card stat-done"><div class="stat-val" id="pb-paid" style="color:#00d084">&mdash;</div><div class="stat-lbl">Collected (Paid)</div></div>
+  </div>
+  <!-- Invoices with no project — only visible when some exist, so nothing is unreachable -->
+  <div id="unlinked-invoices-panel" class="panel" style="display:none;border-color:#f59e0b">
+    <div class="panel-header">
+      <h3 style="color:#f59e0b">⚠ Invoices without a project (<span id="unlinked-invoices-count">0</span>)</h3>
+      <span style="font-size:11px;color:#888">Open one and pick a project to link it</span>
+    </div>
+    <div id="unlinked-invoices-list" style="font-size:12px"></div>
   </div>
   <div class="toolbar">
     <input class="search-box" type="text" id="project-search" placeholder="Search projects..." oninput="filterProjects()">
@@ -1009,7 +1032,7 @@
     <select class="filter-select" id="project-client-filter" onchange="filterProjects()">
       <option value="">All Clients</option>
     </select>
-    <select class="filter-select" id="project-year-filter" onchange="filterProjects()">
+    <select class="filter-select" id="project-year-filter" onchange="filterProjects();loadProjectsBillingSummary()">
       <option value="" selected>All Time</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
     </select>
     <div class="view-toggle">
@@ -1042,59 +1065,10 @@
   </div>
 </div>
 
-<!-- ===================== TAB: INVOICES ===================== -->
-<div class="tab-pane" id="tab-invoices">
-  <div class="page-header">
-    <div>
-      <div class="page-title">InvoiceIT</div>
-      <div class="page-sub">Create, track, and manage invoices</div>
-    </div>
-    <button class="btn btn-primary" onclick="openInvoiceModal()">+ New Invoice</button>
-    <button class="btn btn-secondary" onclick="openInvoiceFromProject()" style="margin-left:8px">From Project</button>
-  </div>
-  <div class="stats-row" id="invoice-stats">
-    <div class="stat-card stat-total"><div class="stat-val" id="is-total" style="color:#00d084">$0</div><div class="stat-lbl">Total Revenue</div></div>
-    <div class="stat-card stat-paid"><div class="stat-val" id="is-paid">$0</div><div class="stat-lbl">Paid</div></div>
-    <div class="stat-card stat-progress"><div class="stat-val" id="is-approved">$0</div><div class="stat-lbl">Approved (deposit in)</div></div>
-    <div class="stat-card stat-pending"><div class="stat-val" id="is-sent">$0</div><div class="stat-lbl">Sent (quote out)</div></div>
-    <div class="stat-card stat-overdue"><div class="stat-val" id="is-overdue">$0</div><div class="stat-lbl">Overdue / Balance Due</div></div>
-  </div>
-  <div class="toolbar">
-    <input class="search-box" type="text" id="invoice-search" placeholder="Search invoices..." oninput="filterInvoices()">
-    <select class="filter-select" id="invoice-status-filter" onchange="filterInvoices()">
-      <option value="">All Statuses</option>
-      <option value="Sent">Sent (quote out)</option>
-      <option value="Approved">Approved (deposit in)</option>
-      <option value="Paid">Paid</option>
-      <option value="Overdue">Overdue</option>
-      <option value="balance_due">⚠ Balance Due</option>
-    </select>
-    <select class="filter-select" id="invoice-year-filter" onchange="filterInvoices()">
-      <option value="" selected>All Time</option><option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
-    </select>
-    <div class="view-toggle">
-      <button class="active" onclick="setInvoiceView('table')" id="iv-table">Table</button>
-      <button onclick="setInvoiceView('kanban')" id="iv-kanban">Board</button>
-    </div>
-  </div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Invoice #</th>
-        <th>Client</th>
-        <th>Project</th>
-        <th>Total</th>
-        <th>Status</th>
-        <th>Due Date</th>
-        <th style="width:100px">Actions</th>
-      </tr>
-    </thead>
-    <tbody id="invoices-tbody">
-      <tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading invoices...</td></tr>
-    </tbody>
-  </table>
-  <div id="invoices-kanban" style="display:none" class="kanban-board"></div>
-</div>
+<!-- InvoiceIT tab retired 2026-06-11 — invoicing now lives inside each project
+     (project detail modal → Invoices & Billing panel) with rollups on the
+     Projects tab. The invoice editor modal (#invoiceModal) is body-level and
+     opens from any surface. -->
 
 <!-- ===================== TAB: RECEIPTS (QuickRF) ===================== -->
 <div class="tab-pane" id="tab-receipts">
@@ -2844,58 +2818,9 @@
 </div>
 
 <!-- ===================== TAB: BILLING ===================== -->
-<div class="tab-pane" id="tab-billing">
-  <div class="page-header">
-    <div>
-      <div class="page-title">Billing</div>
-      <div class="page-sub">Payments, receivables, and financial tracking</div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <select class="filter-select" id="billing-year-filter" onchange="loadBilling()">
-        <option value="" selected>All Time</option>
-        <option value="2026">2026</option>
-        <option value="2025">2025</option>
-        <option value="2024">2024</option>
-      </select>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;cursor:pointer;user-select:none">
-        <input type="checkbox" id="billing-unpaid-toggle" checked onchange="loadBilling()" style="accent-color:#e94560">
-        Unpaid only
-      </label>
-    </div>
-  </div>
-  <div class="stats-row" id="bill-stats">
-    <div class="stat-card stat-pending"><div class="stat-val" id="bl-due">$0</div><div class="stat-lbl">Payments Due</div></div>
-    <div class="stat-card stat-blocked"><div class="stat-val" id="bl-overdue">$0</div><div class="stat-lbl">Overdue</div></div>
-    <div class="stat-card stat-progress"><div class="stat-val" id="bl-progress">$0</div><div class="stat-lbl">In Progress</div></div>
-    <div class="stat-card stat-done"><div class="stat-val" id="bl-paid">$0</div><div class="stat-lbl">Paid</div></div>
-    <div class="stat-card stat-total"><div class="stat-val" id="bl-receivable">$0</div><div class="stat-lbl">Total Receivable</div></div>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-    <div class="panel">
-      <h3>Overdue with Interest</h3>
-      <div id="bl-overdue-list" style="font-size:12px;color:#666">Loading...</div>
-    </div>
-    <div class="panel">
-      <h3>Payment Methods</h3>
-      <div id="bl-methods" style="font-size:12px;color:#666">Cash, Check, Zelle, Venmo, Wire, Credit Card</div>
-    </div>
-  </div>
-  <h3 style="font-size:14px;font-weight:700;color:#fff;margin-bottom:12px">Active Billing</h3>
-  <table class="data-table">
-    <thead><tr><th>Invoice #</th><th>Client</th><th>Amount</th><th>Status</th><th>Interest</th><th>Total Due</th><th style="width:100px">Actions</th></tr></thead>
-    <tbody id="billing-tbody"><tr><td colspan="7" style="text-align:center;padding:40px;color:#333">Loading...</td></tr></tbody>
-  </table>
-
-  <!-- Completed projects, grouped by year — newest first. Always shows
-       2023→current as separate sections, even when empty. -->
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:30px;margin-bottom:12px;gap:10px;flex-wrap:wrap">
-    <h3 style="font-size:14px;font-weight:700;color:#fff;margin:0">✓ Completed Projects by Year</h3>
-    <div id="billing-completed-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></div>
-  </div>
-  <div id="billing-completed-years" style="display:flex;flex-direction:column;gap:10px">
-    <div style="text-align:center;padding:30px;color:#333;font-size:12px">Loading completed projects…</div>
-  </div>
-</div>
+<!-- Billing tab retired 2026-06-11 — billing rollups moved to the Projects tab
+     (stat cards + per-project chips); per-project billing status + overdue
+     interest live in the project detail modal's Invoices & Billing panel. -->
 
 <!-- ===================== TREASURY → VENDORS TAB ===================== -->
 <div class="tab-pane" id="tab-vendors">
@@ -3929,6 +3854,7 @@
         <select id="invoice-status">
           <option value="draft">Draft</option>
           <option value="sent">Sent</option>
+          <option value="approved">Approved</option>
           <option value="paid">Paid</option>
           <option value="overdue">Overdue</option>
         </select>
@@ -3938,18 +3864,20 @@
         <input type="date" id="invoice-due">
       </div>
     </div>
-    <h3 style="font-size:13px;font-weight:700;color:#888;margin:16px 0 8px;text-transform:uppercase;letter-spacing:1px">Line Items <span style="color:#444;font-weight:400;font-size:10px;text-transform:none;letter-spacing:0">(materials + labor sum to total — click total to override)</span></h3>
+    <h3 style="font-size:13px;font-weight:700;color:#888;margin:16px 0 8px;text-transform:uppercase;letter-spacing:1px">Line Items <span style="color:#444;font-weight:400;font-size:10px;text-transform:none;letter-spacing:0">(materials + labor sum to total — click total to override · uncheck Σ to keep a line off the total · drag ⠿ to reorder)</span></h3>
     <table class="line-items-table" id="line-items-table">
       <thead>
         <tr>
-          <th style="width:26%">Description</th>
+          <th style="width:3%" title="Drag rows to reorder"></th>
+          <th style="width:21%">Description</th>
           <th style="width:7%">Qty</th>
           <th style="width:10%">Unit</th>
           <th style="width:11%">Rate</th>
           <th style="width:12%">Materials</th>
           <th style="width:12%">Labor</th>
-          <th style="width:14%">Total</th>
-          <th style="width:8%"></th>
+          <th style="width:13%">Total</th>
+          <th style="width:4%;text-align:center" title="Include this line in the invoice total">Σ</th>
+          <th style="width:7%"></th>
         </tr>
       </thead>
       <tbody id="line-items-tbody">
@@ -3976,7 +3904,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="saveInvoice()">Save Invoice</button>
-      <button class="btn-cancel" onclick="closeModal('invoiceModal')">Cancel</button>
+      <button class="btn-cancel" onclick="invoiceModalCancel()">Cancel</button>
     </div>
   </div>
 </div>
@@ -4560,16 +4488,18 @@
           <div id="pd-est-results" style="margin-top:12px"></div>
         </div>
       </div>
-      <!-- Linked Invoice -->
-      <div class="panel">
+      <!-- Invoices & Billing — full InvoiceIT + Billing toolset, per project -->
+      <div class="panel" style="border-color:#e94560" data-no-autosave>
         <div class="panel-header">
-          <h3>Linked Invoice</h3>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-sm btn-secondary" onclick="viewProjectInvoicePDF()">📄 View PDF</button>
-            <button class="btn btn-sm btn-secondary" style="background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" onclick="editProjectInvoice()" title="Open this invoice in InvoiceIT for editing">✎ Edit in InvoiceIT</button>
-            <button class="btn btn-sm btn-secondary" onclick="syncInvoiceFromPhases()">Sync Line Items</button>
+          <h3 style="color:#f0a0b0">🧾 Invoices &amp; Billing</h3>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm btn-primary" onclick="pdNewInvoice()" title="Create a new invoice pre-linked to this project & client">+ New Invoice</button>
+            <button class="btn btn-sm btn-secondary" onclick="invoiceFromProjectDetail()" title="Auto-generate an invoice from this project's value/phases">⚙ From Phases</button>
+            <button class="btn btn-sm btn-secondary" onclick="syncInvoiceFromPhases()" title="Re-sync the linked invoice's line items from the phase list">Sync Line Items</button>
+            <button class="btn btn-sm btn-secondary" style="border-color:#00d084;color:#00d084" onclick="pdCreateBalanceInvoice()" title="Generate the next payment invoice from the primary: contract total less payments received (deposit credited); add extras in the editor before sending">⚖ Balance Invoice</button>
           </div>
         </div>
+        <div id="pd-billing-summary" style="margin-bottom:10px"></div>
         <div id="pd-invoice-info" style="font-size:13px;color:#888"></div>
       </div>
       <!-- Payments Received (add-record form; explicit submit) -->
@@ -4811,6 +4741,11 @@ document.addEventListener('DOMContentLoaded', () => {
 let allClients = [];
 let allProjects = [];
 let allInvoices = [];
+/* When the invoice editor is opened FROM a project detail modal, this holds the
+   project id so save/cancel returns the user to that project instead of leaving
+   them on a closed modal. (InvoiceIT/Billing tabs were merged into Projects
+   2026-06-11 — the editor modal is now reached only from project surfaces.) */
+let _invoiceReturnPid = null;
 let allReceipts = [];
 let allPayroll = [];
 let allChats = [];
@@ -4834,19 +4769,19 @@ setInterval(updateClock,1000); updateClock();
 /* ===================== TAB SWITCHING ===================== */
 // Super-tab groups → ordered list of leaf tab ids
 const TAB_GROUPS = {
-  projects: {label:'Projects', icon:'🏗️', children:['projects','invoices','changeorders']},
+  // InvoiceIT + Billing merged into Projects 2026-06-11 — invoicing/billing
+  // live per-project (detail modal) with rollups on the Projects leaf.
+  projects: {label:'Projects', icon:'🏗️', children:['projects','changeorders']},
   heavyeq:  {label:'Heavy Equipment', icon:'🚜', children:['estimator','architect','docprep']},
-  treasury: {label:'Treasury', icon:'🏦', children:['billing','receipts','vendors','payroll','taxdocs','ipay']}
+  treasury: {label:'Treasury', icon:'🏦', children:['receipts','vendors','payroll','taxdocs','ipay']}
 };
 // Per-leaf labels + icons for the contextual sub-row
 const LEAF_META = {
   projects:    {label:'Active Projects', icon:'🏗️'},
-  invoices:    {label:'InvoiceIT',       icon:'💰'},
   changeorders:{label:'Change Orders',   icon:'🔄'},
   estimator:   {label:'EstimatOR',       icon:'🧮'},
   architect:   {label:'ArchiteCT',       icon:'📐'},
   docprep:     {label:'DocPrep',         icon:'📂'},
-  billing:     {label:'Billing',         icon:'📑'},
   receipts:    {label:'QuickRF',         icon:'🧾'},
   vendors:     {label:'Vendors',         icon:'🤝'},
   payroll:     {label:'Payroll',         icon:'💵'},
@@ -4869,6 +4804,9 @@ function _renderLeafNav(groupId, activeLeaf){
   }).join('');
 }
 function switchTab(tabName){
+  // Legacy aliases — InvoiceIT and Billing merged into Projects (2026-06-11).
+  // Covers old '?tab=' deep links and stale sessionStorage leaf memory.
+  if(tabName==='invoices' || tabName==='billing') tabName='projects';
   // If a tab-pane exists for this name, treat it as a leaf — even if a
   // same-named group key also exists (e.g. the Projects super-tab and the
   // Active Projects leaf both go by 'projects'). This prevents the otherwise
@@ -4899,8 +4837,7 @@ function switchTab(tabName){
   const loaders = {
     dashboard: loadDashboard,
     clients: loadClients,
-    projects: loadProjects,
-    invoices: loadInvoices,
+    projects: function(){ loadProjects(); loadProjectsBillingSummary(); },
     receipts: function(){ loadReceipts(); rqeLoad(); loadReceiptQueue(); },
     vendors: loadVendorsTab,
     payroll: function(){ loadPayroll(); loadEmployees(); },
@@ -4910,7 +4847,6 @@ function switchTab(tabName){
     noted: loadStickyPad,
     taxdocs: loadUncleSam,
     changeorders: loadChangeOrders,
-    billing: loadBilling,
     architect: loadArchGallery,
     voice: function(){ loadVoicePresets(); loadVoiceLogs(); loadVoiceStats(); },
     chatdept: function(){ loadChats(); loadChatStats(); },
@@ -4934,7 +4870,9 @@ function escHtml(s){
 
 function fmtCurrency(n){
   if(n===null||n===undefined) return '$0.00';
-  return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const v=Number(n);
+  const s=Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  return (v<0?'-$':'$')+s;
 }
 
 function fmtDate(d){
@@ -5533,6 +5471,12 @@ async function loadProjects(){
   try{
     const res = await fetch('/api/ahb/projects');
     allProjects = await res.json();
+    // Warm the invoice cache so per-project billing chips render on first paint.
+    if(!Array.isArray(allInvoices) || !allInvoices.length){
+      try{ await loadInvoices(); }catch(e){}
+    } else {
+      renderUnlinkedInvoices();
+    }
     renderProjectStats();
     renderProjects(allProjects);
     populateProjectDropdowns();
@@ -5595,6 +5539,7 @@ function renderProjects(projects){
       <td>
         <span class="badge badge-${(p.status||'').toLowerCase().replace(' ','_')}">${p.status}</span>
         ${due?`<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px" title="Project complete, ${fmtCurrency(p._payment.owed)} still owed">⚠ BALANCE DUE</span>`:''}
+        ${_projInvoiceChip(p)}
       </td>
       <td colspan="2" onclick="event.stopPropagation()" style="font-size:12px;color:#555">
         <button type="button" id="pf-row-${p.id}" onclick="event.stopPropagation();openProjectRowTimeframe('${p.id}')"
@@ -6076,18 +6021,6 @@ async function openProjectRowTimeframe(pid){
   });
 }
 
-async function deleteInvoice(id, num){
-  const label = num ? ('invoice #'+num) : 'this invoice';
-  if(!confirm('Delete '+label+'?\n\nThis cannot be undone. Linked payments and project references will be orphaned.')) return;
-  try{
-    const r=await fetch('/api/ahb/invoices/'+id,{method:'DELETE'});
-    const d=await r.json().catch(()=>({}));
-    if(d && d.success===false){showToast(d.error||'Delete failed','error');return;}
-    showToast('Invoice deleted');
-    loadInvoices();
-  }catch(e){showToast('Error: '+e.message,'error');}
-}
-
 function populateProjectDropdowns(){
   const selectors=['invoice-project','receipt-project','payroll-project'];
   selectors.forEach(selId=>{
@@ -6100,43 +6033,88 @@ function populateProjectDropdowns(){
   });
 }
 
-/* ===================== INVOICES ===================== */
+/* ===================== INVOICES (data layer — UI lives in Projects) ===================== */
+/* InvoiceIT/Billing tabs were merged into Projects (2026-06-11). loadInvoices is
+   now a pure cache loader: Uncle Sam's tax rollup, Change Orders, and the
+   project invoice chips all read from allInvoices. */
 async function loadInvoices(){
   try{
     const res=await fetch('/api/ahb/invoices');
     allInvoices=await res.json();
-    renderInvoiceStats();
-    renderInvoices(allInvoices);
+    renderUnlinkedInvoices();
   }catch(e){
     console.error('loadInvoices',e);
-    document.getElementById('invoices-tbody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:40px;color:#ff5555">Error: '+e.message+'</td></tr>';
   }
 }
 
-function renderInvoiceStats(list){
-  const data=list||allInvoices;
-  const sumExact=(s)=>data.filter(i=>(i.status||'')===s).reduce((a,i)=>a+(i.total||0),0);
-  // Project lookup so we can compute "balance due" against the project lifecycle
-  // (Completed project + invoice not paid).
-  const projById={}; (allProjects||[]).forEach(p=>{ projById[p.id]=p; });
-  const _balDue = (i) => {
-    const p = projById[i.project_id]; if(!p) return false;
-    if(!_isCompletedProjectStatus(p.status)) return false;
-    return (i.status||'').toLowerCase() !== 'paid';
-  };
-  const balanceDueTotal = data.filter(_balDue).reduce((a,i)=>a+(i.total||0),0);
-  const overdueTotal = sumExact('Overdue') + balanceDueTotal;
-  // "Total Revenue" headline = Sent + Paid (Sent = quote out, Paid = collected).
-  // Excludes Draft/Void — those aren't realized or actively in-flight.
-  const totalRev = sumExact('Paid') + sumExact('Sent');
-  const tEl = document.getElementById('is-total');
-  tEl.textContent = fmtCurrency(totalRev);
-  const tLbl = tEl.parentElement && tEl.parentElement.querySelector('.stat-lbl');
-  if (tLbl) tLbl.innerHTML = 'Total Revenue (Sent + Paid) <span class="help" tabindex="0" data-tip="Sum of invoices with status SENT or PAID — money already collected plus quotes that are actively out.&#10;&#10;Approved (deposit in but balance owed) is shown separately. Overdue + balance-due-on-completed are folded into the Overdue card.">?</span>';
-  document.getElementById('is-paid').textContent=fmtCurrency(sumExact('Paid'));
-  document.getElementById('is-approved').textContent=fmtCurrency(sumExact('Approved'));
-  document.getElementById('is-sent').textContent=fmtCurrency(sumExact('Sent'));
-  document.getElementById('is-overdue').textContent=fmtCurrency(overdueTotal);
+/* Invoices with no project_id would be unreachable now that the global invoice
+   table is gone — surface them on the Projects tab so they can be opened and
+   linked to a project from the editor. */
+function renderUnlinkedInvoices(){
+  const panel=document.getElementById('unlinked-invoices-panel');
+  if(!panel) return;
+  const unlinked=(allInvoices||[]).filter(i=>!i.project_id);
+  if(!unlinked.length){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  document.getElementById('unlinked-invoices-count').textContent=unlinked.length;
+  document.getElementById('unlinked-invoices-list').innerHTML=unlinked.map(i=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;margin-bottom:5px;cursor:pointer;flex-wrap:wrap" onclick="_invoiceReturnPid=null;editInvoice('${i.id}')">
+      <span style="color:#fff;font-weight:700">#${escHtml(String(i.invoice_number||i.id))}</span>
+      <span style="font-size:12px;color:#888">${escHtml(i.client_name||'')||'&mdash;'}</span>
+      <span style="font-weight:700;color:#00d084">${fmtCurrency(i.total)}</span>
+      <span class="badge badge-${(i.status||'').toLowerCase().replace(' ','_')}">${i.status||''}</span>
+      <div class="row-actions" style="margin-left:auto" onclick="event.stopPropagation()">
+        <button class="btn-icon" onclick="_invoiceReturnPid=null;editInvoice('${i.id}')" title="Edit / link to a project">&#9998;</button>
+        <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
+        <button class="btn-icon del" onclick="deleteInvoice('${i.id}','${escHtml(String(i.invoice_number||''))}')" title="Delete">&#10005;</button>
+      </div>
+    </div>`).join('');
+}
+
+/* Billing rollup cards on the Projects tab — replaces the old Billing tab stats.
+   Follows the Projects year filter. */
+async function loadProjectsBillingSummary(){
+  const ids=['pb-receivable','pb-due','pb-overdue','pb-paid'];
+  try{
+    const year=(document.getElementById('project-year-filter')||{}).value||'';
+    const qs=year?('?year='+encodeURIComponent(year)):'';
+    const s=await fetch('/api/ahb/billing/summary'+qs).then(r=>r.json());
+    const overdueWithInterest=(s.overdue_details||[]).reduce((a,i)=>a+(i.total_with_interest||0),0)||((s.overdue||{}).total||0);
+    document.getElementById('pb-receivable').textContent=fmtCurrency(s.total_receivable||0);
+    document.getElementById('pb-due').textContent=fmtCurrency((s.sent||{}).total||0);
+    document.getElementById('pb-overdue').textContent=fmtCurrency(overdueWithInterest);
+    document.getElementById('pb-paid').textContent=fmtCurrency((s.paid||{}).total||0);
+  }catch(e){
+    ids.forEach(id=>{const el=document.getElementById(id); if(el) el.textContent='—';});
+  }
+}
+
+/* One-stop refresh after any invoice mutation: reload the invoice cache,
+   re-render whichever project surfaces are visible, and refresh an open
+   project detail modal in place. */
+async function refreshBillingSurfaces(){
+  await loadInvoices();
+  loadProjectsBillingSummary();
+  if(Array.isArray(allProjects) && allProjects.length){ try{ filterProjects(); }catch(e){} }
+  // Uncle Sam parity — gross revenue is cash-basis off paid invoices, so any
+  // invoice mutation re-renders the tax rollup from the fresh cache.
+  try{ if(typeof renderInvoiceRollup==='function') renderInvoiceRollup(); }catch(e){}
+  const pid=(document.getElementById('pd-id')||{}).value;
+  const modal=document.getElementById('projectDetailModal');
+  if(pid && modal && modal.classList.contains('open')) openProjectDetail(pid);
+}
+
+/* Compact per-project invoice/billing chip used in the Projects table and
+   By-Year rows: invoice count + unpaid sum (green check when fully paid). */
+function _projInvoiceChip(p){
+  if(!Array.isArray(allInvoices) || !allInvoices.length) return '';
+  const invs=allInvoices.filter(i=>String(i.project_id||'')===String(p.id));
+  if(!invs.length) return '';
+  const owed=invs.filter(i=>(i.status||'').toLowerCase()!=='paid').reduce((a,i)=>a+(i.total||0),0);
+  const n=invs.length;
+  return owed>0
+    ? `<span class="badge" style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b66;margin-left:4px;font-size:10px" title="${n} invoice${n===1?'':'s'} — ${fmtCurrency(owed)} unpaid">💰 ${n} · ${fmtCurrency(owed)}</span>`
+    : `<span class="badge" style="background:#00d08422;color:#00d084;border:1px solid #00d08444;margin-left:4px;font-size:10px" title="${n} invoice${n===1?'':'s'} — all paid">💰 ${n} ✓</span>`;
 }
 
 function _invoiceBalanceDue(i){
@@ -6147,54 +6125,6 @@ function _invoiceBalanceDue(i){
   if(!_isCompletedProjectStatus(p.status)) return false;
   return (i.status||'').toLowerCase() !== 'paid';
 }
-function renderInvoices(invoices){
-  const tbody=document.getElementById('invoices-tbody');
-  if(!invoices.length){
-    tbody.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">&#128196;</div><h3>No invoices found</h3><p>Create your first invoice</p></div></td></tr>';
-    return;
-  }
-  tbody.innerHTML=invoices.map(i=>{
-    const due=_invoiceBalanceDue(i);
-    return `
-    <tr style="cursor:pointer${due?';background:#240b0b':''}" onclick="editInvoice('${i.id}')">
-      <td style="font-weight:600;color:#ddd">#${i.invoice_number||i.id}</td>
-      <td style="font-size:12px;color:#888">${escHtml(i.client_name)||'&mdash;'}</td>
-      <td style="font-size:12px;color:#666">${escHtml(i.project_name)||'&mdash;'}</td>
-      <td style="font-weight:700;color:#00d084">${fmtCurrency(i.total)}</td>
-      <td>
-        <span class="badge badge-${i.status}">${i.status}</span>
-        ${due?`<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px" title="Project completed; invoice still owes">⚠ BALANCE DUE</span>`:''}
-      </td>
-      <td style="font-size:12px;color:#555">${fmtDate(i.due_date)}</td>
-      <td onclick="event.stopPropagation()">
-        <div class="row-actions">
-          <button class="btn-icon" onclick="event.stopPropagation();moveInvoiceToYear('${i.id}','${escHtml(i.invoice_number||'')}')" title="Move to year">📅</button>
-          <button class="btn-icon" onclick="event.stopPropagation();editInvoice('${i.id}')" title="Edit">&#9998;</button>
-          <button class="btn-icon" onclick="event.stopPropagation();exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
-          <button class="btn-icon" onclick="event.stopPropagation();downloadInvoicePDF('${i.id}')" title="Download PDF">&#11015;</button>
-          <button class="btn-icon" onclick="event.stopPropagation();shareInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Share">&#128279;</button>
-          <button class="btn-icon del" onclick="event.stopPropagation();deleteInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Delete">&#10005;</button>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function filterInvoices(){
-  const q=document.getElementById('invoice-search').value.toLowerCase();
-  const s=document.getElementById('invoice-status-filter').value;
-  const y=document.getElementById('invoice-year-filter').value;
-  const filtered=allInvoices.filter(i=>{
-    if(q && !(i.invoice_number||'').toString().includes(q) && !(i.client_name||'').toLowerCase().includes(q)) return false;
-    if(s==='balance_due'){ if(!_invoiceBalanceDue(i)) return false; }
-    else if(s && i.status!==s) return false;
-    if(y && (i.year||i.created_at||'').substring(0,4)!==y) return false;
-    return true;
-  });
-  renderInvoiceStats(filtered);
-  renderInvoices(filtered);
-}
-
 async function _ensureClientsAndProjectsLoaded(){
   if(!allClients.length){
     try{ allClients=await fetch('/api/ahb/clients').then(r=>r.json()); }catch(e){}
@@ -6227,8 +6157,14 @@ async function openInvoiceModal(){
 }
 
 async function editInvoice(id){
-  const inv=allInvoices.find(x=>x.id===id);
-  if(!inv) return;
+  // Cache-miss fallback: project surfaces can request an invoice before the
+  // global cache has ever been loaded.
+  let inv=allInvoices.find(x=>String(x.id)===String(id));
+  if(!inv){
+    try{ await loadInvoices(); }catch(e){}
+    inv=allInvoices.find(x=>String(x.id)===String(id));
+  }
+  if(!inv){ showToast('Invoice not found','error'); return; }
   await _ensureClientsAndProjectsLoaded();
   document.getElementById('edit-invoice-id').value=id;
   document.getElementById('invoice-modal-title').textContent='Edit Invoice #'+(inv.invoice_number||id);
@@ -6241,7 +6177,11 @@ async function editInvoice(id){
   // Recompute the existing/new status indicator for what's now in the field.
   onInvoiceClientInput();
   document.getElementById('invoice-project').value=inv.project_id||'';
-  document.getElementById('invoice-status').value=inv.status||'draft';
+  // Status values are stored with mixed case ('Sent', 'Approved'); normalize so
+  // the select matches and editing never silently blanks the status.
+  const statusSel=document.getElementById('invoice-status');
+  statusSel.value=(inv.status||'draft').toLowerCase();
+  if(!statusSel.value) statusSel.value='draft';
   document.getElementById('invoice-due').value=inv.due_date||'';
   document.getElementById('invoice-notes').value=inv.notes||'';
   document.getElementById('line-items-tbody').innerHTML='';
@@ -6269,7 +6209,7 @@ async function editInvoice(id){
       const stored = li.total!=null ? li.total : null;
       const implied = (materials || labor) ? (materials + labor) : (qty * rate);
       const fixed = (stored!=null && Math.abs(stored - implied) > 0.005) ? stored : null;
-      addLineItem(li.description||'', qty, rate, unit, fixed, materials, labor);
+      addLineItem(li.description||'', qty, rate, unit, fixed, materials, labor, li.include_in_total!==false);
     });
   } else {
     addLineItem();
@@ -6280,7 +6220,7 @@ async function editInvoice(id){
 
 const LINE_UNITS=['qty','sq ft','lin ft','hour','day','each','load','room','set'];
 
-function addLineItem(desc,qty,rate,unit,fixedTotal,materials,labor){
+function addLineItem(desc,qty,rate,unit,fixedTotal,materials,labor,includeInTotal){
   lineItemCounter++;
   const id=lineItemCounter;
   const tbody=document.getElementById('line-items-tbody');
@@ -6296,18 +6236,57 @@ function addLineItem(desc,qty,rate,unit,fixedTotal,materials,labor){
   const initialTotal = fixedTotal!=null
       ? fixedTotal
       : (breakdownSum > 0 ? breakdownSum : (initialQty*initialRate));
+  const inc = includeInTotal!==false;  // default: line counts toward the total
   tr.innerHTML=`
+    <td class="li-drag-cell"><span class="li-drag-handle" draggable="true" title="Drag to reorder — saved order matches what you see">⠿</span></td>
     <td><input type="text" id="li-desc-${id}" value="${escHtml(desc||'')}" placeholder="Description"></td>
     <td><input type="number" id="li-qty-${id}" value="${initialQty}" min="0" step="0.01" oninput="recalcLine(${id})"></td>
     <td><select id="li-unit-${id}">${unitOptions}</select></td>
-    <td><input type="number" id="li-rate-${id}" value="${initialRate}" min="0" step="0.01" oninput="recalcLine(${id})"></td>
+    <td><input type="number" id="li-rate-${id}" value="${initialRate}" step="0.01" oninput="recalcLine(${id})"></td>
     <td><input type="number" id="li-mat-${id}" value="${initialMat}" min="0" step="0.01" placeholder="0.00" oninput="recalcLine(${id})"></td>
     <td><input type="number" id="li-lab-${id}" value="${initialLab}" min="0" step="0.01" placeholder="0.00" oninput="recalcLine(${id})"></td>
     <td><div class="li-total-cell" id="li-total-${id}" data-fixed="${fixedTotal!=null?'1':'0'}" onclick="editLineTotal(${id})">${fmtCurrency(initialTotal)}</div></td>
+    <td style="text-align:center"><input type="checkbox" id="li-inc-${id}" ${inc?'checked':''} onchange="recalcInvoice()" title="Include this line in the invoice total"></td>
     <td><button class="btn-icon del" onclick="removeLineItem(${id})">&#10005;</button></td>
   `;
   tbody.appendChild(tr);
+  _liWireDrag();
   recalcInvoice();
+}
+
+/* ----- Line-item drag-to-reorder -----
+   The ⠿ handle starts the drag; rows live-reorder under the cursor. Persisting
+   is free: getLineItems() walks #line-items-tbody rows in DOM order, so the
+   visual order IS the saved order (and the PDF's). Listeners are delegated on
+   the tbody and wired once. */
+let _liDragRow=null;
+function _liWireDrag(){
+  const tbody=document.getElementById('line-items-tbody');
+  if(!tbody || tbody.dataset.dragWired) return;
+  tbody.dataset.dragWired='1';
+  tbody.addEventListener('dragstart',e=>{
+    const h=e.target && e.target.closest ? e.target.closest('.li-drag-handle') : null;
+    if(!h){ e.preventDefault(); return; }
+    _liDragRow=h.closest('tr');
+    _liDragRow.classList.add('li-dragging');
+    e.dataTransfer.effectAllowed='move';
+    try{ e.dataTransfer.setData('text/plain',_liDragRow.id); }catch(err){}
+    try{ e.dataTransfer.setDragImage(_liDragRow,24,14); }catch(err){}
+  });
+  tbody.addEventListener('dragover',e=>{
+    if(!_liDragRow) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect='move';
+    const tr=e.target && e.target.closest ? e.target.closest('tr') : null;
+    if(!tr || tr===_liDragRow || tr.parentElement!==tbody) return;
+    const rect=tr.getBoundingClientRect();
+    const after=(e.clientY-rect.top)>rect.height/2;
+    tbody.insertBefore(_liDragRow, after?tr.nextSibling:tr);
+  });
+  tbody.addEventListener('drop',e=>{ if(_liDragRow) e.preventDefault(); });
+  tbody.addEventListener('dragend',()=>{
+    if(_liDragRow){ _liDragRow.classList.remove('li-dragging'); _liDragRow=null; }
+  });
 }
 
 function recalcLine(id){
@@ -6407,7 +6386,12 @@ function recalcInvoice(skipAutoLineRecalc){
       total=qty*rate;
       if(cell && !cell.classList.contains('editing')) cell.textContent=fmtCurrency(total);
     }
-    subtotal+=total;
+    // Per-line Σ toggle: unchecked lines stay on the invoice but don't count
+    // toward the total (informational/terms rows).
+    const incEl=document.getElementById('li-inc-'+id);
+    const included=!incEl || incEl.checked;
+    tr.style.opacity=included?'':'0.45';
+    if(included) subtotal+=total;
   });
   // Apply user overrides if present
   if(invoiceOverrides.subtotal!=null) subtotal=invoiceOverrides.subtotal;
@@ -6465,10 +6449,12 @@ function getLineItems(){
     } else {
       total = qty * rate;
     }
+    const incEl=document.getElementById('li-inc-'+id);
     items.push({
       description:document.getElementById('li-desc-'+id)?.value||'',
       qty:qty, rate:rate, total:total, unit:unit,
       materials:mat, labor:lab,
+      include_in_total: incEl ? incEl.checked : true,
       // legacy keys for backwards compat with old PDF generator
       quantity:qty, unit_price:rate,
     });
@@ -6479,8 +6465,8 @@ function getLineItems(){
 async function saveInvoice(){
   const id=document.getElementById('edit-invoice-id').value;
   const lineItems=getLineItems();
-  // Sum line totals (which already respect manual overrides via getLineItems)
-  let subtotal=lineItems.reduce((a,li)=>a+(li.total||0),0);
+  // Sum line totals (manual overrides + per-line Σ toggle already respected)
+  let subtotal=lineItems.reduce((a,li)=>a+(li.include_in_total===false?0:(li.total||0)),0);
   // Tax is opt-in: 0 unless user clicked + 6% PA TAX or manually set it
   let tax = 0;
   if(invoiceTaxAddOn) tax = subtotal*0.06;
@@ -6540,11 +6526,24 @@ async function saveInvoice(){
     if(!res.ok) throw new Error(await res.text());
     closeModal('invoiceModal');
     showToast(id?'Invoice updated':'Invoice created');
-    loadInvoices();
+    // Refresh projects/billing surfaces, then return to the project the editor
+    // was opened from (if any).
+    const returnPid=_invoiceReturnPid; _invoiceReturnPid=null;
+    await refreshBillingSurfaces();
+    if(returnPid) openProjectDetail(returnPid);
     // Refresh clients so the new client is visible in the Clients tab too.
     if(typeof loadClients === 'function') loadClients();
   }catch(e){
     showToast('Error: '+e.message,'error');
+  }
+}
+
+/* Cancel/close the invoice editor — returns to the originating project modal. */
+function invoiceModalCancel(){
+  closeModal('invoiceModal');
+  if(_invoiceReturnPid){
+    const pid=_invoiceReturnPid; _invoiceReturnPid=null;
+    openProjectDetail(pid);
   }
 }
 
@@ -6931,6 +6930,7 @@ function renderProjectByYear(preFiltered){
               <div class="ypr-value">${(p.value||p.budget_high)?fmtCurrency(p.value||p.budget_high):'<span style="color:#444">—</span>'}</div>
               <div class="ypr-status-badge" style="background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44">${meta.icon} ${p.status||''}</div>
               ${due?`<div class="ypr-status-badge" title="${fmtCurrency(p._payment.owed)} still owed" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;margin-left:4px">⚠ DUE</div>`:''}
+              ${_projInvoiceChip(p)}
               <div class="ypr-actions">
                 <button class="btn-icon" onclick="event.stopPropagation();moveProjectToYear('${p.id}','${escHtml(p.title||'')}')" title="Move to another year">📅</button>
                 <button class="btn-icon" onclick="event.stopPropagation();editProject('${p.id}')" title="Edit">✎</button>
@@ -7047,8 +7047,8 @@ async function moveInvoiceToYear(iid, label){
     const d=await r.json();
     if(d.success){
       showToast(`Invoice moved to ${newYear}`);
-      await loadInvoices();
       if(alsoProj) await loadProjects();
+      await refreshBillingSurfaces();
     } else {
       showToast(d.error||'Move failed','error');
     }
@@ -7083,39 +7083,6 @@ function renderProjectKanban(filtered){
   }).join('');
 }
 
-/* ===================== KANBAN — INVOICES ===================== */
-let invoiceViewMode='table';
-function setInvoiceView(mode){
-  invoiceViewMode=mode;
-  document.getElementById('iv-table').classList.toggle('active',mode==='table');
-  document.getElementById('iv-kanban').classList.toggle('active',mode==='kanban');
-  document.querySelector('#tab-invoices .data-table').style.display=mode==='table'?'':'none';
-  document.getElementById('invoices-kanban').style.display=mode==='kanban'?'flex':'none';
-  if(mode==='kanban') renderInvoiceKanban();
-}
-function renderInvoiceKanban(){
-  const board=document.getElementById('invoices-kanban');
-  // Lifecycle order: quote out → deposit in → fully paid; Overdue is the exception column.
-  const statuses=['Sent','Approved','Paid','Overdue'];
-  board.innerHTML=statuses.map(st=>{
-    const cards=allInvoices.filter(i=>(i.status||'')===st);
-    return `<div class="kanban-col">
-      <div class="kanban-col-header"><span>${st}</span><span class="col-count">${cards.length}</span></div>
-      <div class="kanban-col-body">${cards.length?cards.map(i=>{
-        const due=_invoiceBalanceDue(i);
-        return `
-        <div class="kanban-card" style="position:relative;cursor:pointer${due?';border-left:3px solid #ff5555':''}" onclick="editInvoice('${i.id}')">
-          <button class="btn-icon del" style="position:absolute;top:6px;right:6px;font-size:11px;padding:2px 6px" onclick="event.stopPropagation();deleteInvoice('${i.id}','${escHtml(i.invoice_number||'')}')" title="Delete invoice">&#10005;</button>
-          <div class="kanban-card-title" style="padding-right:22px">${escHtml(i.invoice_number||'—')}</div>
-          <div class="kanban-card-meta">${escHtml(i.client_name||i.project_name||'')}</div>
-          <div class="kanban-card-amount">${fmtCurrency(i.total)}</div>
-          ${due?`<div style="margin-top:4px"><span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555;font-size:10px">⚠ BALANCE DUE</span></div>`:''}
-        </div>`;
-      }).join(''):'<div style="text-align:center;padding:20px;color:#333;font-size:12px">None</div>'}</div>
-    </div>`;
-  }).join('');
-}
-
 /* ===================== INVOICE TOOLBAR ACTIONS ===================== */
 function _invoiceCurrentProjectId(){
   return document.getElementById('invoice-project')?.value || '';
@@ -7124,6 +7091,7 @@ function _invoiceCurrentProjectId(){
 async function invoiceOpenLinkedProject(){
   const pid=_invoiceCurrentProjectId();
   if(!pid){ showToast('No linked project on this invoice','error'); return; }
+  _invoiceReturnPid=null;   // deliberate navigation — don't bounce back
   closeModal('invoiceModal');
   await openProjectDetail(pid);
 }
@@ -7131,6 +7099,7 @@ async function invoiceOpenLinkedProject(){
 async function invoiceOpenEstimator(){
   const pid=_invoiceCurrentProjectId();
   if(!pid){ showToast('Pick a project first to use the estimator','error'); return; }
+  _invoiceReturnPid=null;   // deliberate navigation — don't bounce back
   closeModal('invoiceModal');
   await openProjectDetail(pid);
   // pdToggleQuoteEstimator is defined in the project detail modal scope; opens
@@ -7193,25 +7162,6 @@ function invoiceConsolidateLines(){
 }
 
 /* ===================== INVOICE FROM PROJECT ===================== */
-async function openInvoiceFromProject(){
-  if(!allProjects.length) await loadProjects();
-  const html=allProjects.map(p=>`<option value="${p.id}">${escHtml(p.title)} ${p.value?'('+fmtCurrency(p.value)+')':''}</option>`).join('');
-  const sel=prompt('Enter project number (1-'+allProjects.length+') or use the Projects tab.\n\n'+allProjects.map((p,i)=>(i+1)+'. '+p.title).join('\n'));
-  if(!sel) return;
-  const idx=parseInt(sel)-1;
-  if(isNaN(idx)||idx<0||idx>=allProjects.length){showToast('Invalid selection','error');return;}
-  const pid=allProjects[idx].id;
-  try{
-    const res=await fetch('/api/ahb/invoices/from-project/'+pid,{method:'POST'});
-    const data=await res.json();
-    if(data.success){
-      showToast('Invoice '+data.invoice_number+' created from project');
-      loadInvoices();
-      switchTab('invoices');
-    }else{showToast(data.error||'Failed','error');}
-  }catch(e){showToast('Error: '+e.message,'error');}
-}
-
 /* ===================== RECEIPTS ===================== */
 let receiptViewMode='kanban';
 
@@ -9635,8 +9585,7 @@ async function m4PushToInvoice(append){
   }
   recalcInvoice();
   showToast('Pushed to invoice — review and Save');
-  // Switch over so the user lands on the invoice modal
-  switchTab('invoices');
+  // The invoice modal is body-level and already open — no tab switch needed.
 }
 
 function m4PullFromInvoice(){
@@ -13604,21 +13553,11 @@ async function openProjectDetail(pid){
     document.getElementById('pd-value').textContent=p.value?fmtCurrency(p.value):'';
     document.getElementById('pd-address').textContent=p.address||'';
     document.getElementById('pd-client').textContent=p.client_name||'';
-    // Linked invoice
+    // Invoices & Billing — all invoices for this project, with full tooling.
+    // pd-invoice-id stays anchored to the FIRST invoice (payments panel + legacy flows).
     const inv=(p.invoices||[])[0];
     document.getElementById('pd-invoice-id').value=inv?inv.id:'';
-    const invEl=document.getElementById('pd-invoice-info');
-    if(inv){
-      invEl.innerHTML=`<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-        <div><span style="color:#fff;font-weight:700;font-size:15px">${escHtml(inv.invoice_number)}</span></div>
-        <div style="font-size:18px;font-weight:800;color:#00d084">${fmtCurrency(inv.total)}</div>
-        <span class="badge badge-${(inv.status||'').toLowerCase()}">${inv.status}</span>
-        <div style="font-size:11px;color:#555">${inv.terms?'Terms: '+escHtml(inv.terms).substring(0,50):''}</div>
-      </div>
-      <div style="margin-top:8px;font-size:12px;color:#888">Line items: ${(()=>{try{return JSON.parse(inv.line_items||'[]').length}catch(e){return 0}})()}</div>`;
-    }else{
-      invEl.innerHTML='<span style="color:#555">No invoice linked — <a href="#" onclick="invoiceFromProjectDetail();return false" style="color:#7c3aed">generate one</a></span>';
-    }
+    pdRenderInvoices(p);
     // Phase manager (planning workflow with tasks)
     renderPhaseManager(p.phases||[]);
     // Payments — anchored to the linked invoice
@@ -14442,20 +14381,138 @@ async function pdDeleteFile(fid){
   showToast('File deleted');
   openProjectDetail(pid);
 }
-function viewProjectInvoicePDF(){
-  const invId=document.getElementById('pd-invoice-id').value;
-  if(!invId){showToast('No invoice linked','error');return;}
-  window.open('/api/ahb/invoices/'+invId+'/pdf','_blank');
+/* Tax-year attribution for an invoice — MUST mirror Uncle Sam's _invoiceYear
+   (explicit year column wins; paid_date is the cash-basis fallback). */
+function _pdInvTaxYear(i){
+  if(typeof _invoiceYear==='function') return _invoiceYear(i)||'?';
+  return (i.year||(i.paid_date||'').slice(0,4)||(i.date||'').slice(0,4)||(i.created_at||'').slice(0,4))||'?';
 }
 
-function editProjectInvoice(){
-  // Open the linked invoice in InvoiceIT for editing — mirrors the project-modal
-  // → quote-tool flow: close this modal, switch tabs, then load the editor.
-  const invId=document.getElementById('pd-invoice-id').value;
-  if(!invId){showToast('No invoice linked — generate one first','error');return;}
+/* ===================== PROJECT MODAL — INVOICES & BILLING =====================
+   Full InvoiceIT toolset inside each project (merged 2026-06-11): every invoice
+   for the project is listed with edit / PDF / download / share / paid / year /
+   delete actions, plus a billing summary strip with overdue interest. */
+function pdRenderInvoices(p){
+  const sumEl=document.getElementById('pd-billing-summary');
+  const listEl=document.getElementById('pd-invoice-info');
+  if(!sumEl || !listEl) return;
+  const invs=(p.invoices||[]);
+  const pay=p._payment||{paid:0,total:0,owed:0};
+  const anyOverdue=invs.some(i=>(i.status||'').toLowerCase()==='overdue');
+  const allPaid=invs.length>0 && invs.every(i=>(i.status||'').toLowerCase()==='paid');
+  const balDue=_isBalanceDue(p);
+  let chip;
+  if(!invs.length)      chip='<span class="badge" style="background:#33333344;color:#888;border:1px solid #444">NO INVOICE</span>';
+  else if(anyOverdue)   chip='<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555">🔥 OVERDUE</span>';
+  else if(balDue)       chip='<span class="badge" style="background:#ff555522;color:#ff5555;border:1px solid #ff5555">⚠ BALANCE DUE</span>';
+  else if(allPaid)      chip='<span class="badge" style="background:#00d08422;color:#00d084;border:1px solid #00d084">✓ PAID</span>';
+  else                  chip=`<span class="badge badge-${(invs[0].status||'').toLowerCase().replace(' ','_')}">${invs[0].status||''}</span>`;
+  sumEl.innerHTML=`<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px">
+    <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px">Invoiced<br><span style="font-size:16px;font-weight:800;color:#fff">${fmtCurrency(pay.total)}</span></div>
+    <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px">Paid<br><span style="font-size:16px;font-weight:800;color:#00d084">${fmtCurrency(pay.paid)}</span></div>
+    <div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px">Owed<br><span style="font-size:16px;font-weight:800;color:${(pay.owed||0)>0?'#ff5555':'#00d084'}">${fmtCurrency(pay.owed)}</span></div>
+    <div style="margin-left:auto">${chip}</div>
+  </div>
+  <div id="pd-billing-interest" style="font-size:11px;color:#f59e0b;margin-top:5px;min-height:0"></div>`;
+  if(anyOverdue) pdLoadOverdueInterest(invs);
+  if(!invs.length){
+    listEl.innerHTML='<span style="color:#555">No invoices yet — <a href="#" onclick="pdNewInvoice();return false" style="color:#7c3aed">create one</a> or <a href="#" onclick="invoiceFromProjectDetail();return false" style="color:#7c3aed">generate from phases</a></span>';
+    return;
+  }
+  listEl.innerHTML=invs.map(i=>{
+    const st=(i.status||'').toLowerCase();
+    const lineCount=(()=>{try{const li=typeof i.line_items==='string'?JSON.parse(i.line_items||'[]'):(i.line_items||[]);return Array.isArray(li)?li.length:0;}catch(e){return 0;}})();
+    const num=escHtml(String(i.invoice_number||i.id));
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:7px;margin-bottom:6px;flex-wrap:wrap${st==='overdue'?';border-color:#ff555566':''}">
+      <span style="color:#fff;font-weight:700">#${num}</span>
+      <span style="font-weight:800;color:#00d084">${fmtCurrency(i.total)}</span>
+      <span class="badge badge-${st.replace(' ','_')}">${i.status||''}</span>
+      ${i.is_primary?'<span class="badge" style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b" title="Primary invoice — basis for payment terms & balance invoices">★ PRIMARY</span>':''}
+      ${i.is_change_order?'<span class="badge" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed">CHANGE ORDER</span>':''}
+      ${i.parent_invoice_id&&!i.is_change_order?'<span class="badge" style="background:#00d08422;color:#00d084;border:1px solid #00d08466" title="Follow-up invoice generated from the primary">BALANCE</span>':''}
+      <span style="font-size:11px;color:#555">${i.due_date?'Due '+fmtDate(i.due_date):''}${lineCount?` · ${lineCount} line${lineCount===1?'':'s'}`:''}${st==='paid'?` · <span style="color:#00d084" title="Counted in Uncle Sam's cash-basis gross revenue for tax year ${_pdInvTaxYear(i)}">Paid${i.paid_date?' '+fmtDate(i.paid_date):''} → tax yr ${_pdInvTaxYear(i)}</span>`:''}</span>
+      <div class="row-actions" style="margin-left:auto">
+        ${i.is_primary?'':`<button class="btn-icon" onclick="pdSetPrimaryInvoice('${i.id}')" title="Make this the primary invoice (basis for payment terms & balance invoice)" style="color:#f59e0b">&#9733;</button>`}
+        <button class="btn-icon" onclick="pdEditInvoice('${i.id}')" title="Edit invoice">&#9998;</button>
+        <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
+        <button class="btn-icon" onclick="downloadInvoicePDF('${i.id}')" title="Download PDF">&#11015;</button>
+        <button class="btn-icon" onclick="shareInvoice('${i.id}','${num}')" title="Share PDF link with client">&#128279;</button>
+        ${st==='paid'
+          ?`<button class="btn-icon" onclick="markInvoiceUnpaid('${i.id}')" title="Mark Unpaid (revert to Sent)" style="color:#f59e0b;border-color:#f59e0b">&#8617;</button>`
+          :`<button class="btn-icon" onclick="markInvoicePaid('${i.id}')" title="Mark Paid" style="color:#00d084;border-color:#00d084">&#10003;</button>`}
+        <button class="btn-icon" onclick="moveInvoiceToYear('${i.id}','${num}')" title="Move to year">📅</button>
+        <button class="btn-icon del" onclick="deleteInvoice('${i.id}','${num}')" title="Delete">&#10005;</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* Accrued interest detail for overdue invoices (weekly rate, from the backend). */
+async function pdLoadOverdueInterest(invs){
+  const el=document.getElementById('pd-billing-interest');
+  if(!el) return;
+  try{
+    const overdue=(invs||[]).filter(i=>(i.status||'').toLowerCase()==='overdue');
+    const parts=[];
+    for(const i of overdue){
+      const d=await fetch('/api/ahb/invoices/'+i.id+'/interest').then(r=>r.json());
+      if(d && (d.interest||0)>0) parts.push(`#${i.invoice_number||i.id}: +${fmtCurrency(d.interest)} interest (${d.weeks}wk @ ${fmtCurrency(d.rate_per_week||50)}/wk) → ${fmtCurrency(d.total_with_interest)} total due`);
+    }
+    el.textContent=parts.join('  ·  ');
+  }catch(e){}
+}
+
+/* New invoice pre-linked to the open project + its client; editor returns here. */
+async function pdNewInvoice(){
+  const pid=document.getElementById('pd-id').value;
+  const p=currentProjectDetail||{};
+  _invoiceReturnPid=pid||null;
   closeModal('projectDetailModal');
-  switchTab('invoices');
-  setTimeout(()=>{ if(typeof editInvoice==='function') editInvoice(invId); }, 400);
+  await openInvoiceModal();
+  if(pid) document.getElementById('invoice-project').value=pid;
+  if(p.client_id) document.getElementById('invoice-client').value=p.client_id;
+  if(p.client_name){
+    document.getElementById('invoice-client-name').value=p.client_name;
+    if(typeof onInvoiceClientInput==='function') onInvoiceClientInput();
+  }
+}
+
+/* Edit an invoice from the project modal; save/cancel returns to the project. */
+function pdEditInvoice(invId){
+  _invoiceReturnPid=document.getElementById('pd-id').value||null;
+  closeModal('projectDetailModal');
+  editInvoice(invId);
+}
+
+/* Make an invoice the project's primary — payment tracking, status sync, and
+   balance invoices all key off the primary. One primary per project. */
+async function pdSetPrimaryInvoice(invId){
+  const pid=document.getElementById('pd-id').value;
+  try{
+    const d=await fetch('/api/ahb/invoices/'+invId+'/primary',{method:'POST'}).then(r=>r.json());
+    if(!d.success){showToast(d.error||'Failed','error');return;}
+    showToast('Primary invoice set');
+    await loadInvoices();
+    if(pid) openProjectDetail(pid);
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+/* Generate the follow-up payment invoice from the primary: contract total,
+   less each payment received as a credit line, = remaining balance due.
+   Opens straight in the editor so extras/change-order lines can be added
+   before sending. The primary invoice itself is never altered. */
+async function pdCreateBalanceInvoice(){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid)return;
+  try{
+    const d=await fetch('/api/ahb/projects/'+pid+'/balance-invoice',{method:'POST'}).then(r=>r.json());
+    if(!d.success){showToast(d.error||'Failed','error');return;}
+    showToast('Balance invoice '+d.invoice_number+' created — '+fmtCurrency(d.balance)+' due. Add extras, then save.');
+    await loadInvoices();
+    _invoiceReturnPid=pid;
+    closeModal('projectDetailModal');
+    editInvoice(d.id);
+  }catch(e){showToast('Error: '+e.message,'error');}
 }
 
 function pdEditReceipt(rid){
@@ -14642,156 +14699,21 @@ async function createChangeOrder(){
 }
 
 /* ===================== BILLING ===================== */
-async function loadBilling(){
-  try{
-    const year=(document.getElementById('billing-year-filter')||{}).value||'';
-    const unpaidOnly=(document.getElementById('billing-unpaid-toggle')||{}).checked!==false;
-    const qs=new URLSearchParams();
-    if(year)qs.set('year',year);
-    qs.set('unpaid_only',unpaidOnly?'true':'false');
-    const res=await fetch('/api/ahb/billing/summary?'+qs.toString());
-    const s=await res.json();
-    document.getElementById('bl-due').textContent=fmtCurrency((s.sent||{}).total||0);
-    document.getElementById('bl-overdue').textContent=fmtCurrency((s.overdue||{}).total||0);
-    document.getElementById('bl-progress').textContent=fmtCurrency(((s.in_progress||{}).total||0)+((s.approved||{}).total||0));
-    document.getElementById('bl-paid').textContent=fmtCurrency((s.paid||{}).total||0);
-    document.getElementById('bl-receivable').textContent=fmtCurrency(s.total_receivable||0);
-    // Overdue details with interest
-    const olEl=document.getElementById('bl-overdue-list');
-    const od=s.overdue_details||[];
-    olEl.innerHTML=od.length?od.map(i=>`<div class="dash-breakdown-row">
-      <span style="color:#ddd">${escHtml(i.invoice_number)} — ${escHtml(i.client_name||'')}</span>
-      <span><span style="color:#ff5555">${fmtCurrency(i.total)}</span> + <span style="color:#f59e0b">${fmtCurrency(i.interest_accrued)} interest (${i.weeks_overdue}wk)</span> = <span style="font-weight:700;color:#ff5555">${fmtCurrency(i.total_with_interest)}</span></span>
-    </div>`).join(''):'<span style="color:#333">No overdue invoices</span>';
-    // Active billing table
-    const tb=document.getElementById('billing-tbody');
-    const items=s.active_items||[];
-    tb.innerHTML=items.length?items.map(i=>{
-      const st=(i.status||'').toLowerCase();
-      const isOverdue=st==='overdue';
-      const isPaid=st==='paid';
-      return `<tr>
-        <td style="font-weight:600;color:#ddd">${escHtml(i.invoice_number)}</td>
-        <td style="font-size:12px;color:#888">${escHtml(i.client_name||'')}</td>
-        <td style="color:#00d084;font-weight:700">${fmtCurrency(i.total)}</td>
-        <td><span class="badge badge-${st.replace(' ','_')}">${i.status}</span></td>
-        <td style="color:${isOverdue?'#f59e0b':'#333'}">${isOverdue?'Accruing':'—'}</td>
-        <td style="font-weight:700;color:#ddd">${fmtCurrency(i.total)}</td>
-        <td><div class="row-actions">
-          <button class="btn-icon" onclick="editInvoice('${i.id}')" title="Edit" style="color:#4da6ff;border-color:#4da6ff">&#9998;</button>
-          <button class="btn-icon" onclick="deleteInvoice('${i.id}','${escHtml(i.invoice_number||i.id)}')" title="Delete" style="color:#ff5555;border-color:#ff5555">&#128465;</button>
-          ${isPaid
-            ?`<button class="btn-icon" onclick="markInvoiceUnpaid('${i.id}')" title="Mark Unpaid" style="color:#f59e0b;border-color:#f59e0b">&#10003;</button>`
-            :`<button class="btn-icon" onclick="markInvoicePaid('${i.id}')" title="Mark Paid" style="color:#00d084;border-color:#00d084">&#10003;</button>`}
-        </div></td>
-      </tr>`;
-    }).join(''):`<tr><td colspan="7" style="text-align:center;padding:40px;color:#333">${unpaidOnly?'All invoices paid':'No invoices'}</td></tr>`;
-    // Completed-projects-by-year section (independent of the year/unpaid filters).
-    renderBillingCompletedByYear();
-  }catch(e){console.error('loadBilling',e);}
-}
-
-/* Render the "Completed Projects by Year" section on the Billing tab.
-   Always shows year sections from 2023 to the current year, newest first.
-   Each section is an expandable <details> with a row per completed project. */
-async function renderBillingCompletedByYear(){
-  const host = document.getElementById('billing-completed-years');
-  const tabsHost = document.getElementById('billing-completed-tabs');
-  if(!host) return;
-  /* Make sure projects are loaded (Billing tab might be opened first). */
-  if(!allProjects.length){
-    try{ allProjects = await fetch('/api/ahb/projects').then(r=>r.json()); }catch(e){}
-  }
-  const completed = (allProjects||[]).filter(p => _isCompletedProjectStatus(p.status));
-  const cy = new Date().getFullYear();
-  /* Always include 2023..current; add any older years that actually have data. */
-  const yearsSet = new Set();
-  for(let y = cy; y >= 2023; y--) yearsSet.add(String(y));
-  completed.forEach(p => {
-    const yr = _projectYear(p);
-    if(/^\d{4}$/.test(yr)) yearsSet.add(yr);
-  });
-  /* Newest first; place "Undated" (if any completed project lacks a year) at the bottom. */
-  const years = [...yearsSet].sort((a,b)=>b.localeCompare(a));
-  const hasUndated = completed.some(p => _projectYear(p) === 'Undated');
-  if(hasUndated) years.push('Undated');
-
-  /* Top jump-tabs — one per year section. */
-  tabsHost.innerHTML = years.map(yr => {
-    const n = completed.filter(p => _projectYear(p) === yr).length;
-    const isCur = yr === String(cy);
-    const bg = isCur ? '#10b981' : '#070712';
-    const fg = isCur ? '#fff' : (n ? '#a7f3d0' : '#666');
-    const bd = isCur ? '#10b981' : '#2a2a4a';
-    return `<button type="button" onclick="_jumpToBillingYear('${yr}')"
-              title="${n} completed project${n===1?'':'s'} in ${yr}"
-              style="background:${bg};color:${fg};border:1px solid ${bd};border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:monospace">${yr} · ${n}</button>`;
-  }).join('');
-
-  /* One <details> per year, newest first. Group sums + row table inside. */
-  host.innerHTML = years.map(yr => {
-    const projs = completed
-      .filter(p => _projectYear(p) === yr)
-      .sort((a,b)=>(b.end_date||b.start_date||'').localeCompare(a.end_date||a.start_date||''));
-    const total = projs.reduce((s,p)=>s+(p.value||p.budget_high||0),0);
-    const isCur = yr === String(cy);
-    return `<details class="year-group" id="bl-yr-${yr}" ${isCur||projs.length<=10?'open':''}>
-      <summary class="year-group-header" style="cursor:pointer">
-        <div class="year-group-left">
-          <span class="year-chevron">▾</span>
-          <span class="year-label">${yr}</span>
-          <span class="year-count">${projs.length} completed project${projs.length===1?'':'s'}</span>
-        </div>
-        <div class="year-group-right">
-          <span class="year-total">${fmtCurrency(total)}</span>
-        </div>
-      </summary>
-      <div class="year-group-body">
-        ${projs.length ? projs.map(p => {
-          const due = _isBalanceDue(p);
-          return `<div class="year-project-row" onclick="openProjectDetail('${p.id}')" style="${due?'background:#1a0808':''};cursor:pointer">
-            <div class="ypr-status" style="background:${due?'#ff5555':'#00d084'}"></div>
-            <div class="ypr-main">
-              <div class="ypr-title">${escHtml(p.title||'(untitled)')}</div>
-              <div class="ypr-meta">
-                ${p.client_name?'<span>👤 '+escHtml(p.client_name)+'</span>':''}
-                ${p.address?'<span>📍 '+escHtml(p.address.slice(0,40))+'</span>':''}
-                ${p.scope?'<span>🔧 '+escHtml(p.scope)+'</span>':''}
-              </div>
-            </div>
-            <div class="ypr-dates" style="font-size:10px;color:#666">
-              ${p.start_date?fmtDate(p.start_date):'—'}<br>${p.end_date?fmtDate(p.end_date):'—'}
-            </div>
-            <div class="ypr-value">${(p.value||p.budget_high)?fmtCurrency(p.value||p.budget_high):'<span style="color:#444">—</span>'}</div>
-            <div class="ypr-status-badge" style="background:${due?'#ff555522':'#00d08422'};color:${due?'#ff5555':'#00d084'};border:1px solid ${due?'#ff5555':'#00d08444'}">${due?'⚠ DUE':'✓ Done'}</div>
-            <div class="ypr-actions">
-              <button class="btn-icon" onclick="event.stopPropagation();editProject('${p.id}')" title="Edit">✎</button>
-            </div>
-          </div>`;
-        }).join('') : `<div style="padding:18px 22px;font-size:12px;color:#444;font-style:italic">No completed projects in ${yr}.</div>`}
-      </div>
-    </details>`;
-  }).join('');
-}
-
-function _jumpToBillingYear(yr){
-  const el = document.getElementById('bl-yr-'+yr);
-  if(!el) return;
-  el.open = true;
-  el.scrollIntoView({behavior:'smooth', block:'start'});
-}
+/* Billing tab retired 2026-06-11 — rollups live on the Projects tab
+   (loadProjectsBillingSummary) and per-project status in the detail modal
+   (pdRenderInvoices). Invoice mutations below refresh project surfaces. */
 async function markInvoicePaid(id){
   if(!confirm('Mark this invoice as Paid?'))return;
   try{
     await fetch('/api/ahb/invoices/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Paid'})});
-    showToast('Marked as paid');loadBilling();
+    showToast('Marked as paid');refreshBillingSurfaces();
   }catch(e){showToast('Error','error');}
 }
 async function markInvoiceUnpaid(id){
   if(!confirm('Mark this invoice as Unpaid (revert to Sent)?'))return;
   try{
     await fetch('/api/ahb/invoices/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Sent',paid_date:''})});
-    showToast('Marked as unpaid');loadBilling();
+    showToast('Marked as unpaid');refreshBillingSurfaces();
   }catch(e){showToast('Error','error');}
 }
 async function deleteInvoice(id,label){
@@ -14799,7 +14721,7 @@ async function deleteInvoice(id,label){
   try{
     const r=await fetch('/api/ahb/invoices/'+id,{method:'DELETE'});
     const d=await r.json();
-    if(d.success){showToast('Invoice deleted');loadBilling();}
+    if(d.success){showToast('Invoice deleted');refreshBillingSurfaces();}
     else showToast(d.error||'Delete failed','error');
   }catch(e){showToast('Error','error');}
 }
