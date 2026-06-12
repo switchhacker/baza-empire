@@ -1,7 +1,7 @@
 agents:
   claw_batto:
     company_title: VP of Engineering & Infrastructure
-    model: deepseek-coder-v2:16b
+    model: gemma4:26b-a4b-it-qat
     name: Claw Batto
     role: Senior Developer, DevOps Engineer, Linux Admin, Security Specialist
     scheduled_tasks:
@@ -132,7 +132,7 @@ agents:
     telegram_token_env: TELEGRAM_CLAW_BATTO
   duke_harmon:
     company_title: Director of Project Management
-    model: gemma3:12b
+    model: gemma4:12b-it-qat
     name: Duke Harmon
     role: Project Manager & Deadline Enforcer — Baza Empire & AHBCO LLC
     scheduled_tasks:
@@ -199,7 +199,7 @@ agents:
     telegram_token_env: TELEGRAM_DUKE_HARMON
   nova_sterling:
     company_title: Director of Client Relations
-    model: qwen2.5:14b
+    model: gemma4:12b-it-qat
     name: Nova Sterling
     role: Client-Facing Chat Specialist — ahb123.com
     scheduled_tasks:
@@ -414,7 +414,7 @@ agents:
     telegram_token_env: TELEGRAM_NOVA_STERLING
   phil_hass:
     company_title: Director of Finance, Legal & Compliance
-    model: qwen2.5:14b
+    model: gemma4:12b-it-qat
     name: Phil Hass
     role: Legal Advisor, Accountant, Finance & Compliance
     scheduled_tasks:
@@ -610,7 +610,7 @@ agents:
     telegram_token_env: TELEGRAM_PHIL_HASS
   rex_valor:
     company_title: Director of Inbound Sales & Lead Operations
-    model: qwen2.5:14b
+    model: gemma4:12b-it-qat
     name: Rex Valor
     role: Voicemail Triage & Lead Qualification Agent — AHBCO LLC
     scheduled_tasks:
@@ -955,7 +955,7 @@ agents:
     telegram_token_env: TELEGRAM_SAM_AXE
   scout_reeves:
     company_title: Director of Research & Market Intelligence
-    model: deepseek-coder-v2:16b
+    model: nemotron-cascade-2:30b
     name: Scout Reeves
     role: Research & Market Intelligence Agent — Baza Empire
     scheduled_tasks:
@@ -1110,7 +1110,7 @@ agents:
     telegram_token_env: TELEGRAM_SCOUT_REEVES
   simon_bately:
     company_title: VP of Corporate Affairs — All Home Building Co LLC
-    model: gemma4:e4b
+    model: gemma4:12b-it-qat
     name: Simon Bately
     role: VP Corporate Affairs — AHBCO business, management, treasury, agent ops
     scheduled_tasks:
