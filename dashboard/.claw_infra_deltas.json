@@ -22,5 +22,13 @@
   {
     "ts": "2026-06-12T00:42:11+00:00",
     "change": "+ ollama_model: qwen3.6:27b"
+  },
+  {
+    "ts": "2026-06-12T01:43:22+00:00",
+    "change": "+ ollama_model: minicpm-v4.6:latest"
+  },
+  {
+    "ts": "2026-06-12T01:43:22+00:00",
+    "change": "+ ollama_model: nemotron-cascade-2:30b"
   }
 ]

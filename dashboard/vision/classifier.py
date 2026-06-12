@@ -105,6 +105,7 @@ def _post_ollama(b64: str, model: str) -> str:
         "keep_alive": "10m",
         "options": {"num_predict": 1500, "temperature": 0.2, "num_ctx": 3072},
         "messages": [{"role": "user", "content": PROMPT, "images": [b64]}],
+        "think": False,  # Ollama 0.30+: qwen3-vl otherwise spends num_predict in `thinking`, content comes back empty
     }).encode("utf-8")
     req = urllib.request.Request(
         OLLAMA_URL, data=payload,

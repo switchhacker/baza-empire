@@ -209,6 +209,7 @@ def ollama_caption(img_b64: str, model: str, port: int) -> str:
         "messages": [
             {"role": "user", "content": CAPTION_PROMPT, "images": [img_b64]}
         ],
+        "think": False,  # Ollama 0.30+: qwen3-vl otherwise spends num_predict in `thinking`, content comes back empty
     }).encode("utf-8")
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/api/chat",
