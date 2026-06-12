@@ -15,8 +15,17 @@ import re
 import threading
 import time
 import subprocess
+import requests
 from dataclasses import dataclass, field
 from typing import Optional
+
+# Quant-accurate model sizing: actual on-disk size from ollama /api/tags beats
+# guessing VRAM from parameter count (a 26B model is ~17GB at Q4 but ~10GB at
+# Q2). Cached briefly so routing stays cheap. Disk size + overhead = footprint.
+_OLLAMA_SIZE_CACHE: dict = {}
+_OLLAMA_SIZE_CACHE_TS: float = 0.0
+_OLLAMA_SIZE_TTL = 300.0
+_FOOTPRINT_OVERHEAD_MB = 1500   # activation + KV cache (matches MODEL_FOOTPRINT_MB)
 
 
 # ── Backend definitions ───────────────────────────────────────────────────────
@@ -156,18 +165,46 @@ class GPUPool:
         self._condition = threading.Condition(self._lock)
 
     # ── Routing logic ─────────────────────────────────────────────────────────
+    def _refresh_ollama_sizes(self):
+        """Populate the model→footprint cache from the AMD ollama instances'
+        actual pulled-model sizes. Best-effort; failures leave the cache as-is."""
+        global _OLLAMA_SIZE_CACHE, _OLLAMA_SIZE_CACHE_TS
+        now = time.time()
+        if _OLLAMA_SIZE_CACHE and (now - _OLLAMA_SIZE_CACHE_TS) < _OLLAMA_SIZE_TTL:
+            return
+        sizes = {}
+        for url in (AMD_URL, AMD2_URL):
+            try:
+                r = requests.get(f"{url}/api/tags", timeout=2)
+                for m in r.json().get("models", []):
+                    name, sz = m.get("name"), m.get("size")
+                    if name and sz:
+                        sizes[name] = int(sz / 1024 / 1024) + _FOOTPRINT_OVERHEAD_MB
+            except Exception:
+                continue
+        if sizes:
+            _OLLAMA_SIZE_CACHE = sizes
+            _OLLAMA_SIZE_CACHE_TS = now
+
     def _model_size_mb(self, model: str) -> int:
-        """Best guess at model VRAM footprint."""
+        """Best guess at model VRAM footprint, quant-accurate when possible."""
         if not model:
             return 0
         m = model.strip()
+        # 1. Explicit override always wins.
         if m in MODEL_FOOTPRINT_MB:
             return MODEL_FOOTPRINT_MB[m]
-        # Try without :latest
+        # 2. Actual on-disk size from ollama (quant-accurate) beats the
+        #    parameter-count heuristic — a 26B Q2 fits the 12GB card; a 26B Q4
+        #    doesn't, and only the real size can tell them apart.
+        self._refresh_ollama_sizes()
+        if m in _OLLAMA_SIZE_CACHE:
+            return _OLLAMA_SIZE_CACHE[m]
+        # 3. Try without :latest
         base = m.split(":")[0]
         if base in MODEL_FOOTPRINT_MB:
             return MODEL_FOOTPRINT_MB[base]
-        # Heuristic from name (e.g. "qwen2.5:14b" → 14B → ~9000MB)
+        # 4. Heuristic from name (e.g. "qwen2.5:14b" → 14B → ~9000MB)
         match = re.search(r"(\d+)b", m.lower())
         if match:
             params = int(match.group(1))

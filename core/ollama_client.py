@@ -17,13 +17,17 @@ CLOUD_MODEL_PREFIXES = (
     "groq-", "o1", "o3-", "local/"
 )
 
-# Models that exceed any single GPU's VRAM and must run on the dual-GPU
-# Vulkan instance (port 11438). Routing here bypasses gpu_pool, since the
-# pool slots only represent single GPUs.
+# Model families that CAN need the dual-GPU tensor-split instance (port 11438)
+# — but only for quants too large to fit the single LLM GPU. Smaller quants of
+# the same family fit one card and route through the normal pool (see
+# is_dual_gpu_model, which checks actual size + whether 11438 is even up).
 DUAL_GPU_MODEL_PREFIXES = (
     "supergemma4:",
     "hf.co/Jiunsong/supergemma4-",
 )
+
+AMD_LLM_GPU_VRAM_GB = 12.0   # RX 6700 XT — the single GPU that serves LLMs
+_DUAL_HEADROOM_GB   = 1.8    # KV cache + context slack on top of weights
 
 
 def is_cloud_model(model: str) -> bool:
@@ -36,9 +40,40 @@ def is_ollama_cloud_model(model: str) -> bool:
     return model.endswith(":cloud")
 
 
+def _ollama_model_size_gb(model: str, base_url: str = OLLAMA_AMD_URL) -> float:
+    """Actual on-disk size (GB) of a pulled Ollama model, or 0.0 if unknown."""
+    try:
+        r = requests.get(f"{base_url}/api/tags", timeout=3)
+        for m in r.json().get("models", []):
+            if m.get("name") == model and m.get("size"):
+                return m["size"] / 1e9
+    except Exception:
+        pass
+    return 0.0
+
+
+def _dual_instance_up() -> bool:
+    """Is the dual-GPU tensor-split Ollama instance (11438) actually running?
+    It's stopped whenever the NVIDIA 3070 is dedicated to the image engine."""
+    try:
+        return requests.get(f"{OLLAMA_DUAL_URL}/api/version", timeout=2).ok
+    except Exception:
+        return False
+
+
 def is_dual_gpu_model(model: str) -> bool:
-    """Check if model must run on the dual-GPU Ollama instance (port 11438)."""
-    return any(model.startswith(p) for p in DUAL_GPU_MODEL_PREFIXES)
+    """True only when a dual-GPU-family model's quant is too big for the single
+    12GB LLM GPU AND the dual-GPU instance (11438) is up. A smaller quant fits
+    one card, so it returns False and flows through the normal gpu_pool (which
+    sizes by real quant size). If 11438 is down — e.g. the 3070 is running the
+    image engine — we also return False so the request degrades to the AMD
+    pool / CPU instead of dead-ending on a stopped port."""
+    if not any(model.startswith(p) for p in DUAL_GPU_MODEL_PREFIXES):
+        return False
+    size_gb = _ollama_model_size_gb(model)
+    if 0 < size_gb <= (AMD_LLM_GPU_VRAM_GB - _DUAL_HEADROOM_GB):
+        return False  # quant fits the AMD card — use the normal pool
+    return _dual_instance_up()  # too big (or unknown) — only if dual is reachable
 
 
 def chat_stream_cloud(model: str, messages: list, system_prompt: str = None,
