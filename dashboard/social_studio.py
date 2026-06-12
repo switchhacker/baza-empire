@@ -1802,11 +1802,48 @@ def _preset_schedule_allows(preset: dict, now=None) -> bool:
     return True
 
 
+def _publish_due_scheduled(con) -> list[int]:
+    """Send posts whose scheduled_at has passed to Telegram and mark them posted.
+
+    Runs regardless of the autopilot master toggle — these were scheduled
+    explicitly by the user. scheduled_at is compared against local time since
+    the UI's datetime-local picker stores naive local ISO strings.
+    """
+    now_local = datetime.now().isoformat(timespec="seconds")
+    rows = con.execute(
+        "SELECT id FROM ahb_social_posts WHERE status='scheduled' "
+        "AND scheduled_at IS NOT NULL AND scheduled_at != '' AND scheduled_at <= ?",
+        (now_local,),
+    ).fetchall()
+    published = []
+    for r in rows:
+        pid = r["id"]
+        ok, err = _send_post_to_telegram(pid)
+        if ok:
+            con.execute(
+                "UPDATE ahb_social_posts SET status='posted', updated_at=? WHERE id=?",
+                (now_local, pid),
+            )
+            con.commit()
+            published.append(pid)
+        else:
+            # Leave status='scheduled' so the next tick retries.
+            print(f"[autopilot] scheduled post {pid} publish failed: {err}", flush=True)
+    return published
+
+
 @social_bp.route("/api/ahb/social/autopilot/tick", methods=["POST"])
 def autopilot_tick():
     s = _settings.load_settings()
+    published = []
+    con = _conn()
+    try:
+        published = _publish_due_scheduled(con)
+    finally:
+        con.close()
     if not s.get("autopilot_master"):
-        return jsonify({"ran": 0, "reason": "master off"})
+        return jsonify({"ran": 0, "reason": "master off",
+                        "published_scheduled": published})
     daily_cap = int(s.get("daily_post_cap") or 4)
     cool_days = int(s.get("cool_down_days") or 14)
     now_iso = datetime.utcnow().isoformat(timespec="seconds")
@@ -1855,7 +1892,8 @@ def autopilot_tick():
                 print(f"[autopilot] preset {preset['id']} failed: {e}", flush=True)
     finally:
         con.close()
-    return jsonify({"ran": len(ran), "post_ids": ran})
+    return jsonify({"ran": len(ran), "post_ids": ran,
+                    "published_scheduled": published})
 
 
 @social_bp.route("/api/ahb/social/presets/<int:pid>/run", methods=["POST"])
