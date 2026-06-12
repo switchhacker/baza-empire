@@ -7244,19 +7244,186 @@ def api_ahb_estimates_create():
         conn = _ahb_db()
         conn.execute(
             """INSERT INTO ahb_estimates (id, client_id, project_id, title, description, scope,
-               line_items, subtotal, markup_pct, total, status, generated_by, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               line_items, subtotal, markup_pct, total, status, generated_by, notes, method, breakdown)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (eid, data.get('client_id'), data.get('project_id'), data.get('title'),
              data.get('description'), data.get('scope'),
              json.dumps(data.get('line_items', [])) if isinstance(data.get('line_items'), list) else data.get('line_items'),
              data.get('subtotal'), data.get('markup_pct', 15), data.get('total'),
-             data.get('status', 'draft'), data.get('generated_by'), data.get('notes'))
+             data.get('status', 'draft'), data.get('generated_by'), data.get('notes'),
+             data.get('method'),
+             json.dumps(data.get('breakdown')) if isinstance(data.get('breakdown'), (dict, list)) else data.get('breakdown'))
         )
         conn.commit()
         conn.close()
         return jsonify({'success': True, 'id': eid})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/estimates/<eid>', methods=['PUT', 'DELETE'])
+def api_ahb_estimates_modify(eid):
+    try:
+        conn = _ahb_db()
+        row = conn.execute("SELECT id FROM ahb_estimates WHERE id=?", (eid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Estimate not found'}), 404
+        if request.method == 'DELETE':
+            conn.execute("DELETE FROM ahb_estimates WHERE id=?", (eid,))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True})
+        d = request.json or {}
+        allowed = ('title', 'description', 'scope', 'total', 'subtotal', 'status',
+                   'notes', 'project_id', 'client_id', 'method', 'breakdown')
+        sets, vals = [], []
+        for k in allowed:
+            if k in d:
+                v = d[k]
+                if k == 'breakdown' and isinstance(v, (dict, list)):
+                    v = json.dumps(v)
+                sets.append(f"{k}=?")
+                vals.append(v)
+        if sets:
+            sets.append("updated_at=datetime('now')")
+            conn.execute(f"UPDATE ahb_estimates SET {','.join(sets)} WHERE id=?", vals + [eid])
+            conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/estimates/<eid>/to-quote', methods=['POST'])
+def api_ahb_estimate_to_quote(eid):
+    """Attach a saved estimate to a project as an ahb_quotes row (shows in the
+    project's Quotes & Estimator panel and inherits the quote PDF)."""
+    try:
+        d = request.json or {}
+        pid = d.get('project_id')
+        if not pid:
+            return jsonify({'success': False, 'error': 'project_id required'}), 400
+        conn = _ahb_db()
+        row = conn.execute("SELECT * FROM ahb_estimates WHERE id=?", (eid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Estimate not found'}), 404
+        e = dict(row)
+        cur = conn.execute(
+            """INSERT INTO ahb_quotes (project_id, method, scope, description, total, breakdown, notes)
+               VALUES (?,?,?,?,?,?,?)""",
+            (pid, f"estimator_m{e.get('method') or '?'}", e.get('scope'), e.get('description'),
+             float(e.get('total') or 0), e.get('breakdown'),
+             f"From EstimatOR — {e.get('title') or e.get('id')}"))
+        qid = cur.lastrowid
+        conn.execute("UPDATE ahb_estimates SET project_id=?, status='quoted', updated_at=datetime('now') WHERE id=?",
+                     (pid, eid))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'quote_id': qid})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/estimates/<eid>/pdf', methods=['GET'])
+def api_ahb_estimate_pdf(eid):
+    """Branded printable estimate sheet (WeasyPrint PDF, HTML fallback) —
+    same visual family as the project quote PDF."""
+    try:
+        conn = _ahb_db()
+        row = conn.execute("SELECT * FROM ahb_estimates WHERE id=?", (eid,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({'error': 'Estimate not found'}), 404
+        e = dict(row)
+        try:
+            breakdown = json.loads(e['breakdown']) if e.get('breakdown') else {}
+        except (json.JSONDecodeError, TypeError):
+            breakdown = {}
+
+        logo_b64 = ''
+        logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
+        if os.path.exists(logo_path):
+            import base64
+            with open(logo_path, 'rb') as lf:
+                logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
+
+        total = float(e.get('total') or 0)
+        created = (e.get('created_at') or '')[:10]
+        method_label = {'1': 'Time × Crew', '2': 'Market Research', '3': 'Low / High Range',
+                        '4': 'Custom Build-Up', '5': 'Unit Cost'}.get(str(e.get('method') or ''), 'Manual')
+        esc = lambda s: (s or '').replace('<', '&lt;').replace('>', '&gt;')
+
+        bk_rows = ''
+        if isinstance(breakdown, dict):
+            for k, v in breakdown.items():
+                if isinstance(v, (int, float)) and k != 'total':
+                    label = str(k).replace('_', ' ').title()
+                    bk_rows += f'''<tr>
+                        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">{label}</td>
+                        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${float(v):,.2f}</td>
+                    </tr>'''
+        if not bk_rows:
+            bk_rows = f'''<tr>
+                <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">Estimate</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${total:,.2f}</td>
+            </tr>'''
+
+        logo_html = f'<img src="data:image/jpeg;base64,{logo_b64}" style="height:64px;border-radius:8px;">' if logo_b64 else '<div style="font-size:24px;font-weight:800;color:#7c3aed;">AHBCO</div>'
+        notes_block = f'<div style="margin-top:20px;padding:12px 16px;background:#f9fafb;border-radius:8px;font-size:12px;color:#555;"><b>Notes:</b> {esc(e.get("notes"))}</div>' if e.get('notes') else ''
+        html = f'''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estimate {eid}</title></head>
+<body style="font-family:Helvetica,Arial,sans-serif;max-width:720px;margin:0 auto;padding:32px;color:#222;">
+<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #7c3aed;padding-bottom:16px;">
+    {logo_html}
+    <div style="text-align:right;">
+        <div style="font-size:22px;font-weight:800;color:#7c3aed;">PROJECT ESTIMATE</div>
+        <div style="font-size:12px;color:#888;">All Home Building Co LLC · {created}</div>
+        <div style="font-size:11px;color:#aaa;">Method: {method_label}</div>
+    </div>
+</div>
+<div style="margin-top:24px;">
+    <div style="font-size:16px;font-weight:700;">{esc(e.get('title')) or 'Estimate'}</div>
+    <div style="font-size:12px;color:#888;text-transform:capitalize;">{esc(e.get('scope'))}</div>
+    <div style="margin-top:12px;font-size:13px;color:#444;line-height:1.6;white-space:pre-wrap;">{esc(e.get('description'))}</div>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-top:24px;font-size:13px;">
+    <thead><tr style="background:#f3f0ff;">
+        <th style="padding:8px 12px;text-align:left;color:#7c3aed;">Item</th>
+        <th style="padding:8px 12px;text-align:right;color:#7c3aed;">Amount</th>
+    </tr></thead>
+    <tbody>{bk_rows}</tbody>
+</table>
+<div style="display:flex;justify-content:flex-end;margin-top:8px;">
+    <div style="width:280px;border-top:2px solid #333;padding-top:8px;">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:20px;font-weight:700;color:#7c3aed;">
+            <span>Estimate Total:</span><span>${total:,.2f}</span>
+        </div>
+    </div>
+</div>
+{notes_block}
+<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:11px;color:#888;">
+    This estimate is valid for 30 days from the date above and is based on the scope described.
+    Final pricing may adjust based on actual scope, materials chosen, and site conditions discovered during work.
+</div>
+</body></html>'''
+
+        download = request.args.get('download', '0') == '1'
+        try:
+            from weasyprint import HTML as WeasyHTML
+            pdf_bytes = WeasyHTML(string=html).write_pdf()
+            response = make_response(pdf_bytes)
+            response.headers['Content-Type'] = 'application/pdf'
+            disposition = 'attachment' if download else 'inline'
+            response.headers['Content-Disposition'] = f'{disposition}; filename="estimate_{eid}.pdf"'
+            return response
+        except ImportError:
+            response = make_response(html)
+            response.headers['Content-Type'] = 'text/html; charset=utf-8'
+            response.headers['Content-Disposition'] = f'inline; filename="estimate_{eid}.html"'
+            return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/ahb/estimates/generate', methods=['POST'])
@@ -13735,6 +13902,98 @@ def _ensure_estimator_settings():
 _ensure_estimator_settings()
 
 
+# Seed rates: Philly-area all-in customer-facing unit costs (2025-26) and the
+# Home Depot rental catalog that previously lived hardcoded in ahb123.html.
+# Both are editable from the dashboard — seeds only apply on first create.
+_COST_BOOK_SEED = [
+    # (scope, label, unit, low, mid, high)
+    ('kitchen',       'Kitchen Remodel',     'sqft', 150,  250,  400),
+    ('bathroom',      'Bathroom Remodel',    'sqft', 250,  400,  650),
+    ('addition',      'Addition',            'sqft', 200,  300,  450),
+    ('basement',      'Basement Finish',     'sqft', 50,   75,   120),
+    ('deck',          'Deck Build',          'sqft', 35,   55,   90),
+    ('full-reno',     'Full Renovation',     'sqft', 100,  175,  300),
+    ('roofing',       'Roofing',             'sqft', 5.5,  8,    13),
+    ('flooring',      'Flooring',            'sqft', 6,    11,   20),
+    ('painting',      'Painting (interior)', 'sqft', 2.5,  4,    6.5),
+    ('siding',        'Siding',              'sqft', 7,    11,   17),
+    ('windows-doors', 'Windows / Doors',     'unit', 450,  750,  1400),
+    ('concrete',      'Concrete / Flatwork', 'sqft', 9,    14,   22),
+    ('fence',         'Fencing',             'lnft', 25,   45,   80),
+    ('drywall',       'Drywall',             'sqft', 2.5,  3.5,  5.5),
+    ('demolition',    'Demolition',          'sqft', 4,    8,    15),
+]
+
+_EQUIPMENT_SEED = [
+    # (name, hr4, day, week) — reference Home Depot rates, Greater Philly 2025-26
+    ('Concrete Mixer (9 cu ft)', 44, 61, 244), ('Demo Hammer (35 lb)', 47, 69, 276),
+    ('Jackhammer (60 lb)', 58, 83, 332), ('Concrete Saw (14")', 68, 98, 392),
+    ('Tile Saw (10")', 40, 58, 232), ('Floor Sander (Drum)', 40, 59, 236),
+    ('Floor Edger', 25, 36, 144), ('Pressure Washer (3000 PSI)', 35, 52, 208),
+    ('Wet/Dry Vac', 20, 29, 116), ('Drywall Lift', 26, 38, 152),
+    ("Scaffolding Set (6')", 26, 38, 152), ("Extension Ladder (32')", 19, 28, 112),
+    ('Mini Excavator (1.5T)', 250, 363, 1452), ('Skid Steer Loader', 245, 355, 1420),
+    ('Stump Grinder', 86, 123, 492), ('Trencher (24")', 90, 128, 512),
+    ('Plate Compactor', 43, 62, 248), ('Concrete Vibrator', 26, 38, 152),
+    ('Heat Gun', 11, 16, 64), ('Air Compressor (10 gal)', 24, 35, 140),
+    ('Generator (5500W)', 50, 73, 292), ('Mortar Mixer', 30, 44, 176),
+    ('Tile Stripper', 29, 42, 168), ('Wood Chipper', 112, 164, 656),
+    ('Carpet Cleaner', 32, 46, 184), ('Dehumidifier', 43, 62, 248),
+    ('Insulation Blower', 96, 140, 560), ('MIG Welder (140A)', 36, 52, 208),
+    ('Drywall Sander', 34, 49, 196), ('Paint Sprayer (Airless)', 55, 79, 316),
+    ('Lawn Aerator', 40, 58, 232), ('Sod Cutter', 60, 87, 348),
+    ('Power Auger', 32, 46, 184),
+]
+
+
+def _ensure_estimator_v2():
+    """EstimatOR v2 schema: saved-estimate columns, cost book, equipment catalog.
+    Idempotent and tolerant of a busy DB at boot (same rationale as
+    _ensure_estimator_settings above)."""
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+        conn.execute("PRAGMA busy_timeout = 8000")
+        for col in ('method TEXT', 'breakdown TEXT'):
+            try:
+                conn.execute(f"ALTER TABLE ahb_estimates ADD COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_cost_book (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scope TEXT UNIQUE NOT NULL,
+            label TEXT,
+            unit TEXT DEFAULT 'sqft',
+            low REAL DEFAULT 0,
+            mid REAL DEFAULT 0,
+            high REAL DEFAULT 0,
+            notes TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_equipment_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            hr4 REAL DEFAULT 0,
+            day REAL DEFAULT 0,
+            week REAL DEFAULT 0,
+            owned INTEGER DEFAULT 0,
+            notes TEXT,
+            active INTEGER DEFAULT 1
+        )""")
+        if conn.execute("SELECT COUNT(*) FROM ahb_cost_book").fetchone()[0] == 0:
+            conn.executemany(
+                "INSERT INTO ahb_cost_book (scope,label,unit,low,mid,high) VALUES (?,?,?,?,?,?)",
+                _COST_BOOK_SEED)
+        if conn.execute("SELECT COUNT(*) FROM ahb_equipment_catalog").fetchone()[0] == 0:
+            conn.executemany(
+                "INSERT INTO ahb_equipment_catalog (name,hr4,day,week) VALUES (?,?,?,?)",
+                _EQUIPMENT_SEED)
+        conn.commit()
+        conn.close()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_estimator_v2 deferred — DB busy: {e}", flush=True)
+_ensure_estimator_v2()
+
+
 @app.route('/api/ahb/estimator/settings', methods=['GET','PUT'])
 def api_estimator_settings():
     conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
@@ -13865,7 +14124,7 @@ def api_estimator_method2():
         "}\n\nJSON:"
     )
     try:
-        result_text = _ollama_text(prompt, model="qwen2.5:14b", json_mode=True, max_tokens=900)
+        result_text = _ollama_text(prompt, model="qwen3.6:27b", json_mode=True, max_tokens=900, think=False)
         result = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', result_text).strip())
         return jsonify({'success': True, 'method': 2, 'specter_analysis': result})
     except Exception as e:
@@ -13899,13 +14158,115 @@ def api_estimator_method3():
         "}\n\nJSON:"
     )
     try:
-        result_text = _ollama_text(prompt, model="qwen2.5:14b", json_mode=True, max_tokens=700)
+        result_text = _ollama_text(prompt, model="qwen3.6:27b", json_mode=True, max_tokens=700, think=False)
         result = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', result_text).strip())
         avg = (float(result['low']['total']) + float(result['high']['total'])) / 2
         result['average'] = round(avg, 2)
         return jsonify({'success': True, 'method': 3, 'range': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/estimator/method5', methods=['POST'])
+def api_estimator_method5():
+    """Method 5: unit-cost — qty × cost-book rate × condition multiplier.
+    Body: {scope, qty, tier ('low'|'mid'|'high'), multiplier}"""
+    body = request.get_json() or {}
+    scope = (body.get('scope') or '').strip()
+    qty = float(body.get('qty', 0) or 0)
+    tier = body.get('tier') if body.get('tier') in ('low', 'mid', 'high') else 'mid'
+    mult = float(body.get('multiplier', 1.0) or 1.0)
+    if not scope or qty <= 0:
+        return jsonify({'success': False, 'error': 'scope and qty required'}), 400
+    conn = _ahb_db()
+    row = conn.execute("SELECT * FROM ahb_cost_book WHERE scope=?", (scope,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'success': False, 'error': f'no cost-book entry for scope "{scope}" — add one in the Cost Book editor'}), 404
+    cb = dict(row)
+    totals = {t: round(float(cb[t]) * qty * mult, 2) for t in ('low', 'mid', 'high')}
+    return jsonify({
+        'success': True, 'method': 5,
+        'scope': scope, 'label': cb.get('label'), 'unit': cb.get('unit') or 'sqft',
+        'qty': qty, 'tier': tier, 'multiplier': mult,
+        'rates': {t: cb[t] for t in ('low', 'mid', 'high')},
+        'totals': totals,
+        'selected_total': totals[tier],
+        'notes': cb.get('notes'),
+    })
+
+
+@app.route('/api/ahb/estimator/costbook', methods=['GET', 'POST'])
+def api_estimator_costbook():
+    conn = _ahb_db()
+    if request.method == 'GET':
+        rows = [dict(r) for r in conn.execute("SELECT * FROM ahb_cost_book ORDER BY label").fetchall()]
+        conn.close()
+        return jsonify(rows)
+    d = request.get_json() or {}
+    scope = (d.get('scope') or '').strip().lower().replace(' ', '-')
+    if not scope:
+        conn.close()
+        return jsonify({'success': False, 'error': 'scope required'}), 400
+    conn.execute("""INSERT INTO ahb_cost_book (scope,label,unit,low,mid,high,notes)
+                    VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT(scope) DO UPDATE SET
+                      label=excluded.label, unit=excluded.unit, low=excluded.low,
+                      mid=excluded.mid, high=excluded.high, notes=excluded.notes,
+                      updated_at=CURRENT_TIMESTAMP""",
+                 (scope, d.get('label') or scope.title(), d.get('unit') or 'sqft',
+                  float(d.get('low') or 0), float(d.get('mid') or 0), float(d.get('high') or 0),
+                  d.get('notes')))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'scope': scope})
+
+
+@app.route('/api/ahb/estimator/costbook/<int:cid>', methods=['DELETE'])
+def api_estimator_costbook_delete(cid):
+    conn = _ahb_db()
+    conn.execute("DELETE FROM ahb_cost_book WHERE id=?", (cid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/ahb/estimator/equipment', methods=['GET', 'POST'])
+def api_estimator_equipment():
+    conn = _ahb_db()
+    if request.method == 'GET':
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM ahb_equipment_catalog WHERE active=1 ORDER BY owned DESC, name").fetchall()]
+        conn.close()
+        return jsonify(rows)
+    d = request.get_json() or {}
+    name = (d.get('name') or '').strip()
+    if not name:
+        conn.close()
+        return jsonify({'success': False, 'error': 'name required'}), 400
+    vals = (name, float(d.get('hr4') or 0), float(d.get('day') or 0),
+            float(d.get('week') or 0), 1 if d.get('owned') else 0, d.get('notes'))
+    if d.get('id'):
+        conn.execute("""UPDATE ahb_equipment_catalog
+                        SET name=?, hr4=?, day=?, week=?, owned=?, notes=? WHERE id=?""",
+                     vals + (int(d['id']),))
+        eid = int(d['id'])
+    else:
+        cur = conn.execute("""INSERT INTO ahb_equipment_catalog (name,hr4,day,week,owned,notes)
+                              VALUES (?,?,?,?,?,?)""", vals)
+        eid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'id': eid})
+
+
+@app.route('/api/ahb/estimator/equipment/<int:eid>', methods=['DELETE'])
+def api_estimator_equipment_delete(eid):
+    conn = _ahb_db()
+    conn.execute("UPDATE ahb_equipment_catalog SET active=0 WHERE id=?", (eid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
 
 
 # ── ahb123.com Static Site Server ───────────────────────────────────────────
@@ -14832,8 +15193,10 @@ def _get_doc(did: int):
     return d, d['file_path']
 
 
-def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = False, max_tokens: int = 1200) -> str:
-    """Quick local Ollama text generation helper for doc actions."""
+def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = False, max_tokens: int = 1200, think=None) -> str:
+    """Quick local Ollama text generation helper for doc actions.
+    think=False is required for qwen3.x models under Ollama 0.30+ — otherwise
+    the thinking field eats the token budget (same regression as qwen3-vl)."""
     import urllib.request as _ur
     payload = {
         "model": model,
@@ -14843,6 +15206,8 @@ def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = Fals
     }
     if json_mode:
         payload["format"] = "json"
+    if think is not None:
+        payload["think"] = think
     try:
         req = _ur.Request("http://localhost:11434/api/generate",
                           data=json.dumps(payload).encode(),

@@ -10,7 +10,7 @@
     "baza-agent-simon-bately.service": "running",
     "baza-backup.service": "dead",
     "baza-dashboard.service": "running",
-    "baza-email-fetch.service": "dead",
+    "baza-email-fetch.service": "failed",
     "baza-email-summarize.service": "dead",
     "baza-image-indexer.service": "dead",
     "baza-litellm.service": "running",
