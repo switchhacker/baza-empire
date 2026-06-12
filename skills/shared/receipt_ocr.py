@@ -656,24 +656,40 @@ def run_llm_analysis(image_path: str) -> dict:
 
 def _ollama_vision_analyze(prompt: str, img_b64: str, mime_type: str, model: str | None = None) -> str:
     """Local vision call to Ollama. Returns the model's raw text response,
-    or '' on failure. `model` defaults to OLLAMA_VISION_MODEL."""
+    or '' on failure. `model` defaults to OLLAMA_VISION_MODEL.
+
+    `think: false` + `format: json` are both required since Ollama 0.30
+    (llama.cpp backend): qwen3-vl self-emits <think> tags that get routed to a
+    separate `thinking` field and burn the num_predict budget, returning an
+    empty `response`. format=json grammar-constrains decoding so think-tags are
+    impossible, prose-only replies (minicpm) become JSON, and looping output
+    (glm-ocr) stops at the first complete object. Models that reject `think`
+    get one retry without it."""
     mdl = model or OLLAMA_VISION_MODEL
-    try:
-        resp = requests.post(
-            f"{OLLAMA_BASE}/api/generate",
-            json={
-                "model": mdl,
-                "prompt": prompt + "\n\nReturn ONLY a JSON object — no commentary.",
-                "images": [img_b64],
-                "stream": False,
-                "options": {"temperature": 0.1, "num_predict": 1500},
-            },
-            timeout=180,
-        )
-        resp.raise_for_status()
-        return (resp.json() or {}).get("response", "") or ""
-    except Exception:
-        return ""
+    payload = {
+        "model": mdl,
+        "prompt": prompt + "\n\nReturn ONLY a JSON object — no commentary.",
+        "images": [img_b64],
+        "stream": False,
+        "think": False,
+        "format": "json",
+        # num_ctx 16384: a 2400px receipt photo alone is ~4k image tokens and the
+        # 0.30 runner splits its default 8192 ctx across parallel slots (4096 each),
+        # which 400-errors large receipts. num_predict 3000: format=json makes a
+        # truncated items array unparseable, so give long receipts headroom.
+        "options": {"temperature": 0.1, "num_predict": 3000, "num_ctx": 16384},
+    }
+    for attempt in (1, 2):
+        try:
+            resp = requests.post(f"{OLLAMA_BASE}/api/generate", json=payload, timeout=180)
+            if resp.status_code == 400 and "think" in payload and "think" in resp.text.lower():
+                payload.pop("think")
+                continue
+            resp.raise_for_status()
+            return (resp.json() or {}).get("response", "") or ""
+        except Exception:
+            return ""
+    return ""
 
 
 def merge_results(ocr_data: dict, llm_data: dict, raw_text: str = "") -> dict:

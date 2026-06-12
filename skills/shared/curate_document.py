@@ -211,6 +211,7 @@ def analyze_image(path: str) -> str:
             "prompt": prompt,
             "images": [img_b64],
             "stream": False,
+            "think": False,  # Ollama 0.30+: qwen3-vl otherwise spends num_predict in `thinking`, response comes back empty
             "options": {"temperature": 0.2, "num_predict": 1500}
         }).encode()
         req = urllib.request.Request(f"{OLLAMA_URL}/api/generate", data=payload,

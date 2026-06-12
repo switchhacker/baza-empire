@@ -186,11 +186,12 @@ def _try_ollama_vision(image_path, prompt, system_prompt, timeout=120):
     for model in vision_models:
         for port in ports:
             try:
-                # High num_predict because vision models (qwen3-vl) use thinking tokens
-                # before generating content — need 1500+ for thinking + 1000+ for output
+                # think:False — Ollama 0.30+ moves qwen3-vl reasoning to a separate
+                # `thinking` field that eats num_predict; content comes back empty.
                 ollama_payload = json.dumps({
                     "model": model,
                     "stream": False,
+                    "think": False,
                     "options": {"num_predict": 3000, "temperature": 0.3, "num_ctx": 8192},
                     "messages": [
                         {"role": "system", "content": system_prompt[:800]},
