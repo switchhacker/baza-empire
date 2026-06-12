@@ -40,6 +40,10 @@ MODEL_FOOTPRINT_MB = {
     "ministral-3:8b":          7500,    # 6.0 + 1.5
     "qwen3-vl:latest":         7600,    # 6.1 + 1.5
     "qwen3.5:latest":          8100,    # 6.6 + 1.5
+    "minicpm-v4.6:latest":     3100,    # 1.6 + 1.5
+    "glm-ocr:latest":          3700,    # 2.2 + 1.5
+    "lfm2.5:8b":               6700,    # 5.2 + 1.5
+    "gemma4:12b-it-qat":       8700,    # 7.2 + 1.5
     "llava:13b":               9500,    # 8.0 + 1.5
     "gemma3:12b":              9600,    # 8.1 + 1.5
     "deepseek-coder-v2:16b":   10400,   # 8.9 + 1.5
@@ -47,7 +51,10 @@ MODEL_FOOTPRINT_MB = {
     "ministral-3:14b":         10600,   # 9.1 + 1.5
     "mistral-small:22b":       13500,   # 12 + 1.5
     "gpt-oss:20b":             14500,   # 13 + 1.5
+    "gemma4:26b-a4b-it-qat":   16500,   # 15 + 1.5 — MoE 4B active, CPU-friendly
+    "qwen3.6:27b":             18500,   # 17 + 1.5 — dense, slow on CPU
     "glm-4.7-flash:latest":    20500,   # 19 + 1.5
+    "nemotron-cascade-2:30b":  25500,   # 24 + 1.5 — MoE 3B active, CPU-friendly
     "nemotron-3-nano:latest":  25500,   # 24 + 1.5
     "qwen3-coder-next:latest": 52500,   # CPU only
     "nemotron-3-super:latest": 87500,   # CPU only

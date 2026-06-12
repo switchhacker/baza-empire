@@ -113,10 +113,10 @@ def classify_prompt(text: str, history_tokens: int = 0) -> Complexity:
 DEFAULT_ROUTING = {
     "trivial": os.environ.get("BAZA_MODEL_TRIVIAL",  "ministral-3:3b"),
     "simple":  os.environ.get("BAZA_MODEL_SIMPLE",   "ministral-3:8b"),
-    "medium":  os.environ.get("BAZA_MODEL_MEDIUM",   "qwen2.5:14b"),
-    "heavy":   os.environ.get("BAZA_MODEL_HEAVY",    "mistral-small:22b"),
+    "medium":  os.environ.get("BAZA_MODEL_MEDIUM",   "gemma4:12b-it-qat"),
+    "heavy":   os.environ.get("BAZA_MODEL_HEAVY",    "gemma4:26b-a4b-it-qat"),
     "code":    os.environ.get("BAZA_MODEL_CODE",     "deepseek-coder-v2:16b"),
-    "research":os.environ.get("BAZA_MODEL_RESEARCH", "glm-4.7-flash:latest"),
+    "research":os.environ.get("BAZA_MODEL_RESEARCH", "nemotron-cascade-2:30b"),
 }
 
 

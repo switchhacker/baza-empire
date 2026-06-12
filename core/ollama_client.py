@@ -177,7 +177,7 @@ RATE_LIMIT_MARKERS = (
     "insufficient_quota",
 )
 
-DEFAULT_FALLBACK_MODEL = os.environ.get("DEFAULT_FALLBACK_MODEL", "qwen2.5:14b")
+DEFAULT_FALLBACK_MODEL = os.environ.get("DEFAULT_FALLBACK_MODEL", "gemma4:12b-it-qat")
 # When the LOCAL Ollama stack is unreachable (both GPUs busy, daemon crashed, etc.),
 # transparently route to this cloud model via LiteLLM. Empty = disabled.
 LOCAL_OUTAGE_CLOUD_MODEL = os.environ.get("LOCAL_OUTAGE_CLOUD_MODEL", "gpt-4o-mini")
