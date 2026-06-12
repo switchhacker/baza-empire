@@ -41,6 +41,14 @@ SCOPES = [
 OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 DEFAULT_MODEL = os.environ.get("EMAIL_AI_MODEL", "gpt-oss:20b")
 FAST_MODEL = os.environ.get("EMAIL_AI_FAST_MODEL", "gemma3:4b")
+# Fixed loopback redirect for the add-account flow. Works automatically when the
+# browser runs on baza (or through an SSH tunnel); remote browsers paste the
+# redirect URL back instead (see /accounts/add/finish).
+OAUTH_REDIRECT_URI = os.environ.get(
+    "EMAIL_OAUTH_REDIRECT", "http://localhost:8888/api/email2/oauth/callback"
+)
+# Google sometimes returns extra scopes (openid, …); don't fail the exchange.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 
 def _db_path() -> str:
@@ -315,6 +323,27 @@ def _headers_map(msg: dict) -> dict:
     return {h["name"]: h["value"] for h in (msg.get("payload") or {}).get("headers", [])}
 
 
+def _collect_attachments(payload: dict) -> list[dict]:
+    """Walk a payload tree collecting real attachments (parts with a filename)."""
+    out: list[dict] = []
+
+    def walk(p):
+        fn = p.get("filename") or ""
+        body = p.get("body") or {}
+        if fn and body.get("attachmentId"):
+            out.append({
+                "filename": fn,
+                "mime": p.get("mimeType", ""),
+                "size": int(body.get("size") or 0),
+                "attachment_id": body["attachmentId"],
+            })
+        for sp in p.get("parts", []) or []:
+            walk(sp)
+
+    walk(payload or {})
+    return out
+
+
 # ── Ollama helper ─────────────────────────────────────────────────────────
 
 
@@ -495,7 +524,9 @@ def api_threads():
 @email_bp.route("/api/email2/thread/<tid>", methods=["GET"])
 def api_thread(tid: str):
     try:
-        svc = _gmail(_req_account_id())
+        acc = _pick_account(_req_account_id())
+        acc_id = acc["id"] if acc else None
+        svc = _gmail(acc_id)
         t = svc.users().threads().get(userId="me", id=tid, format="full").execute()
         msgs = []
         con = _conn()
@@ -518,25 +549,29 @@ def api_thread(tid: str):
                     "is_unread": "UNREAD" in labels,
                     "is_starred": "STARRED" in labels,
                     "message_id_header": hdrs.get("Message-ID") or hdrs.get("Message-Id") or "",
+                    "attachments": _collect_attachments(m.get("payload") or {}),
                 })
                 # Refresh cache for this message
                 con.execute(
                     """INSERT INTO emails (id, gmail_id, thread_id, from_addr, to_addr,
                                             subject, body_snippet, full_body, received_at,
-                                            status, priority, labels, is_unread, is_starred)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?)
+                                            status, priority, labels, is_unread, is_starred,
+                                            account_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?, ?)
                        ON CONFLICT(gmail_id) DO UPDATE SET
                          thread_id=excluded.thread_id,
                          from_addr=excluded.from_addr, to_addr=excluded.to_addr,
                          subject=excluded.subject, body_snippet=excluded.body_snippet,
                          full_body=excluded.full_body, received_at=excluded.received_at,
                          labels=excluded.labels, is_unread=excluded.is_unread,
-                         is_starred=excluded.is_starred, updated_at=datetime('now')""",
+                         is_starred=excluded.is_starred,
+                         account_id=COALESCE(excluded.account_id, account_id),
+                         updated_at=datetime('now')""",
                     (str(uuid.uuid4()), m["id"], m.get("threadId", tid),
                      hdrs.get("From", ""), hdrs.get("To", ""), hdrs.get("Subject", ""),
                      m.get("snippet", ""), plain, hdrs.get("Date", ""),
                      ",".join(labels), 1 if "UNREAD" in labels else 0,
-                     1 if "STARRED" in labels else 0)
+                     1 if "STARRED" in labels else 0, acc_id)
                 )
             con.commit()
         finally:
@@ -548,6 +583,29 @@ def api_thread(tid: str):
         return jsonify({"error": str(e), "messages": []}), 500
 
 
+@email_bp.route("/api/email2/attachment/<msg_id>/<path:att_id>", methods=["GET"])
+def api_attachment(msg_id: str, att_id: str):
+    """Stream an attachment's bytes from Gmail. ?name= sets the download filename."""
+    from flask import Response
+    name = request.args.get("name") or "attachment"
+    safe_name = re.sub(r'[^\w.\- ()]', "_", name)[:160] or "attachment"
+    mime = request.args.get("mime") or "application/octet-stream"
+    try:
+        svc = _gmail(_req_account_id())
+        att = svc.users().messages().attachments().get(
+            userId="me", messageId=msg_id, id=att_id
+        ).execute()
+        data = base64.urlsafe_b64decode(att.get("data", ""))
+        return Response(data, mimetype=mime, headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Content-Length": str(len(data)),
+        })
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @email_bp.route("/api/email2/sync", methods=["POST"])
 def api_sync():
     """Pull recent unread + last N threads from Gmail into local cache."""
@@ -555,7 +613,9 @@ def api_sync():
     max_threads = int(body.get("max", 80))
     label = body.get("label", "INBOX")
     try:
-        svc = _gmail(_req_account_id())
+        acc = _pick_account(_req_account_id())
+        acc_id = acc["id"] if acc else None
+        svc = _gmail(acc_id)
         resp = svc.users().threads().list(
             userId="me", labelIds=[label], maxResults=max_threads
         ).execute()
@@ -590,13 +650,13 @@ def api_sync():
                     con.execute(
                         """INSERT INTO emails (id, gmail_id, thread_id, from_addr, to_addr,
                             subject, body_snippet, full_body, received_at, status, priority,
-                            labels, is_unread, is_starred)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?)""",
+                            labels, is_unread, is_starred, account_id)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?, ?)""",
                         (str(uuid.uuid4()), head["id"], tid, hdrs.get("From", ""),
                          hdrs.get("To", ""), hdrs.get("Subject", ""),
                          t.get("snippet", ""), "", hdrs.get("Date", ""),
                          ",".join(labels), 1 if "UNREAD" in labels else 0,
-                         1 if "STARRED" in labels else 0)
+                         1 if "STARRED" in labels else 0, acc_id)
                     )
                     new_count += 1
             con.commit()
@@ -1129,77 +1189,167 @@ def api_accounts_delete(aid: str):
     return jsonify({"ok": True})
 
 
+_ACCESS_DENIED_HINT = (
+    "Google blocked the sign-in (access_denied). If the OAuth app is in Testing "
+    "mode, this Gmail address must be added as a test user first: Google Cloud "
+    "Console → APIs & Services → OAuth consent screen → Audience → Test users. "
+    "(Project: baza-empire.) Then retry."
+)
+
+
+def _register_account(creds, label: Optional[str]) -> tuple[str, str]:
+    """Persist credentials + upsert email_accounts. Returns (email, account_id)."""
+    import googleapiclient.discovery
+    svc = googleapiclient.discovery.build(
+        "gmail", "v1", credentials=creds, cache_discovery=False
+    )
+    prof = svc.users().getProfile(userId="me").execute()
+    email = prof["emailAddress"]
+    os.makedirs(ACCOUNTS_DIR, exist_ok=True)
+    acc_dir = os.path.join(ACCOUNTS_DIR, email)
+    os.makedirs(acc_dir, exist_ok=True)
+    token_dest = os.path.join(acc_dir, "token.json")
+    with open(token_dest, "w") as f:
+        f.write(creds.to_json())
+    con = _conn()
+    try:
+        existing = con.execute(
+            "SELECT id FROM email_accounts WHERE email=?", (email,)
+        ).fetchone()
+        if existing:
+            con.execute(
+                "UPDATE email_accounts SET token_path=?, label=COALESCE(?, label) WHERE id=?",
+                (token_dest, label, existing["id"])
+            )
+            acc_id = existing["id"]
+        else:
+            acc_id = str(uuid.uuid4())
+            con.execute(
+                """INSERT INTO email_accounts (id, email, label, token_path, is_active)
+                   VALUES (?, ?, ?, ?, 0)""",
+                (acc_id, email, label or "", token_dest)
+            )
+        con.commit()
+    finally:
+        con.close()
+    return email, acc_id
+
+
+def _finish_oauth(flow_id: str, code: str) -> dict:
+    """Exchange the auth code and register the account. Updates _oauth_flows."""
+    entry = _oauth_flows.get(flow_id)
+    if not entry or "flow" not in entry:
+        return {"status": "failed", "error": "unknown or expired flow"}
+    try:
+        flow = entry["flow"]
+        flow.fetch_token(code=code)
+        email, acc_id = _register_account(flow.credentials, entry.get("label"))
+        result = {"status": "done", "email": email, "account_id": acc_id}
+    except Exception as e:
+        msg = str(e)
+        if "access_denied" in msg:
+            msg = _ACCESS_DENIED_HINT
+        result = {"status": "failed", "error": msg}
+    entry.update(result)
+    return result
+
+
 @email_bp.route("/api/email2/accounts/add/start", methods=["POST"])
 def api_accounts_add_start():
-    """Begin an OAuth flow. Returns the consent URL the user must open."""
+    """Begin an OAuth flow. Returns the consent URL the user must open.
+
+    Two ways to complete:
+    - Browser on baza (or SSH tunnel to :8888): Google redirects to
+      /api/email2/oauth/callback and the account is saved automatically.
+    - Remote browser: the localhost redirect fails to load — the user copies the
+      URL from the address bar and pastes it into the modal (→ /add/finish).
+    """
     if not os.path.exists(CREDENTIALS_PATH):
         return jsonify({
             "ok": False,
             "error": f"OAuth client secret not found at {CREDENTIALS_PATH}"
         }), 500
-    import threading
-    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google_auth_oauthlib.flow import Flow
     data = request.get_json(silent=True) or {}
     label = (data.get("label") or "").strip() or None
     flow_id = secrets_token()
 
-    # Build the flow once, capture the consent URL, then hand off to background.
-    flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
-    # Reserve a port so the redirect_uri matches what local_server will use.
-    import socket
-    s = socket.socket(); s.bind(("localhost", 0)); port = s.getsockname()[1]; s.close()
-    flow.redirect_uri = f"http://localhost:{port}/"
-    auth_url, _ = flow.authorization_url(
+    flow = Flow.from_client_secrets_file(
+        CREDENTIALS_PATH, scopes=SCOPES, redirect_uri=OAUTH_REDIRECT_URI
+    )
+    auth_url, state = flow.authorization_url(
         access_type="offline", include_granted_scopes="true", prompt="consent"
     )
+    # Drop flows older than an hour so the dict can't grow unbounded.
+    cutoff = time.time() - 3600
+    for fid in [f for f, v in _oauth_flows.items() if v.get("created", 0) < cutoff]:
+        _oauth_flows.pop(fid, None)
+    _oauth_flows[flow_id] = {
+        "status": "pending", "flow": flow, "label": label,
+        "state": state, "created": time.time(),
+    }
+    return jsonify({"ok": True, "flow_id": flow_id, "auth_url": auth_url,
+                    "redirect_uri": OAUTH_REDIRECT_URI})
 
-    def _run():
-        try:
-            import googleapiclient.discovery
-            creds = flow.run_local_server(
-                host="localhost", port=port, open_browser=False,
-                authorization_prompt_message="",
-                success_message="✅ Account added. Return to the Mail UI.",
-            )
-            svc = googleapiclient.discovery.build(
-                "gmail", "v1", credentials=creds, cache_discovery=False
-            )
-            prof = svc.users().getProfile(userId="me").execute()
-            email = prof["emailAddress"]
-            os.makedirs(ACCOUNTS_DIR, exist_ok=True)
-            acc_dir = os.path.join(ACCOUNTS_DIR, email)
-            os.makedirs(acc_dir, exist_ok=True)
-            token_dest = os.path.join(acc_dir, "token.json")
-            with open(token_dest, "w") as f:
-                f.write(creds.to_json())
-            con = _conn()
-            try:
-                existing = con.execute(
-                    "SELECT id FROM email_accounts WHERE email=?", (email,)
-                ).fetchone()
-                if existing:
-                    con.execute(
-                        "UPDATE email_accounts SET token_path=?, label=COALESCE(?, label) WHERE id=?",
-                        (token_dest, label, existing["id"])
-                    )
-                    acc_id = existing["id"]
-                else:
-                    acc_id = str(uuid.uuid4())
-                    con.execute(
-                        """INSERT INTO email_accounts (id, email, label, token_path, is_active)
-                           VALUES (?, ?, ?, ?, 0)""",
-                        (acc_id, email, label or "", token_dest)
-                    )
-                con.commit()
-            finally:
-                con.close()
-            _oauth_flows[flow_id] = {"status": "done", "email": email, "account_id": acc_id}
-        except Exception as e:
-            _oauth_flows[flow_id] = {"status": "failed", "error": str(e)}
 
-    _oauth_flows[flow_id] = {"status": "pending"}
-    threading.Thread(target=_run, daemon=True).start()
-    return jsonify({"ok": True, "flow_id": flow_id, "auth_url": auth_url, "port": port})
+@email_bp.route("/api/email2/oauth/callback", methods=["GET"])
+def api_oauth_callback():
+    """Loopback landing for the add-account flow (browser on baza / tunnel)."""
+    state = request.args.get("state", "")
+    code = request.args.get("code", "")
+    error = request.args.get("error", "")
+    flow_id = next(
+        (f for f, v in _oauth_flows.items() if v.get("state") == state), None
+    )
+
+    def _page(title: str, body: str) -> tuple[str, int]:
+        return (f"<html><body style='font-family:sans-serif;background:#0a0a1a;"
+                f"color:#e0e0e0;padding:40px'><h2>{title}</h2><p>{body}</p>"
+                f"</body></html>"), 200
+
+    if not flow_id:
+        return _page("⚠ Unknown OAuth flow",
+                     "This flow expired or was already completed. "
+                     "Start again from the Mail tab.")
+    if error:
+        msg = _ACCESS_DENIED_HINT if error == "access_denied" else error
+        _oauth_flows[flow_id].update({"status": "failed", "error": msg})
+        return _page("⚠ Google sign-in failed", msg)
+    if not code:
+        return _page("⚠ Missing authorization code", "Try the flow again.")
+    result = _finish_oauth(flow_id, code)
+    if result["status"] == "done":
+        return _page("✅ Account added",
+                     f"<strong>{result['email']}</strong> is connected. "
+                     f"Return to the Mail tab.")
+    return _page("⚠ Could not add account", result.get("error", "unknown error"))
+
+
+@email_bp.route("/api/email2/accounts/add/finish", methods=["POST"])
+def api_accounts_add_finish():
+    """Manual completion: accepts the pasted redirect URL (or bare code).
+    Body: {flow_id, redirect_url}"""
+    data = request.get_json(silent=True) or {}
+    flow_id = (data.get("flow_id") or "").strip()
+    raw = (data.get("redirect_url") or "").strip()
+    if not flow_id or not raw:
+        return jsonify({"ok": False, "error": "missing flow_id or redirect_url"}), 400
+    code = raw
+    if "://" in raw or "?" in raw:
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(raw).query)
+        if qs.get("error"):
+            err = qs["error"][0]
+            msg = _ACCESS_DENIED_HINT if err == "access_denied" else err
+            _oauth_flows.get(flow_id, {}).update({"status": "failed", "error": msg})
+            return jsonify({"ok": False, "error": msg}), 400
+        code = (qs.get("code") or [""])[0]
+    if not code:
+        return jsonify({"ok": False, "error": "no authorization code found in the pasted URL"}), 400
+    result = _finish_oauth(flow_id, code)
+    if result["status"] == "done":
+        return jsonify({"ok": True, **result})
+    return jsonify({"ok": False, "error": result.get("error", "unknown")}), 400
 
 
 def secrets_token() -> str:
@@ -1214,7 +1364,10 @@ def api_accounts_add_poll():
     info = _oauth_flows.get(fid)
     if not info:
         return jsonify({"status": "unknown"}), 404
-    return jsonify(info)
+    # Strip non-serializable internals (the Flow object itself).
+    safe = {k: v for k, v in info.items()
+            if k in ("status", "email", "account_id", "error")}
+    return jsonify(safe)
 
 
 # ── Cleanup endpoints ─────────────────────────────────────────────────────

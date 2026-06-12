@@ -5,7 +5,7 @@ Full control center: agents, cron jobs, artifacts, settings, logs, infra
 """
 import os, sys, json, yaml, subprocess, re, datetime, sqlite3, uuid, secrets, functools
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_from_directory, make_response, session, redirect
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file, make_response, session, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from dashboard.private_inbound import (
@@ -2636,6 +2636,31 @@ def api_artifact_image_index_status():
         'failed': failed, 'pending': max(0, total - captioned - failed),
         'last_indexed_at': last_at, 'ever_indexed': (captioned + failed) > 0,
     })
+
+
+@app.route('/api/artifacts/caption')
+def api_artifact_caption():
+    """Caption + tags for one artifact image, from the image_captions index
+    (image_captions.db, written by image_indexer.py). Always 200 with empty
+    strings when nothing is indexed — the lightbox treats captions as
+    best-effort decoration."""
+    project_id = (request.args.get('project_id', '') or '').strip()
+    sub_path   = (request.args.get('sub_path', '') or '').strip()
+    caption = tags = ''
+    if project_id and sub_path and os.path.exists(IMAGE_CAPTIONS_DB):
+        try:
+            con = sqlite3.connect(IMAGE_CAPTIONS_DB, timeout=5)
+            row = con.execute(
+                "SELECT caption, tags FROM image_captions "
+                "WHERE project_id=? AND sub_path=? AND status='ok'",
+                (project_id, sub_path)).fetchone()
+            con.close()
+            if row:
+                caption = row[0] or ''
+                tags    = row[1] or ''
+        except Exception:
+            pass
+    return jsonify({'caption': caption, 'tags': tags})
 
 
 @app.route('/api/artifacts/grep')
@@ -12269,11 +12294,47 @@ if CLOUD_ENABLED:
                       '.insv','.lrv'}
     CLOUD_DOC_EXTS = {'.pdf','.doc','.docx','.txt','.csv','.xlsx','.xls','.md','.rtf',
                       '.odt','.pptx','.ppt','.pages','.numbers','.key'}
-    CLOUD_SKIP_DIRS = {'.thumbnails', '.vault_meta', 'Vault', 'Imports'}
+    # `.transcode-cache` holds on-demand H.264 renditions and must never be
+    # indexed; `.transcodes` is the legacy cache dir, kept excluded too.
+    CLOUD_SKIP_DIRS = {'.thumbnails', '.vault_meta', 'Vault', 'Imports',
+                       '.transcode-cache', '.transcodes'}
     THUMB_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.thumbnails')
-    TRANSCODE_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.transcodes')
+    TRANSCODE_DIR = os.path.join(CLOUD_STORAGE, str(FAMILY_USER_ID), '.transcode-cache')
+    TRANSCODE_CACHE_MAX_BYTES = 20 * 1024 ** 3  # 20 GB cap, oldest-first eviction
     os.makedirs(THUMB_DIR, exist_ok=True)
     os.makedirs(TRANSCODE_DIR, exist_ok=True)
+
+    def _prune_transcode_cache(keep=None):
+        """Keep the transcode cache under TRANSCODE_CACHE_MAX_BYTES by
+        deleting the oldest files (mtime) until back under the cap.
+        `keep` (abs path) is never evicted — it's the file about to be served."""
+        try:
+            entries, total = [], 0
+            for fn in os.listdir(TRANSCODE_DIR):
+                fp = os.path.join(TRANSCODE_DIR, fn)
+                if not os.path.isfile(fp):
+                    continue
+                try:
+                    st = os.stat(fp)
+                except OSError:
+                    continue
+                entries.append((st.st_mtime, st.st_size, fp))
+                total += st.st_size
+            if total <= TRANSCODE_CACHE_MAX_BYTES:
+                return
+            entries.sort()  # oldest first
+            for _mt, sz, fp in entries:
+                if keep and fp == keep:
+                    continue
+                try:
+                    os.remove(fp)
+                    total -= sz
+                except OSError:
+                    pass
+                if total <= TRANSCODE_CACHE_MAX_BYTES:
+                    break
+        except Exception:
+            pass  # cache pruning is best-effort; never break playback
 
     def _init_media_index():
         conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'))
@@ -12654,29 +12715,36 @@ if CLOUD_ENABLED:
         if codec in pass_through_codecs and ext not in ('.insv', '.lrv'):
             return send_from_directory(os.path.dirname(full), os.path.basename(full),
                                        as_attachment=False, mimetype='video/mp4')
+        import tempfile
         mtime = os.path.getmtime(full)
-        size = os.path.getsize(full)
-        key = hashlib.md5(f"{full}|{mtime}|{size}".encode()).hexdigest() + '.mp4'
-        cached = os.path.join(TRANSCODE_DIR, key)
-        if not (os.path.exists(cached) and os.path.getsize(cached) > 0):
+        key = hashlib.sha1((full + str(mtime)).encode()).hexdigest()
+        cached = os.path.join(TRANSCODE_DIR, key + '.mp4')
+        if os.path.exists(cached) and os.path.getsize(cached) > 0:
+            return send_file(cached, mimetype='video/mp4', as_attachment=False)
+        # Transcode into a temp file in the cache dir, then atomically rename
+        # so concurrent requests never see a half-written .mp4.
+        os.makedirs(TRANSCODE_DIR, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(prefix=key + '.', suffix='.part', dir=TRANSCODE_DIR)
+        os.close(fd)
+        try:
+            subprocess.run(
+                ['ffmpeg','-nostdin','-loglevel','error','-y','-i', full,
+                 '-c:v','libx264','-preset','ultrafast','-crf','23',
+                 '-pix_fmt','yuv420p',
+                 '-c:a','aac','-b:a','128k','-ac','2',
+                 '-movflags','+faststart','-f','mp4', tmp_path],
+                check=True, timeout=600)
+            os.replace(tmp_path, cached)
+        except Exception as e:
+            # Clean up any half-written temp file
             try:
-                subprocess.run(
-                    ['ffmpeg','-nostdin','-loglevel','error','-y','-i', full,
-                     '-c:v','libx264','-preset','ultrafast','-crf','23',
-                     '-pix_fmt','yuv420p',
-                     '-c:a','aac','-b:a','128k','-ac','2',
-                     '-movflags','+faststart', cached],
-                    check=True, timeout=600)
-            except Exception as e:
-                # Clean up any half-written cache file
-                try:
-                    if os.path.exists(cached):
-                        os.remove(cached)
-                except Exception:
-                    pass
-                return f'transcode failed: {e}', 500
-        return send_from_directory(TRANSCODE_DIR, key,
-                                   as_attachment=False, mimetype='video/mp4')
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            return f'transcode failed: {e}', 500
+        _prune_transcode_cache(keep=cached)
+        return send_file(cached, mimetype='video/mp4', as_attachment=False)
 
     def _resolve_cloud_media_path(filepath):
         """Resolve a cloud_media_index key ({source}/{rel}) to absolute path.

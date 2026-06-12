@@ -307,6 +307,12 @@
   <div class="toolbar">
     <button class="drawer-toggle" onclick="toggleDrawer()" aria-label="Filters">&#9776;</button>
     <input class="search-box" type="text" placeholder="Search filenames, objects in images, keywords in documents..." oninput="onSearchInput()" id="searchBox">
+    <select id="sortSelect" onchange="setSort(this.value)" title="Sort files" style="background:#12122a;border:1px solid #2a2a4a;color:#ccc;padding:8px 10px;border-radius:6px;font-size:11px;cursor:pointer">
+      <option value="newest" selected>Newest</option>
+      <option value="oldest">Oldest</option>
+      <option value="name">Name A-Z</option>
+      <option value="size">Size</option>
+    </select>
     <button id="reindexBtn" onclick="triggerReindex()" title="Re-caption images so object search finds them" style="background:#12122a;border:1px solid #7c3aed;color:#ccc;padding:8px 12px;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">&#128444; <span id="indexStatus">index...</span></button>
     <button id="dhSelectBtn" onclick="dhToggleSelectMode()" title="Multi-select for share / download / erase" style="background:#12122a;border:1px solid #2a2a4a;color:#ccc;padding:8px 12px;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap">&#9745; Select</button>
     <div class="agent-pills" id="agentPills"></div>
@@ -376,6 +382,8 @@
   <div class="modal" style="max-width:900px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <div class="modal-title" id="fmTitle" style="flex:1;margin:0"></div>
+      <button class="btn btn-secondary btn-sm" id="fmPrevBtn" onclick="fmNav(-1)" title="Previous file (&#8592;)" style="padding:4px 9px">&#8249;</button>
+      <button class="btn btn-secondary btn-sm" id="fmNextBtn" onclick="fmNav(1)" title="Next file (&#8594;)" style="padding:4px 9px">&#8250;</button>
       <div id="fmActions" style="display:flex;gap:6px"></div>
       <button class="btn btn-secondary btn-sm" onclick="closeFileModal()" style="margin-left:8px">Close</button>
     </div>
@@ -558,6 +566,8 @@ function closeDrawer(){ document.querySelector('.sidebar').classList.remove('ope
 document.addEventListener('DOMContentLoaded',()=>{ const sb=document.querySelector('.sidebar'); if(sb) sb.addEventListener('click',e=>{ if(window.innerWidth<=800 && (e.target.closest('.proj-item')||e.target.closest('.cat-item'))) closeDrawer(); }); });
 
 let allFiles=[], currentProject='', currentTab='all', currentCat='all', currentAgent='', currentSubcat='all', currentMdFamily='', uploadQueue=[];
+let currentSort='newest';       // newest | oldest | name | size
+let lastRenderedFiles=[];       // files in the order last painted into the grid (for lightbox prev/next)
 /* Multi-select state for share / download / erase actions on the gallery. */
 let dhSelectMode = false;
 const dhSelectedKeys = new Set();
@@ -786,9 +796,17 @@ function renderAll(){
   // reflect what's available in the current view (after tab/agent/search).
   renderMdFamilyChips(filtered);
   if(currentMdFamily)filtered=filtered.filter(f=>f.md_family===currentMdFamily);
-  // Newest → oldest by modification time. `modified` is "YYYY-MM-DD HH:MM"
-  // which sorts lexicographically.
-  filtered.sort((a,b)=>(b.modified||'').localeCompare(a.modified||''));
+  // Client-side sort. `modified` is "YYYY-MM-DD HH:MM" which sorts
+  // lexicographically; `size` is bytes from the listing API.
+  if(currentSort==='oldest'){
+    filtered.sort((a,b)=>(a.modified||'').localeCompare(b.modified||''));
+  }else if(currentSort==='name'){
+    filtered.sort((a,b)=>(a.basename||a.name||'').localeCompare(b.basename||b.name||'',undefined,{sensitivity:'base'}));
+  }else if(currentSort==='size'){
+    filtered.sort((a,b)=>(b.size||0)-(a.size||0));
+  }else{ // newest (default)
+    filtered.sort((a,b)=>(b.modified||'').localeCompare(a.modified||''));
+  }
   renderStats();renderProjects();renderAgentSidebar();renderCatSidebar();renderSubTabs();renderGrid(filtered);renderTabCounts();
 }
 
@@ -1017,6 +1035,7 @@ async function dhEraseSelected(){
 
 function renderGrid(files){
   const grid=document.getElementById('filesGrid'),empty=document.getElementById('emptyState');
+  lastRenderedFiles=files; // remember paint order for lightbox prev/next
   if(!files.length){grid.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';
   grid.innerHTML=files.map(f=>{
@@ -1101,6 +1120,7 @@ function setProject(p){currentProject=p;currentMdFamily='';loadFiles()}
 function setCat(c){currentCat=c;currentMdFamily='';renderAll()}
 function setAgent(a){currentAgent=a;currentMdFamily='';renderAll()}
 function setMdFamily(k){currentMdFamily=k;renderAll()}
+function setSort(v){currentSort=v;renderAll()}
 function applyFilters(){renderAll()}
 
 // Image-index status: "42/257 captioned (215 pending)" with live progress
@@ -1217,11 +1237,13 @@ async function openFile(proj,name){
   </div>`;
   actions.innerHTML=btns;
   modal.classList.add('open');
+  if(!fmKeysWired){document.addEventListener('keydown',fmKeyHandler);fmKeysWired=true;}
 
   // Load content
   try{
     if(fileType==='image'){
-      content.innerHTML=`<div style="text-align:center;padding:10px;background:#020208;border-radius:8px"><img src="/api/artifacts/serve/${proj}/${name}" style="max-width:100%;max-height:55vh;border-radius:6px"></div>`;
+      content.innerHTML=`<div style="text-align:center;padding:10px;background:#020208;border-radius:8px"><img src="/api/artifacts/serve/${proj}/${name}" style="max-width:100%;max-height:55vh;border-radius:6px"></div><div id="fmCaption" style="display:none;margin-top:8px;text-align:center;font-size:11px;color:#888;line-height:1.5"></div>`;
+      loadImageCaption(proj,name);
     }else if(fileType==='video'){
       content.innerHTML=`<div style="text-align:center;padding:10px;background:#020208;border-radius:8px"><video id="fmVideo" controls autoplay playsinline src="/api/artifacts/serve/${proj}/${encodeURIComponent(name)}" style="max-width:100%;max-height:60vh;border-radius:6px;background:#000"></video></div>`;
     }else if(fileType==='pdf'){
@@ -1276,8 +1298,53 @@ function closeFileModal(){
   const v=document.getElementById('fmVideo');if(v){try{v.pause();v.removeAttribute('src');v.load();}catch(e){}}
   document.getElementById('fileModal').classList.remove('open');
   openFileData=null;
+  if(fmKeysWired){document.removeEventListener('keydown',fmKeyHandler);fmKeysWired=false;}
   const runOut=document.getElementById('fmRunOutput');if(runOut)runOut.remove();
   const menu=document.getElementById('fmOverflowMenu');if(menu)menu.classList.remove('open');
+}
+
+// ── Lightbox keyboard navigation + prev/next ────────────────────────────────
+let fmKeysWired=false; // keydown listener attached only while the modal is open
+function fmNav(dir){
+  if(!openFileData||!lastRenderedFiles.length)return;
+  const key=openFileData.proj+'|'+openFileData.name;
+  const idx=lastRenderedFiles.findIndex(f=>((f.project_id||'')+'|'+(f.name||''))===key);
+  if(idx===-1)return;
+  const next=idx+dir;
+  if(next<0||next>=lastRenderedFiles.length)return; // no wrap-around
+  const f=lastRenderedFiles[next];
+  openFile(f.project_id,f.name);
+}
+function fmKeyHandler(e){
+  const modal=document.getElementById('fileModal');
+  if(!modal||!modal.classList.contains('open'))return;
+  const t=e.target;
+  if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
+  if(e.key==='Escape'){e.preventDefault();closeFileModal();}
+  else if(e.key==='ArrowLeft'){e.preventDefault();fmNav(-1);}
+  else if(e.key==='ArrowRight'){e.preventDefault();fmNav(1);}
+}
+
+// ── Caption + tag chips under images in the lightbox ────────────────────────
+async function loadImageCaption(proj,name){
+  try{
+    const r=await fetch(`/api/artifacts/caption?project_id=${encodeURIComponent(proj)}&sub_path=${encodeURIComponent(name)}`);
+    const d=await r.json();
+    // Bail if the modal moved on to another file while we were fetching
+    if(!openFileData||openFileData.proj!==proj||openFileData.name!==name)return;
+    const el=document.getElementById('fmCaption');
+    if(!el)return;
+    const caption=(d.caption||'').trim(),tags=(d.tags||'').trim();
+    if(!caption&&!tags)return;
+    let html='';
+    if(caption)html+=`<div>${escHtml(caption)}</div>`;
+    if(tags){
+      const chips=tags.split(',').map(t=>t.trim()).filter(Boolean)
+        .map(t=>`<span style="background:#12122a;border:1px solid #2a2a4a;border-radius:10px;padding:2px 8px;font-size:10px;color:#9f7aea">${escHtml(t)}</span>`).join('');
+      if(chips)html+=`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center">${chips}</div>`;
+    }
+    el.innerHTML=html;el.style.display='block';
+  }catch(e){/* caption is best-effort — never break the lightbox */}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -134,6 +134,11 @@
     .msg-date{font-size:11px;color:#555;white-space:nowrap;flex-shrink:0}
     .msg-body{padding:16px;font-size:13.5px;line-height:1.65;color:#cfd2e8;white-space:pre-wrap;word-wrap:break-word;max-height:none}
     .msg-card.collapsed .msg-body{display:none}
+    .msg-attachments{padding:0 16px 14px;display:flex;flex-wrap:wrap;gap:8px}
+    .msg-card.collapsed .msg-attachments{display:none}
+    .att-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#10102a;border:1px solid #2a2a55;border-radius:16px;color:#a0c0ff;font-size:12px;text-decoration:none;max-width:280px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .att-chip:hover{border-color:#4a4a90;background:#16163a}
+    .att-size{color:#666;font-size:11px}
     .msg-card.collapsed{opacity:.78}
     .msg-collapsed-snippet{padding:0 16px 12px;font-size:12px;color:#5a5e7a;display:none}
     .msg-card.collapsed .msg-collapsed-snippet{display:block}
@@ -478,7 +483,7 @@
       <button class="modal-close" onclick="closeAddAccount()">×</button>
     </div>
     <div class="add-acc-step" id="addAccStep">
-      <div>Click <strong>Start</strong> to begin the Google OAuth flow. You'll get a consent URL — open it in any browser and sign in with the Gmail account you want to add. Once Google redirects to <code>localhost</code>, the account is saved and ready.</div>
+      <div>Click <strong>Start</strong>, open the consent URL, and sign in with the Gmail account you want to add. If the final page says it <em>can't connect to localhost</em>, that's expected when browsing from another machine — copy the full URL from the address bar and paste it below.</div>
       <div style="margin-top:14px;display:flex;gap:8px">
         <input type="text" id="addAccLabel" placeholder="Label (optional, e.g. Work)" style="flex:1;background:#070718;border:1px solid #22224a;color:#e0e0e0;padding:9px 12px;border-radius:7px;font-size:13px;outline:none">
         <button class="send-btn" id="addAccStartBtn" onclick="startAddAccount()">🔐 Start</button>
@@ -748,6 +753,7 @@ function renderThread(){
       </div>
       <div class="msg-collapsed-snippet">${esc((m.body||'').slice(0,160))}…</div>
       <div class="msg-body">${esc(m.body || '(empty body)')}</div>
+      ${renderAttachments(m)}
     </div>`;
   }).join('');
 
@@ -759,6 +765,27 @@ function renderThread(){
 function toggleMsg(gid){
   const el = document.getElementById('msg-' + gid);
   if(el) el.classList.toggle('collapsed');
+}
+
+function fmtSize(b){
+  if(!b) return '';
+  if(b < 1024) return b + ' B';
+  if(b < 1048576) return (b/1024).toFixed(0) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+function renderAttachments(m){
+  const atts = m.attachments || [];
+  if(!atts.length) return '';
+  const acc = state.activeAccount ? '&account=' + encodeURIComponent(state.activeAccount.id) : '';
+  return '<div class="msg-attachments">' + atts.map(a => {
+    const url = '/api/email2/attachment/' + encodeURIComponent(m.gmail_id) + '/' +
+                encodeURIComponent(a.attachment_id) +
+                '?name=' + encodeURIComponent(a.filename) +
+                '&mime=' + encodeURIComponent(a.mime || '') + acc;
+    return `<a class="att-chip" href="${url}" title="${esc(a.filename)}">📎 ${esc(a.filename)}
+            <span class="att-size">${fmtSize(a.size)}</span></a>`;
+  }).join('') + '</div>';
 }
 
 // ── Modify actions ────────────────────────────────────────────────────────
@@ -1094,20 +1121,30 @@ function closeAddAccount(){
   document.getElementById('addAccModal').classList.remove('open');
   if(_addAccPoll){ clearInterval(_addAccPoll); _addAccPoll = null; }
 }
+let _addAccFlowId = null;
 async function startAddAccount(){
   const label = document.getElementById('addAccLabel').value.trim();
   const btn = document.getElementById('addAccStartBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Starting…';
   const d = await api('/api/email2/accounts/add/start', {method:'POST', body:{label}});
   if(!d.ok){ toast('Failed: '+(d.error||'?'), true); btn.disabled = false; btn.textContent = '🔐 Start'; return; }
+  _addAccFlowId = d.flow_id;
   document.getElementById('addAccBody').innerHTML = `
     <div style="margin-top:14px;padding:10px 14px;background:#0a2a1a;border:1px solid #0e8049;border-radius:7px;color:#33d27e;font-size:12px">
-      1. Open the URL below in a browser. 2. Sign in with the Gmail account. 3. Allow access. The account will be added automatically.
+      1. Open the URL below and sign in with the Gmail account. 2. Allow access.
+      3. If the last page loads a ✅ confirmation, you're done. If it says
+      <strong>"can't connect to localhost"</strong>, copy the FULL URL from the
+      address bar and paste it below, then click Finish.
     </div>
     <div class="add-acc-url"><a href="${d.auth_url}" target="_blank" style="color:#a0c0ff">${d.auth_url}</a></div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <input type="text" id="addAccPaste" placeholder="Paste the localhost redirect URL here (remote browsers)"
+             style="flex:1;background:#070718;border:1px solid #22224a;color:#e0e0e0;padding:9px 12px;border-radius:7px;font-size:12px;outline:none">
+      <button class="send-btn" onclick="finishAddAccount()">✅ Finish</button>
+    </div>
     <div class="add-acc-status" id="addAccStatus"><span class="spinner"></span> Waiting for you to complete the OAuth flow…</div>
   `;
   btn.textContent = '🔐 Start';
-  // Poll
+  // Poll — completes automatically if the browser could reach the callback.
   _addAccPoll = setInterval(async () => {
     const p = await api('/api/email2/accounts/add/poll?flow_id='+encodeURIComponent(d.flow_id));
     if(p.status === 'done'){
@@ -1121,6 +1158,25 @@ async function startAddAccount(){
       document.getElementById('addAccStatus').innerHTML = '⚠ Failed: ' + esc(p.error||'unknown');
     }
   }, 1500);
+}
+
+async function finishAddAccount(){
+  const raw = (document.getElementById('addAccPaste').value || '').trim();
+  if(!raw){ toast('Paste the redirect URL first', true); return; }
+  if(!_addAccFlowId){ toast('Start the flow first', true); return; }
+  const st = document.getElementById('addAccStatus');
+  st.innerHTML = '<span class="spinner"></span> Exchanging code…';
+  const d = await api('/api/email2/accounts/add/finish',
+                      {method:'POST', body:{flow_id:_addAccFlowId, redirect_url:raw}});
+  if(d.ok){
+    if(_addAccPoll){ clearInterval(_addAccPoll); _addAccPoll = null; }
+    st.innerHTML = '✅ Added <strong>' + esc(d.email) + '</strong>';
+    toast('✅ Added ' + d.email);
+    await loadAccounts();
+    setTimeout(closeAddAccount, 1400);
+  } else {
+    st.innerHTML = '⚠ ' + esc(d.error || 'failed');
+  }
 }
 
 // Click outside to close account menu
