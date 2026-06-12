@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-10 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 2 warn, 7 info)
-- 2026-06-10 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 1 warn, 12 info)
-- 2026-06-10 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 2 warn, 8 info)
-- 2026-06-10 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
-- 2026-06-10 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
-- 2026-06-10 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
-- 2026-06-10 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
-- 2026-06-10 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
-- 2026-06-10 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 2 warn, 11 info)
-- 2026-06-10 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
-- 2026-06-10 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 1 warn, 5 info)
-- 2026-06-10 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 0 warn, 8 info)
-- 2026-06-10 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 1 warn, 11 info)
-- 2026-06-10 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 2 warn, 5 info)
-- 2026-06-10 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 2 warn, 2 info)
+- 2026-06-11 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 2 warn, 6 info)
+- 2026-06-11 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
+- 2026-06-11 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
+- 2026-06-11 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 2 warn, 7 info)
+- 2026-06-11 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 3 warn, 7 info)
+- 2026-06-11 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
+- 2026-06-11 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 3 warn, 8 info)
+- 2026-06-11 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
+- 2026-06-11 Claw hourly digest — 14 new (0 bug, 0 regression, 0 security, 5 warn, 9 info)
+- 2026-06-11 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 1 warn, 9 info)
+- 2026-06-11 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 0 warn, 3 info)
+- 2026-06-11 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 2 warn, 4 info)
+- 2026-06-11 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
+- 2026-06-11 ahb123 — design: merge InvoiceIT + Billing into Projects
+- 2026-06-11 ahb123 — InvoiceIT + Billing merged into Projects (shipped)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
