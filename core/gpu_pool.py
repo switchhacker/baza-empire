@@ -1,9 +1,9 @@
 """
-GPU Pool — manages four Ollama instances:
+GPU Pool — LLM inference slots (NVIDIA 3070 is NOT here — it's the dedicated
+Stable Diffusion image engine as of 2026-06-11):
   - 11434  AMD RX 6700 XT   (Vulkan, 12GB) — primary Vulkan
-  - 11435  NVIDIA RTX 3070  (CUDA, 8GB)    — CUDA compute
-  - 11436  CPU + 64GB RAM   (no GPU)       — big-model fallback
   - 11437  AMD RX 6700 XT   (Vulkan, 12GB) — secondary Vulkan (overflow)
+  - 11436  CPU + 64GB RAM   (no GPU)       — big-model fallback
 
 Agents acquire the BEST slot for their model (size + temperature + load
 aware), run inference, then release. Temperature awareness skips a GPU that
@@ -138,14 +138,17 @@ class GPUPool:
         # joins the LLM pool. Routing prefers smallest GPU that fits, so
         # small models (≤6GB) land on NVIDIA (CUDA, fastest) and big models
         # (8–11GB) land on AMD (Vulkan, 12GB). CPU is last-resort for >12GB.
-        # When SD WebUI returns, drop the NVIDIA slot and restore AMD2.
+        # 2026-06-11: SD WebUI is back on the NVIDIA 3070, so the NVIDIA CUDA
+        # slot is dropped and AMD2 (11437) restored — imaging owns the 3070,
+        # LLM stays on the AMD card + CPU. To revert (NVIDIA back into the LLM
+        # pool), restore the id=1 NVIDIA_URL/CUDA slot and stop baza-sd-webui.
         self.slots = [
             GPUSlot(id=0, url=AMD_URL, name="AMD RX 6700 XT (Vulkan)",
                     backend="vulkan", vram_mb=AMD_VRAM_MB,
                     temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
-            GPUSlot(id=1, url=NVIDIA_URL, name="NVIDIA RTX 3070 (CUDA)",
-                    backend="cuda", vram_mb=NVIDIA_VRAM_MB,
-                    temp_warn=NVIDIA_TEMP_WARN, temp_crit=NVIDIA_TEMP_CRIT),
+            GPUSlot(id=1, url=AMD2_URL, name="AMD RX 6700 XT (Vulkan) #2",
+                    backend="vulkan", vram_mb=AMD_VRAM_MB,
+                    temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
             GPUSlot(id=2, url=CPU_URL, name="CPU + 64GB RAM",
                     backend="cpu",    vram_mb=0),
         ]

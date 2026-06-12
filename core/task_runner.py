@@ -78,15 +78,14 @@ LLM_RETRY_ON_TIMEOUT = os.getenv("BAZA_OLLAMA_RETRY_ON_TIMEOUT", "1") not in ("0
 MAX_TASK_ITERATIONS = int(os.getenv("BAZA_MAX_TASK_ITERATIONS", "3"))
 
 
-# Ollama instance pool — current pool per project_gpu_pool_pause_state.md
-# (2026-05-13): AMD 11434 + NVIDIA-CUDA 11435 + CPU 11436. Legacy AMD2 at
-# 11437 still up as additional fallback. GPUs come before CPU because CPU
+# Ollama instance pool. 2026-06-11: NVIDIA 3070 (11435) removed — it's now the
+# dedicated Stable Diffusion image engine, so LLM stays on the AMD 6700 XT
+# (11434 primary + 11437 secondary) + CPU. GPUs come before CPU because CPU
 # inference of a 14B model exceeds the request timeout. CPU is reserved for
 # small models (≤7B) only — see is_cpu_capable_model().
 OLLAMA_INSTANCES_GPU = [
     os.getenv("OLLAMA_URL", "http://localhost:11434"),  # AMD primary
-    "http://localhost:11435",                            # NVIDIA CUDA (small/fast)
-    "http://localhost:11437",                            # legacy AMD2
+    "http://localhost:11437",                            # AMD secondary
 ]
 OLLAMA_INSTANCES_CPU = ["http://localhost:11436"]
 
