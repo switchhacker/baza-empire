@@ -25,12 +25,15 @@ LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
 LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "baza-litellm-internal")
 OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 # Local-only by Serge's rule (feedback_no_outside_apis): nothing in the OCR
-# path may depend on a cloud service. Primary is qwen3-vl (best local
-# accuracy); llava is a backup for when qwen3-vl errors out. Cloud models
-# (gemma3:27b-cloud, gpt-4o) are still reachable for one-off opt-in by
-# setting OLLAMA_VISION_MODEL or RECEIPT_OCR_ALLOW_CLOUD=1.
-OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:latest")
-OLLAMA_VISION_FALLBACK = os.environ.get("OLLAMA_VISION_FALLBACK", "llava:13b")
+# path may depend on a cloud service. Primary is glm-ocr (won the 2026-06-11
+# 12-receipt bake-off: 7/12 totals, 2 hard errors vs qwen3-vl's 0/12 — qwen3-vl
+# self-emits <think> tags that Ollama 0.30 routes to the `thinking` field,
+# leaving `response` empty, so it's unusable as OCR primary until fixed
+# upstream). minicpm-v4.6 is the fallback (reads receipts well, different
+# failure modes). Cloud models (gemma3:27b-cloud, gpt-4o) are still reachable
+# for one-off opt-in by setting OLLAMA_VISION_MODEL or RECEIPT_OCR_ALLOW_CLOUD=1.
+OLLAMA_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "glm-ocr:latest")
+OLLAMA_VISION_FALLBACK = os.environ.get("OLLAMA_VISION_FALLBACK", "minicpm-v4.6:latest")
 ALLOW_CLOUD = os.environ.get("RECEIPT_OCR_ALLOW_CLOUD", "0") in ("1", "true", "yes")
 
 EMPTY_STRUCTURED = {
@@ -418,7 +421,47 @@ def _parse_vision_json(content: str) -> dict | None:
         try:
             return json.loads(snippet)
         except json.JSONDecodeError:
-            return None
+            pass
+    # Salvage a num_predict-truncated object (cut off mid items array): trim
+    # back to the last complete value, then close the open containers. The
+    # critical scalars (store/date/totals) are prompted to appear before
+    # `items`, so a clean truncation repair preserves them.
+    if start != -1:
+        body = content[start:]
+        # One forward pass: snapshot the open-container stack at every position
+        # where a JSON value just ended outside a string (candidate cut points).
+        candidates = []          # (cut_index, open-stack snapshot)
+        opens, in_str, esc = [], False, False
+        for i, ch in enumerate(body):
+            if esc:
+                esc = False
+                continue
+            if ch == '\\':
+                esc = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                if not in_str:
+                    candidates.append((i + 1, ''.join(opens)))
+                continue
+            if in_str:
+                continue
+            if ch in '{[':
+                opens.append(ch)
+            elif ch in '}]':
+                if opens:
+                    opens.pop()
+                candidates.append((i + 1, ''.join(opens)))
+            elif ch in '0123456789.el':   # number / true / false / null tail
+                candidates.append((i + 1, ''.join(opens)))
+        for cut, stack in reversed(candidates[-60:]):
+            if not stack:
+                continue
+            chunk = body[:cut].rstrip().rstrip(',')
+            try:
+                return json.loads(chunk + ''.join('}' if o == '{' else ']' for o in reversed(stack)))
+            except json.JSONDecodeError:
+                continue
     return None
 
 
@@ -468,6 +511,17 @@ def _normalize_vision_numbers(parsed: dict) -> dict:
             # often picks up an unrelated line as "total"). Trust the math.
             else:
                 parsed['total'] = derived
+
+    # Date normalization: models echo the printed format (12/27/2025, 7/19/24)
+    # despite the prompt asking for YYYY-MM-DD. US order (MM/DD) assumed.
+    pd = (parsed.get('purchase_date') or '').strip()
+    if pd and not re.fullmatch(r'\d{4}-\d{2}-\d{2}', pd):
+        m = re.fullmatch(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})', pd)
+        if m:
+            mo, dy, yr = int(m.group(1)), int(m.group(2)), m.group(3)
+            year = int(yr) + 2000 if len(yr) == 2 else int(yr)
+            if 1 <= mo <= 12 and 1 <= dy <= 31 and 2000 <= year <= 2099:
+                parsed['purchase_date'] = f"{year:04d}-{mo:02d}-{dy:02d}"
     return parsed
 
 
@@ -577,7 +631,6 @@ def run_llm_analysis(image_path: str) -> dict:
         "  next to 03/27/26 is the purchase). Read each digit carefully: 0/3/8\n"
         "  and 1/7 look alike on faded thermal paper.\n"
         "- purchase_time: HH:MM (24h) if printed\n"
-        "- items: [{name, quantity, price}]\n"
         "- subtotal: pre-tax subtotal as number\n"
         "- tax_amount: total tax as number (sum state+local if multiple tax lines)\n"
         "- total: GRAND TOTAL / Amount Due / Balance Due — the final charge, "
@@ -588,7 +641,10 @@ def run_llm_analysis(image_path: str) -> dict:
         "  Rules: The Home Depot / Lowe's / Sherwin-Williams / Ace / 84 Lumber / "
         "  hardware stores = Materials. Gallons/unleaded/premium/diesel = Fuel "
         "  (even at Wawa/Sheetz/7-Eleven). Grocery or coffee/food chains = Food. "
-        "  Specialty tool stores (Harbor Freight / Snap-On / Matco) = Tools.\n\n"
+        "  Specialty tool stores (Harbor Freight / Snap-On / Matco) = Tools.\n"
+        "- items: [{name, quantity, price}] — at most 25 items; keep names short; "
+        "  this field MUST come last in the JSON object.\n\n"
+        "Emit the JSON keys in exactly the order listed above (items last). "
         "Return ONLY valid JSON. Use empty string for unknown text fields and 0 for unknown numbers."
     )
 
