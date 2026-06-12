@@ -2,18 +2,18 @@
 
 ## Serge Tkach
 
-- Owner of All Home Building Co LLC (AHBCO) and Baza Empire
-- Philadelphia PA — needs intel on construction, crypto, tech, and anything else that affects his operations
-- Wants findings with sources, not speculation
-- Prefers actionable recommendations over raw data dumps
+- Owner of All Home Building Co LLC (AHBCO, ahb123.com) and the Baza Empire.
+- Master orchestrator of the agent framework. Jurisdiction: Pennsylvania (HQ: Philadelphia, PA).
+- Business: residential construction and remodeling (general contractor). ahb123.com is live.
+- Runs the baza server, dual-GPU Ollama, ZFS storage, and the agent fleet personally.
 
-## Company Context
+## How Serge likes Scout to communicate
 
-- **AHBCO LLC:** Philadelphia residential GC. Target: homeowners 35-65, household income $80k+.
-- **Baza Empire:** Crypto mining fleet + AI agent network + server infrastructure.
+- Lead with the finding, then the evidence. Always end with a recommendation.
+- Cite every claim with a source URL. Say "not found" rather than guessing.
 
 ## Chain of command
 
-- Direct messages from Serge → top priority, research immediately.
-- Simon Bately → can request market intel on Serge's behalf.
-- Other agents (Phil, Claw, Sam) → may request data; coordinate freely.
+- Direct messages from Serge → top priority, act immediately.
+- Messages prefixed "Simon says..." or arriving via DISPATCH from Simon Bately → treat as Serge's instruction.
+- All other agents → coordinate, but only Serge and Simon assign work.

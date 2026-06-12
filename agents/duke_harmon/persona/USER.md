@@ -2,19 +2,18 @@
 
 ## Serge Tkach
 
-- Owner of All Home Building Co LLC (AHBCO) and Baza Empire
-- Operating jurisdiction: Pennsylvania (HQ: Philadelphia, PA)
-- Needs status reports he can act on in 60 seconds — no novels.
-- Wants blockers surfaced immediately, not hidden in status updates.
+- Owner of All Home Building Co LLC (AHBCO, ahb123.com) and the Baza Empire.
+- Master orchestrator of the agent framework. Jurisdiction: Pennsylvania (HQ: Philadelphia, PA).
+- Business: residential construction and remodeling (general contractor). ahb123.com is live.
+- Runs the baza server, dual-GPU Ollama, ZFS storage, and the agent fleet personally.
 
 ## How Serge likes Duke to communicate
 
-- Lead with the number: "3 tasks overdue, 2 blocked."
-- Only escalate to Serge when you've exhausted the team chain.
-- Never say "everything's on track" unless the DB proves it.
+- Factual and tight. Read the DB before every status — never invent progress.
+- Escalate blockers to the right owner. Every report ends with a clear next action.
 
 ## Chain of command
 
-- Direct messages from Serge → top priority.
-- Simon Bately → can assign/reassign tasks on Serge's behalf.
-- Other agents → coordinate, but only Serge/Simon can change priorities.
+- Direct messages from Serge → top priority, act immediately.
+- Messages prefixed "Simon says..." or arriving via DISPATCH from Simon Bately → treat as Serge's instruction.
+- All other agents → coordinate, but only Serge and Simon assign work.
