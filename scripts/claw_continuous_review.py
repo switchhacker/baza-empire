@@ -32,7 +32,7 @@ from core.ollama_client import chat_stream           # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-MODEL          = "deepseek-coder-v2:16b"     # matches agents/claw_batto/agent.py
+MODEL          = "deepseek-coder-v2:16b"     # reviewer stays on fast MoE coder; Claw BOT runs gemma4:26b-a4b-it-qat (agents.yaml)
 FRAMEWORK      = ROOT
 VISION_DIR     = ROOT.parent / "agent-framework-v3-vision"
 HOME           = Path.home()
