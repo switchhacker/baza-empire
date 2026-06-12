@@ -2,5 +2,25 @@
   {
     "ts": "2026-05-27T12:15:50+00:00",
     "change": "+ ollama_model: qwen2.5:0.5b"
+  },
+  {
+    "ts": "2026-06-12T00:42:11+00:00",
+    "change": "+ ollama_model: gemma4:12b-it-qat"
+  },
+  {
+    "ts": "2026-06-12T00:42:11+00:00",
+    "change": "+ ollama_model: gemma4:26b-a4b-it-qat"
+  },
+  {
+    "ts": "2026-06-12T00:42:11+00:00",
+    "change": "+ ollama_model: glm-ocr:latest"
+  },
+  {
+    "ts": "2026-06-12T00:42:11+00:00",
+    "change": "+ ollama_model: lfm2.5:8b"
+  },
+  {
+    "ts": "2026-06-12T00:42:11+00:00",
+    "change": "+ ollama_model: qwen3.6:27b"
   }
 ]
