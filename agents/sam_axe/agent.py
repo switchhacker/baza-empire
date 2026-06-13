@@ -754,23 +754,26 @@ class SamAxe(BaseAgent):
         if self._is_image_request(text):
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="🎨 Generating 2 variants... ~1-2 min"
+                text="🎨 Generating your image... ~30-60s"
             )
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_PHOTO)
 
-            history = get_history(chat_id, self.AGENT_ID, limit=MAX_HISTORY)
-            messages = [{"role": h["role"], "content": h["content"]} for h in history]
             system = self.build_system_prompt()
             loop = asyncio.get_event_loop()
 
-            # Have the LLM craft a detailed SD prompt
-            prompt_msgs = messages + [{
+            # Draft the SD prompt from ONLY this request. We deliberately do NOT
+            # feed conversation history here: prior avatar / portrait / landscape
+            # builds were bleeding into every new request (a "penguin" request was
+            # coming back as a female portrait + a mountain lake). The prompt must
+            # describe exactly what Serge just asked for and nothing else.
+            prompt_msgs = [{
                 "role": "user",
                 "content": (
-                    f"{text}\n\n"
-                    "[TASK: Write a detailed Stable Diffusion prompt for this request. "
-                    "Include: subject, style, materials, lighting, camera angle, quality tags. "
-                    "Output ONLY the prompt text, nothing else. No explanations.]"
+                    f"Image request: {text}\n\n"
+                    "[TASK: Write a detailed Stable Diffusion prompt for the image request ABOVE, "
+                    "and ONLY that. Describe exactly that subject — ignore any previous image, person, "
+                    "scene, or earlier conversation. Include: subject, style, materials, lighting, "
+                    "camera angle, quality tags. Output ONLY the prompt text, nothing else. No explanations.]"
                 )
             }]
             sd_prompt = await loop.run_in_executor(
@@ -787,20 +790,20 @@ class SamAxe(BaseAgent):
                     f"sharp focus, professional, 8k, intricate, cinematic lighting"
                 )
 
+            # One clean image — no variants (Serge: "no variants just 1 image generated").
             result = self.skills.run("generate_image", {
                 "prompt": sd_prompt,
                 "width": 768, "height": 768,
-                "n_iter": 3,
+                "n_iter": 1,
             }, chat_id=chat_id)
 
             if result.get("success"):
                 output = result.get("output", "")
                 paths = re.findall(r'(/[^\s"]+\.(?:png|jpg|jpeg|webp))', output)
                 if paths:
-                    await self._send_variants(chat_id, paths[:3], context, text)
-                    for p in paths[:3]:
-                        self._record_generated(chat_id, p)
-                    response = f"🎨 Generated from: {text[:100]}\n\nReply 1, 2, or 3 to select."
+                    await self._send_variants(chat_id, paths[:1], context, text)
+                    self._record_generated(chat_id, paths[0])
+                    response = f"🎨 Here's your image: {text[:100]}"
                 else:
                     response = f"Generated but no files found.\n{output[:300]}"
             else:

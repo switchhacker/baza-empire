@@ -326,32 +326,10 @@ for idx, img_b64 in enumerate(images):
         f.write(base64.b64decode(img_b64))
     saved_paths.append(filepath)
 
-# ── Register with artifacts dashboard ─────────────────────────────────────────
-for fpath in saved_paths:
-    try:
-        import urllib.request
-        DASHBOARD_URL = os.environ.get("BAZA_DASHBOARD_URL", "http://localhost:8888")
-        boundary = "bazaartifactboundary"
-        with open(fpath, "rb") as img_f:
-            img_data = img_f.read()
-        fname = os.path.basename(fpath)
-        body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="project_id"\r\n\r\nproj-ahb123\r\n'
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="sam_axe_{fname}"\r\n'
-            f"Content-Type: image/png\r\n\r\n"
-        ).encode("utf-8") + img_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
-        req = urllib.request.Request(
-            f"{DASHBOARD_URL}/api/artifacts/upload",
-            data=body,
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15):
-            pass
-    except Exception:
-        pass
+# ── DataHub upload intentionally disabled ─────────────────────────────────────
+# Telegram-driven generations are throwaway: Serge asks, Sam generates, Sam replies.
+# We do NOT register these into the proj-ahb123 artifacts / Data Hub. Images still
+# live on disk at OUTPUT_DIR if needed. (Removed 2026-06-12 per Serge.)
 
 # ── Result ───────────────────────────────────────────────────────────────────
 for i, p in enumerate(saved_paths):

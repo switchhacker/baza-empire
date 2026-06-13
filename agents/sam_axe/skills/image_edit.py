@@ -350,28 +350,8 @@ for variant_idx in range(num_variants):
         sys.exit(1)
 
 # ── Upload to dashboard ───────────────────────���─────────────────────────────
-for filepath in saved_paths:
-    try:
-        import urllib.request
-        DASHBOARD = os.environ.get("BAZA_DASHBOARD_URL", "http://localhost:8888")
-        boundary = "bazaimgedit"
-        with open(filepath, "rb") as img_f:
-            img_bytes_upload = img_f.read()
-        fname = os.path.basename(filepath)
-        body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="project_id"\r\n\r\nproj-ahb123\r\n'
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="sam_{fname}"\r\n'
-            f"Content-Type: image/png\r\n\r\n"
-        ).encode() + img_bytes_upload + f"\r\n--{boundary}--\r\n".encode()
-        req = urllib.request.Request(
-            f"{DASHBOARD}/api/artifacts/upload", data=body,
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-        )
-        urllib.request.urlopen(req, timeout=15)
-    except Exception:
-        pass
+# DataHub upload intentionally disabled — Telegram edits are throwaway and do NOT
+# get registered into proj-ahb123 artifacts / Data Hub. (Removed 2026-06-12 per Serge.)
 
 # ── Save context ────────────────────────────────────────────────────────────
 edit_entry = {
