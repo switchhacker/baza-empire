@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Edge Devices</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+
+    /* NAV */
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:100;flex-wrap:nowrap;overflow:visible}
+    .nav::-webkit-scrollbar{height:0;display:none}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-brand span{font-size:22px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;cursor:pointer;transition:color .2s,border-color .2s;white-space:nowrap;flex-shrink:0}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .nav-status{font-size:11px;color:#555;font-family:monospace}
+
+    /* LAYOUT */
+    .container{max-width:1440px;margin:0 auto;padding:28px 32px 60px}
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
+    .page-title{font-size:24px;font-weight:800;color:#fff}
+    .page-subtitle{font-size:13px;color:#555;margin-top:4px}
+    .header-right{display:flex;align-items:center;gap:12px}
+    .refresh-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#888;padding:9px 16px;border-radius:7px;cursor:pointer;font-size:13px;transition:all .2s}
+    .refresh-btn:hover{border-color:#e94560;color:#e94560}
+    .section-head{display:flex;align-items:center;justify-content:space-between;margin:26px 0 12px;font-size:14px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:1.5px}
+    .sec-actions{display:flex;align-items:center;gap:10px}
+    .sec-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#888;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:11px}
+    .sec-btn:hover{border-color:#e94560;color:#e94560}
+
+    /* EDGE NODES */
+    .edge-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+    .edge-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden}
+    .edge-card.online{border-color:#1e3a2a}
+    .edge-card.offline{opacity:.55}
+    .edge-card-head{display:flex;align-items:center;gap:8px;justify-content:space-between}
+    .edge-name{font-weight:700;color:#fff;font-size:14px;letter-spacing:.5px}
+    .edge-type{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1.5px}
+    .edge-pill{font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:1.2px}
+    .edge-pill.online{background:#0e3320;color:#5cdc99;border:1px solid #1c5638}
+    .edge-pill.offline{background:#3a1a1a;color:#e94560;border:1px solid #5a2828}
+    .edge-thumb{width:100%;aspect-ratio:4/3;background:#06060e;border:1px solid #161628;border-radius:7px;object-fit:cover;display:block}
+    .edge-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 12px;font-size:11px;font-family:monospace}
+    .edge-meta div{color:#666}
+    .edge-meta b{color:#aaa;font-weight:600}
+    .edge-last-event{font-size:11px;color:#888;font-family:monospace;border-top:1px dashed #1a1a2e;padding-top:8px}
+    .edge-alerts{background:#0a0a18;border:1px solid #15152a;border-radius:10px;padding:10px;max-height:280px;overflow-y:auto;font-family:monospace;font-size:12px}
+    .edge-alert-row{display:flex;gap:10px;padding:6px 4px;border-bottom:1px solid #15152a;align-items:center}
+    .edge-alert-row:last-child{border-bottom:0}
+    .edge-alert-kind{padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;min-width:78px;text-align:center}
+    .edge-alert-kind.motion{background:#0e2a3a;color:#5ca8dc}
+    .edge-alert-kind.audio{background:#3a2a0e;color:#dc9a5c}
+    .edge-alert-kind.vibration{background:#2a0e2a;color:#c45cdc}
+    .edge-alert-kind.receipt{background:#0e3320;color:#5cdc99}
+    .edge-alert-kind.critical{background:#3a1010;color:#e94560}
+    .edge-alert-time{color:#444;min-width:140px}
+    .edge-alert-node{color:#aaa;min-width:130px}
+    .edge-alert-detail{color:#888;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .edge-alert-detail a{color:#5cdc99;text-decoration:underline}
+
+    /* RECEIPT BOOTH */
+    .booth-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width:900px){.booth-row{grid-template-columns:1fr}}
+    .booth-card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:10px;padding:16px}
+    .booth-card h3{font-size:13px;color:#aaa;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:12px}
+    .wiring-table{width:100%;border-collapse:collapse;font-family:monospace;font-size:12px}
+    .wiring-table th{text-align:left;color:#666;font-weight:600;padding:6px 8px;border-bottom:1px solid #1a1a2e;text-transform:uppercase;font-size:10px;letter-spacing:1px}
+    .wiring-table td{padding:6px 8px;border-bottom:1px solid #15152a;color:#aaa}
+    .wiring-table td.gpio{color:#5cdc99;font-weight:700}
+    .wiring-note{font-size:11px;color:#666;margin-top:10px;line-height:1.6}
+    .booth-stat{display:flex;gap:24px;margin-bottom:14px}
+    .booth-stat div{font-family:monospace}
+    .booth-stat .num{font-size:26px;font-weight:800;color:#5cdc99}
+    .booth-stat .lbl{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px}
+    .quickrf-link{display:inline-block;margin-top:8px;font-size:12px;color:#5cdc99;text-decoration:underline}
+  </style>
+</head>
+<body>
+{% set nav_active = 'edge' %}
+{% include '_nav.html' %}
+
+<div class="container">
+  <div class="page-header">
+    <div>
+      <div class="page-title">&#128225; Edge Devices</div>
+      <div class="page-subtitle">ESP32 fleet — cameras, sensors, receipt booth. Nodes heartbeat the Tool Server every 30s; offline after 90s of silence.</div>
+    </div>
+    <div class="header-right">
+      <span id="edgeMeta" class="nav-status">--</span>
+      <button class="refresh-btn" onclick="loadEdge()">&#8635; Refresh</button>
+    </div>
+  </div>
+
+  <div class="section-head"><span>Nodes</span></div>
+  <div class="edge-grid" id="edgeGrid">
+    <div style="color:#444;font-size:13px;padding:18px">No edge nodes reporting yet. Flash a node and wait ~30s.</div>
+  </div>
+
+  <div class="section-head"><span>Receipt Photo Booth</span></div>
+  <div class="booth-row">
+    <div class="booth-card">
+      <h3>&#129534; Booth status — s3-receipt-cam-01</h3>
+      <div class="booth-stat">
+        <div><div class="num" id="boothReceipts">—</div><div class="lbl">receipts sent</div></div>
+        <div><div class="num" id="boothLight">—</div><div class="lbl">light %</div></div>
+        <div><div class="num" id="boothSd">—</div><div class="lbl">sd card</div></div>
+      </div>
+      <div style="font-size:12px;color:#888;line-height:1.7">
+        Press the booth button → strips boost to 100% → UXGA still →
+        Tool Server <code>/edge/receipt</code> → QuickRF OCR queue.
+        Failed uploads park on SD and auto-retry every 60s.
+      </div>
+      <a class="quickrf-link" href="/ahb123/receipts">Open QuickRF receipt queue &rarr;</a>
+    </div>
+    <div class="booth-card">
+      <h3>&#128268; Wiring reference — Freenove ESP32-S3 WROOM CAM</h3>
+      <table class="wiring-table">
+        <tr><th>Function</th><th>GPIO</th><th>Notes</th></tr>
+        <tr><td>Capture button</td><td class="gpio">1</td><td>to GND · internal pull-up · BOOT also works</td></tr>
+        <tr><td>LED strip 1</td><td class="gpio">21</td><td rowspan="4">PWM 5kHz &rarr; logic-level N-MOSFET gate;<br>strip V+ to its own 5/12V supply,<br>supply GND common with ESP32 GND</td></tr>
+        <tr><td>LED strip 2</td><td class="gpio">47</td></tr>
+        <tr><td>LED strip 3</td><td class="gpio">41</td></tr>
+        <tr><td>LED strip 4</td><td class="gpio">42</td></tr>
+        <tr><td>Status LED</td><td class="gpio">2</td><td>onboard · 2 blinks = queued, 5 fast = failed</td></tr>
+        <tr><td>microSD</td><td class="gpio">39/38/40</td><td>CLK/CMD/D0 · onboard slot, 1-bit</td></tr>
+      </table>
+      <div class="wiring-note">
+        Avoid GPIO 0/3/19/20/43&ndash;46 (strapping, USB, UART) and 4&ndash;18 (camera bus).
+        Full doc: <code>baza_edge/docs/s3_receipt_cam_design.md</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-head"><span>Alert Stream</span></div>
+  <div class="edge-alerts" id="edgeAlerts">
+    <div style="color:#444;font-size:13px;padding:14px">No recent alerts.</div>
+  </div>
+</div>
+
+<script>
+const NODE_TYPE_LABEL = {
+  wrover_cam: 'Camera', s3_voice: 'Voice', s3_power: 'Power',
+  s3_receipt_cam: 'Receipt Booth', cyd_router: 'NAT Router',
+};
+function fmtAge(s){
+  if (s == null) return '—';
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  return Math.floor(s/3600) + 'h ago';
+}
+function fmtBytes(b){
+  b = parseInt(b) || 0;
+  if (b < 1024) return b + 'B';
+  if (b < 1048576) return (b/1024).toFixed(1) + 'KB';
+  return (b/1048576).toFixed(1) + 'MB';
+}
+function loadEdge() {
+  fetch('/api/edge/nodes').then(r => r.json()).then(d => {
+    const grid = document.getElementById('edgeGrid');
+    const meta = document.getElementById('edgeMeta');
+    const nodes = (d && d.nodes) || [];
+    if (d && d.error) {
+      grid.innerHTML = '<div style="color:#e94560;font-size:13px;padding:18px">Tool Server unreachable: ' + d.error + '</div>';
+      meta.textContent = 'tool-server down';
+    } else if (nodes.length === 0) {
+      grid.innerHTML = '<div style="color:#444;font-size:13px;padding:18px">No edge nodes reporting yet. Flash a node and wait ~30s.</div>';
+      meta.textContent = '0 nodes';
+    } else {
+      const online = nodes.filter(n => n.online).length;
+      meta.textContent = online + '/' + nodes.length + ' online';
+      grid.innerHTML = nodes.map(n => {
+        const cls    = n.online ? 'online' : 'offline';
+        const pill   = n.online ? '<span class="edge-pill online">ONLINE</span>'
+                                : '<span class="edge-pill offline">OFFLINE</span>';
+        const label  = NODE_TYPE_LABEL[n.type] || (n.type || 'NODE').toUpperCase();
+        const thumb  = n.frame_url
+          ? `<img class="edge-thumb" src="/api/edge/frame/${encodeURIComponent(n.node_id)}?t=${Date.now()}" onerror="this.style.display='none'"/>`
+          : '';
+        let extra = {};
+        try { extra = n.extra ? JSON.parse(n.extra) : {}; } catch(e) {}
+        let lastEvent = '';
+        if (n.type === 's3_receipt_cam') {
+          lastEvent = `receipts: ${n.receipts_total || 0} forwarded · ${extra.receipts_sent != null ? extra.receipts_sent + ' since boot' : ''} ${extra.sd === false ? '· no SD' : ''}`;
+          if (n.node_id === 's3-receipt-cam-01') {
+            document.getElementById('boothReceipts').textContent = n.receipts_total || 0;
+            document.getElementById('boothLight').textContent = extra.light_pct != null ? extra.light_pct : '—';
+            document.getElementById('boothSd').textContent = extra.sd == null ? '—' : (extra.sd ? 'OK' : 'NONE');
+          }
+        } else if (n.type === 'wrover_cam' && n.last_motion) {
+          lastEvent = `motion ${parseFloat(n.last_motion).toFixed(3)} · ${fmtBytes(n.last_frame_bytes)}`;
+        } else if (n.type === 's3_voice' && n.last_audio_rms) {
+          lastEvent = `last RMS ${parseFloat(n.last_audio_rms).toFixed(1)} dBFS`;
+        } else if (n.type === 's3_power' && n.last_vibe_severity) {
+          lastEvent = `${n.last_vibe_severity} · axis ${n.last_vibe_axis} · z=${parseFloat(n.last_vibe_z).toFixed(2)}`;
+        }
+        const heap = n.free_heap ? (parseInt(n.free_heap)/1024).toFixed(0) + 'KB' : '—';
+        return `
+          <div class="edge-card ${cls}">
+            <div class="edge-card-head">
+              <div>
+                <div class="edge-name">${n.node_id || '?'}</div>
+                <div class="edge-type">${label}</div>
+              </div>
+              ${pill}
+            </div>
+            ${thumb}
+            <div class="edge-meta">
+              <div><b>seen</b> ${fmtAge(n.age_s)}</div>
+              <div><b>rssi</b> ${n.rssi || '—'} dBm</div>
+              <div><b>heap</b> ${heap}</div>
+              <div><b>uptime</b> ${n.uptime_s ? Math.floor(n.uptime_s/60)+'m' : '—'}</div>
+              <div style="grid-column:span 2"><b>fw</b> ${n.fw_ver || '—'}</div>
+            </div>
+            ${lastEvent ? '<div class="edge-last-event">' + lastEvent + '</div>' : ''}
+          </div>`;
+      }).join('');
+    }
+
+    const alerts = (d && d.alerts) || [];
+    const ael = document.getElementById('edgeAlerts');
+    if (alerts.length === 0) {
+      ael.innerHTML = '<div style="color:#444;font-size:13px;padding:14px">No recent alerts.</div>';
+    } else {
+      ael.innerHTML = alerts.map(a => {
+        const t   = a.ts ? new Date(a.ts).toLocaleTimeString() : '';
+        const k   = (a.severity === 'critical') ? 'critical' : (a.kind || 'event');
+        let det   = '';
+        if (a.kind === 'receipt') {
+          const ids = (a.queue_ids || []).length;
+          det = a.error
+            ? 'queue forward FAILED: ' + a.error
+            : fmtBytes(a.bytes) + ' · ' + ids + ' queued → <a href="/ahb123/receipts">QuickRF</a>';
+        }
+        else if (a.kind === 'motion')    det = 'motion=' + (parseFloat(a.motion_score)||0).toFixed(3) + ' · ' + fmtBytes(a.bytes);
+        else if (a.kind === 'audio')     det = 'rms=' + parseFloat(a.rms).toFixed(1) + 'dBFS · peak=' + parseFloat(a.peak).toFixed(1) + ' · ' + a.duration + 'ms';
+        else if (a.kind === 'vibration') det = a.severity + ' · ' + a.axis + ' · mag=' + parseFloat(a.magnitude).toFixed(3) + 'g · z=' + parseFloat(a.z).toFixed(2);
+        return `
+          <div class="edge-alert-row">
+            <span class="edge-alert-time">${t}</span>
+            <span class="edge-alert-kind ${k}">${k}</span>
+            <span class="edge-alert-node">${a.node_id || '?'}</span>
+            <span class="edge-alert-detail">${det}</span>
+          </div>`;
+      }).join('');
+    }
+  }).catch(e => {
+    document.getElementById('edgeMeta').textContent = 'fetch error';
+  });
+}
+loadEdge();
+setInterval(loadEdge, 5000);
+</script>
+</body>
+</html>

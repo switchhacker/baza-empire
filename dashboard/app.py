@@ -3721,6 +3721,12 @@ def api_delete_secret():
 def infra_page():
     return render_template('infra.html')
 
+
+@app.route('/edge')
+def edge_page():
+    """Edge Devices — ESP32 fleet + receipt photo booth."""
+    return render_template('edge.html')
+
 @app.route('/api/infra/metrics')
 def api_infra_metrics():
     import socket as _socket, shutil as _shutil
@@ -17518,9 +17524,56 @@ def api_edge_status():
 
 @app.route('/api/edge/heartbeat', methods=['POST'])
 def api_edge_heartbeat():
-    """Record a heartbeat from a remote node (CYD, S3 voice, S3 power, etc.)."""
+    """Proxy node heartbeats to the Tool Server. The Tool Server only binds
+    127.0.0.1:8000, so LAN devices (CYD, S3 cams, …) check in through the
+    dashboard's :8888 instead."""
+    import requests as _rq
     body = request.get_json(silent=True) or {}
-    return jsonify({'ok': True, 'node_id': body.get('node_id', 'unknown')})
+    try:
+        r = _rq.post(f"{EDGE_TOOL_SERVER}/edge/heartbeat", json=body, timeout=3)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 503
+
+
+@app.route('/api/edge/frame', methods=['POST'])
+def api_edge_frame_post():
+    """Proxy a camera frame upload to the Tool Server (see heartbeat proxy)."""
+    import requests as _rq
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'ok': False, 'error': 'no file'}), 400
+    data = {'node_id': request.form.get('node_id', '')}
+    ms = request.form.get('motion_score')
+    if ms:
+        data['motion_score'] = ms
+    try:
+        r = _rq.post(f"{EDGE_TOOL_SERVER}/edge/frame", data=data,
+                     files={'file': (f.filename or 'frame.jpg', f.stream,
+                                     f.content_type or 'image/jpeg')},
+                     timeout=20)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 503
+
+
+@app.route('/api/edge/receipt', methods=['POST'])
+def api_edge_receipt_post():
+    """Proxy a receipt-booth capture to the Tool Server, which forwards it
+    into the QuickRF OCR queue."""
+    import requests as _rq
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'ok': False, 'error': 'no file'}), 400
+    try:
+        r = _rq.post(f"{EDGE_TOOL_SERVER}/edge/receipt",
+                     data={'node_id': request.form.get('node_id', '')},
+                     files={'file': (f.filename or 'receipt.jpg', f.stream,
+                                     f.content_type or 'image/jpeg')},
+                     timeout=45)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 503
 
 
 @app.route('/api/dispatch', methods=['POST'])
