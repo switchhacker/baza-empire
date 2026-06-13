@@ -6,9 +6,10 @@ Drop-in for the Tool Server. In tools/server.py add:
     from tool_server_endpoints.edge_routes import router as edge_router
     app.include_router(edge_router)
 
-Six endpoints:
+Endpoints:
     POST /edge/heartbeat          — node check-in (called every 30s)
     POST /edge/frame              — WROVER camera uploads JPEG on motion
+    POST /edge/receipt            — receipt photo booth → QuickRF OCR queue
     POST /edge/audio_alert        — S3 voice fires when RMS crosses threshold
     POST /edge/vibration_alert    — S3 power fires on accel anomaly
     GET  /edge/nodes              — list all nodes + status (for dashboard)
@@ -30,6 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import httpx
 import redis
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -46,6 +48,10 @@ FRAMES_PER_NODE_KEEP = 200         # rolling window per node (rest pruned)
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 r = redis.from_url(REDIS_URL, decode_responses=True)
+
+# Dashboard (Flask :8888) — receipt photos are forwarded into its QuickRF
+# bulk intake so they land in ahb_receipt_queue and the OCR worker drains them.
+DASHBOARD_URL = os.environ.get("BAZA_DASHBOARD_URL", "http://127.0.0.1:8888")
 
 router = APIRouter(prefix="/edge", tags=["edge"])
 
@@ -184,6 +190,81 @@ async def frame(
     })
 
     return {"ok": True, "path": str(path), "bytes": len(body)}
+
+
+@router.post("/receipt")
+def receipt(
+    node_id: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """Receipt photo-booth capture. Archives a copy for the edge UI, then
+    forwards the JPEG into the dashboard's QuickRF bulk intake so it lands
+    in ahb_receipt_queue (status=pending) and the OCR worker drains it.
+
+    Sync handler on purpose — runs in the threadpool so the blocking
+    forward to :8888 doesn't stall the event loop.
+    """
+    if file.content_type not in ("image/jpeg", "application/octet-stream"):
+        raise HTTPException(400, f"expected JPEG, got {file.content_type}")
+    body = file.file.read()
+    if len(body) < 200:
+        raise HTTPException(400, "image too small")
+
+    node_dir = FRAME_DIR / node_id
+    node_dir.mkdir(parents=True, exist_ok=True)
+    ts = int(time.time() * 1000)
+    fname = f"{ts}.jpg"
+    (node_dir / fname).write_bytes(body)
+    latest = node_dir / "latest.jpg"
+    try:
+        if latest.exists() or latest.is_symlink():
+            latest.unlink()
+        latest.symlink_to(fname)
+    except OSError:
+        latest.write_bytes(body)
+    _prune_frames(node_dir)
+
+    queue_ids: list = []
+    fwd_err = None
+    try:
+        resp = httpx.post(
+            f"{DASHBOARD_URL}/api/ahb/receipts/process",
+            files={"files": (f"edge_{node_id}_{ts}.jpg", body, "image/jpeg")},
+            timeout=30.0,
+        )
+        data = resp.json() if resp.status_code == 200 else {}
+        if data.get("success"):
+            queue_ids = data.get("queue_ids", [])
+        else:
+            fwd_err = f"dashboard {resp.status_code}: {resp.text[:200]}"
+    except Exception as e:
+        fwd_err = str(e)
+
+    try:
+        r.hincrby(_node_key(node_id), "receipts_total", 1)
+    except redis.RedisError:
+        pass
+    _touch_node(node_id, {
+        "type":             "s3_receipt_cam",
+        "last_receipt_ts":  ts,
+        "last_frame_ts":    ts,     # refreshes the edge-card thumbnail
+        "last_frame_bytes": len(body),
+    })
+    _publish_alert({
+        "kind":      "receipt",
+        "node_id":   node_id,
+        "queue_ids": queue_ids,
+        "error":     fwd_err,
+        "frame":     f"/edge/frames/{node_id}/latest",
+        "bytes":     len(body),
+    })
+
+    if fwd_err:
+        logger.error(f"receipt forward failed: {fwd_err}")
+        # 502 tells the booth to park the shot on SD and retry later;
+        # the frame copy + alert above still record the attempt.
+        raise HTTPException(502, f"receipt stored locally, queue forward failed: {fwd_err}")
+    return {"ok": True, "queue_ids": queue_ids, "bytes": len(body)}
 
 
 @router.post("/audio_alert")
