@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-11 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 2 warn, 6 info)
-- 2026-06-11 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
-- 2026-06-11 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
-- 2026-06-11 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 2 warn, 7 info)
-- 2026-06-11 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 3 warn, 7 info)
-- 2026-06-11 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
-- 2026-06-11 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 3 warn, 8 info)
-- 2026-06-11 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
-- 2026-06-11 Claw hourly digest — 14 new (0 bug, 0 regression, 0 security, 5 warn, 9 info)
-- 2026-06-11 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 1 warn, 9 info)
-- 2026-06-11 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 0 warn, 3 info)
-- 2026-06-11 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 2 warn, 4 info)
-- 2026-06-11 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
-- 2026-06-11 ahb123 — design: merge InvoiceIT + Billing into Projects
-- 2026-06-11 ahb123 — InvoiceIT + Billing merged into Projects (shipped)
+- 2026-06-12 Claw hourly digest — 18 new (0 bug, 0 regression, 0 security, 3 warn, 15 info)
+- 2026-06-12 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 1 warn, 1 info)
+- 2026-06-12 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 1 warn, 12 info)
+- 2026-06-12 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
+- 2026-06-12 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 0 warn, 4 info)
+- 2026-06-12 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 4 warn, 8 info)
+- 2026-06-12 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 0 warn, 2 info)
+- 2026-06-12 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-06-12 ESP32 NAT router CYD rebuild started
+- 2026-06-12 NAT router: stock build fails on IDF 5.1.4 — installing IDF 5.5.4
+- 2026-06-12 Fluid rebuild started — orb circle → JARVIS particle plexus
+- 2026-06-12 Claw hourly digest — 39 new (1 bug, 0 regression, 0 security, 5 warn, 33 info)
+- 2026-06-12 Fluid orb → ParticleField shipped (JARVIS plexus, token-reactive)
+- 2026-06-12 NAT router CYD feature code written
+- 2026-06-12 CYD build: lvgl dep rules bug + snprintf fix
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
