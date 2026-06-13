@@ -20190,7 +20190,7 @@ SocialStudio.modules.library = (function(){
         <input type="checkbox" data-bulk-check="${p.id}" ${checked}
                style="position:absolute;top:8px;left:8px;width:16px;height:16px;cursor:pointer;z-index:2"
                title="Select (shift-click for range)">
-        <img src="${p.cover_path ? '/api/ahb/social/posts/' + p.id + '/cover' : ''}"
+        <img src="/api/ahb/social/posts/${p.id}/cover"
              style="width:90px;aspect-ratio:9/16;object-fit:cover;border-radius:6px;background:#070712;cursor:pointer"
              onerror="this.style.opacity='0.2'"
              onclick="SocialStudio.modules.postdetail.open(${p.id})">
@@ -22787,6 +22787,16 @@ SocialStudio.modules.device = (function(){
     const shell = document.getElementById('ss-preview-shell');
     if (!shell) return;
     if (document.getElementById('ss-preview-toolbar')) return;
+    // Wrap the preview shell in a dedicated frame so device decorations
+    // (iPhone notch/speaker) land on the phone screen — NOT on the platform-tab
+    // row at the top of the surrounding card.
+    let frame = document.getElementById('ss-device-frame');
+    if (!frame) {
+      frame = document.createElement('div');
+      frame.id = 'ss-device-frame';
+      shell.parentElement.insertBefore(frame, shell);
+      frame.appendChild(shell);
+    }
     const tb = document.createElement('div');
     tb.id = 'ss-preview-toolbar';
     tb.className = 'ss-toolbar';
@@ -22799,7 +22809,7 @@ SocialStudio.modules.device = (function(){
       <button id="ss-light-toggle" title="Toggle light background">☀</button>
       <button id="ss-dpr-toggle" title="Toggle @1× / @2×">@2×</button>
     `;
-    shell.parentElement.insertBefore(tb, shell);
+    frame.parentElement.insertBefore(tb, frame);
     document.getElementById('ss-device-pick').value = read('device', '');
     apply();
     document.getElementById('ss-device-pick').addEventListener('change', (e) => {
@@ -22818,7 +22828,7 @@ SocialStudio.modules.device = (function(){
   function apply() {
     const shell = document.getElementById('ss-preview-shell');
     if (!shell) return;
-    const parent = shell.parentElement;
+    const parent = document.getElementById('ss-device-frame') || shell.parentElement;
     const device = read('device', '');
     const light = read('light', '0') === '1';
     const dpr = read('dpr', '2');

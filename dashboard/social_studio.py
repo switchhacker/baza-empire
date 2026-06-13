@@ -347,6 +347,25 @@ def _query_data_hub_sources(media_type, q, limit):
     } for r in rows]
 
 
+def _indexed_at_sort_key(v) -> float:
+    """Coerce a mixed indexed_at value to a comparable epoch float.
+
+    The three source origins disagree on storage: the composer DB and Data Hub
+    use ISO-8601 text, while the Media tab's image_captions.db stores an epoch
+    float. Sorting the union with a raw key crashes (TypeError: '<' not
+    supported between 'float' and 'str'), so normalize everything to a float.
+    """
+    if v is None or v == "":
+        return 0.0
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except (ValueError, OSError):
+        return 0.0
+
+
 @social_bp.route("/api/ahb/social/sources", methods=["GET"])
 def social_sources():
     project_id = request.args.get("project_id", type=int)
@@ -366,7 +385,7 @@ def social_sources():
         items.extend(_query_data_hub_sources(media_type, q, limit))
     # Cap the union; we sorted within each query, but re-sort the union by
     # indexed_at desc so the freshest stuff floats to the top.
-    items.sort(key=lambda d: (d.get("indexed_at") or ""), reverse=True)
+    items.sort(key=lambda d: _indexed_at_sort_key(d.get("indexed_at")), reverse=True)
     items = items[:limit]
     return jsonify({"items": items, "origins_returned": sorted(origins)})
 
@@ -1038,9 +1057,12 @@ def _resolve_media_paths(source_media_ids: list, _return_pairs: bool = False) ->
             return []
     finally:
         con.close()
+    # Real cloud storage lives on the ZFS pool (see app.py CLOUD_STORAGE); the
+    # old "/home/switchhacker/baza-cloud" default never existed, which silently
+    # dropped every relative source path. Default to the pool root.
     cloud_root = os.environ.get(
         "BAZA_CLOUD_ROOT",
-        "/home/switchhacker/baza-cloud",
+        "/mnt/empirepool/cloud",
     )
     cloud_root_abs = os.path.abspath(cloud_root)
     # v2.1 T20: uploads from webcam/screen capture land under DASHBOARD_DIR/uploads/social
@@ -1051,10 +1073,18 @@ def _resolve_media_paths(source_media_ids: list, _return_pairs: bool = False) ->
     data_hub_root_abs = os.path.abspath(
         os.path.join(DASHBOARD_DIR, "uploads", "ahb")
     )
+    # The dashboard's own artifacts dir — Sam's generated images and Phil's
+    # unlocked photos land here and are legitimately referenced as sources.
+    artifacts_root_abs = os.path.abspath(
+        os.path.join(DASHBOARD_DIR, "artifacts")
+    )
     # Takeout/iCloud imports — index-only, abs paths under user home are
     # trusted when materialized via /sources/import-by-path.
     extra_root = os.environ.get("BAZA_MEDIA_EXTRA_ROOT")
-    allowed_roots = [cloud_root_abs, uploads_root_abs, data_hub_root_abs]
+    allowed_roots = [
+        cloud_root_abs, uploads_root_abs, data_hub_root_abs, artifacts_root_abs,
+        "/mnt/empirepool/cloud", "/mnt/empirepool/media",
+    ]
     if extra_root:
         allowed_roots.append(os.path.abspath(extra_root))
     allowed_roots = tuple(allowed_roots)
@@ -1155,9 +1185,16 @@ def social_post_cover(pid: int):
         r = con.execute("SELECT cover_path FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
     finally:
         con.close()
-    if not r or not r["cover_path"] or not os.path.exists(r["cover_path"]):
-        return jsonify({"error": "no cover"}), 404
-    return send_file(r["cover_path"])
+    if r and r["cover_path"] and os.path.exists(r["cover_path"]):
+        return send_file(r["cover_path"])
+    # Fallback: an unrendered draft has no cover yet. Serve the first source
+    # image so the library still shows a preview thumbnail instead of a blank.
+    paths = _resolve_media_paths(_get_post_source_ids(pid))
+    img_exts = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif")
+    first_img = next((p for p in paths if p.lower().endswith(img_exts)), None)
+    if first_img:
+        return send_file(first_img)
+    return jsonify({"error": "no cover"}), 404
 
 
 @social_bp.route("/api/ahb/social/posts/<int:pid>/bundle", methods=["GET"])
