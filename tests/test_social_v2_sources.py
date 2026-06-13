@@ -186,6 +186,46 @@ def test_sources_union_includes_data_hub(client, tmp_path):
     assert dh["data_hub_id"] == "uuid-1"
 
 
+def test_sources_union_mixed_indexed_at_types(client, tmp_path, monkeypatch):
+    """Regression: the Media-tab DB stores indexed_at as an epoch float while
+    the composer DB stores it as ISO text (or NULL). The union re-sort must
+    not crash comparing float < str (TypeError -> HTTP 500)."""
+    c, _ = client
+    # composer row (ISO-text / NULL indexed_at) via the upload route
+    up = c.post(
+        "/api/ahb/social/sources/upload",
+        data={"file": (io.BytesIO(b"\x89PNGcomposer"), "composer.png")},
+        content_type="multipart/form-data",
+    )
+    assert up.status_code == 200
+    # Media-tab DB with REAL (epoch float) indexed_at — the crashing mix
+    media_db = tmp_path / "image_captions.db"
+    con = sqlite3.connect(str(media_db))
+    con.execute(
+        """CREATE TABLE image_captions (
+            abs_path TEXT PRIMARY KEY, project_id TEXT, sub_path TEXT,
+            caption TEXT, tags TEXT, mtime REAL, indexed_at REAL,
+            model TEXT, status TEXT, error TEXT
+        )"""
+    )
+    mf = tmp_path / "from_media.jpg"
+    mf.write_bytes(b"fake-jpg-data")
+    con.execute(
+        "INSERT INTO image_captions (abs_path, sub_path, caption, tags, status, indexed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (str(mf), "from_media.jpg", "cap", "t", "ok", 1776375365.25816),
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setenv("BAZA_MEDIA_CAPTIONS_DB", str(media_db))
+
+    r = c.get("/api/ahb/social/sources?origins=composer,media")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    items = r.get_json()["items"]
+    assert any(i["origin"] == "composer" for i in items)
+    assert any(i["origin"] == "media" for i in items)
+
+
 def test_sources_origins_filter(client):
     c, _ = client
     r_default = c.get("/api/ahb/social/sources")
@@ -251,6 +291,34 @@ def test_uploaded_path_resolvable_via_post_render(client):
     import social_studio as ss
     paths = ss._resolve_media_paths([sid])
     assert paths == [upload_path]  # path is inside DASHBOARD_DIR/uploads/social
+
+
+def test_post_cover_falls_back_to_source_image(client, tmp_path, monkeypatch):
+    """An unrendered draft (cover_path NULL) must still serve a thumbnail: the
+    cover endpoint falls back to the post's first resolvable source image."""
+    monkeypatch.setenv("BAZA_MEDIA_EXTRA_ROOT", str(tmp_path))
+    c, _ = client
+    img = tmp_path / "shot.png"
+    payload = b"\x89PNG\r\n\x1a\nfake-cover"
+    img.write_bytes(payload)
+    sid = c.post("/api/ahb/social/sources/import-by-path",
+                 json={"abs_path": str(img)}).get_json()["id"]
+    pid = c.post("/api/ahb/social/posts",
+                 json={"platform": "ig_feed_square", "variant": "1x1",
+                       "source_media_ids": [sid]}).get_json()["id"]
+    r = c.get(f"/api/ahb/social/posts/{pid}/cover")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.data == payload
+
+
+def test_post_cover_404_when_no_source(client):
+    """A post with no sources and no cover returns 404 (not a 500)."""
+    c, _ = client
+    pid = c.post("/api/ahb/social/posts",
+                 json={"platform": "tiktok", "variant": "9x16",
+                       "source_media_ids": []}).get_json()["id"]
+    r = c.get(f"/api/ahb/social/posts/{pid}/cover")
+    assert r.status_code == 404
 
 
 def test_url_import_400_no_url(client):
