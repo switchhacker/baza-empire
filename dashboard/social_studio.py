@@ -391,6 +391,62 @@ def social_sources():
 
 
 # ---------------------------------------------------------------------------
+# Media serving for the composer/source grid.
+#
+# The cloud thumb/serve routes (/api/cloud/thumb/<path:...>) take the path as a
+# URL *segment*, which mangles absolute paths (the encoded leading slash gets
+# collapsed by Flask, causing a 308 → wrong path), and they only allow the ZFS
+# pool dirs — not the dashboard's artifacts/ or uploads/social where social
+# sources actually live. These social-scoped routes take the path as a query
+# param (no slash mangling) and validate against the social allowed-roots.
+# ---------------------------------------------------------------------------
+@social_bp.route("/api/ahb/social/media/serve", methods=["GET"])
+def social_media_serve():
+    p_abs = _resolve_social_media_arg(request.args.get("path", ""))
+    if not p_abs:
+        return jsonify({"error": "not found"}), 404
+    return send_file(p_abs)
+
+
+_SOCIAL_IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif", ".bmp")
+
+
+@social_bp.route("/api/ahb/social/media/thumb", methods=["GET"])
+def social_media_thumb():
+    p_abs = _resolve_social_media_arg(request.args.get("path", ""))
+    if not p_abs:
+        return jsonify({"error": "not found"}), 404
+    try:
+        size = min(max(int(request.args.get("size", 300)), 50), 1600)
+    except (TypeError, ValueError):
+        size = 300
+    ext = os.path.splitext(p_abs)[1].lower()
+    if ext in _SOCIAL_IMG_EXTS:
+        try:
+            try:
+                import pillow_heif
+                pillow_heif.register_heif_opener()
+            except ImportError:
+                pass
+            from PIL import Image
+            img = Image.open(p_abs)
+            img.thumbnail((size, size), Image.LANCZOS)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=82)
+            buf.seek(0)
+            return send_file(buf, mimetype="image/jpeg")
+        except Exception:
+            # Decoding/resize failed — serve the original so the tile still
+            # shows something instead of a black box.
+            return send_file(p_abs)
+    # Videos and other non-images have no cheap inline thumbnail; the <img>
+    # onerror handler in the grid degrades gracefully.
+    return jsonify({"error": "no thumb"}), 404
+
+
+# ---------------------------------------------------------------------------
 # T16 — In-app image editor: per-source edits sidecar
 # ---------------------------------------------------------------------------
 def _edits_dir() -> str:
@@ -1039,6 +1095,53 @@ def _resolve_media_paths_with_ids(source_media_ids: list) -> list:
     return flat
 
 
+def _social_cloud_root() -> str:
+    # Real cloud storage lives on the ZFS pool (see app.py CLOUD_STORAGE); the
+    # old "/home/switchhacker/baza-cloud" default never existed.
+    return os.environ.get("BAZA_CLOUD_ROOT", "/mnt/empirepool/cloud")
+
+
+def _social_allowed_roots() -> tuple:
+    """Filesystem roots a social media path may live under (traversal defense).
+    Shared by the path resolver and the thumb/serve endpoints so they never
+    drift out of sync."""
+    roots = [
+        os.path.abspath(_social_cloud_root()),
+        # webcam/screen-capture uploads
+        os.path.abspath(os.path.join(DASHBOARD_DIR, "uploads", "social")),
+        # Data Hub uploads
+        os.path.abspath(os.path.join(DASHBOARD_DIR, "uploads", "ahb")),
+        # the dashboard's own artifacts (Sam's generated images, Phil's photos)
+        os.path.abspath(os.path.join(DASHBOARD_DIR, "artifacts")),
+        # ZFS pool cloud + media imports (icloud/generated)
+        "/mnt/empirepool/cloud",
+        "/mnt/empirepool/media",
+    ]
+    extra = os.environ.get("BAZA_MEDIA_EXTRA_ROOT")
+    if extra:
+        roots.append(os.path.abspath(extra))
+    return tuple(roots)
+
+
+def _social_path_allowed(p_abs: str) -> bool:
+    return any(
+        p_abs == root or p_abs.startswith(root + os.sep)
+        for root in _social_allowed_roots()
+    )
+
+
+def _resolve_social_media_arg(raw: str) -> Optional[str]:
+    """Validate a caller-supplied media path (abs or cloud-root-relative) and
+    return its absolute path if it exists inside an allowed root, else None."""
+    if not raw:
+        return None
+    p = raw if os.path.isabs(raw) else os.path.join(_social_cloud_root(), raw)
+    p_abs = os.path.abspath(p)
+    if not _social_path_allowed(p_abs) or not os.path.isfile(p_abs):
+        return None
+    return p_abs
+
+
 def _resolve_media_paths(source_media_ids: list, _return_pairs: bool = False) -> list:
     """Map image_captions.id → absolute file path. Joins sub_path under the
     baza cloud root if not absolute. When _return_pairs is True, returns
@@ -1057,37 +1160,8 @@ def _resolve_media_paths(source_media_ids: list, _return_pairs: bool = False) ->
             return []
     finally:
         con.close()
-    # Real cloud storage lives on the ZFS pool (see app.py CLOUD_STORAGE); the
-    # old "/home/switchhacker/baza-cloud" default never existed, which silently
-    # dropped every relative source path. Default to the pool root.
-    cloud_root = os.environ.get(
-        "BAZA_CLOUD_ROOT",
-        "/mnt/empirepool/cloud",
-    )
-    cloud_root_abs = os.path.abspath(cloud_root)
-    # v2.1 T20: uploads from webcam/screen capture land under DASHBOARD_DIR/uploads/social
-    uploads_root_abs = os.path.abspath(
-        os.path.join(DASHBOARD_DIR, "uploads", "social")
-    )
-    # Data Hub uploads land here, and we accept imported references to them.
-    data_hub_root_abs = os.path.abspath(
-        os.path.join(DASHBOARD_DIR, "uploads", "ahb")
-    )
-    # The dashboard's own artifacts dir — Sam's generated images and Phil's
-    # unlocked photos land here and are legitimately referenced as sources.
-    artifacts_root_abs = os.path.abspath(
-        os.path.join(DASHBOARD_DIR, "artifacts")
-    )
-    # Takeout/iCloud imports — index-only, abs paths under user home are
-    # trusted when materialized via /sources/import-by-path.
-    extra_root = os.environ.get("BAZA_MEDIA_EXTRA_ROOT")
-    allowed_roots = [
-        cloud_root_abs, uploads_root_abs, data_hub_root_abs, artifacts_root_abs,
-        "/mnt/empirepool/cloud", "/mnt/empirepool/media",
-    ]
-    if extra_root:
-        allowed_roots.append(os.path.abspath(extra_root))
-    allowed_roots = tuple(allowed_roots)
+    cloud_root = _social_cloud_root()
+    allowed_roots = _social_allowed_roots()
     paths = []
     for r in rows:
         p = r["sub_path"]

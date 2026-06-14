@@ -19164,12 +19164,12 @@ SocialStudio.modules.composer = (function(){
     renderSourceGrid();
   }
 
-  function thumbUrl(subPath) {
-    return '/api/cloud/thumb/' + encodeURIComponent(subPath) + '?size=300';
+  function thumbUrl(p) {
+    return '/api/ahb/social/media/thumb?size=300&path=' + encodeURIComponent(p || '');
   }
 
-  function serveUrl(subPath) {
-    return '/api/cloud/media/serve/' + encodeURIComponent(subPath);
+  function serveUrl(p) {
+    return '/api/ahb/social/media/serve?path=' + encodeURIComponent(p || '');
   }
 
   function _esc(s) {
@@ -19188,11 +19188,10 @@ SocialStudio.modules.composer = (function(){
   }
 
   function _serveTokenFor(s) {
-    // composer + uploads: sub_path is the canonical key for /cloud/thumb.
-    // media/data-hub: thumbnail by abs_path (URL-encoded full path) — many
-    // installs accept absolute paths via the same thumb endpoint. Fallback
-    // is a generic icon if the thumb fetch errors.
-    return s.sub_path || s.abs_path || '';
+    // media/data-hub rows carry the real location in abs_path (sub_path is a
+    // bare filename there); composer rows have an absolute sub_path and no
+    // abs_path. Prefer abs_path so every origin resolves on the server.
+    return s.abs_path || s.sub_path || '';
   }
 
   function renderSourceGrid() {
@@ -20029,7 +20028,10 @@ SocialStudio.modules.composer = (function(){
     root().innerHTML = `
       <div class="ss-grid">
         <div class="ss-card">
-          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Sources</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700;font-size:13px">Sources</div>
+            <button class="btn-secondary ss-tip" data-tip="Browse all media in a big window and pick several at once" style="font-size:11px;padding:4px 10px" onclick="SocialStudio.modules.sourceBrowser.open()">🔍 Browse</button>
+          </div>
           <select id="ss-source-project" class="filter-select" style="width:100%;margin-bottom:6px" onchange="SocialStudio.modules.composer._reload()">
             <option value="">All projects</option>
           </select>
@@ -20141,6 +20143,190 @@ SocialStudio.modules.composer = (function(){
   }
 
   return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiStoryboard, aiBroll, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic, importAndToggle, _applyTemplate };
+})();
+
+// ── Source Browser: full-window, multi-select media picker ──────────────────
+SocialStudio.modules.sourceBrowser = (function(){
+  const S = SocialStudio;
+  let sel = new Map();   // stable key -> source item
+  let items = [];        // currently fetched items
+  let modal = null;
+  let qTimer = null;
+
+  function _esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  function _token(s){ return s.abs_path || s.sub_path || ''; }
+  function _key(s){
+    return (s.origin === 'composer' && s.id != null)
+      ? 'c:' + s.id : 'p:' + _token(s);
+  }
+  function _thumb(s){
+    return '/api/ahb/social/media/thumb?size=300&path=' + encodeURIComponent(_token(s));
+  }
+  function _badge(o){
+    if (o === 'media')    return '<span style="position:absolute;top:4px;left:4px;background:rgba(16,185,129,.9);color:#000;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700">M</span>';
+    if (o === 'data-hub') return '<span style="position:absolute;top:4px;left:4px;background:rgba(59,130,246,.9);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700">D</span>';
+    return '<span style="position:absolute;top:4px;left:4px;background:rgba(124,58,237,.9);color:#fff;font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700">S</span>';
+  }
+
+  function open(){
+    sel = new Map();
+    items = [];
+    modal = document.createElement('div');
+    modal.className = 'modal-bg';
+    modal.style.cssText = 'display:flex';
+    document.body.appendChild(modal);
+    modal.innerHTML = `
+      <div class="modal" style="max-width:1040px;width:94vw;height:86vh;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🔍 Browse sources</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:22px">&times;</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+          <input id="sb-q" class="search-box" placeholder="Search caption / tags / name" style="flex:1;min-width:160px">
+          <select id="sb-origin" class="filter-select">
+            <option value="composer,media,data-hub">All sources</option>
+            <option value="composer">Studio only</option>
+            <option value="media">Media tab only</option>
+            <option value="data-hub">Data Hub only</option>
+          </select>
+          <select id="sb-type" class="filter-select">
+            <option value="">Photos &amp; videos</option>
+            <option value="photo">Photos only</option>
+            <option value="video">Videos only</option>
+          </select>
+          <button class="btn-secondary" id="sb-selall" style="font-size:11px;padding:6px 10px">Select all</button>
+          <button class="btn-secondary" id="sb-clear" style="font-size:11px;padding:6px 10px">Clear</button>
+        </div>
+        <div id="sb-grid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;align-content:start;padding:2px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:10px">
+          <div id="sb-count" style="color:#aaa;font-size:12px">0 selected</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-secondary" data-close style="font-size:13px">Cancel</button>
+            <button class="btn-primary" id="sb-add" style="font-size:13px" disabled>Add to shot list</button>
+          </div>
+        </div>
+      </div>
+    `;
+    modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    document.getElementById('sb-q').addEventListener('input', () => {
+      clearTimeout(qTimer); qTimer = setTimeout(fetchAndRender, 300);
+    });
+    document.getElementById('sb-origin').addEventListener('change', fetchAndRender);
+    document.getElementById('sb-type').addEventListener('change', fetchAndRender);
+    document.getElementById('sb-selall').addEventListener('click', () => {
+      items.forEach(s => sel.set(_key(s), s)); renderGrid();
+    });
+    document.getElementById('sb-clear').addEventListener('click', () => { sel.clear(); renderGrid(); });
+    document.getElementById('sb-add').addEventListener('click', confirm);
+    // Inherit the inline grid's current project filter if one is set.
+    fetchAndRender();
+  }
+
+  function close(){
+    clearTimeout(qTimer);
+    if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
+    modal = null;
+  }
+
+  async function fetchAndRender(){
+    const grid = document.getElementById('sb-grid');
+    if (grid) grid.innerHTML = '<div style="color:#666;padding:30px;grid-column:1/-1;text-align:center">Loading…</div>';
+    const url = new URL('/api/ahb/social/sources', location.origin);
+    const q = (document.getElementById('sb-q') || {}).value || '';
+    const origin = (document.getElementById('sb-origin') || {}).value || 'composer,media,data-hub';
+    const type = (document.getElementById('sb-type') || {}).value || '';
+    const proj = (document.getElementById('ss-source-project') || {}).value || '';
+    if (q) url.searchParams.set('q', q);
+    url.searchParams.set('origins', origin);
+    if (type) url.searchParams.set('type', type);
+    if (proj) url.searchParams.set('project_id', proj);
+    url.searchParams.set('limit', '300');
+    try {
+      const r = await fetch(url);
+      items = (await r.json()).items || [];
+    } catch (e) { items = []; }
+    renderGrid();
+  }
+
+  function renderGrid(){
+    const grid = document.getElementById('sb-grid');
+    if (!grid) return;
+    if (!items.length){
+      grid.innerHTML = '<div style="color:#666;padding:30px;grid-column:1/-1;text-align:center">No media found for these filters.</div>';
+    } else {
+      grid.innerHTML = items.map((s, idx) => {
+        const on = sel.has(_key(s));
+        const label = s.caption || s.sub_path || s.abs_path || '';
+        return `
+          <div data-idx="${idx}" style="position:relative;cursor:pointer;border:2px solid ${on?'#10b981':'#1a1a2e'};border-radius:8px;overflow:hidden;background:#070712">
+            ${_badge(s.origin)}
+            <span style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:4px;background:${on?'#10b981':'rgba(7,7,18,.8)'};border:1px solid ${on?'#10b981':'#2a2a4a'};color:#0a0a18;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center">${on?'✓':''}</span>
+            <img src="${_thumb(s)}" loading="lazy" onerror="this.style.opacity='0.25'" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">
+            <div style="font-size:10px;color:#999;padding:3px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(String(label).slice(0,48))}</div>
+          </div>`;
+      }).join('');
+      grid.querySelectorAll('[data-idx]').forEach(el => {
+        el.addEventListener('click', () => {
+          const s = items[parseInt(el.dataset.idx, 10)];
+          const k = _key(s);
+          if (sel.has(k)) sel.delete(k); else sel.set(k, s);
+          renderGrid();
+        });
+      });
+    }
+    const n = sel.size;
+    const cnt = document.getElementById('sb-count');
+    const add = document.getElementById('sb-add');
+    if (cnt) cnt.textContent = n + ' selected';
+    if (add){ add.disabled = n === 0; add.textContent = n ? `Add ${n} to shot list` : 'Add to shot list'; }
+  }
+
+  async function confirm(){
+    const picks = Array.from(sel.values());
+    if (!picks.length) return;
+    const tid = S.modules.toast.progress(`Adding ${picks.length}…`);
+    let added = 0, failed = 0;
+    for (const s of picks){
+      try {
+        let id, srcObj;
+        if (s.origin === 'composer' && s.id != null){
+          id = s.id;
+          srcObj = { origin:'composer', id, sub_path:s.sub_path, caption:s.caption||'', tags:s.tags||'' };
+        } else {
+          const r = await fetch('/api/ahb/social/sources/import-by-path', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              abs_path: s.abs_path || s.sub_path,
+              caption: s.caption || '', tags: s.tags || s.origin || '',
+              origin: s.origin || 'imported',
+            }),
+          });
+          const j = await r.json();
+          if (!r.ok){ failed++; continue; }
+          id = j.id;
+          srcObj = { origin:'composer', id, sub_path:j.sub_path, caption:s.caption||'', tags:s.tags||'' };
+        }
+        // Keep state.sources in sync so the preview/shot-rail can resolve thumbs.
+        if (!S.state.sources.some(x => x.id === id)) S.state.sources.push(srcObj);
+        // Add to the shot list if not already present.
+        const present = S.state.shotList.some(it => (typeof it === 'object' ? it.id : it) === id);
+        if (!present){ S.state.shotList.push({ id }); added++; }
+      } catch (e) { failed++; }
+    }
+    S.modules.composer.renderShotRail();
+    S.modules.composer.renderPreview();
+    S.modules.composer._reload();   // refresh the inline grid checkmarks
+    S.modules.toast.resolve(tid, failed ? 'info' : 'success',
+      `Added ${added} to shot list` + (failed ? ` (${failed} failed)` : ''));
+    close();
+  }
+
+  return { open, close };
 })();
 
 SocialStudio.modules.library = (function(){
