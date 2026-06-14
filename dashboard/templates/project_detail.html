@@ -316,6 +316,7 @@
             </div>
           </div>
           <button id="scaffold-pcb-vision-btn" class="btn-sm" style="background:#3b82f6;color:#fff;" title="Upload or pick a board photo for vision-based identification">📸 Add PCB photo</button>
+          <button id="scaffold-silkscreen-btn" class="btn-sm" style="background:#a855f7;color:#fff;" title="Add a silkscreen / board-overlay deliverable (component outlines, reference designators, pin labels)">🏷️ Silkscreen</button>
           <button id="scaffold-open-inventory" class="btn-sm">🧰 Inventory</button>
           <button id="scaffold-open-equipment" class="btn-sm">🔧 Equipment</button>
           <button id="scaffold-open-supplies" class="btn-sm">🛒 Supplies</button>
@@ -743,7 +744,8 @@ reload();
     root: '🌱', research: '🔬', decision: '❓',
     hardware_component: '🔩', firmware: '⚡', software_module: '💻',
     integration: '🔗', test: '✅', deploy: '🚀',
-    result: '🍎', manual_step: '✋'
+    result: '🍎', manual_step: '✋',
+    schematic: '🔌', pcb_vision: '📸', silkscreen: '🏷️'
   };
   const STATUS_COLOR = {
     pending: '#9ca3af', in_progress: '#3b82f6',
@@ -872,6 +874,10 @@ reload();
     }
     if (n.node_type === 'pcb_vision') {
       await renderPCBVisionEditor(n, body, panel);
+      return;
+    }
+    if (n.node_type === 'silkscreen') {
+      renderSilkscreen(n, body, panel);
       return;
     }
     // Reset panel to default width for non-schematic nodes
@@ -1446,15 +1452,149 @@ reload();
     const equipBtn = document.getElementById('scaffold-open-equipment');
     const suppBtn = document.getElementById('scaffold-open-supplies');
     const pcbBtn = document.getElementById('scaffold-pcb-vision-btn');
+    const silkBtn = document.getElementById('scaffold-silkscreen-btn');
     if (startBtn) startBtn.addEventListener('click', startScaffold);
     if (pauseBtn) pauseBtn.addEventListener('click', togglePause);
     if (bomAddBtn) bomAddBtn.addEventListener('click', addBom);
     if (pcbBtn) pcbBtn.addEventListener('click', openPCBSourceModal);
+    if (silkBtn) silkBtn.addEventListener('click', addSilkscreen);
     if (invBtn) invBtn.addEventListener('click', () => { if (window.InventoryModal) window.InventoryModal.open(); else alert('Inventory modal not loaded yet'); });
     if (equipBtn) equipBtn.addEventListener('click', () => { if (window.EquipmentModal) window.EquipmentModal.open(); else alert('Equipment modal not loaded yet'); });
     if (suppBtn) suppBtn.addEventListener('click', () => alert('Cross-project supplies roll-up is Phase 3.'));
     loadGraph();
     connectStream();
+  }
+
+  // ============================================================
+  //  Silkscreen / board overlay — available on every project
+  // ============================================================
+  async function addSilkscreen() {
+    // Offer to attach an existing image (e.g. a generated pinout) or start
+    // an empty silkscreen spec. Upload-from-disk also supported via the
+    // node side panel once created.
+    const img = prompt(
+      'Silkscreen / board overlay.\n\n' +
+      'Enter a project-relative image to use as the silkscreen layer ' +
+      '(e.g. docs/pinout.png), or leave blank to create an empty spec:',
+      'docs/pinout.png');
+    if (img === null) return;  // cancelled
+    try {
+      const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/silkscreen`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ image: (img || '').trim() })
+      });
+      const j = await r.json();
+      if (!j.ok) { alert('Silkscreen failed: ' + (j.error || r.status)); return; }
+      await loadGraph();
+      if (j.node_id) openSidePanel(j.node_id);
+    } catch (e) {
+      alert('Silkscreen request failed: ' + e);
+    }
+  }
+
+  function renderSilkscreen(n, body, panel) {
+    panel.style.width = 'min(640px, 94vw)';
+    panel.style.right = '0';   // slide the drawer into view
+    const payload = n.payload || {};
+    const hasImg = !!(payload.image);
+    const imgUrl = `/api/baza/projects/${PROJECT_ID}/scaffold/silkscreen/image/${n.id}?t=${Date.now()}`;
+    body.innerHTML = `
+      <h3 style="margin-top:0;">🏷️ ${escapeHtml(n.title)}</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <span class="pill" style="background:${STATUS_COLOR[n.status]||'#666'};padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;">${escapeHtml(n.status)}</span>
+        <span class="pill" style="background:#a855f7;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;">silkscreen</span>
+      </div>
+      <p style="color:#bbb;font-size:13px;">${escapeHtml(n.description || '')}</p>
+      ${hasImg
+        ? `<div style="display:flex;gap:6px;align-items:center;margin:8px 0;">
+             <button id="silk-zoom-out" class="btn-sm" title="Zoom out">－</button>
+             <button id="silk-zoom-in" class="btn-sm" title="Zoom in">＋</button>
+             <button id="silk-zoom-reset" class="btn-sm" title="Fit to width">Reset</button>
+             <span id="silk-zoom-label" style="font-size:11px;color:#888;min-width:42px;">100%</span>
+             <span style="font-size:11px;color:#666;margin-left:auto;">scroll = zoom · drag = pan</span>
+           </div>
+           <div id="silk-viewport" style="border:1px solid #333;border-radius:6px;overflow:auto;background:#0a0a0a;max-height:62vh;cursor:grab;">
+             <img id="silk-img" src="${imgUrl}" draggable="false" style="width:100%;display:block;transform-origin:top left;"
+                  onerror="this.parentNode.innerHTML='<div style=\\'padding:14px;color:#e94560;font-size:12px;\\'>image not found: ${escapeHtml(payload.image)}</div>'"/>
+           </div>
+           <div style="font-size:11px;color:#777;margin-top:4px;">source: <code>${escapeHtml(payload.image)}</code> · <a href="${imgUrl}" target="_blank" style="color:#a855f7;">open full size ↗</a></div>`
+        : `<div style="padding:14px;border:1px dashed #444;border-radius:6px;color:#888;font-size:12px;">
+             Empty silkscreen spec. Attach an overlay image with the button below, or re-create from a generated pinout/wiring diagram.
+           </div>`}
+      <div style="margin-top:14px;display:flex;gap:6px;flex-wrap:wrap;">
+        <button onclick="document.getElementById('silk-upload-${n.id}').click()" class="btn-sm" style="background:#a855f7;color:#fff;">⬆ Attach image</button>
+        <input type="file" id="silk-upload-${n.id}" accept=".png,.jpg,.jpeg,.webp,.svg,.pdf" style="display:none" onchange="ScaffoldUI.uploadSilkscreen(${n.id}, this.files[0])"/>
+        <button onclick="ScaffoldUI.addNote(${n.id})" class="btn-sm">📝 Note</button>
+        <button onclick="ScaffoldUI.deleteNode(${n.id})" class="btn-sm" style="background:#7a1d1d;color:#fff;">Delete</button>
+      </div>`;
+    if (hasImg) _silkInitZoom();
+  }
+
+  // Pan + zoom for the silkscreen image. All listeners bind to elements that
+  // are recreated on each panel render, so nothing leaks across opens.
+  function _silkInitZoom() {
+    const vp = document.getElementById('silk-viewport');
+    const img = document.getElementById('silk-img');
+    const label = document.getElementById('silk-zoom-label');
+    if (!vp || !img) return;
+    let scale = 1;
+    const MIN = 0.25, MAX = 8;
+    const apply = () => {
+      img.style.width = (scale * 100) + '%';
+      if (label) label.textContent = Math.round(scale * 100) + '%';
+    };
+    const zoomAt = (factor, clientX, clientY) => {
+      const old = scale;
+      scale = Math.min(MAX, Math.max(MIN, scale * factor));
+      if (scale === old) return;
+      const rect = vp.getBoundingClientRect();
+      // content coord under the cursor, before zoom
+      const cx = (clientX == null) ? rect.width / 2 : clientX - rect.left;
+      const cy = (clientY == null) ? rect.height / 2 : clientY - rect.top;
+      const contentX = vp.scrollLeft + cx;
+      const contentY = vp.scrollTop + cy;
+      const ratio = scale / old;
+      apply();
+      vp.scrollLeft = contentX * ratio - cx;
+      vp.scrollTop = contentY * ratio - cy;
+    };
+    document.getElementById('silk-zoom-in').onclick = () => zoomAt(1.25);
+    document.getElementById('silk-zoom-out').onclick = () => zoomAt(0.8);
+    document.getElementById('silk-zoom-reset').onclick = () => { scale = 1; apply(); vp.scrollTo(0, 0); };
+    vp.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomAt(e.deltaY < 0 ? 1.15 : 0.87, e.clientX, e.clientY);
+    }, { passive: false });
+    // drag-to-pan via pointer capture (no window-level listeners)
+    let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
+    vp.addEventListener('pointerdown', (e) => {
+      dragging = true; sx = e.clientX; sy = e.clientY; sl = vp.scrollLeft; st = vp.scrollTop;
+      vp.style.cursor = 'grabbing'; vp.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    vp.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      vp.scrollLeft = sl - (e.clientX - sx);
+      vp.scrollTop = st - (e.clientY - sy);
+    });
+    const endDrag = (e) => { dragging = false; vp.style.cursor = 'grab'; try { vp.releasePointerCapture(e.pointerId); } catch (_) {} };
+    vp.addEventListener('pointerup', endDrag);
+    vp.addEventListener('pointercancel', endDrag);
+    apply();
+  }
+
+  async function uploadSilkscreen(nodeId, file) {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      // create a fresh silkscreen node from the uploaded image, then refresh
+      const r = await fetch(`/api/baza/projects/${PROJECT_ID}/scaffold/silkscreen`, { method:'POST', body: fd });
+      const j = await r.json();
+      if (!j.ok) { alert('Upload failed: ' + (j.error || r.status)); return; }
+      await loadGraph();
+      if (j.node_id) openSidePanel(j.node_id);
+    } catch (e) { alert('Upload failed: ' + e); }
   }
 
   // ============================================================
@@ -1927,7 +2067,8 @@ reload();
     init, loadGraph, openSidePanel, closeSidePanel, teardown,
     runNode, addNote, markDone, deleteNode, overrideDecision,
     toggleHand, promoteBom, deleteBom, addBom,
-    renderSchematicEditor, renderPCBVisionEditor, openPCBSourceModal
+    renderSchematicEditor, renderPCBVisionEditor, openPCBSourceModal,
+    addSilkscreen, renderSilkscreen, uploadSilkscreen
   };
 
   // Init when scaffold tab becomes active. The existing setTab() shows panels by

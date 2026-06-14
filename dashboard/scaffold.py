@@ -1196,3 +1196,111 @@ def pcb_vision_datahub_list(pid):
     items = items[:500]
     return jsonify({"ok": True, "count": len(items), "root_path": str(root_path),
                     "root_key": root_key, "items": items})
+
+
+# ---------------- Silkscreen / board overlay (every project) ------------------
+
+SILKSCREEN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".pdf"}
+
+
+def _silkscreen_dir(project_id: str) -> Path:
+    d = ARTIFACTS_DIR / project_id / "silkscreen"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/silkscreen", methods=["POST"])
+def silkscreen_create(pid):
+    """Create a silkscreen / board-overlay deliverable. Exposed on EVERY
+    project (the scaffold toolbar shows a Silkscreen button regardless of
+    project type). Accepts one of:
+      - a multipart image upload (field 'file'),
+      - a project-relative image path (json 'image', e.g. 'docs/pinout.png'),
+      - nothing — creates an empty silkscreen spec to fill in later.
+    The silkscreen layer captures component outlines, reference designators
+    and pin labels for fabrication or hand-wiring."""
+    if not _project_exists(pid):
+        return jsonify({"ok": False, "error": "project_not_found"}), 404
+    eng = _engine()
+    root = next((n for n in eng.get_nodes(pid) if n["node_type"] == "root"), None)
+    parent_id = root["id"] if root else None
+
+    title = "Silkscreen / board overlay"
+    description = ""
+    image_ref = ""
+    labels = []
+
+    if "file" in request.files and request.files["file"].filename:
+        f = request.files["file"]
+        ext = Path(f.filename).suffix.lower()
+        if ext not in SILKSCREEN_IMAGE_EXTS:
+            return jsonify({"ok": False, "error": f"unsupported extension {ext}"}), 415
+        raw = f.read()
+        if not raw:
+            return jsonify({"ok": False, "error": "empty file"}), 400
+        sha = hashlib.sha256(raw).hexdigest()[:8]
+        dest = _silkscreen_dir(pid) / f"{sha}{ext}"
+        if not dest.exists():
+            dest.write_bytes(raw)
+        image_ref = str(dest)
+        title = (request.form.get("title") or title)[:200]
+        description = request.form.get("description") or ""
+    else:
+        body = request.get_json(silent=True) or {}
+        image_ref = (body.get("image") or "").strip()
+        title = (body.get("title") or title)[:200]
+        description = body.get("description") or ""
+        labels = body.get("labels") or []
+
+    payload = {"kind": "silkscreen", "image": image_ref,
+               "labels": labels, "notes": description}
+    nid = eng.create_node(
+        pid, node_type="silkscreen", title=title,
+        description=description or (
+            "Board silkscreen layer — component outlines, reference "
+            "designators, and pin labels for fabrication or hand-wiring."),
+        parent_id=parent_id, payload=payload,
+        status="done" if image_ref else "pending",
+    )
+    return jsonify({"ok": True, "node_id": nid}), 201
+
+
+@scaffold_bp.route("/api/baza/projects/<pid>/scaffold/silkscreen/image/<int:nid>",
+                   methods=["GET"])
+def silkscreen_image(pid, nid):
+    """Serve a silkscreen node's image. Resolves both absolute artifact
+    paths (uploads) and project-relative paths (e.g. 'docs/pinout.png')."""
+    eng = _engine()
+    node = eng.get_node(nid)
+    if not node or node["project_id"] != pid:
+        return abort(404)
+    payload = {}
+    if node.get("payload_json"):
+        try:
+            payload = json.loads(node["payload_json"])
+        except Exception:
+            payload = {}
+    img = (payload.get("image") or "").strip()
+    if not img:
+        return abort(404)
+    # Resolve the project's on-disk sandbox from the DB `path` column.
+    proj_root = None
+    try:
+        con = sqlite3.connect(_db_path())
+        row = con.execute("SELECT path FROM projects WHERE id=?", (pid,)).fetchone()
+        con.close()
+        if row and row[0]:
+            proj_root = Path(row[0]).resolve()
+    except Exception:
+        proj_root = None
+    p = Path(img)
+    if not p.is_absolute():
+        if proj_root is None:
+            return abort(404)
+        p = proj_root / img
+    p = p.resolve()
+    # confine to the project sandbox or its artifacts dir
+    allowed = [a for a in (proj_root, (ARTIFACTS_DIR / pid).resolve()) if a]
+    if not any(str(p).startswith(str(a)) for a in allowed) or not p.exists():
+        return abort(404)
+    return send_file(str(p))

@@ -10,7 +10,7 @@ NODE_TYPES = {
     "root", "research", "decision", "hardware_component",
     "firmware", "software_module", "integration",
     "test", "deploy", "result", "manual_step",
-    "schematic", "pcb_vision",
+    "schematic", "pcb_vision", "silkscreen",
 }
 
 DEFAULT_WEIGHTS = {
@@ -27,6 +27,7 @@ DEFAULT_WEIGHTS = {
     "result": 0,
     "schematic": 2,
     "pcb_vision": 2,
+    "silkscreen": 2,
 }
 
 _AGENT_BY_TYPE = {
@@ -43,6 +44,7 @@ _AGENT_BY_TYPE = {
     "result": "claw_batto",
     "schematic": "rex_smasher",
     "pcb_vision": "claw_batto",
+    "silkscreen": "rex_smasher",
 }
 
 
