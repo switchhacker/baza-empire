@@ -321,6 +321,47 @@ def test_post_cover_404_when_no_source(client):
     assert r.status_code == 404
 
 
+def test_media_serve_allows_extra_root_and_blocks_traversal(client, tmp_path, monkeypatch):
+    """serve returns the file for an allowed abs path and 404s outside roots."""
+    monkeypatch.setenv("BAZA_MEDIA_EXTRA_ROOT", str(tmp_path))
+    c, _ = client
+    img = tmp_path / "pic.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\nserve-me")
+    r = c.get("/api/ahb/social/media/serve", query_string={"path": str(img)})
+    assert r.status_code == 200
+    assert r.data == b"\x89PNG\r\n\x1a\nserve-me"
+    # Outside any allowed root → 404, never served
+    r2 = c.get("/api/ahb/social/media/serve", query_string={"path": "/etc/passwd"})
+    assert r2.status_code == 404
+    # Missing path → 404
+    assert c.get("/api/ahb/social/media/serve").status_code == 404
+
+
+def test_media_thumb_resizes_image(client, tmp_path, monkeypatch):
+    """thumb returns a JPEG smaller than the source dimensions."""
+    PIL = pytest.importorskip("PIL")
+    from PIL import Image
+    monkeypatch.setenv("BAZA_MEDIA_EXTRA_ROOT", str(tmp_path))
+    c, _ = client
+    big = tmp_path / "big.png"
+    Image.new("RGB", (1200, 1200), (10, 120, 80)).save(str(big))
+    r = c.get("/api/ahb/social/media/thumb",
+              query_string={"path": str(big), "size": 200})
+    assert r.status_code == 200
+    assert r.mimetype == "image/jpeg"
+    out = Image.open(io.BytesIO(r.data))
+    assert max(out.size) <= 200
+
+
+def test_media_thumb_404_for_non_image(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("BAZA_MEDIA_EXTRA_ROOT", str(tmp_path))
+    c, _ = client
+    vid = tmp_path / "clip.mp4"
+    vid.write_bytes(b"\x00\x00\x00\x18ftyp")
+    r = c.get("/api/ahb/social/media/thumb", query_string={"path": str(vid)})
+    assert r.status_code == 404
+
+
 def test_url_import_400_no_url(client):
     c, _ = client
     r = c.post("/api/ahb/social/sources/url-import", json={})
