@@ -48,14 +48,15 @@ def env(monkeypatch, tmp_path):
         sys.modules.pop(m, None)
 
 
-def _make_post(db, asset_path=None, caption="hello", hashtags="#a #b"):
+def _make_post(db, asset_path=None, caption="hello", hashtags="#a #b",
+               cover_path=None):
     con = sqlite3.connect(db)
     try:
         cur = con.execute(
             "INSERT INTO ahb_social_posts (platform, variant, caption, hashtags, "
-            "asset_path, source_media_ids, status) VALUES "
-            "('tiktok','9x16',?,?,?,'[]','draft')",
-            (caption, hashtags, asset_path),
+            "asset_path, cover_path, source_media_ids, status) VALUES "
+            "('tiktok','9x16',?,?,?,?,'[]','draft')",
+            (caption, hashtags, asset_path, cover_path),
         )
         con.commit()
         return cur.lastrowid
@@ -213,9 +214,9 @@ def test_publish_youtube_success(env, monkeypatch, tmp_path):
     assert row[1] == "https://youtu.be/VID123"
 
 
-def test_publish_non_youtube_is_501_with_manual_hint(env):
+def test_publish_unknown_platform_is_501(env):
     c, sc, db = env
-    cid = sc._upsert_connection("instagram", "ig", "ig_1", "")
+    cid = sc._upsert_connection("threads", "th", "th_1", "")
     pid = _make_post(db)
     r = c.post(f"/api/ahb/social/posts/{pid}/publish",
                json={"connection_id": cid, "confirm": True})
@@ -264,10 +265,282 @@ def test_feed_youtube(env, monkeypatch):
     assert items[0]["id"] == "v1"
 
 
-def test_feed_non_youtube_returns_phase_note(env, monkeypatch):
+# ── Phase 3: TikTok ─────────────────────────────────────────────────────────
+def _seed_tiktok(sc, ref="open_1", privacy_options=None):
+    cid = sc._upsert_connection("tiktok", "Creator", ref, "video.publish")
+    sc._set_conn_meta(cid, {"open_id": ref,
+                            "privacy_options": privacy_options or []})
+    sc._secure_write(sc._token_path("tiktok", ref),
+                     '{"access_token": "TT_TOKEN", "open_id": "open_1"}')
+    return cid
+
+
+def test_tiktok_token_requires_token(env):
+    c, _, _ = env
+    assert c.post("/api/ahb/social/connections/tiktok/token",
+                  json={}).status_code == 400
+
+
+def test_tiktok_token_connects(env, monkeypatch):
+    c, sc, _ = env
+    monkeypatch.setattr(sc, "_tt_creator_info", lambda tok: {
+        "creator_nickname": "AHB Co",
+        "privacy_level_options": ["SELF_ONLY", "PUBLIC_TO_EVERYONE"]})
+    r = c.post("/api/ahb/social/connections/tiktok/token",
+               json={"access_token": "TT", "open_id": "open_xyz"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    j = r.get_json()
+    assert j["account_label"] == "AHB Co"
+    assert "PUBLIC_TO_EVERYONE" in j["privacy_options"]
+    tp = sc._token_path("tiktok", "open_xyz")
+    assert os.path.exists(tp)
+    assert oct(os.stat(tp).st_mode & 0o777) == "0o600"
+    items = c.get("/api/ahb/social/connections").get_json()["items"]
+    assert any(i["platform"] == "tiktok" for i in items)
+
+
+def test_publish_tiktok_self_only_draft(env, monkeypatch, tmp_path):
     c, sc, db = env
-    cid = sc._upsert_connection("tiktok", "tt", "tt_1", "")
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "https://ahb123.com")
+    cid = _seed_tiktok(sc, privacy_options=[])  # unaudited → SELF_ONLY only
+    vid = tmp_path / "v.mp4"; vid.write_bytes(b"\x00\x00\x00\x18ftyp")
+    pid = _make_post(db, asset_path=str(vid), caption="hi", hashtags="#x")
+    cap = {}
+
+    def fake_pub(token, url, title, privacy):
+        cap.update(token=token, url=url, privacy=privacy)
+        return {"publish_id": "PUB1"}
+
+    monkeypatch.setattr(sc, "_tt_publish_video", fake_pub)
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    j = r.get_json()
+    assert j["publish_id"] == "PUB1"
+    assert j["privacy_level"] == "SELF_ONLY"
+    assert "draft" in j["note"].lower()
+    assert cap["privacy"] == "SELF_ONLY"
+    assert cap["url"].endswith(f"/posts/{pid}/asset")
+
+
+def test_publish_tiktok_public_when_allowed(env, monkeypatch, tmp_path):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "https://ahb123.com")
+    cid = _seed_tiktok(sc, privacy_options=["PUBLIC_TO_EVERYONE", "SELF_ONLY"])
+    vid = tmp_path / "v.mp4"; vid.write_bytes(b"\x00\x00\x00\x18ftyp")
+    pid = _make_post(db, asset_path=str(vid))
+    seen = {}
+    monkeypatch.setattr(sc, "_tt_publish_video",
+                        lambda token, url, title, privacy: seen.update(privacy=privacy)
+                        or {"publish_id": "P2"})
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 200
+    assert seen["privacy"] == "PUBLIC_TO_EVERYONE"
+
+
+def test_publish_tiktok_requires_video(env, monkeypatch):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "https://ahb123.com")
+    cid = _seed_tiktok(sc)
+    pid = _make_post(db, asset_path=None)
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 400
+    assert "video" in r.get_json()["error"].lower()
+
+
+def test_publish_tiktok_requires_public_base(env, monkeypatch, tmp_path):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "")
+    cid = _seed_tiktok(sc)
+    vid = tmp_path / "v.mp4"; vid.write_bytes(b"\x00\x00\x00\x18ftyp")
+    pid = _make_post(db, asset_path=str(vid))
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 400
+    assert "manual_export" in r.get_json()
+
+
+def test_feed_tiktok(env, monkeypatch):
+    c, sc, db = env
+    cid = _seed_tiktok(sc)
+    monkeypatch.setattr(sc, "_tt_video_list",
+                        lambda token, limit: [{"id": "tv1", "title": "clip",
+                                               "url": "u", "thumbnail": "t",
+                                               "published_at": "0"}])
     r = c.get(f"/api/ahb/social/connections/{cid}/feed")
     assert r.status_code == 200
-    assert r.get_json()["items"] == []
-    assert "Phase" in r.get_json()["note"]
+    assert r.get_json()["items"][0]["id"] == "tv1"
+
+
+# ── Phase 2: Meta (Instagram + Facebook) ───────────────────────────────────
+_FAKE_PAGES = [{
+    "id": "PAGE1", "name": "All Home Building",
+    "access_token": "PAGE_TOKEN_1",
+    "instagram_business_account": {"id": "IG1", "username": "ahbco"},
+}]
+
+
+def _seed_meta(sc, platform, ref, meta):
+    cid = sc._upsert_connection(platform, "lbl", ref, "")
+    sc._set_conn_meta(cid, meta)
+    sc._secure_write(sc._token_path(platform, ref),
+                     '{"page_token": "PAGE_TOKEN_1"}')
+    return cid
+
+
+def test_connections_list_reports_token_platforms(env):
+    c, _, _ = env
+    j = c.get("/api/ahb/social/connections").get_json()
+    assert "instagram" in j["token_platforms"]
+    assert "facebook" in j["token_platforms"]
+    assert j["public_base_set"] is False
+
+
+def test_meta_token_lists_pages_without_leaking_tokens(env, monkeypatch):
+    c, sc, _ = env
+    monkeypatch.setattr(sc, "_meta_list_pages", lambda tok: _FAKE_PAGES)
+    r = c.post("/api/ahb/social/connections/meta/token",
+               json={"access_token": "USER_TOKEN"})
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ref"]
+    assert j["pages"][0]["has_instagram"] is True
+    assert j["pages"][0]["ig_username"] == "ahbco"
+    # page access tokens never leak to the client
+    assert "PAGE_TOKEN_1" not in json.dumps(j)
+
+
+def test_meta_add_creates_facebook_and_instagram(env, monkeypatch):
+    c, sc, _ = env
+    monkeypatch.setattr(sc, "_meta_list_pages", lambda tok: _FAKE_PAGES)
+    ref = c.post("/api/ahb/social/connections/meta/token",
+                 json={"access_token": "U"}).get_json()["ref"]
+    r = c.post("/api/ahb/social/connections/meta/add",
+               json={"ref": ref, "page_id": "PAGE1", "connect_instagram": True})
+    assert r.status_code == 200
+    created = r.get_json()["created"]
+    platforms = {x["platform"] for x in created}
+    assert platforms == {"facebook", "instagram"}
+    # token files written with 600 perms
+    assert oct(os.stat(sc._token_path("facebook", "PAGE1")).st_mode & 0o777) == "0o600"
+    assert os.path.exists(sc._token_path("instagram", "IG1"))
+
+
+def test_meta_add_facebook_only(env, monkeypatch):
+    c, sc, _ = env
+    monkeypatch.setattr(sc, "_meta_list_pages", lambda tok: _FAKE_PAGES)
+    ref = c.post("/api/ahb/social/connections/meta/token",
+                 json={"access_token": "U"}).get_json()["ref"]
+    r = c.post("/api/ahb/social/connections/meta/add",
+               json={"ref": ref, "page_id": "PAGE1", "connect_instagram": False})
+    assert [x["platform"] for x in r.get_json()["created"]] == ["facebook"]
+
+
+def test_meta_add_expired_session(env):
+    c, _, _ = env
+    r = c.post("/api/ahb/social/connections/meta/add",
+               json={"ref": "nope", "page_id": "PAGE1"})
+    assert r.status_code == 400
+
+
+def test_publish_meta_requires_public_base(env, monkeypatch, tmp_path):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "")
+    cid = _seed_meta(sc, "facebook", "PAGE1", {"page_id": "PAGE1"})
+    img = tmp_path / "c.jpg"; img.write_bytes(b"x")
+    pid = _make_post(db, cover_path=str(img))
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 400
+    assert "manual_export" in r.get_json()
+
+
+def test_publish_facebook_photo(env, monkeypatch, tmp_path):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "https://ahb123.com")
+    cid = _seed_meta(sc, "facebook", "PAGE1", {"page_id": "PAGE1"})
+    img = tmp_path / "c.jpg"; img.write_bytes(b"jpg")
+    pid = _make_post(db, cover_path=str(img), caption="hi", hashtags="#x")
+    cap = {}
+
+    def fake_photo(page_id, token, image_url, caption):
+        cap.update(page_id=page_id, token=token, image_url=image_url)
+        return {"id": "FB9", "url": "https://facebook.com/FB9"}
+
+    monkeypatch.setattr(sc, "_meta_publish_photo", fake_photo)
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["url"] == "https://facebook.com/FB9"
+    assert cap["page_id"] == "PAGE1"
+    assert cap["token"] == "PAGE_TOKEN_1"
+    assert cap["image_url"] == f"https://ahb123.com/api/ahb/social/posts/{pid}/cover"
+
+
+def test_publish_instagram_reel(env, monkeypatch, tmp_path):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "https://ahb123.com")
+    cid = _seed_meta(sc, "instagram", "IG1", {"ig_user_id": "IG1", "page_id": "PAGE1"})
+    vid = tmp_path / "r.mp4"; vid.write_bytes(b"\x00\x00\x00\x18ftyp")
+    pid = _make_post(db, asset_path=str(vid), caption="reel", hashtags="#a")
+    cap = {}
+
+    def fake_ig(ig_id, token, media_url, caption, is_video):
+        cap.update(ig_id=ig_id, media_url=media_url, is_video=is_video)
+        return {"id": "IGM1", "url": "https://instagram.com/p/IGM1"}
+
+    monkeypatch.setattr(sc, "_meta_ig_publish", fake_ig)
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert cap["ig_id"] == "IG1"
+    assert cap["is_video"] is True
+    assert cap["media_url"].endswith(f"/posts/{pid}/asset")
+
+
+def test_publish_meta_requires_asset(env, monkeypatch):
+    c, sc, db = env
+    monkeypatch.setattr(sc, "SOCIAL_PUBLIC_BASE_URL", "https://ahb123.com")
+    cid = _seed_meta(sc, "facebook", "PAGE1", {"page_id": "PAGE1"})
+    pid = _make_post(db, asset_path=None, cover_path=None)
+    r = c.post(f"/api/ahb/social/posts/{pid}/publish",
+               json={"connection_id": cid, "confirm": True})
+    assert r.status_code == 400
+    assert "render" in r.get_json()["error"].lower()
+
+
+def test_feed_facebook(env, monkeypatch):
+    c, sc, db = env
+    cid = _seed_meta(sc, "facebook", "PAGE1", {"page_id": "PAGE1"})
+    monkeypatch.setattr(sc, "_meta_page_feed",
+                        lambda pid, tok, lim: [{"id": "p1", "title": "post",
+                                                "url": "u", "thumbnail": "t",
+                                                "published_at": ""}])
+    r = c.get(f"/api/ahb/social/connections/{cid}/feed")
+    assert r.status_code == 200
+    assert r.get_json()["items"][0]["id"] == "p1"
+
+
+def test_feed_instagram(env, monkeypatch):
+    c, sc, db = env
+    cid = _seed_meta(sc, "instagram", "IG1", {"ig_user_id": "IG1"})
+    monkeypatch.setattr(sc, "_meta_ig_media",
+                        lambda ig, tok, lim: [{"id": "m1", "title": "cap",
+                                               "url": "u", "thumbnail": "t",
+                                               "published_at": ""}])
+    r = c.get(f"/api/ahb/social/connections/{cid}/feed")
+    assert r.status_code == 200
+    assert r.get_json()["items"][0]["id"] == "m1"
+
+
+def test_asset_serve(env, tmp_path):
+    c, sc, db = env
+    vid = tmp_path / "a.mp4"; vid.write_bytes(b"VIDEOBYTES")
+    pid = _make_post(db, asset_path=str(vid))
+    r = c.get(f"/api/ahb/social/posts/{pid}/asset")
+    assert r.status_code == 200
+    assert r.data == b"VIDEOBYTES"
+    pid2 = _make_post(db, asset_path=None)
+    assert c.get(f"/api/ahb/social/posts/{pid2}/asset").status_code == 404

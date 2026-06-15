@@ -218,7 +218,11 @@ def test_render_post_invokes_still_for_image(client, monkeypatch, tmp_path):
     # Stub resolve to return one fake jpg, stub render_still to record args
     fake_src = str(tmp_path / "src.jpg")
     open(fake_src, "w").write("")
-    monkeypatch.setattr(social_studio, "_resolve_media_paths", lambda ids: [fake_src])
+    monkeypatch.setattr(
+        social_studio, "_resolve_media_paths",
+        lambda ids, _return_pairs=False: (
+            [{"id": (ids[0] if ids else 1), "path": fake_src}]
+            if _return_pairs else [fake_src]))
     calls = {}
     def fake_still(src, out, platform, hook_text=None, brand_corner=False, fill_mode="blurred"):
         calls["still"] = {"src": src, "out": out, "platform": platform, "hook": hook_text}
@@ -241,7 +245,11 @@ def test_render_post_failed_marks_status(client, monkeypatch, tmp_path):
     import subprocess as sp
     fake_src = str(tmp_path / "src.jpg")
     open(fake_src, "w").write("")
-    monkeypatch.setattr(social_studio, "_resolve_media_paths", lambda ids: [fake_src])
+    monkeypatch.setattr(
+        social_studio, "_resolve_media_paths",
+        lambda ids, _return_pairs=False: (
+            [{"id": (ids[0] if ids else 1), "path": fake_src}]
+            if _return_pairs else [fake_src]))
     def boom(*a, **kw):
         raise sp.CalledProcessError(1, ["ffmpeg"], stderr=b"fake err")
     monkeypatch.setattr(social_studio._render, "render_still", boom)
