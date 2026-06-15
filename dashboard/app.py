@@ -16,6 +16,7 @@ from dashboard.private_inbound import (
     move_out_of_vault as _vault_move_out,
     migrate_legacy_inbound_meta as _migrate_legacy_inbound_meta,
 )
+from dashboard.text_utils import normalize_escaped_newlines
 
 try:
     from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -5621,10 +5622,10 @@ def api_ahb_projects_create():
                commission_pct, commission_value)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (pid, data.get('client_id'), data.get('title'), data.get('address'),
-             data.get('scope'), data.get('description'),
+             normalize_escaped_newlines(data.get('scope')), normalize_escaped_newlines(data.get('description')),
              data.get('budget_low'), data.get('budget_high'),
              _ahb_canon_project_status(data.get('status', 'Planning')), data.get('start_date'),
-             data.get('end_date'), data.get('assigned_agents'), data.get('notes'),
+             data.get('end_date'), data.get('assigned_agents'), normalize_escaped_newlines(data.get('notes')),
              data.get('value'), data.get('client_name', ''),
              data.get('client_email', ''), data.get('contact_info', ''),
              data.get('location', ''),
@@ -5704,8 +5705,13 @@ def api_ahb_projects_update(pid):
                    'acquisition_type', 'commission_pct', 'commission_value',
                    'commission_beneficiary'):
             if k in data:
+                v = data[k]
+                # Heal LLM-extracted / pasted text where line breaks arrived as
+                # literal backslash-n (renders verbatim, pollutes Specter prompts).
+                if k in ('description', 'scope', 'notes'):
+                    v = normalize_escaped_newlines(v)
                 fields.append(f"{k} = ?")
-                vals.append(data[k])
+                vals.append(v)
         if not fields:
             return jsonify({'success': False, 'error': 'No fields to update'}), 400
         fields.append("updated_at = ?")
