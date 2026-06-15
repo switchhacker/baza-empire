@@ -26,7 +26,7 @@ import sqlite3
 import time
 from typing import Optional
 
-from flask import jsonify, request
+from flask import jsonify, request, send_file
 
 DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 FRAMEWORK_DIR = os.path.dirname(DASHBOARD_DIR)
@@ -54,9 +54,171 @@ OAUTH_REDIRECT_URI = os.environ.get(
 os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 _VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".m4v")
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+# Phase 2: Meta (Instagram + Facebook Page) connect via a pasted long-lived
+# access token (no redirect-based OAuth needed for single-user local use).
+META_GRAPH = os.environ.get("META_GRAPH_BASE", "https://graph.facebook.com/v19.0")
+# Phase 3: TikTok Content Posting API. Unaudited apps can only post privately
+# (SELF_ONLY drafts); public direct-post requires TikTok to audit the app.
+TIKTOK_API = os.environ.get("TIKTOK_API_BASE", "https://open.tiktokapis.com/v2")
+TOKEN_PLATFORMS = ("instagram", "facebook")
+# Instagram/Facebook pull media from a PUBLIC url — set this to the https origin
+# that fronts baza (e.g. https://ahb123.com) so the Graph API can fetch assets.
+SOCIAL_PUBLIC_BASE_URL = os.environ.get("SOCIAL_PUBLIC_BASE_URL", "")
 
 # In-memory OAuth flow registry (mirrors email_studio).
 _oauth_flows: dict = {}
+# Short-lived Meta token-discovery sessions (page list held server-side so page
+# tokens never round-trip through the browser).
+_meta_sessions: dict = {}
+
+
+def _public_base() -> str:
+    return (SOCIAL_PUBLIC_BASE_URL or "").rstrip("/")
+
+
+def _public_asset_url(pid: int, kind: str) -> str:
+    base = _public_base()
+    if not base:
+        return ""
+    path = (f"/api/ahb/social/posts/{pid}/asset" if kind == "video"
+            else f"/api/ahb/social/posts/{pid}/cover")
+    return base + path
+
+
+# ---------------------------------------------------------------------------
+# Meta Graph boundary — monkeypatched in tests
+# ---------------------------------------------------------------------------
+def _meta_list_pages(user_token: str) -> list:
+    import requests
+    r = requests.get(
+        f"{META_GRAPH}/me/accounts",
+        params={"access_token": user_token,
+                "fields": "id,name,access_token,instagram_business_account{id,username}"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
+def _meta_publish_photo(page_id, page_token, image_url, caption) -> dict:
+    import requests
+    r = requests.post(f"{META_GRAPH}/{page_id}/photos",
+                      data={"url": image_url, "caption": caption,
+                            "access_token": page_token}, timeout=120)
+    r.raise_for_status()
+    j = r.json()
+    pid_ = j.get("post_id") or j.get("id", "")
+    return {"id": pid_, "url": f"https://facebook.com/{pid_}" if pid_ else ""}
+
+
+def _meta_publish_video(page_id, page_token, video_url, caption) -> dict:
+    import requests
+    r = requests.post(f"{META_GRAPH}/{page_id}/videos",
+                      data={"file_url": video_url, "description": caption,
+                            "access_token": page_token}, timeout=180)
+    r.raise_for_status()
+    vid = r.json().get("id", "")
+    return {"id": vid, "url": f"https://facebook.com/{vid}" if vid else ""}
+
+
+def _meta_ig_publish(ig_id, token, media_url, caption, is_video) -> dict:
+    import requests
+    params = {"caption": caption, "access_token": token}
+    if is_video:
+        params["media_type"] = "REELS"
+        params["video_url"] = media_url
+    else:
+        params["image_url"] = media_url
+    c = requests.post(f"{META_GRAPH}/{ig_id}/media", data=params, timeout=180)
+    c.raise_for_status()
+    creation_id = c.json().get("id")
+    p = requests.post(f"{META_GRAPH}/{ig_id}/media_publish",
+                      data={"creation_id": creation_id, "access_token": token},
+                      timeout=120)
+    p.raise_for_status()
+    mid = p.json().get("id", "")
+    return {"id": mid, "url": f"https://instagram.com/p/{mid}" if mid else "",
+            "creation_id": creation_id}
+
+
+def _meta_page_feed(page_id, token, limit) -> list:
+    import requests
+    r = requests.get(f"{META_GRAPH}/{page_id}/posts",
+                     params={"access_token": token, "limit": limit,
+                             "fields": "id,message,created_time,full_picture,permalink_url"},
+                     timeout=20)
+    r.raise_for_status()
+    out = []
+    for it in r.json().get("data", []):
+        out.append({"id": it.get("id"), "title": (it.get("message") or "")[:80],
+                    "published_at": it.get("created_time", ""),
+                    "thumbnail": it.get("full_picture", ""),
+                    "url": it.get("permalink_url", "")})
+    return out
+
+
+def _meta_ig_media(ig_id, token, limit) -> list:
+    import requests
+    r = requests.get(f"{META_GRAPH}/{ig_id}/media",
+                     params={"access_token": token, "limit": limit,
+                             "fields": "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp"},
+                     timeout=20)
+    r.raise_for_status()
+    out = []
+    for it in r.json().get("data", []):
+        out.append({"id": it.get("id"), "title": (it.get("caption") or "")[:80],
+                    "published_at": it.get("timestamp", ""),
+                    "thumbnail": it.get("thumbnail_url") or it.get("media_url") or "",
+                    "url": it.get("permalink", "")})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# TikTok boundary — monkeypatched in tests
+# ---------------------------------------------------------------------------
+def _tt_headers(token):
+    return {"Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=UTF-8"}
+
+
+def _tt_creator_info(access_token) -> dict:
+    import requests
+    r = requests.post(f"{TIKTOK_API}/post/publish/creator_info/query/",
+                      headers=_tt_headers(access_token), timeout=20)
+    r.raise_for_status()
+    return (r.json() or {}).get("data", {})
+
+
+def _tt_publish_video(access_token, video_url, title, privacy_level) -> dict:
+    import requests
+    body = {
+        "post_info": {"title": title[:150], "privacy_level": privacy_level,
+                      "disable_comment": False, "disable_duet": False,
+                      "disable_stitch": False},
+        "source_info": {"source": "PULL_FROM_URL", "video_url": video_url},
+    }
+    r = requests.post(f"{TIKTOK_API}/post/publish/video/init/",
+                      headers=_tt_headers(access_token), json=body, timeout=60)
+    r.raise_for_status()
+    return {"publish_id": ((r.json() or {}).get("data", {})).get("publish_id", "")}
+
+
+def _tt_video_list(access_token, limit) -> list:
+    import requests
+    r = requests.post(
+        f"{TIKTOK_API}/video/list/?fields=id,title,cover_image_url,share_url,create_time",
+        headers=_tt_headers(access_token), json={"max_count": min(limit, 20)},
+        timeout=20)
+    r.raise_for_status()
+    out = []
+    for it in (r.json() or {}).get("data", {}).get("videos", []):
+        out.append({"id": it.get("id"), "title": (it.get("title") or "")[:80],
+                    "published_at": str(it.get("create_time", "")),
+                    "thumbnail": it.get("cover_image_url", ""),
+                    "url": it.get("share_url", "")})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +432,8 @@ def register(bp):
             "items": [_row_to_conn(r) for r in rows],
             "platforms": list(PLATFORMS),
             "oauth_platforms": list(OAUTH_PLATFORMS),
+            "token_platforms": list(TOKEN_PLATFORMS),
+            "public_base_set": bool(_public_base()),
         })
 
     @bp.route("/api/ahb/social/connections/app-creds", methods=["GET"])
@@ -419,18 +583,26 @@ def register(bp):
             con.close()
         if not r:
             return jsonify({"error": "not found"}), 404
-        if r["platform"] != "youtube":
-            return jsonify({
-                "items": [],
-                "note": f"In-app browsing for {r['platform']} lands in Phase 2/3.",
-            })
+        platform = r["platform"]
         try:
             limit = min(max(int(request.args.get("limit", 12)), 1), 50)
         except (TypeError, ValueError):
             limit = 12
+        meta = _get_conn_meta(r)
         try:
-            creds = _load_creds("youtube", r["account_ref"] or "")
-            items = _yt_recent_uploads(creds, limit)
+            if platform == "youtube":
+                creds = _load_creds("youtube", r["account_ref"] or "")
+                items = _yt_recent_uploads(creds, limit)
+            elif platform == "facebook":
+                token = _meta_token("facebook", r["account_ref"] or "")
+                items = _meta_page_feed(meta.get("page_id") or r["account_ref"],
+                                        token, limit)
+            elif platform == "instagram":
+                token = _meta_token("instagram", r["account_ref"] or "")
+                items = _meta_ig_media(meta.get("ig_user_id") or r["account_ref"],
+                                       token, limit)
+            else:  # tiktok
+                items = _tt_video_list(_tt_token(r["account_ref"] or ""), limit)
         except Exception as e:
             return jsonify({"error": str(e)}), 502
         return jsonify({"items": items})
@@ -458,10 +630,15 @@ def register(bp):
         if not r:
             return jsonify({"error": "connection not found"}), 404
         platform = r["platform"]
+        if platform in ("facebook", "instagram"):
+            body, code = _publish_meta(platform, r, post, pid)
+            return jsonify(body), code
+        if platform == "tiktok":
+            body, code = _publish_tiktok(r, post, pid, data)
+            return jsonify(body), code
         if platform != "youtube":
             return jsonify({
-                "error": f"Direct publish to {platform} lands in Phase 2/3. "
-                         f"Use Manual export for now.",
+                "error": f"Direct publish to {platform} is not supported.",
                 "manual_export": f"/api/ahb/social/posts/{pid}/manual-export",
             }), 501
         asset = post.get("asset_path")
@@ -510,6 +687,98 @@ def register(bp):
             "bundle_url": f"/api/ahb/social/posts/{pid}/bundle",
             "cover_url": f"/api/ahb/social/posts/{pid}/cover",
         })
+
+    # ---- public asset serve (Meta pulls media from a public URL) ----------
+    @bp.route("/api/ahb/social/posts/<int:pid>/asset", methods=["GET"])
+    def social_post_asset(pid):
+        post = _get_post_row(pid)
+        if not post:
+            return jsonify({"error": "not found"}), 404
+        asset = post.get("asset_path")
+        if not asset or not os.path.exists(asset):
+            return jsonify({"error": "no asset"}), 404
+        return send_file(asset)
+
+    # ---- Meta (Instagram + Facebook) connect via pasted token -------------
+    @bp.route("/api/ahb/social/connections/meta/token", methods=["POST"])
+    def social_meta_token():
+        data = request.get_json(silent=True) or {}
+        token = (data.get("access_token") or "").strip()
+        if not token:
+            return jsonify({"error": "access_token required"}), 400
+        try:
+            pages = _meta_list_pages(token)
+        except Exception as e:
+            return jsonify({"error": f"could not list pages: {e}"}), 502
+        ref = _flow_id()
+        cutoff = time.time() - 3600
+        for k in [k for k, v in _meta_sessions.items()
+                  if v.get("created", 0) < cutoff]:
+            _meta_sessions.pop(k, None)
+        _meta_sessions[ref] = {"pages": pages, "created": time.time()}
+        safe = [{
+            "id": p.get("id"), "name": p.get("name"),
+            "has_instagram": bool(p.get("instagram_business_account")),
+            "ig_username": (p.get("instagram_business_account") or {}).get("username", ""),
+        } for p in pages]
+        return jsonify({"ok": True, "ref": ref, "pages": safe})
+
+    @bp.route("/api/ahb/social/connections/meta/add", methods=["POST"])
+    def social_meta_add():
+        data = request.get_json(silent=True) or {}
+        ref = (data.get("ref") or "").strip()
+        page_id = (data.get("page_id") or "").strip()
+        connect_ig = bool(data.get("connect_instagram"))
+        sess = _meta_sessions.get(ref)
+        if not sess:
+            return jsonify({"error": "session expired — paste the token again"}), 400
+        page = next((p for p in sess["pages"] if p.get("id") == page_id), None)
+        if not page:
+            return jsonify({"error": "page not found in session"}), 404
+        page_token = page.get("access_token")
+        if not page_token:
+            return jsonify({"error": "no page access token returned by Meta"}), 502
+        created = []
+        _secure_write(_token_path("facebook", page_id),
+                      json.dumps({"page_token": page_token}))
+        fb_id = _upsert_connection("facebook", page.get("name") or page_id,
+                                   page_id, "pages_manage_posts")
+        _set_conn_meta(fb_id, {"page_id": page_id})
+        created.append({"platform": "facebook", "id": fb_id})
+        iga = page.get("instagram_business_account") or {}
+        if connect_ig and iga.get("id"):
+            ig_ref = iga["id"]
+            _secure_write(_token_path("instagram", ig_ref),
+                          json.dumps({"page_token": page_token}))
+            ig_id = _upsert_connection("instagram", iga.get("username") or ig_ref,
+                                       ig_ref, "instagram_content_publish")
+            _set_conn_meta(ig_id, {"ig_user_id": ig_ref, "page_id": page_id})
+            created.append({"platform": "instagram", "id": ig_id})
+        _meta_sessions.pop(ref, None)
+        return jsonify({"ok": True, "created": created})
+
+    # ---- TikTok connect via pasted access token ---------------------------
+    @bp.route("/api/ahb/social/connections/tiktok/token", methods=["POST"])
+    def social_tiktok_token():
+        data = request.get_json(silent=True) or {}
+        token = (data.get("access_token") or "").strip()
+        open_id = (data.get("open_id") or "").strip()
+        if not token:
+            return jsonify({"error": "access_token required"}), 400
+        try:
+            info = _tt_creator_info(token)
+        except Exception as e:
+            return jsonify({"error": f"could not validate token: {e}"}), 502
+        nickname = info.get("creator_nickname") or "TikTok account"
+        ref = open_id or info.get("creator_username") or nickname or "default"
+        _secure_write(_token_path("tiktok", ref),
+                      json.dumps({"access_token": token, "open_id": open_id}))
+        privacy_opts = info.get("privacy_level_options") or []
+        cid = _upsert_connection("tiktok", nickname, ref, "video.publish")
+        _set_conn_meta(cid, {"open_id": open_id, "privacy_options": privacy_opts})
+        return jsonify({"ok": True, "connection_id": cid,
+                        "account_label": nickname,
+                        "privacy_options": privacy_opts})
 
 
 def _finish_oauth(flow_id: str, code: str) -> dict:
@@ -563,3 +832,124 @@ def _upsert_connection(platform: str, label: str, ref: str, scopes: str) -> int:
 def _flow_id() -> str:
     import secrets as _s
     return _s.token_urlsafe(16)
+
+
+def _set_conn_meta(cid: int, meta: dict) -> None:
+    con = _db()
+    try:
+        con.execute("UPDATE social_connections SET meta=? WHERE id=?",
+                    (json.dumps(meta), cid))
+        con.commit()
+    finally:
+        con.close()
+
+
+def _get_conn_meta(row) -> dict:
+    try:
+        return json.loads(row["meta"] or "{}")
+    except Exception:
+        return {}
+
+
+def _meta_token(platform: str, account_ref: str) -> str:
+    """Return the stored Page access token for a Meta connection."""
+    p = _token_path(platform, account_ref)
+    if not os.path.exists(p):
+        raise RuntimeError("token missing — reconnect the account")
+    with open(p) as f:
+        return (json.load(f) or {}).get("page_token", "")
+
+
+def _mark_posted(pid: int, url: str) -> None:
+    con = _db()
+    try:
+        con.execute(
+            "UPDATE ahb_social_posts SET status='posted', posted_url=?, "
+            "posted_at=CURRENT_TIMESTAMP WHERE id=?", (url, pid),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def _publish_meta(platform: str, conn_row, post: dict, pid: int) -> tuple:
+    """Publish a post to Facebook/Instagram. Returns (body_dict, status_code)."""
+    asset = post.get("asset_path")
+    cover = post.get("cover_path")
+    caption = post.get("caption") or ""
+    hashtags = post.get("hashtags") or ""
+    full = (caption + ("\n\n" + hashtags if hashtags else "")).strip()
+    is_video = bool(asset and os.path.exists(asset)
+                    and os.path.splitext(asset)[1].lower() in _VIDEO_EXTS)
+    has_image = bool((cover and os.path.exists(cover))
+                     or (asset and not is_video and os.path.exists(asset)))
+    if not is_video and not has_image:
+        return {"error": "post has no rendered asset — render it first."}, 400
+    if not _public_base():
+        return {
+            "error": "set SOCIAL_PUBLIC_BASE_URL (the public https origin that "
+                     "fronts baza) so the platform can fetch the media, or use "
+                     "Manual export.",
+            "manual_export": f"/api/ahb/social/posts/{pid}/manual-export",
+        }, 400
+    media_url = _public_asset_url(pid, "video" if is_video else "image")
+    meta = _get_conn_meta(conn_row)
+    try:
+        token = _meta_token(platform, conn_row["account_ref"] or "")
+        if platform == "facebook":
+            page_id = meta.get("page_id") or conn_row["account_ref"]
+            res = (_meta_publish_video(page_id, token, media_url, full) if is_video
+                   else _meta_publish_photo(page_id, token, media_url, full))
+        else:  # instagram
+            ig_id = meta.get("ig_user_id") or conn_row["account_ref"]
+            res = _meta_ig_publish(ig_id, token, media_url, full, is_video)
+    except Exception as e:
+        return {"error": str(e)}, 502
+    url = res.get("url", "")
+    _mark_posted(pid, url)
+    return {"ok": True, "url": url, "platform": platform}, 200
+
+
+def _tt_token(account_ref: str) -> str:
+    p = _token_path("tiktok", account_ref)
+    if not os.path.exists(p):
+        raise RuntimeError("token missing — reconnect the account")
+    with open(p) as f:
+        return (json.load(f) or {}).get("access_token", "")
+
+
+def _publish_tiktok(conn_row, post: dict, pid: int, data: dict) -> tuple:
+    """Publish a post to TikTok. Returns (body_dict, status_code)."""
+    asset = post.get("asset_path")
+    is_video = bool(asset and os.path.exists(asset)
+                    and os.path.splitext(asset)[1].lower() in _VIDEO_EXTS)
+    if not is_video:
+        return {"error": "TikTok needs a rendered video asset — render the "
+                         "post first."}, 400
+    if not _public_base():
+        return {
+            "error": "set SOCIAL_PUBLIC_BASE_URL (a public https origin fronting "
+                     "baza, also added as a verified URL prefix in your TikTok "
+                     "app) so TikTok can pull the video, or use Manual export.",
+            "manual_export": f"/api/ahb/social/posts/{pid}/manual-export",
+        }, 400
+    meta = _get_conn_meta(conn_row)
+    opts = meta.get("privacy_options") or []
+    privacy = (data or {}).get("privacy_level") or (
+        "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in opts else "SELF_ONLY")
+    caption = post.get("caption") or ""
+    hashtags = post.get("hashtags") or ""
+    title = (caption + (" " + hashtags if hashtags else "")).strip()[:150]
+    video_url = _public_asset_url(pid, "video")
+    try:
+        token = _tt_token(conn_row["account_ref"] or "")
+        res = _tt_publish_video(token, video_url, title, privacy)
+    except Exception as e:
+        return {"error": str(e)}, 502
+    note = ("Uploaded to TikTok as a private draft (SELF_ONLY) — open the TikTok "
+            "app to review and post publicly. Public direct-post requires your "
+            "TikTok app to be audited.") if privacy == "SELF_ONLY" \
+        else "Published to TikTok."
+    _mark_posted(pid, "")
+    return {"ok": True, "publish_id": res.get("publish_id", ""),
+            "platform": "tiktok", "privacy_level": privacy, "note": note}, 200

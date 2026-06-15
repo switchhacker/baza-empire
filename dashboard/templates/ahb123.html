@@ -20335,14 +20335,14 @@ SocialStudio.modules.sourceBrowser = (function(){
 SocialStudio.modules.connect = (function(){
   const S = SocialStudio;
   const PLATFORMS = [
-    { id:'youtube',   name:'YouTube Shorts', icon:'▶️', live:true,
+    { id:'youtube',   name:'YouTube Shorts', icon:'▶️', connect:'oauth', feed:true,
       note:'Reuses your Google sign-in. Connect, then Publish renders → uploads as a Short.' },
-    { id:'instagram', name:'Instagram', icon:'📸', live:false,
-      note:'Phase 2 — needs a Meta app + IG Business account. Use Manual export for now.' },
-    { id:'facebook',  name:'Facebook Page', icon:'👥', live:false,
-      note:'Phase 2 — needs a Meta app + Page token. Use Manual export for now.' },
-    { id:'tiktok',    name:'TikTok', icon:'🎵', live:false,
-      note:'Phase 3 — needs an audited TikTok app. Use Manual export for now.' },
+    { id:'instagram', name:'Instagram', icon:'📸', connect:'meta', feed:true,
+      note:'Reels + photos via the Meta Graph API. Connect with a Meta access token (needs an IG Business account linked to a Page).' },
+    { id:'facebook',  name:'Facebook Page', icon:'👥', connect:'meta', feed:true,
+      note:'Photos & videos to a Page via the Meta Graph API. Connect with a Meta access token.' },
+    { id:'tiktok',    name:'TikTok', icon:'🎵', connect:'tiktok', feed:true,
+      note:'Video posts via the TikTok Content Posting API. Connect with an access token. Unaudited apps post privately (draft) — review in the TikTok app to go public.' },
   ];
   let conns = [], creds = {};
 
@@ -20372,16 +20372,28 @@ SocialStudio.modules.connect = (function(){
         <div style="display:flex;align-items:center;gap:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:6px 8px;margin-top:6px">
           <span style="flex:1;font-size:12px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(a.account_label || a.account_ref || 'account')}</span>
           <span class="ss-status-pill ss-pill-approved" style="font-size:9px">${_esc(a.status)}</span>
-          ${p.live ? `<button class="btn-secondary" style="font-size:10px;padding:3px 8px" onclick="SocialStudio.modules.connect.browseFeed(${a.id})">Browse</button>` : ''}
+          ${p.feed ? `<button class="btn-secondary" style="font-size:10px;padding:3px 8px" onclick="SocialStudio.modules.connect.browseFeed(${a.id})">Browse</button>` : ''}
           <button class="btn-secondary" style="font-size:10px;padding:3px 8px;color:#f87171" onclick="SocialStudio.modules.connect.disconnect(${a.id})">Disconnect</button>
         </div>`).join('') : `<div style="color:#555;font-size:11px;margin-top:6px">No accounts connected.</div>`;
-      let action;
-      if (!p.live) {
-        action = `<button class="btn-secondary" disabled style="width:100%;margin-top:8px;opacity:.6">${_esc(p.note.split('—')[0].trim())}</button>`;
-      } else if (!configured) {
-        action = `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.setAppCreds('${p.id}')">⚙ Add Google OAuth client</button>`;
+      let action, statusTxt, statusColor;
+      if (p.connect === 'oauth') {
+        statusTxt = configured ? 'OAuth client ready' : 'OAuth client not set';
+        statusColor = configured ? '#10b981' : '#f59e0b';
+        action = configured
+          ? `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.connectOAuth('${p.id}')">＋ Connect account</button>`
+          : `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.setAppCreds('${p.id}')">⚙ Add Google OAuth client</button>`;
+      } else if (p.connect === 'meta') {
+        statusTxt = 'Meta Graph API';
+        statusColor = '#10b981';
+        action = `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.connectMeta()">＋ Connect via Meta</button>`;
+      } else if (p.connect === 'tiktok') {
+        statusTxt = 'TikTok API';
+        statusColor = '#10b981';
+        action = `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.connectTikTok()">＋ Connect TikTok</button>`;
       } else {
-        action = `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.connectOAuth('${p.id}')">＋ Connect account</button>`;
+        statusTxt = 'Coming soon';
+        statusColor = '#f59e0b';
+        action = `<button class="btn-secondary" disabled style="width:100%;margin-top:8px;opacity:.6">Coming soon — use Manual export</button>`;
       }
       return `
         <div class="ss-card">
@@ -20389,7 +20401,7 @@ SocialStudio.modules.connect = (function(){
             <span style="font-size:22px">${p.icon}</span>
             <div style="flex:1">
               <div style="font-weight:700;font-size:14px">${_esc(p.name)}</div>
-              <div style="font-size:10px;color:${configured||!p.live?'#10b981':'#f59e0b'}">${p.live ? (configured?'OAuth client ready':'OAuth client not set') : 'Phase 2/3'}</div>
+              <div style="font-size:10px;color:${statusColor}">${statusTxt}</div>
             </div>
           </div>
           <div style="font-size:11px;color:#888;margin-top:6px;line-height:1.4">${_esc(p.note)}</div>
@@ -20475,6 +20487,87 @@ SocialStudio.modules.connect = (function(){
     });
   }
 
+  async function connectMeta(){
+    const { m, close } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">Connect Meta (Instagram + Facebook)</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div style="font-size:12px;color:#aaa;line-height:1.5;margin-bottom:8px">
+        Paste a Meta <strong>access token</strong> (a long-lived User token from your Meta app with <code>pages_show_list</code>, <code>pages_manage_posts</code>, <code>instagram_content_publish</code>). We'll list your Pages — page tokens stay on baza.
+      </div>
+      <input id="sc-meta-token" placeholder="Meta access token" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">
+      <button class="btn-primary" id="sc-meta-list" style="width:100%;margin-top:10px">List my Pages</button>
+      <div id="sc-meta-pages" style="margin-top:10px"></div>
+    `, true);
+    m.querySelector('#sc-meta-list').addEventListener('click', async () => {
+      const tok = m.querySelector('#sc-meta-token').value.trim();
+      if (!tok) return;
+      const tid = S.modules.toast.progress('Listing Pages…');
+      const r = await fetch('/api/ahb/social/connections/meta/token', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ access_token: tok }),
+      });
+      const j = await r.json();
+      if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
+      S.modules.toast.resolve(tid, 'success', (j.pages.length||0) + ' page(s)');
+      const ref = j.ref;
+      const box = m.querySelector('#sc-meta-pages');
+      box.innerHTML = (j.pages && j.pages.length) ? j.pages.map(p => `
+        <div style="display:flex;align-items:center;gap:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:8px;margin-bottom:6px">
+          <div style="flex:1;font-size:12px;color:#ddd">${_esc(p.name)}${p.has_instagram ? ` · IG @${_esc(p.ig_username)}` : ''}</div>
+          ${p.has_instagram ? `<label style="font-size:11px;color:#aaa"><input type="checkbox" class="sc-ig" data-pid="${_esc(p.id)}" checked> +IG</label>` : ''}
+          <button class="btn-secondary sc-connect-page" data-pid="${_esc(p.id)}" style="font-size:11px;padding:4px 10px">Connect</button>
+        </div>`).join('') : '<div style="color:#888;font-size:12px">No Pages on this token.</div>';
+      box.querySelectorAll('.sc-connect-page').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const pid = btn.dataset.pid;
+          const igChk = box.querySelector('.sc-ig[data-pid="' + pid + '"]');
+          const t2 = S.modules.toast.progress('Connecting…');
+          const ar = await fetch('/api/ahb/social/connections/meta/add', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ ref, page_id: pid,
+                                   connect_instagram: igChk ? igChk.checked : false }),
+          });
+          const aj = await ar.json();
+          if (!ar.ok){ S.modules.toast.resolve(t2, 'error', aj.error || 'Failed'); return; }
+          S.modules.toast.resolve(t2, 'success',
+            'Connected ' + (aj.created||[]).map(x => x.platform).join(' + '));
+          close(); render();
+        });
+      });
+    });
+  }
+
+  async function connectTikTok(){
+    const { m, close } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">Connect TikTok</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div style="font-size:12px;color:#aaa;line-height:1.5;margin-bottom:8px">
+        Paste a TikTok <strong>access token</strong> from your TikTok app (scopes <code>video.publish</code>, <code>video.list</code>). Until your app is audited, posts upload as a private draft you finish in the TikTok app.
+      </div>
+      <input id="sc-tt-token" placeholder="TikTok access token" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">
+      <input id="sc-tt-openid" placeholder="open_id (optional)" style="width:100%;margin-top:6px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">
+      <button class="btn-primary" id="sc-tt-go" style="width:100%;margin-top:10px">Connect</button>
+    `);
+    m.querySelector('#sc-tt-go').addEventListener('click', async () => {
+      const token = m.querySelector('#sc-tt-token').value.trim();
+      if (!token) return;
+      const open_id = m.querySelector('#sc-tt-openid').value.trim();
+      const tid = S.modules.toast.progress('Connecting…');
+      const r = await fetch('/api/ahb/social/connections/tiktok/token', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ access_token: token, open_id }),
+      });
+      const j = await r.json();
+      if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
+      S.modules.toast.resolve(tid, 'success', 'Connected ' + (j.account_label||''));
+      close(); render();
+    });
+  }
+
   async function disconnect(id){
     if (!confirm('Disconnect this account?')) return;
     const r = await fetch('/api/ahb/social/connections/' + id, { method:'DELETE' });
@@ -20534,7 +20627,7 @@ SocialStudio.modules.connect = (function(){
       });
       const j = await r.json();
       if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Publish failed'); return; }
-      S.modules.toast.resolve(tid, 'success', 'Published: ' + (j.url||'done'));
+      S.modules.toast.resolve(tid, 'success', j.note || ('Published: ' + (j.url||'done')));
       close();
     });
     m.querySelector('#sc-pub-manual').addEventListener('click', async () => {
@@ -20568,7 +20661,7 @@ SocialStudio.modules.connect = (function(){
     });
   }
 
-  return { render, setAppCreds, connectOAuth, disconnect, browseFeed, publishPicker, manualExport };
+  return { render, setAppCreds, connectOAuth, connectMeta, connectTikTok, disconnect, browseFeed, publishPicker, manualExport };
 })();
 
 SocialStudio.modules.library = (function(){
