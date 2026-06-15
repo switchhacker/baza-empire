@@ -2243,3 +2243,10 @@ except ImportError:
 social_workflow.register(social_bp)
 social_trends.register(social_bp)
 social_analytics.register(social_bp)
+
+
+try:
+    from dashboard import social_connect
+except ImportError:
+    import social_connect
+social_connect.register(social_bp)

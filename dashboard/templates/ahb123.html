@@ -3369,6 +3369,7 @@
       <button class="btn-secondary ss-subnav" data-sub="autopilot">Auto-Pilot</button>
       <button class="btn-secondary ss-subnav" data-sub="inspo">💡 Inspo</button>
       <button class="btn-secondary ss-subnav" data-sub="stats">📊 Stats</button>
+      <button class="btn-secondary ss-subnav" data-sub="connect">🔗 Connect</button>
       <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
     </div>
   </div>
@@ -3379,6 +3380,7 @@
   <div id="ss-sub-autopilot" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-inspo" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-stats" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-connect" class="ss-sub" style="display:none"></div>
 </div>
 
 <!-- ============================ EMAIL ============================ -->
@@ -20329,6 +20331,246 @@ SocialStudio.modules.sourceBrowser = (function(){
   return { open, close };
 })();
 
+// ── Connect: social account connections + direct posting (Phase 1) ──────────
+SocialStudio.modules.connect = (function(){
+  const S = SocialStudio;
+  const PLATFORMS = [
+    { id:'youtube',   name:'YouTube Shorts', icon:'▶️', live:true,
+      note:'Reuses your Google sign-in. Connect, then Publish renders → uploads as a Short.' },
+    { id:'instagram', name:'Instagram', icon:'📸', live:false,
+      note:'Phase 2 — needs a Meta app + IG Business account. Use Manual export for now.' },
+    { id:'facebook',  name:'Facebook Page', icon:'👥', live:false,
+      note:'Phase 2 — needs a Meta app + Page token. Use Manual export for now.' },
+    { id:'tiktok',    name:'TikTok', icon:'🎵', live:false,
+      note:'Phase 3 — needs an audited TikTok app. Use Manual export for now.' },
+  ];
+  let conns = [], creds = {};
+
+  function _esc(s){
+    return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  async function render(){
+    const root = document.getElementById('ss-sub-connect');
+    if (!root) return;
+    root.innerHTML = '<div style="color:#666;padding:20px">Loading connections…</div>';
+    try {
+      const [c1, c2] = await Promise.all([
+        fetch('/api/ahb/social/connections').then(r=>r.json()),
+        fetch('/api/ahb/social/connections/app-creds').then(r=>r.json()),
+      ]);
+      conns = c1.items || [];
+      creds = (c2 && c2.configured) || {};
+    } catch(e){ conns = []; creds = {}; }
+    const byPlat = {};
+    conns.forEach(c => { (byPlat[c.platform] = byPlat[c.platform] || []).push(c); });
+    const cards = PLATFORMS.map(p => {
+      const accounts = byPlat[p.id] || [];
+      const configured = !!creds[p.id];
+      const accountsHtml = accounts.length ? accounts.map(a => `
+        <div style="display:flex;align-items:center;gap:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:6px 8px;margin-top:6px">
+          <span style="flex:1;font-size:12px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(a.account_label || a.account_ref || 'account')}</span>
+          <span class="ss-status-pill ss-pill-approved" style="font-size:9px">${_esc(a.status)}</span>
+          ${p.live ? `<button class="btn-secondary" style="font-size:10px;padding:3px 8px" onclick="SocialStudio.modules.connect.browseFeed(${a.id})">Browse</button>` : ''}
+          <button class="btn-secondary" style="font-size:10px;padding:3px 8px;color:#f87171" onclick="SocialStudio.modules.connect.disconnect(${a.id})">Disconnect</button>
+        </div>`).join('') : `<div style="color:#555;font-size:11px;margin-top:6px">No accounts connected.</div>`;
+      let action;
+      if (!p.live) {
+        action = `<button class="btn-secondary" disabled style="width:100%;margin-top:8px;opacity:.6">${_esc(p.note.split('—')[0].trim())}</button>`;
+      } else if (!configured) {
+        action = `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.setAppCreds('${p.id}')">⚙ Add Google OAuth client</button>`;
+      } else {
+        action = `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.connectOAuth('${p.id}')">＋ Connect account</button>`;
+      }
+      return `
+        <div class="ss-card">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:22px">${p.icon}</span>
+            <div style="flex:1">
+              <div style="font-weight:700;font-size:14px">${_esc(p.name)}</div>
+              <div style="font-size:10px;color:${configured||!p.live?'#10b981':'#f59e0b'}">${p.live ? (configured?'OAuth client ready':'OAuth client not set') : 'Phase 2/3'}</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:6px;line-height:1.4">${_esc(p.note)}</div>
+          ${accountsHtml}
+          ${action}
+        </div>`;
+    }).join('');
+    root.innerHTML = `
+      <div style="margin-bottom:12px;color:#aaa;font-size:13px">
+        Connect accounts to publish directly from the Library. Each platform needs a developer app you register — tokens are stored locally on baza (never in the cloud UI). Until a platform is connected, use <strong>Manual export</strong> on any Library post.
+      </div>
+      <div class="ss-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${cards}</div>`;
+  }
+
+  function _modal(html, wide){
+    const m = document.createElement('div');
+    m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    m.innerHTML = `<div class="modal" style="max-width:${wide?720:520}px">${html}</div>`;
+    const close = () => { if (m.parentNode) m.parentNode.removeChild(m); };
+    m.addEventListener('click', e => { if (e.target === m) close(); });
+    m.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+    return { m, close };
+  }
+
+  function setAppCreds(platform){
+    const { m, close } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">⚙ ${platform} OAuth client</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div style="font-size:12px;color:#888;margin-bottom:8px">Paste the OAuth <strong>client secret JSON</strong> downloaded from Google Cloud Console (Desktop or Web app type). Add redirect URI <code>http://localhost:8888/api/ahb/social/connections/oauth/callback</code>.</div>
+      <textarea id="sc-creds-json" placeholder='{"installed":{"client_id":"…","client_secret":"…"}}' style="width:100%;height:160px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-family:monospace;font-size:11px"></textarea>
+      <button class="btn-primary" id="sc-creds-save" style="width:100%;margin-top:10px">Save client</button>
+    `);
+    m.querySelector('#sc-creds-save').addEventListener('click', async () => {
+      const v = m.querySelector('#sc-creds-json').value.trim();
+      if (!v) return;
+      const r = await fetch('/api/ahb/social/connections/app-creds', {
+        method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ platform, client_json: v }),
+      });
+      const j = await r.json();
+      if (!r.ok){ S.modules.toast.error(j.error || 'Save failed'); return; }
+      S.modules.toast.success('OAuth client saved'); close(); render();
+    });
+  }
+
+  async function connectOAuth(platform){
+    const tid = S.modules.toast.progress('Starting sign-in…');
+    const r = await fetch(`/api/ahb/social/connections/${platform}/auth/start`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+    });
+    const j = await r.json();
+    if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Could not start'); return; }
+    S.modules.toast.resolve(tid, 'info', 'Opening Google…');
+    window.open(j.auth_url, '_blank');
+    const { m, close } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">Connect ${platform}</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div style="font-size:12px;color:#aaa;line-height:1.5;margin-bottom:8px">
+        1. A Google sign-in tab opened. Approve access.<br>
+        2. If the page shows a "can't reach localhost" error or a code, copy the <strong>full address-bar URL</strong> (or the code) and paste it below.
+      </div>
+      <a href="${_esc(j.auth_url)}" target="_blank" style="font-size:11px;color:#60a5fa">Re-open sign-in link</a>
+      <input id="sc-paste" placeholder="Paste redirect URL or code" style="width:100%;margin-top:10px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff">
+      <button class="btn-primary" id="sc-finish" style="width:100%;margin-top:10px">Finish connecting</button>
+    `);
+    m.querySelector('#sc-finish').addEventListener('click', async () => {
+      const raw = m.querySelector('#sc-paste').value.trim();
+      if (!raw) return;
+      const t2 = S.modules.toast.progress('Connecting…');
+      const fr = await fetch(`/api/ahb/social/connections/${platform}/auth/finish`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ flow_id: j.flow_id, redirect_url: raw }),
+      });
+      const fj = await fr.json();
+      if (!fr.ok){ S.modules.toast.resolve(t2, 'error', fj.error || 'Failed'); return; }
+      S.modules.toast.resolve(t2, 'success', 'Connected ' + (fj.account_label||''));
+      close(); render();
+    });
+  }
+
+  async function disconnect(id){
+    if (!confirm('Disconnect this account?')) return;
+    const r = await fetch('/api/ahb/social/connections/' + id, { method:'DELETE' });
+    if (r.ok){ S.modules.toast.success('Disconnected'); render(); }
+    else S.modules.toast.error('Failed to disconnect');
+  }
+
+  async function browseFeed(id){
+    const { m } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">📺 Recent uploads</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div id="sc-feed" style="max-height:64vh;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+        <div style="color:#666;grid-column:1/-1;padding:20px;text-align:center">Loading…</div>
+      </div>`, true);
+    let items = [], note = '';
+    try {
+      const j = await fetch(`/api/ahb/social/connections/${id}/feed`).then(r=>r.json());
+      items = j.items || []; note = j.note || j.error || '';
+    } catch(e){ note = 'Could not load feed'; }
+    const grid = m.querySelector('#sc-feed');
+    grid.innerHTML = items.length ? items.map(it => `
+      <a href="${_esc(it.url)}" target="_blank" style="text-decoration:none;color:inherit">
+        <div style="border:1px solid #1a1a2e;border-radius:8px;overflow:hidden;background:#070712">
+          <img src="${_esc(it.thumbnail)}" onerror="this.style.opacity='.25'" style="width:100%;aspect-ratio:16/9;object-fit:cover;display:block">
+          <div style="font-size:11px;color:#ddd;padding:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(it.title)}</div>
+        </div></a>`).join('')
+      : `<div style="color:#888;grid-column:1/-1;padding:20px;text-align:center">${_esc(note || 'No recent uploads.')}</div>`;
+  }
+
+  // Publish picker used by the Library (exposed for reuse).
+  async function publishPicker(postId){
+    let list = [];
+    try { list = (await fetch('/api/ahb/social/connections').then(r=>r.json())).items || []; } catch(e){}
+    const opts = list.map(a => `<option value="${a.id}">${_esc(a.platform)} — ${_esc(a.account_label||a.account_ref||'account')}</option>`).join('');
+    const { m, close } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">🚀 Publish post #${postId}</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      ${list.length ? `
+        <div style="font-size:12px;color:#aaa;margin-bottom:6px">Choose a connected account. Publishing is final.</div>
+        <select id="sc-pub-acct" class="filter-select" style="width:100%;margin-bottom:10px">${opts}</select>
+        <button class="btn-primary" id="sc-pub-go" style="width:100%">Publish now</button>
+      ` : `<div style="font-size:12px;color:#f59e0b;margin-bottom:10px">No accounts connected yet. Connect one in the 🔗 Connect tab, or export manually.</div>`}
+      <button class="btn-secondary" id="sc-pub-manual" style="width:100%;margin-top:8px">📋 Manual export (copy + download)</button>
+    `);
+    const go = m.querySelector('#sc-pub-go');
+    if (go) go.addEventListener('click', async () => {
+      const cid = m.querySelector('#sc-pub-acct').value;
+      if (!confirm('Publish this post now? This is outward-facing and final.')) return;
+      const tid = S.modules.toast.progress('Publishing…');
+      const r = await fetch(`/api/ahb/social/posts/${postId}/publish`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ connection_id: parseInt(cid,10), confirm: true }),
+      });
+      const j = await r.json();
+      if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Publish failed'); return; }
+      S.modules.toast.resolve(tid, 'success', 'Published: ' + (j.url||'done'));
+      close();
+    });
+    m.querySelector('#sc-pub-manual').addEventListener('click', async () => {
+      close(); manualExport(postId);
+    });
+  }
+
+  async function manualExport(postId){
+    let j = {};
+    try { j = await fetch(`/api/ahb/social/posts/${postId}/manual-export`).then(r=>r.json()); } catch(e){}
+    const text = [j.caption||'', j.hashtags||''].filter(Boolean).join('\n\n');
+    const { m } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">📋 Manual export — post #${postId}</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <textarea id="sc-me-text" style="width:100%;height:120px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-size:13px">${_esc(text)}</textarea>
+      ${j.first_comment ? `<div style="font-size:11px;color:#888;margin-top:6px">First comment: ${_esc(j.first_comment)}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn-secondary" id="sc-me-copy" style="flex:1">Copy caption+tags</button>
+        <a class="btn-secondary" href="${_esc(j.bundle_url||'#')}" target="_blank" style="flex:1;text-align:center;text-decoration:none">⬇ Download bundle</a>
+        ${j.has_asset ? '' : `<a class="btn-secondary" href="${_esc(j.cover_url||'#')}" target="_blank" style="flex:1;text-align:center;text-decoration:none">⬇ Cover image</a>`}
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:8px">Post manually in the platform app, then mark the post as posted.</div>
+    `);
+    m.querySelector('#sc-me-copy').addEventListener('click', () => {
+      const ta = m.querySelector('#sc-me-text');
+      ta.select(); try { document.execCommand('copy'); } catch(e){}
+      if (navigator.clipboard) navigator.clipboard.writeText(ta.value).catch(()=>{});
+      S.modules.toast.success('Copied');
+    });
+  }
+
+  return { render, setAppCreds, connectOAuth, disconnect, browseFeed, publishPicker, manualExport };
+})();
+
 SocialStudio.modules.library = (function(){
   const root = () => document.getElementById('ss-sub-library');
   let items = [];
@@ -20396,6 +20638,7 @@ SocialStudio.modules.library = (function(){
             <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.setStatus(${p.id},'rejected')">&#x274C;</button>
           ` : ''}
           <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.library.telegram(${p.id})">&#x1F4F2;</button>
+          <button class="btn-secondary ss-tip" data-tip="Publish to a connected social account (or manual export)" style="padding:4px 10px;font-size:11px" onclick="SocialStudio.modules.connect.publishPicker(${p.id})">&#x1F680;</button>
         </div>
       </div>
     `;}).join('');
