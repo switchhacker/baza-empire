@@ -297,6 +297,39 @@ def _req_account_id() -> Optional[str]:
     return aid or None
 
 
+def _all_accounts() -> list:
+    """Return all configured Gmail accounts ordered by email."""
+    con = _conn()
+    try:
+        rows = con.execute("SELECT * FROM email_accounts ORDER BY email ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        con.close()
+
+
+def _threads_all(limit: int, q: str):
+    """Fetch threads from every account, merge, sort descending by received_at."""
+    merged = []
+    con = _conn()
+    try:
+        for acc in _all_accounts():
+            try:
+                svc = _gmail(acc["id"])
+                kwargs = {"userId": "me", "maxResults": limit, "labelIds": ["INBOX"]}
+                if q:
+                    kwargs["q"] = q
+                resp = svc.users().threads().list(**kwargs).execute()
+                for t in resp.get("threads", []) or []:
+                    merged.append(_hydrate_thread(svc, con, t, acc["id"], acc["email"]))
+            except Exception as e:
+                print(f"[email] ALL-inbox fetch failed for {acc.get('email')}: {e}", flush=True)
+                continue
+    finally:
+        con.close()
+    merged.sort(key=lambda x: x.get("received_at") or "", reverse=True)
+    return jsonify({"threads": merged[:limit], "next_page_token": None})
+
+
 def _decode_body(payload: dict) -> tuple[str, str]:
     """Return (plain_text, html). Walks multipart payloads."""
     plain, html = "", ""
@@ -382,6 +415,64 @@ def _pick_model(prefer: Optional[str] = None) -> str:
     return DEFAULT_MODEL
 
 
+# ── Per-thread hydration helper ──────────────────────────────────────────
+
+def _hydrate_thread(svc, con, t, account_id, account_email):
+    """Hydrate a single thread dict from local cache or lightweight remote fetch.
+
+    Stamps ``account_id`` and ``account_email`` onto every returned dict so
+    callers never need to re-attach them.
+    """
+    tid = t["id"]
+    row = con.execute(
+        """SELECT thread_id, subject, from_addr, to_addr, body_snippet,
+                  received_at, labels, is_unread, is_starred, ai_summary,
+                  category, gmail_id
+           FROM emails WHERE thread_id=? ORDER BY received_at DESC LIMIT 1""",
+        (tid,)
+    ).fetchone()
+    if row:
+        d = dict(row)
+        out = {
+            "thread_id": tid,
+            "subject": d["subject"] or "(no subject)",
+            "from": d["from_addr"] or "",
+            "snippet": d["body_snippet"] or t.get("snippet", ""),
+            "received_at": d["received_at"] or "",
+            "labels": (d["labels"] or "").split(",") if d["labels"] else [],
+            "is_unread": bool(d["is_unread"]),
+            "is_starred": bool(d["is_starred"]),
+            "ai_summary": d["ai_summary"] or "",
+            "category": d["category"] or "",
+            "cached": True,
+        }
+    else:
+        msg = svc.users().threads().get(
+            userId="me", id=tid, format="metadata",
+            metadataHeaders=["From", "Subject", "Date", "To"]
+        ).execute()
+        msgs = msg.get("messages", []) or []
+        head = msgs[-1] if msgs else {}
+        hdrs = _headers_map(head)
+        labels = head.get("labelIds", []) or []
+        out = {
+            "thread_id": tid,
+            "subject": hdrs.get("Subject", "(no subject)"),
+            "from": hdrs.get("From", ""),
+            "snippet": t.get("snippet", ""),
+            "received_at": hdrs.get("Date", ""),
+            "labels": labels,
+            "is_unread": "UNREAD" in labels,
+            "is_starred": "STARRED" in labels,
+            "ai_summary": "",
+            "category": "",
+            "cached": False,
+        }
+    out["account_id"] = account_id
+    out["account_email"] = account_email
+    return out
+
+
 # ── Blueprint ─────────────────────────────────────────────────────────────
 
 email_bp = Blueprint("email_studio", __name__)
@@ -448,6 +539,9 @@ def api_threads():
     limit = min(int(request.args.get("limit", "40")), 100)
     page_token = request.args.get("page_token") or None
 
+    if _req_account_id() == "ALL":
+        return _threads_all(limit, q)
+
     try:
         svc = _gmail(_req_account_id())
         kwargs = {"userId": "me", "maxResults": limit}
@@ -462,56 +556,12 @@ def api_threads():
         next_token = resp.get("nextPageToken")
 
         # Hydrate each thread head from local cache; if missing, fetch metadata.
+        acc = _pick_account(_req_account_id())
+        acc_id = acc["id"] if acc else None
+        acc_email = acc["email"] if acc else ""
         con = _conn()
         try:
-            out = []
-            for t in threads:
-                tid = t["id"]
-                row = con.execute(
-                    """SELECT thread_id, subject, from_addr, to_addr, body_snippet,
-                              received_at, labels, is_unread, is_starred, ai_summary,
-                              category, gmail_id
-                       FROM emails WHERE thread_id=? ORDER BY received_at DESC LIMIT 1""",
-                    (tid,)
-                ).fetchone()
-                if row:
-                    d = dict(row)
-                    out.append({
-                        "thread_id": tid,
-                        "subject": d["subject"] or "(no subject)",
-                        "from": d["from_addr"] or "",
-                        "snippet": d["body_snippet"] or t.get("snippet", ""),
-                        "received_at": d["received_at"] or "",
-                        "labels": (d["labels"] or "").split(",") if d["labels"] else [],
-                        "is_unread": bool(d["is_unread"]),
-                        "is_starred": bool(d["is_starred"]),
-                        "ai_summary": d["ai_summary"] or "",
-                        "category": d["category"] or "",
-                        "cached": True,
-                    })
-                else:
-                    # Lightweight remote metadata fetch
-                    msg = svc.users().threads().get(
-                        userId="me", id=tid, format="metadata",
-                        metadataHeaders=["From", "Subject", "Date", "To"]
-                    ).execute()
-                    msgs = msg.get("messages", []) or []
-                    head = msgs[-1] if msgs else {}
-                    hdrs = _headers_map(head)
-                    labels = head.get("labelIds", []) or []
-                    out.append({
-                        "thread_id": tid,
-                        "subject": hdrs.get("Subject", "(no subject)"),
-                        "from": hdrs.get("From", ""),
-                        "snippet": t.get("snippet", ""),
-                        "received_at": hdrs.get("Date", ""),
-                        "labels": labels,
-                        "is_unread": "UNREAD" in labels,
-                        "is_starred": "STARRED" in labels,
-                        "ai_summary": "",
-                        "category": "",
-                        "cached": False,
-                    })
+            out = [_hydrate_thread(svc, con, t, acc_id, acc_email) for t in threads]
             return jsonify({"threads": out, "next_page_token": next_token})
         finally:
             con.close()
@@ -1039,14 +1089,20 @@ def api_search():
     try:
         # FTS5 query — escape user input to avoid syntax errors
         safe = q.replace('"', '""')
-        rows = con.execute(
-            """SELECT e.thread_id, e.gmail_id, e.subject, e.from_addr, e.body_snippet,
-                      e.received_at, e.labels, e.is_unread, e.is_starred,
-                      bm25(emails_fts) AS rank
-               FROM emails_fts JOIN emails e ON e.gmail_id = emails_fts.gmail_id
-               WHERE emails_fts MATCH ? ORDER BY rank LIMIT ?""",
-            (f'"{safe}"', limit)
-        ).fetchall()
+        acct = _req_account_id()
+        base = """SELECT e.thread_id, e.gmail_id, e.subject, e.from_addr, e.body_snippet,
+                         e.received_at, e.labels, e.is_unread, e.is_starred, e.account_id,
+                         a.email AS account_email, bm25(emails_fts) AS rank
+                  FROM emails_fts JOIN emails e ON e.gmail_id = emails_fts.gmail_id
+                  LEFT JOIN email_accounts a ON a.id = e.account_id
+                  WHERE emails_fts MATCH ?"""
+        params = [f'"{safe}"']
+        if acct and acct != "ALL":
+            base += " AND (e.account_id = ? OR e.account_id IS NULL)"
+            params.append(acct)
+        base += " ORDER BY rank LIMIT ?"
+        params.append(limit)
+        rows = con.execute(base, params).fetchall()
         out = []
         seen_threads = set()
         for r in rows:
@@ -1063,6 +1119,8 @@ def api_search():
                 "labels": (d["labels"] or "").split(",") if d["labels"] else [],
                 "is_unread": bool(d["is_unread"]),
                 "is_starred": bool(d["is_starred"]),
+                "account_id": d["account_id"],
+                "account_email": d["account_email"] or "",
                 "rank": d["rank"],
             })
         return jsonify({"results": out, "query": q})

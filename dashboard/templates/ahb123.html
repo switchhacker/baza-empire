@@ -4018,6 +4018,15 @@
       <textarea id="project-notes" rows="2" placeholder="Internal notes, reminders, special conditions..."></textarea>
     </div>
 
+    <div class="form-group" style="margin-top:10px">
+      <label style="display:flex;justify-content:space-between;align-items:center">
+        <span>Terms &amp; Conditions</span>
+        <button type="button" class="btn-secondary btn-sm" onclick="loadDefaultTerms()">Load company default</button>
+      </label>
+      <textarea id="project-terms-conditions" rows="6"
+        placeholder="Leave blank to use the company default terms."></textarea>
+    </div>
+
     <div class="form-row">
       <div class="form-group">
         <label>Budget Low</label>
@@ -5463,6 +5472,7 @@ async function _saveProjectQuiet(){
     address: document.getElementById('project-address').value.trim(),
     description: document.getElementById('project-description').value.trim(),
     notes: document.getElementById('project-notes').value.trim(),
+    terms_conditions: document.getElementById('project-terms-conditions').value,
     budget_low: document.getElementById('project-budget-low').value || null,
     budget_high: document.getElementById('project-budget-high').value || null,
     start_date: document.getElementById('project-start').value || null,
@@ -9363,6 +9373,11 @@ async function saveEstimatorSettings(){
     showToast('Settings saved');
     closeModal('estSettingsModal');
   }catch(e){showToast('Save failed','error');}
+}
+
+async function loadDefaultTerms(){
+  const d = await fetch('/api/ahb/invoice-settings').then(r=>r.json());
+  document.getElementById('project-terms-conditions').value = d.terms_default || '';
 }
 
 function recalcM1(){ /* live preview hook — currently no-op, results render on Calculate click */ }

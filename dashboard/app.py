@@ -472,6 +472,7 @@ def _init_ahb_tables_inner():
                            WHERE y.project_id = i.project_id
                            ORDER BY y.created_at ASC, y.id ASC LIMIT 1)
            )""",
+        "ALTER TABLE ahb_projects ADD COLUMN terms_conditions TEXT",
     ]
     for stmt in alter_stmts:
         try:
@@ -5619,8 +5620,8 @@ def api_ahb_projects_create():
             """INSERT INTO ahb_projects (id, client_id, title, address, scope, description,
                budget_low, budget_high, status, start_date, end_date, assigned_agents, notes,
                value, client_name, client_email, contact_info, location,
-               commission_pct, commission_value)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               commission_pct, commission_value, terms_conditions)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (pid, data.get('client_id'), data.get('title'), data.get('address'),
              normalize_escaped_newlines(data.get('scope')), normalize_escaped_newlines(data.get('description')),
              data.get('budget_low'), data.get('budget_high'),
@@ -5632,7 +5633,8 @@ def api_ahb_projects_create():
              # Default new projects to 0% commission. The user enters a real
              # commission per-project in the project detail modal when needed.
              float(data.get('commission_pct') or 0),
-             float(data.get('commission_value') or 0))
+             float(data.get('commission_value') or 0),
+             normalize_escaped_newlines(data.get('terms_conditions')))
         )
 
         # Create phases if provided
@@ -5703,12 +5705,12 @@ def api_ahb_projects_update(pid):
                    'end_date', 'assigned_agents', 'notes', 'value',
                    'client_name', 'client_email', 'contact_info', 'location',
                    'acquisition_type', 'commission_pct', 'commission_value',
-                   'commission_beneficiary'):
+                   'commission_beneficiary', 'terms_conditions'):
             if k in data:
                 v = data[k]
                 # Heal LLM-extracted / pasted text where line breaks arrived as
                 # literal backslash-n (renders verbatim, pollutes Specter prompts).
-                if k in ('description', 'scope', 'notes'):
+                if k in ('description', 'scope', 'notes', 'terms_conditions'):
                     v = normalize_escaped_newlines(v)
                 fields.append(f"{k} = ?")
                 vals.append(v)
@@ -10047,6 +10049,10 @@ def api_ahb_invoice_pdf(iid):
             with open(logo_path, 'rb') as lf:
                 logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
 
+        # Resolve Terms & Conditions: project override → company default → built-in constant
+        terms_text = _resolve_invoice_terms(project, _company_terms_default())
+        terms_html = _render_terms_html(terms_text)
+
         # Page 1: Invoice
         html = f'''<!DOCTYPE html>
 <html>
@@ -10153,12 +10159,7 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
 <div style="margin-bottom:24px;">
     <h3 style="font-size:14px;color:#333;margin:0 0 12px;">Terms & Conditions</h3>
     <div style="font-size:13px;color:#444;line-height:1.6;">
-        <p style="margin:0 0 8px;"><strong>1.</strong> A Deposit is due before commencement of the project.</p>
-        <p style="margin:0 0 8px;"><strong>2.</strong> Total due upon completion.</p>
-        <p style="margin:0 0 8px;"><strong>3.</strong> Project will take approx {(project or {}).get('notes','') or 'TBD'} days to complete.</p>
-        <p style="margin:0 0 8px;"><strong>4.</strong> Project description is final unless a change order is requested.</p>
-        <p style="margin:0 0 8px;"><strong>5.</strong> Make checks payable to ALL HOME BUILDING CO.</p>
-        <p style="margin:0 0 8px;"><strong>6.</strong> Late Payment: Payment is due by the date specified on this invoice. If payment is not received by the due date, this invoice shall be deemed overdue. Interest shall accrue at the rate of fifty dollars (${interest_rate:.0f}.00) per week on the unpaid balance. An overdue interest sheet will be attached reflecting all accrued charges.</p>
+        {terms_html}
     </div>
 </div>
 
@@ -13982,6 +13983,61 @@ def _ensure_estimator_settings():
 _ensure_estimator_settings()
 
 
+DEFAULT_INVOICE_TERMS = """1. A Deposit is due before commencement of the project.
+2. Total due upon completion.
+3. Project will take approx TBD days to complete.
+4. Project description is final unless a change order is requested.
+5. Make checks payable to ALL HOME BUILDING CO.
+6. Late Payment: Payment is due by the date specified on this invoice. If payment is not received by the due date, this invoice shall be deemed overdue. Interest shall accrue at the rate of fifty dollars ($50.00) per week on the unpaid balance. An overdue interest sheet will be attached reflecting all accrued charges."""
+
+
+def _ensure_invoice_settings():
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+        conn.execute("PRAGMA busy_timeout = 8000")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ahb_invoice_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            terms_default TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("INSERT OR IGNORE INTO ahb_invoice_settings (id, terms_default) VALUES (1, ?)",
+                     (DEFAULT_INVOICE_TERMS,))
+        conn.commit(); conn.close()
+    except sqlite3.OperationalError as e:
+        print(f"[startup] _ensure_invoice_settings deferred — DB busy: {e}", flush=True)
+_ensure_invoice_settings()
+
+import html as _html
+
+
+def _resolve_invoice_terms(project, company_default):
+    """Return the effective terms text: project override → company default → built-in constant."""
+    pj = (project or {}).get("terms_conditions") or ""
+    if pj.strip():
+        return pj
+    if (company_default or "").strip():
+        return company_default
+    return DEFAULT_INVOICE_TERMS
+
+
+def _company_terms_default():
+    """Fetch the company-level terms default from ahb_invoice_settings row 1."""
+    try:
+        conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+        row = conn.execute("SELECT terms_default FROM ahb_invoice_settings WHERE id=1").fetchone()
+        conn.close()
+        return row[0] if row else ""
+    except Exception:
+        return ""
+
+
+def _render_terms_html(text):
+    """Convert plain-text T&C lines to HTML <p> elements."""
+    safe = _html.escape(text or "")
+    lines = [ln for ln in safe.splitlines() if ln.strip()]
+    return "".join(f'<p style="margin:0 0 8px;">{ln}</p>' for ln in lines)
+
+
 # Seed rates: Philly-area all-in customer-facing unit costs (2025-26) and the
 # Home Depot rental catalog that previously lived hardcoded in ahb123.html.
 # Both are editable from the dashboard — seeds only apply on first create.
@@ -14212,6 +14268,25 @@ def api_estimator_settings():
         conn.commit()
     conn.close()
     return jsonify({'success': True})
+
+
+@app.route('/api/ahb/invoice-settings', methods=['GET'])
+def api_ahb_invoice_settings_get():
+    _ensure_invoice_settings()
+    return jsonify({"terms_default": _company_terms_default() or DEFAULT_INVOICE_TERMS})
+
+
+@app.route('/api/ahb/invoice-settings', methods=['PUT'])
+def api_ahb_invoice_settings_put():
+    data = request.json or {}
+    val = normalize_escaped_newlines(data.get('terms_default') or '')
+    conn = _ahb_db()
+    conn.execute(
+        "INSERT INTO ahb_invoice_settings (id, terms_default, updated_at) VALUES (1, ?, datetime('now')) "
+        "ON CONFLICT(id) DO UPDATE SET terms_default=excluded.terms_default, updated_at=excluded.updated_at",
+        (val,))
+    conn.commit(); conn.close()
+    return jsonify({"success": True})
 
 
 @app.route('/api/ahb/estimator/method1', methods=['POST'])

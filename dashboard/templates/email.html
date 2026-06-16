@@ -621,7 +621,7 @@ async function loadLabels(){
       ${l.unread>0?`<div class="label-count">${l.unread}</div>`:''}
     </div>`).join('');
   let html = '<div class="label-group-title">Mailboxes</div>' + part(data.system||[]);
-  if((data.user||[]).length){ html += '<div class="label-group-title">Labels</div>' + part(data.user); }
+  if((data.user||[]).length && !state.activeAccount?.all){ html += '<div class="label-group-title">Labels</div>' + part(data.user); }
   el.innerHTML = html;
 }
 
@@ -641,9 +641,11 @@ async function loadThreads(){
   const scroll = document.getElementById('threadScroll');
   scroll.innerHTML = '<div class="thread-empty">Loading…</div>';
   const q = state.query;
+  const acc = state.activeAccount?.all ? 'ALL' : (state.activeAccount?.id || '');
   let url;
-  if(q){ url = '/api/email2/search?q=' + encodeURIComponent(q); }
-  else  { url = '/api/email2/threads?label=' + encodeURIComponent(state.label) + '&limit=40'; }
+  if(q){ url = '/api/email2/search?q=' + encodeURIComponent(q) + (acc?('&account='+encodeURIComponent(acc)):''); }
+  else  { url = '/api/email2/threads?label=' + encodeURIComponent(state.label) +
+              '&limit=40' + (acc?('&account='+encodeURIComponent(acc)):''); }
   const data = await api(url);
   state.threads = data.threads || data.results || [];
   state.pageToken = data.next_page_token || null;
@@ -672,9 +674,12 @@ function renderThreads(){
     const fromDisp = nameFrom(t.from) || parseEmailFrom(t.from) || '(unknown)';
     const cat = t.category ? `<span class="thread-cat-badge cat-${t.category}">${esc(t.category)}</span>` : '';
     const star = t.is_starred ? '<span class="thread-star">★</span>' : '';
+    const badge = state.activeAccount?.all && t.account_email
+      ? `<span class="acct-badge" style="font-size:9px;padding:1px 5px;border-radius:8px;background:#13132a;color:#7a7ea0;margin-left:6px">${esc(t.account_email.split('@')[0])}</span>`
+      : '';
     return `<div class="thread-item ${t.is_unread?'unread':''} ${t.thread_id===state.currentThreadId?'active':''}" onclick="openThread('${t.thread_id}')">
       <div class="thread-row1">
-        <div class="thread-from">${star}${esc(fromDisp)}</div>
+        <div class="thread-from">${star}${esc(fromDisp)}${badge}</div>
         <div class="thread-time">${fmtTime(t.received_at)}</div>
       </div>
       <div class="thread-subject">${esc(t.subject||'(no subject)')}</div>
@@ -705,12 +710,12 @@ async function openThread(tid){
   document.getElementById('readerSubject').textContent = '…';
   document.getElementById('replyComposer').classList.add('hidden');
   hideAiOutput();
-  const data = await api('/api/email2/thread/' + tid);
+  const data = await api('/api/email2/thread/' + tid + '?account=' + encodeURIComponent(threadAccount(tid)));
   if(data.error){ toast('⚠ ' + data.error, true); return; }
   state.currentThread = data;
   renderThread();
   // Mark as read in Gmail
-  try { await api('/api/email2/modify',{method:'POST',body:{target:'thread',id:tid,action:'read'}}); } catch(e){}
+  try { await api('/api/email2/modify',{method:'POST',body:{target:'thread',id:tid,action:'read',account:threadAccount(tid)}}); } catch(e){}
   // Optimistic local update
   const t = state.threads.find(x => x.thread_id === tid);
   if(t){ t.is_unread = false; renderThreads(); loadLabels(); }
@@ -927,7 +932,8 @@ async function sendReply(){
   const subject = (last.subject||'').toLowerCase().startsWith('re:') ? last.subject : 'Re: ' + (last.subject||'');
   const btn = document.getElementById('sendReplyBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
   const d = await api('/api/email2/send',{method:'POST', body:{
-    mode:'reply', to, subject, body, thread_id:tid, reply_to_gmail_id: last.gmail_id
+    mode:'reply', to, subject, body, thread_id:tid, reply_to_gmail_id: last.gmail_id,
+    account: threadAccount(tid)
   }});
   btn.disabled = false; btn.innerHTML = '📤 Send';
   if(d.ok){ toast('✅ Reply sent'); hideReply(); openThread(tid); }
@@ -959,7 +965,8 @@ async function sendCompose(){
   const body = document.getElementById('cmpBody').value.trim();
   if(!to){ toast('Missing "To"', true); return; }
   const btn = document.getElementById('cmpSendBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-  const d = await api('/api/email2/send',{method:'POST', body:{mode:'compose', to, cc, bcc, subject, body}});
+  const composeAcct = state.lastRealAccount?.id || (state.activeAccount?.all ? '' : (state.activeAccount?.id || ''));
+  const d = await api('/api/email2/send',{method:'POST', body:{mode:'compose', to, cc, bcc, subject, body, account: composeAcct || undefined}});
   btn.disabled = false; btn.innerHTML = '📤 Send';
   if(d.ok){ toast('✅ Sent'); closeCompose(); loadThreads(); loadLabels(); }
   else { toast('Send failed: '+(d.error||'?'), true); }
@@ -1035,9 +1042,17 @@ document.addEventListener('keydown', e => {
     modifyAction(starOn?'unstar':'star'); }
 });
 
+// ── Per-thread account helpers ────────────────────────────────────────────
+function threadAccount(tid){
+  const t = state.threads.find(x => x.thread_id === tid);
+  return t && t.account_id ? t.account_id : (state.activeAccount && !state.activeAccount.all ? state.activeAccount.id : '');
+}
+function acctParam(tid){ const a = threadAccount(tid); return a ? ('&account='+encodeURIComponent(a)) : ''; }
+
 // ── Accounts ─────────────────────────────────────────────────────────────
 state.accounts = [];
 state.activeAccount = null;
+state.lastRealAccount = null;
 
 async function loadAccounts(){
   const d = await api('/api/email2/accounts');
@@ -1058,6 +1073,12 @@ function renderAccountPill(){
     return;
   }
   const a = state.activeAccount;
+  if(a.all){
+    avatarEl.textContent = '📬';
+    emailEl.textContent = 'All inboxes';
+    labelEl.textContent = 'Merged';
+    return;
+  }
   avatarEl.textContent = (a.email||'?').substring(0,1).toUpperCase();
   emailEl.textContent = a.email;
   labelEl.textContent = a.label || 'Active';
@@ -1080,9 +1101,28 @@ function renderAccountMenu(){
       </div>
       <div class="acc-rm" onclick="event.stopPropagation();removeAccount('${a.id}','${esc(a.email)}')">×</div>
     </div>`).join('');
-  menu.innerHTML = (rows || '<div style="padding:10px;color:#555;font-size:11px">No accounts yet</div>') +
+  const allRow = `
+  <div class="acc-menu-item ${state.activeAccount?.all?'active':''}" onclick="selectAllInboxes()">
+    <div class="acc-avatar" style="width:22px;height:22px;font-size:10px">&#128236;</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:11.5px;font-weight:700;color:#e0e0e0">All inboxes</div>
+      <div style="font-size:9.5px;color:#5a5e7a">Merged &middot; every account</div>
+    </div>
+  </div>`;
+  menu.innerHTML = allRow + (rows || '') +
     '<div class="acc-menu-divider"></div>' +
-    '<div class="acc-menu-add" onclick="openAddAccount()">➕ Add Gmail account</div>';
+    '<div class="acc-menu-add" onclick="openAddAccount()">&#10133; Add Gmail account</div>';
+}
+
+function selectAllInboxes(){
+  if(state.activeAccount && !state.activeAccount.all) state.lastRealAccount = state.activeAccount;
+  state.activeAccount = {id:'ALL', email:'All inboxes', all:true};
+  document.getElementById('accMenu').classList.remove('open');
+  renderAccountPill();
+  state.currentThreadId = null; state.currentThread = null;
+  document.getElementById('readerEmpty').style.display = 'flex';
+  document.getElementById('readerContent').style.display = 'none';
+  loadLabels(); loadThreads();
 }
 
 async function switchAccount(id){
@@ -1092,6 +1132,7 @@ async function switchAccount(id){
     toast('Switched account');
     document.getElementById('accMenu').classList.remove('open');
     await loadAccounts();
+    state.lastRealAccount = state.activeAccount;
     state.currentThreadId = null; state.currentThread = null;
     document.getElementById('readerEmpty').style.display = 'flex';
     document.getElementById('readerContent').style.display = 'none';
