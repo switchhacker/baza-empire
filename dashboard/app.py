@@ -5903,23 +5903,85 @@ def _project_has_primary_invoice(conn, project_id):
     return bool(row)
 
 
-def _apply_quote_to_invoice(c, project_id, quote_total, quote_description):
-    """Rewrite the linked invoice's line items from the quote's description
-    and sync subtotal/total. Returns the invoice id or None if no invoice
-    exists for this project."""
-    inv = c.execute(
-        "SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
-        (project_id,)
-    ).fetchone()
-    if not inv:
-        return None
-    items = _line_items_from_description(quote_description, quote_total)
+def _invoice_line_items_from_quote(quote):
+    """Build invoice line_items from a quote/estimate, preferring structured
+    data (breakdown.line_items / line_items JSON) and falling back to the
+    description-text parse when no structured items exist."""
+    breakdown = quote.get("breakdown")
+    if isinstance(breakdown, str):
+        try:
+            breakdown = json.loads(breakdown) if breakdown else {}
+        except Exception:
+            breakdown = {}
+    structured = None
+    if isinstance(breakdown, dict) and isinstance(breakdown.get("line_items"), list):
+        structured = breakdown["line_items"]
+    elif isinstance(quote.get("line_items"), (list, str)):
+        structured = _parse_line_items(quote.get("line_items"))
+    if structured:
+        items = []
+        for li in structured:
+            if not isinstance(li, dict):
+                continue
+            total = float(li.get("total") or li.get("amount") or 0)
+            rate = float(li.get("rate") or li.get("unit_price") or total or 0)
+            items.append({
+                "description": (li.get("description") or li.get("label") or "").strip() or "Item",
+                "qty": li.get("qty") or li.get("quantity") or 1,
+                "quantity": li.get("qty") or li.get("quantity") or 1,
+                "unit": li.get("unit") or "qty",
+                "rate": rate,
+                "unit_price": rate,
+                "materials": float(li.get("materials") or 0),
+                "labor": float(li.get("labor") or 0),
+                "total": total,
+                "include_in_total": li.get("include_in_total", True) is not False,
+            })
+        if items:
+            return items
+    return _line_items_from_description(quote.get("description") or "", quote.get("total") or 0)
+
+
+def _create_primary_invoice_from_quote(c, project, quote):
+    """Create a new primary invoice carrying the quote's line items."""
+    pid = project["id"]
+    items = _invoice_line_items_from_quote(quote)
+    subtotal = float(quote.get("total") or 0)
+    iid = uuid.uuid4().hex[:24]
+    inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
     c.execute(
-        "UPDATE ahb_invoices SET line_items=?, subtotal=?, total=?, tax=0, updated_at=? WHERE id=?",
-        (json.dumps(items), float(quote_total or 0), float(quote_total or 0),
-         datetime.datetime.now().isoformat(), inv['id'])
-    )
-    return inv['id']
+        """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
+           subtotal, tax, total, status, notes, client_name, project_name,
+           date, is_primary, project_address)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (iid, project.get("client_id") or "", pid, inv_num, json.dumps(items),
+         subtotal, 0, subtotal, "draft", "",
+         project.get("client_name") or "", project.get("title") or "",
+         datetime.datetime.now().date().isoformat(), 1,
+         project.get("address") or project.get("location") or ""))
+    return iid
+
+
+def _apply_quote_to_invoice(c, project_id, quote, on_existing):
+    """Apply an active quote to the project's invoice. Returns (invoice_id, error_or_None).
+    - No primary yet: create one. - Primary exists: require on_existing in
+    {'replace','new'} (no silent overwrite)."""
+    project = c.execute("SELECT * FROM ahb_projects WHERE id=?", (project_id,)).fetchone()
+    project = dict(project) if project else {"id": project_id}
+    if not _project_has_primary_invoice(c, project_id):
+        return _create_primary_invoice_from_quote(c, project, quote), None
+    if on_existing == "new":
+        return _create_primary_invoice_from_quote(c, project, quote), None  # is_primary swap is manual
+    if on_existing == "replace":
+        inv = c.execute(
+            "SELECT id FROM ahb_invoices WHERE project_id=? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
+            (project_id,)).fetchone()
+        items = _invoice_line_items_from_quote(quote)
+        total = float(quote.get("total") or 0)
+        c.execute("UPDATE ahb_invoices SET line_items=?, subtotal=?, total=?, tax=0, updated_at=? WHERE id=?",
+                  (json.dumps(items), total, total, datetime.datetime.now().isoformat(), inv["id"]))
+        return inv["id"], None
+    return None, "a primary invoice already exists — pass on_existing='replace' or 'new'"
 
 
 @app.route('/api/ahb/projects/<pid>/quotes', methods=['GET', 'POST'])
@@ -5946,7 +6008,11 @@ def api_ahb_project_quotes(pid):
             c.execute("UPDATE ahb_quotes SET is_active=0 WHERE project_id=? AND id<>?", (pid, qid))
             c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                       (total, total, datetime.datetime.now().isoformat(), pid))
-            _apply_quote_to_invoice(c, pid, total, d.get('description', ''))
+            quote_row = dict(c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone())
+            inv_id, err = _apply_quote_to_invoice(c, pid, quote_row, d.get('on_existing'))
+            if err:
+                conn.rollback(); conn.close()
+                return jsonify({'success': False, 'error': err, 'needs_decision': True}), 409
         conn.commit()
         row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
         conn.close()
@@ -5993,9 +6059,92 @@ def _resolve_payment_terms(preset, milestones):
     return {"preset": preset, "net_days": net_days, "milestones": ms}
 
 
+def _project_total_paid(conn, pid):
+    """Sum of all payments across every invoice belonging to the project."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(p.amount),0) AS paid FROM ahb_payments p "
+        "JOIN ahb_invoices i ON p.invoice_id = i.id WHERE i.project_id = ?",
+        (pid,)).fetchone()
+    return float(row["paid"] or 0) if row else 0.0
+
+
+def _compute_milestone_amount_due(contract, milestones, k, paid):
+    """Self-healing amount due for milestone index k (0-based):
+    cumulative-% target through k minus total paid; the final milestone
+    clears to the true remaining balance. Negatives clamp to 0."""
+    contract = float(contract or 0); paid = float(paid or 0)
+    if k >= len(milestones) - 1:                 # final milestone
+        due = contract - paid
+    else:
+        cum_pct = sum(float(m.get("pct") or 0) for m in milestones[:k + 1]) / 100.0
+        due = round(contract * cum_pct, 2) - paid
+    return round(max(0.0, due), 2)
+
+
 def _stamp_primary_as_deposit(conn, pid, terms):
-    """Stamp the project's primary invoice as milestone 0. Filled in Task 9."""
-    return None
+    """Stamp the project's primary invoice as milestone 0 (the deposit):
+    label, index 0, frozen terms snapshot, and self-healing amount_due."""
+    ms = (terms or {}).get("milestones") or []
+    if not ms:
+        return None
+    primary = conn.execute(
+        "SELECT id, subtotal, total FROM ahb_invoices WHERE project_id=? "
+        "ORDER BY is_primary DESC, created_at ASC LIMIT 1", (pid,)).fetchone()
+    if not primary:
+        return None
+    primary = dict(primary)
+    contract = float(primary.get("subtotal") or primary.get("total") or 0)
+    paid = _project_total_paid(conn, pid)
+    due = _compute_milestone_amount_due(contract, ms, 0, paid)
+    conn.execute(
+        "UPDATE ahb_invoices SET milestone_label=?, milestone_index=0, amount_due=?, "
+        "terms_snapshot=? WHERE id=?",
+        (ms[0]["label"], due, json.dumps(terms), primary["id"]))
+    return primary["id"]
+
+
+def _payment_schedule_block(inv):
+    """HTML block for a term-driven invoice's payment schedule, or '' for a
+    plain invoice. Self-contained (own money formatter) so it is unit-testable
+    and reusable in both the PDF and any HTML view."""
+    try:
+        idx = int(inv.get("milestone_index") if inv.get("milestone_index") is not None else -1)
+    except (TypeError, ValueError):
+        idx = -1
+    raw = (inv.get("terms_snapshot") or "").strip()
+    if idx < 0 or not raw:
+        return ""
+    try:
+        terms = json.loads(raw)
+    except Exception:
+        return ""
+    ms = terms.get("milestones") or []
+    if not ms:
+        return ""
+    contract = float(inv.get("total") or 0)
+    due = float(inv.get("amount_due") or 0)
+
+    def m(x):
+        return ("-$" if x < 0 else "$") + f"{abs(x):,.2f}"
+
+    label = (terms.get("preset") or "").replace("_", " / ")
+    rows = ""
+    for k, mil in enumerate(ms):
+        amt = round(contract * float(mil.get("pct") or 0) / 100.0, 2)
+        marker = " &larr; this invoice" if k == idx else ""
+        weight = "700" if k == idx else "400"
+        rows += (f'<div style="display:flex;justify-content:space-between;font-weight:{weight};">'
+                 f'<span>{mil.get("label","")} ({mil.get("pct",0)}%){marker}</span>'
+                 f'<span>{m(amt)}</span></div>')
+    status = (inv.get("status") or "draft").upper()
+    return (
+        '<div style="margin-top:18px;border-top:1px dashed #94a3b8;padding-top:10px;width:320px;font-size:12px;">'
+        f'<div style="display:flex;justify-content:space-between;font-weight:700;color:#334155;">'
+        f'<span>PAYMENT SCHEDULE ({label})</span><span>Status: {status}</span></div>'
+        f'{rows}'
+        '<div style="display:flex;justify-content:space-between;border-top:1px solid #333;'
+        f'margin-top:6px;padding-top:6px;font-weight:700;color:#2563eb;">'
+        f'<span>AMOUNT DUE NOW</span><span>{m(due)}</span></div></div>')
 
 
 @app.route('/api/ahb/projects/<pid>/payment-terms', methods=['GET', 'PUT'])
@@ -6065,7 +6214,8 @@ def api_ahb_quote_modify(qid):
         if row['is_active']:
             c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                       (new_total, new_total, datetime.datetime.now().isoformat(), pid))
-            _apply_quote_to_invoice(c, pid, new_total, new_desc or '')
+            _apply_quote_to_invoice(c, pid, {'total': new_total, 'description': new_desc or '',
+                                             'breakdown': new_breakdown}, 'replace')
         # Re-read for the response
         row = c.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
     if d.get('make_active'):
@@ -6073,14 +6223,14 @@ def api_ahb_quote_modify(qid):
         c.execute("UPDATE ahb_quotes SET is_active=1 WHERE id=?", (qid,))
         c.execute("UPDATE ahb_projects SET value=?, budget_high=?, updated_at=? WHERE id=?",
                   (row['total'], row['total'], datetime.datetime.now().isoformat(), pid))
-        # Rebuild the linked invoice's line items from this quote's description.
-        _apply_quote_to_invoice(c, pid, row['total'], row['description'] or '')
+        # Rebuild the linked invoice's line items from this quote.
+        _apply_quote_to_invoice(c, pid, dict(row), 'replace')
     if d.get('deactivate'):
         c.execute("UPDATE ahb_quotes SET is_active=0 WHERE id=?", (qid,))
     if d.get('apply_to_invoice'):
         # Apply this quote's total to the linked invoice and rebuild line items
-        # from its description — works whether or not the quote is active.
-        _apply_quote_to_invoice(c, pid, row['total'], row['description'] or '')
+        # — works whether or not the quote is active.
+        _apply_quote_to_invoice(c, pid, dict(row), 'replace')
     if 'notes' in d:
         c.execute("UPDATE ahb_quotes SET notes=? WHERE id=?", (d['notes'], qid))
     conn.commit()
@@ -6774,6 +6924,80 @@ def api_ahb_project_balance_invoice(pid):
         conn.commit(); conn.close()
         return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num,
                         'contract_total': contract_total, 'paid': paid, 'balance': subtotal})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/ahb/projects/<pid>/next-invoice', methods=['POST'])
+def api_ahb_project_next_invoice(pid):
+    """Generate the next milestone invoice from the project's payment terms.
+    The primary invoice is milestone 0 (deposit); this issues 1..N-1, each
+    carrying the full contract line items and a self-healing amount_due."""
+    try:
+        conn = _ahb_db()
+        project = conn.execute("SELECT * FROM ahb_projects WHERE id=?", (pid,)).fetchone()
+        if not project:
+            conn.close(); return jsonify({'success': False, 'error': 'Project not found'}), 404
+        project = dict(project)
+        raw = (project.get('payment_terms') or '').strip()
+        if not raw:
+            conn.close()
+            return jsonify({'success': False, 'error': 'set payment terms first'}), 400
+        terms = json.loads(raw)
+        milestones = terms.get('milestones') or []
+        primary = conn.execute(
+            "SELECT * FROM ahb_invoices WHERE project_id=? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
+            (pid,)).fetchone()
+        if not primary:
+            conn.close()
+            return jsonify({'success': False, 'error': 'create the primary invoice first'}), 400
+        primary = dict(primary)
+        # Ensure the primary is stamped as milestone 0.
+        cur_idx = primary.get('milestone_index')
+        if int(cur_idx if cur_idx is not None else -1) != 0:
+            _stamp_primary_as_deposit(conn, pid, terms); conn.commit()
+        issued = {int(r['milestone_index']) for r in conn.execute(
+            "SELECT milestone_index FROM ahb_invoices WHERE project_id=? AND milestone_index>=0", (pid,)
+        ).fetchall()}
+        next_k = next((k for k in range(len(milestones)) if k not in issued), None)
+        if next_k is None:
+            conn.close()
+            return jsonify({'success': False, 'error': 'all milestones invoiced'}), 409
+
+        contract = float(primary.get('subtotal') or primary.get('total') or 0)
+        paid = _project_total_paid(conn, pid)
+        due = _compute_milestone_amount_due(contract, milestones, next_k, paid)
+        line_items = _parse_line_items(primary.get('line_items')) or []
+
+        iid = uuid.uuid4().hex[:24]
+        inv_num = f"AHB-{datetime.datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:3].upper()}"
+        label = milestones[next_k]['label']
+        conn.execute(
+            """INSERT INTO ahb_invoices (id, client_id, project_id, invoice_number, line_items,
+               subtotal, tax, total, status, notes, client_name, project_name, terms,
+               date, parent_invoice_id, is_primary, company_name, contractor_name,
+               client_address, client_email, client_phone, project_address,
+               milestone_label, milestone_index, amount_due, terms_snapshot)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (iid, primary.get('client_id') or project.get('client_id') or '',
+             pid, inv_num, json.dumps(line_items), contract, 0, contract, 'draft',
+             f"{label} payment due.",
+             primary.get('client_name') or project.get('client_name') or '',
+             primary.get('project_name') or project.get('title') or '',
+             primary.get('terms') or '',
+             datetime.datetime.now().date().isoformat(),
+             primary['id'], 0,
+             primary.get('company_name') or 'All Home Building Co',
+             primary.get('contractor_name') or 'Sergey Tkach',
+             primary.get('client_address') or '',
+             primary.get('client_email') or project.get('client_email') or '',
+             primary.get('client_phone') or '',
+             primary.get('project_address') or project.get('address') or '',
+             label, next_k, due, json.dumps(terms)))
+        conn.commit(); conn.close()
+        return jsonify({'success': True, 'id': iid, 'invoice_number': inv_num,
+                        'milestone_label': label, 'milestone_index': next_k,
+                        'contract': contract, 'paid': paid, 'amount_due': due})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -10187,6 +10411,8 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
         </div>
     </div>
 </div>
+
+<div style="display:flex;justify-content:flex-end;">{_payment_schedule_block(inv)}</div>
 
 
 <!-- PAGE 2: CONTRACTOR AGREEMENT -->
@@ -15003,9 +15229,9 @@ def api_estimator_material_price_sync():
         n = 0
         for u in (d.get('updates') or []):
             try:
-                conn.execute("UPDATE ahb_materials_catalog SET unit_price=? WHERE id=?",
-                             (float(u['new_price']), int(u['id'])))
-                n += 1
+                cur = conn.execute("UPDATE ahb_materials_catalog SET unit_price=? WHERE id=? AND active=1",
+                                   (float(u['new_price']), int(u['id'])))
+                n += cur.rowcount  # only count rows that actually changed
             except (ValueError, TypeError, KeyError):
                 continue
         conn.commit()

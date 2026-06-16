@@ -224,6 +224,10 @@ def test_price_sync_apply_updates_prices(client, temp_ahb_db):
     assert r.get_json()["updated"] == 1
     rows = client.get("/api/ahb/estimator/materials").get_json()
     assert any(x["id"] == mid and x["unit_price"] == 8.5 for x in rows)
+    # a nonexistent id must not be counted as updated
+    r2 = client.post("/api/ahb/estimator/material-price-sync",
+                     json={"updates": [{"id": 99999999, "new_price": 1.23}]})
+    assert r2.get_json()["updated"] == 0
 
 
 def test_export_csv_returns_catalog(client):
