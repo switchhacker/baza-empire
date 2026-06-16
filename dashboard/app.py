@@ -14161,24 +14161,137 @@ _MATERIALS_SEED = [
     ('Home Depot', 'Bath Faucet (Widespread)',         'each',  89.00, 'Fixtures'),
     ('Home Depot', 'Interior Door Slab (Hollow)',      'each',  44.98, 'Fixtures'),
     ('Home Depot', 'Interior Door Knob Set',           'each', 19.98, 'Fixtures'),
+    # ── Lumber (extended) ──
+    ('Home Depot', '2x4x12 (SPF)',                     'each',  8.97, 'Lumber'),
+    ('Home Depot', '2x4x16 (SPF)',                     'each', 11.98, 'Lumber'),
+    ('Home Depot', '2x6x10 (SPF)',                     'each',  9.47, 'Lumber'),
+    ('Home Depot', '2x6x12 (SPF)',                     'each', 12.98, 'Lumber'),
+    ('Home Depot', '2x8x12 (SPF)',                     'each', 18.97, 'Lumber'),
+    ('Home Depot', '2x10x12 (SPF)',                    'each', 26.98, 'Lumber'),
+    ('Home Depot', '2x12x12 (SPF)',                    'each', 33.97, 'Lumber'),
+    ('Home Depot', '4x4x8 Pressure-Treated Post',      'each', 12.98, 'Lumber'),
+    ('Home Depot', '6x6x8 Pressure-Treated Post',      'each', 29.97, 'Lumber'),
+    ('Home Depot', '1x8x8 Pine Board',                 'each', 14.98, 'Lumber'),
+    ('Home Depot', '1x12x8 Pine Board',                'each', 22.98, 'Lumber'),
+    ('Home Depot', '4x8 5/8" CDX Plywood',             'sheet', 48.97, 'Lumber'),
+    ('Home Depot', '4x8 1/2" Sanded Plywood',          'sheet', 45.98, 'Lumber'),
+    ('Home Depot', '4x8 3/4" MDF',                     'sheet', 42.98, 'Lumber'),
+    ('Home Depot', '4x8 1/4" Lauan Underlayment',      'sheet', 24.98, 'Lumber'),
+    # ── Trim / Molding ──
+    ('Home Depot', 'Primed Baseboard 3-1/4" (8 ft)',   'each',  8.98, 'Trim'),
+    ('Home Depot', 'Primed Door Casing 2-1/4" (7 ft)', 'each',  6.98, 'Trim'),
+    ('Home Depot', 'Crown Molding 3-5/8" (8 ft)',      'each', 13.98, 'Trim'),
+    ('Home Depot', 'Quarter Round (8 ft)',             'each',  3.98, 'Trim'),
+    ('Home Depot', 'Shoe Molding (8 ft)',              'each',  3.48, 'Trim'),
+    # ── Drywall (extended) ──
+    ('Home Depot', '4x12 1/2" Drywall Sheet',          'sheet', 18.98, 'Drywall'),
+    ('Home Depot', '1/2" Mold-Tough Drywall 4x8',      'sheet', 22.98, 'Drywall'),
+    ('Home Depot', 'Setting-Type Compound 18 lb',      'bag',  16.98, 'Drywall'),
+    ('Home Depot', 'Mesh Drywall Tape (300 ft)',       'roll',  7.98, 'Drywall'),
+    ('Home Depot', 'Drywall Sanding Sponge',           'each',  3.98, 'Drywall'),
+    # ── Concrete (extended) ──
+    ('Home Depot', '#4 Rebar (10 ft)',                 'each',  7.98, 'Concrete'),
+    ('Home Depot', 'Remesh Sheet 3.5x7',               'sheet',  8.98, 'Concrete'),
+    ('Home Depot', 'Concrete Sealer (1 gal)',          'gal',  29.98, 'Concrete'),
+    ('Home Depot', 'Hydraulic Cement 10 lb',           'each', 13.98, 'Concrete'),
+    ('Home Depot', 'Expansion Joint (1/2" x 4 ft)',    'each',  3.98, 'Concrete'),
+    # ── Fasteners (extended) ──
+    ('Home Depot', 'Lag Screws 3/8"x4" (10 pk)',       'pack',  9.98, 'Fasteners'),
+    ('Home Depot', 'Concrete Screws 3/16"x2-1/4" (75)', 'box', 18.98, 'Fasteners'),
+    ('Home Depot', 'Joist Hanger 2x8',                 'each',  1.98, 'Fasteners'),
+    ('Home Depot', 'Hurricane Tie',                    'each',  0.98, 'Fasteners'),
+    ('Home Depot', 'Finish Nails 2" (1 lb)',           'box',   6.98, 'Fasteners'),
+    ('Home Depot', 'Brad Nails 18ga 1-1/4" (1000)',    'box',   7.98, 'Fasteners'),
+    ('Home Depot', 'Roofing Nails 1-1/4" (5 lb)',      'box',  21.98, 'Fasteners'),
+    # ── Paint (extended) ──
+    ('Home Depot', 'Exterior Paint (1 gal)',           'gal',  42.98, 'Paint'),
+    ('Home Depot', 'Ceiling Paint (1 gal)',            'gal',  26.98, 'Paint'),
+    ('Home Depot', 'Exterior Deck Stain (1 gal)',      'gal',  39.98, 'Paint'),
+    ('Home Depot', 'Paint Brush Set (5 pk)',           'pack', 14.98, 'Paint'),
+    ('Home Depot', 'Canvas Drop Cloth 9x12',           'each', 16.98, 'Paint'),
+    ('Home Depot', 'Spray Paint (12 oz)',              'each',  5.98, 'Paint'),
+    # ── Electrical (extended) ──
+    ('Home Depot', '10/2 Romex NM-B (100 ft)',         'roll', 98.00, 'Electrical'),
+    ('Home Depot', '1/2" EMT Conduit (10 ft)',         'each',  9.98, 'Electrical'),
+    ('Home Depot', '1/2" PVC Conduit (10 ft)',         'each',  4.98, 'Electrical'),
+    ('Home Depot', '20A Single-Pole Breaker',          'each',  8.98, 'Electrical'),
+    ('Home Depot', 'GFCI Outlet 15A',                  'each', 18.98, 'Electrical'),
+    ('Home Depot', 'Weatherproof Outlet Box',          'each',  6.98, 'Electrical'),
+    ('Home Depot', 'Electrical Tape (3 pk)',           'pack',  5.98, 'Electrical'),
+    ('Home Depot', 'Dimmer Switch',                    'each', 12.98, 'Electrical'),
+    # ── Plumbing (extended) ──
+    ('Home Depot', '3/4" Copper Pipe Type L (10 ft)',  'each', 44.98, 'Plumbing'),
+    ('Home Depot', '1/2" PEX Elbow (10 pk)',           'pack',  9.98, 'Plumbing'),
+    ('Home Depot', '3" PVC Coupling',                  'each',  2.98, 'Plumbing'),
+    ('Home Depot', '1/4-Turn Angle Stop Valve',        'each',  8.98, 'Plumbing'),
+    ('Home Depot', 'Braided Supply Line 3/8"x20"',     'each',  6.98, 'Plumbing'),
+    ('Home Depot', 'Lead-Free Solder + Flux Kit',      'each', 18.98, 'Plumbing'),
+    ('Home Depot', 'Frost-Free Hose Bibb',             'each', 19.98, 'Plumbing'),
+    # ── Insulation (extended) ──
+    ('Home Depot', 'R-30 Batt Insulation (Roll)',      'roll', 49.98, 'Insulation'),
+    ('Home Depot', 'R-38 Batt Insulation (Roll)',      'roll', 58.98, 'Insulation'),
+    ('Home Depot', '4x8 2" Foam Board (R-10)',         'sheet', 39.98, 'Insulation'),
+    ('Home Depot', 'Door Weatherstrip Kit',            'each',  9.98, 'Insulation'),
+    # ── Fixtures (extended) ──
+    ('Home Depot', '24" Bathroom Vanity w/ Top',       'each', 199.00, 'Fixtures'),
+    ('Home Depot', '48" Bathroom Vanity w/ Top',       'each', 449.00, 'Fixtures'),
+    ('Home Depot', 'Kitchen Faucet (Pull-Down)',       'each', 129.00, 'Fixtures'),
+    ('Home Depot', 'Shower Valve Trim Kit',            'each',  89.00, 'Fixtures'),
+    ('Home Depot', 'Bath Exhaust Fan 80 CFM',          'each',  39.98, 'Fixtures'),
+    ('Home Depot', 'Smoke + CO Detector',              'each',  39.98, 'Fixtures'),
+    ('Home Depot', 'Exterior Steel Door 36"',          'each', 229.00, 'Fixtures'),
+    ('Home Depot', 'Bifold Closet Door 36"',           'each',  74.98, 'Fixtures'),
+    # ── Roofing ──
+    ('Home Depot', 'Architectural Shingles (Bundle)',  'bundle', 38.98, 'Roofing'),
+    ('Home Depot', 'Roofing Felt 15 lb (Roll)',        'roll', 24.98, 'Roofing'),
+    ('Home Depot', 'Aluminum Drip Edge (10 ft)',       'each',  9.98, 'Roofing'),
+    ('Home Depot', 'Ridge Cap Shingles (Bundle)',      'bundle', 42.98, 'Roofing'),
+    ('Home Depot', 'Ice & Water Shield (Roll)',        'roll', 64.98, 'Roofing'),
+    ('Home Depot', 'Pipe Boot Flashing',               'each', 12.98, 'Roofing'),
+    # ── Flooring ──
+    ('Home Depot', 'Luxury Vinyl Plank (sq ft)',       'sqft',  2.49, 'Flooring'),
+    ('Home Depot', 'Floor Underlayment (100 sq ft)',   'roll', 24.98, 'Flooring'),
+    ('Home Depot', 'Porcelain Tile 12x24 (sq ft)',     'sqft',  2.98, 'Flooring'),
+    ('Home Depot', 'Thinset Mortar 50 lb',             'bag',  16.98, 'Flooring'),
+    ('Home Depot', 'Sanded Grout 25 lb',               'bag',  18.98, 'Flooring'),
+    ('Home Depot', 'Tile Spacers 1/4" (100 pk)',       'pack',  4.98, 'Flooring'),
+    ('Home Depot', 'Laminate Flooring (sq ft)',        'sqft',  1.99, 'Flooring'),
+    # ── Siding ──
+    ('Home Depot', 'Vinyl Siding Panel (sq ft)',       'sqft',  2.29, 'Siding'),
+    ('Home Depot', 'House Wrap (3x100 ft)',            'roll', 54.98, 'Siding'),
+    ('Home Depot', 'Vinyl J-Channel (12 ft 6 in)',     'each',  6.98, 'Siding'),
+    # ── Site / Landscape ──
+    ('Home Depot', 'Landscape Fabric (3x50 ft)',       'roll', 19.98, 'Site'),
+    ('Home Depot', '4" Perforated Drain Pipe (10 ft)', 'each',  8.98, 'Site'),
+    ('Home Depot', 'Premium Topsoil 0.75 cu ft',       'bag',   3.48, 'Site'),
+    ('Home Depot', 'Hardwood Mulch 2 cu ft',           'bag',   4.48, 'Site'),
     # ── Lowe's ──
     ("Lowe's", '2x4x8 Stud (SPF)',                     'each',  4.18, 'Lumber'),
+    ("Lowe's", '2x6x8 (SPF)',                          'each',  7.48, 'Lumber'),
     ("Lowe's", '4x8 1/2" Drywall Sheet',              'sheet', 15.48, 'Drywall'),
     ("Lowe's", 'Concrete Mix 80 lb',                  'bag',   7.28, 'Concrete'),
     ("Lowe's", 'Interior Paint (1 gal)',              'gal',  33.98, 'Paint'),
     ("Lowe's", 'Deck Screws 2-1/2" (5 lb)',           'box',  27.98, 'Fasteners'),
+    ("Lowe's", 'R-13 Batt Insulation (Roll)',          'roll', 20.98, 'Insulation'),
+    ("Lowe's", 'Architectural Shingles (Bundle)',      'bundle', 37.98, 'Roofing'),
     # ── Amazon ──
     ('Amazon', 'Drywall Screws 1-1/4" (5 lb)',         'box',  21.99, 'Drywall'),
     ('Amazon', 'Construction Adhesive (10 oz)',        'tube',  5.49, 'Fasteners'),
     ('Amazon', 'Wire Connectors (100 pk)',             'box',  12.99, 'Electrical'),
     ('Amazon', 'Painters Tape 1.88" (6 pk)',           'pack', 18.99, 'Paint'),
     ('Amazon', 'Utility Knife Blades (100 pk)',        'pack',  9.99, 'Hardware'),
+    ('Amazon', 'Tape Measure 25 ft',                   'each', 14.99, 'Tools'),
+    ('Amazon', 'Caulk Gun',                            'each',  9.99, 'Tools'),
 ]
 
 
 def _ensure_materials_catalog(conn):
     """Local materials catalog for Method 4 (mirrors ahb_equipment_catalog).
-    Seeds common Home Depot/Lowe's/Amazon products on first create. Idempotent."""
+    Seeds common Home Depot/Lowe's/Amazon products. Idempotent: inserts only
+    seed rows whose (vendor, name) isn't already present in any state — so a
+    fresh table gets fully seeded AND a growing seed list tops up the live
+    catalog on restart, without duplicating or resurrecting rows the user has
+    edited or soft-deleted."""
     conn.execute("""CREATE TABLE IF NOT EXISTS ahb_materials_catalog (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         vendor TEXT,
@@ -14190,10 +14303,12 @@ def _ensure_materials_catalog(conn):
         notes TEXT,
         active INTEGER DEFAULT 1
     )""")
-    if conn.execute("SELECT COUNT(*) FROM ahb_materials_catalog").fetchone()[0] == 0:
-        conn.executemany(
-            "INSERT INTO ahb_materials_catalog (vendor,name,unit,unit_price,category) VALUES (?,?,?,?,?)",
-            _MATERIALS_SEED)
+    for vendor, name, unit, price, category in _MATERIALS_SEED:
+        conn.execute(
+            """INSERT INTO ahb_materials_catalog (vendor,name,unit,unit_price,category)
+               SELECT ?,?,?,?,?
+               WHERE NOT EXISTS (SELECT 1 FROM ahb_materials_catalog WHERE vendor=? AND name=?)""",
+            (vendor, name, unit, price, category, vendor, name))
 
 
 def _ensure_estimator_v2():

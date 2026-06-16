@@ -1612,10 +1612,14 @@
           </div>
         </div>
         <div id="m4-mat-items-row" style="display:none">
-          <div style="display:grid;grid-template-columns:150px 1fr 110px 90px 80px;gap:8px;margin-bottom:8px;align-items:end">
+          <div style="display:grid;grid-template-columns:130px 130px 1fr 100px 80px 70px;gap:8px;margin-bottom:8px;align-items:end">
             <div>
               <label class="m4-lbl">Vendor</label>
               <select id="m4-mat-vendor" class="m4-input" onchange="onMatVendorChange()"><option value="">All vendors</option></select>
+            </div>
+            <div>
+              <label class="m4-lbl">Category</label>
+              <select id="m4-mat-category" class="m4-input" onchange="onMatCategoryChange()"><option value="">All categories</option></select>
             </div>
             <div>
               <label class="m4-lbl">Pick a product (catalog ★ / receipts 🧾)</label>
@@ -1980,15 +1984,16 @@
     <div style="max-height:420px;overflow-y:auto;margin:12px 0">
       <table class="line-items-table" id="mc-table">
         <thead><tr>
-          <th style="width:22%">Vendor</th><th style="width:40%">Name</th><th style="width:12%">Unit</th>
-          <th style="width:14%">Unit $</th><th style="width:12%"></th>
+          <th style="width:18%">Vendor</th><th style="width:34%">Name</th><th style="width:16%">Category</th>
+          <th style="width:10%">Unit</th><th style="width:12%">Unit $</th><th style="width:10%"></th>
         </tr></thead>
         <tbody id="mc-tbody"></tbody>
       </table>
     </div>
-    <div style="display:grid;grid-template-columns:1.2fr 2fr 0.8fr 1fr auto;gap:6px;align-items:end;background:#070712;border:1px solid #1a1a2e;border-radius:8px;padding:10px">
+    <div style="display:grid;grid-template-columns:1fr 1.6fr 1fr 0.7fr 0.9fr auto;gap:6px;align-items:end;background:#070712;border:1px solid #1a1a2e;border-radius:8px;padding:10px">
       <div><label class="m4-lbl">Vendor</label><input id="mc-new-vendor" class="m4-input" placeholder="Home Depot"></div>
       <div><label class="m4-lbl">New product</label><input id="mc-new-name" class="m4-input" placeholder="e.g. 2x4x8 Stud"></div>
+      <div><label class="m4-lbl">Category</label><input id="mc-new-category" class="m4-input" placeholder="Lumber"></div>
       <div><label class="m4-lbl">Unit</label><input id="mc-new-unit" class="m4-input" placeholder="each"></div>
       <div><label class="m4-lbl">Unit $</label><input id="mc-new-price" type="number" min="0" step="0.01" class="m4-input m4-mono"></div>
       <button class="btn-primary btn-sm" onclick="mcAddNew()">+ Add</button>
@@ -9958,9 +9963,10 @@ function m4PopulateEqSelect(){
 }
 
 function m4Init(){
-  if(m4InitDone){ m4PopulateEqSelect(); m4PopulateMaterialVendors(); m4BuildMatDatalist([]); return; }
+  if(m4InitDone){ m4PopulateEqSelect(); m4PopulateMaterialVendors(); m4PopulateMaterialCategories(); m4BuildMatDatalist([]); return; }
   m4PopulateEqSelect();
   m4PopulateMaterialVendors();
+  m4PopulateMaterialCategories();
   m4BuildMatDatalist([]);
   // Seed labor rates from saved estimator settings if available
   if(estimatorSettings && estimatorSettings.lead_day_rate){
@@ -10375,6 +10381,7 @@ async function loadMaterialsCatalog(){
     if(Array.isArray(rows)) MAT_CATALOG=rows;
   }catch(e){}
   m4PopulateMaterialVendors();
+  m4PopulateMaterialCategories();
   m4BuildMatDatalist([]);
   return MAT_CATALOG;
 }
@@ -10389,23 +10396,39 @@ function m4PopulateMaterialVendors(){
   sel.value=cur;
 }
 
+function m4PopulateMaterialCategories(){
+  const sel=document.getElementById('m4-mat-category');
+  if(!sel) return;
+  const cur=sel.value;
+  const set=new Set();
+  MAT_CATALOG.forEach(r=>{ if(r.category) set.add(r.category); });
+  sel.innerHTML='<option value="">All categories</option>'+[...set].sort().map(c=>`<option>${escHtml(c)}</option>`).join('');
+  sel.value=cur;
+}
+
 function m4BuildMatDatalist(receiptSugs){
   const dl=document.getElementById('m4-mat-datalist');
   if(!dl) return;
   const vendor=(document.getElementById('m4-mat-vendor')||{}).value||'';
+  const category=(document.getElementById('m4-mat-category')||{}).value||'';
   m4MatPickIndex={};
   const opts=[];
-  MAT_CATALOG.filter(r=>!vendor||r.vendor===vendor).forEach(r=>{
-    const label='★ '+r.name+(r.vendor?` — ${r.vendor}`:'')+`  ($${(r.unit_price||0)})`;
-    m4MatPickIndex[label]={name:r.name, price:r.unit_price||0, vendor:r.vendor||'', unit:r.unit||'each', source:'catalog', id:r.id};
+  MAT_CATALOG.filter(r=>(!vendor||r.vendor===vendor)&&(!category||r.category===category)).forEach(r=>{
+    const tag=r.category?` [${r.category}]`:'';
+    const label='★ '+r.name+(r.vendor?` — ${r.vendor}`:'')+tag+`  ($${(r.unit_price||0)})`;
+    m4MatPickIndex[label]={name:r.name, price:r.unit_price||0, vendor:r.vendor||'', unit:r.unit||'each', category:r.category||'', source:'catalog', id:r.id};
     opts.push(label);
   });
-  (receiptSugs||[]).forEach(s=>{
-    const label='🧾 '+s.name+(s.vendor?` — ${s.vendor}`:'')+`  ($${(s.last_price||0)})`;
-    if(m4MatPickIndex[label]) return;
-    m4MatPickIndex[label]={name:s.name, price:s.last_price||0, vendor:s.vendor||'', unit:'each', source:'receipt'};
-    opts.push(label);
-  });
+  // Receipt suggestions have no category; show them only when no category filter
+  // is active (they can't be reliably bucketed), so a category view stays clean.
+  if(!category){
+    (receiptSugs||[]).forEach(s=>{
+      const label='🧾 '+s.name+(s.vendor?` — ${s.vendor}`:'')+`  ($${(s.last_price||0)})`;
+      if(m4MatPickIndex[label]) return;
+      m4MatPickIndex[label]={name:s.name, price:s.last_price||0, vendor:s.vendor||'', unit:'each', category:'', source:'receipt'};
+      opts.push(label);
+    });
+  }
   dl.innerHTML=opts.map(o=>`<option value="${escHtml(o)}"></option>`).join('');
 }
 
@@ -10423,6 +10446,7 @@ function m4FetchMatSuggest(){
 }
 
 function onMatVendorChange(){ m4BuildMatDatalist([]); m4FetchMatSuggest(); }
+function onMatCategoryChange(){ m4BuildMatDatalist([]); m4FetchMatSuggest(); }
 
 function m4MatPickChanged(){
   const inp=document.getElementById('m4-mat-pick');
@@ -10462,8 +10486,9 @@ async function m4SaveMatPickToCatalog(){
   let name=hit?hit.name:label;
   name=name.replace(/^[★🧾]\s*/,'').replace(/\s+—\s+.*\(\$[0-9.]*\)$/,'');
   const price=parseFloat(document.getElementById('m4-mat-pick-price').value)||(hit&&hit.price)||0;
+  const category=(hit&&hit.category)||(document.getElementById('m4-mat-category')||{}).value||'';
   const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({vendor, name, unit:(hit&&hit.unit)||'each', unit_price:price})}).then(r=>r.json());
+    body:JSON.stringify({vendor, name, unit:(hit&&hit.unit)||'each', unit_price:price, category})}).then(r=>r.json());
   if(d.success){ showToast('Saved to catalog: '+name); loadMaterialsCatalog(); }
   else showToast(d.error||'Save failed','error');
 }
@@ -10477,17 +10502,19 @@ function mcRender(){
   tb.innerHTML=(MAT_CATALOG||[]).map(it=>`<tr>
     <td><input type="text" value="${escHtml(it.vendor||'')}" data-mc="${it.id}" data-f="vendor"></td>
     <td><input type="text" value="${escHtml(it.name||'')}" data-mc="${it.id}" data-f="name"></td>
+    <td><input type="text" value="${escHtml(it.category||'')}" data-mc="${it.id}" data-f="category"></td>
     <td><input type="text" value="${escHtml(it.unit||'each')}" data-mc="${it.id}" data-f="unit" style="width:70px"></td>
     <td><input type="number" min="0" step="0.01" value="${it.unit_price||0}" data-mc="${it.id}" data-f="unit_price"></td>
     <td style="white-space:nowrap">
       <button class="btn-secondary btn-sm" onclick="mcSaveRow(${it.id})">Save</button>
       <button class="btn-icon del" onclick="mcDeleteRow(${it.id})">&#10005;</button>
     </td>
-  </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#444;padding:14px">Catalog empty</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#444;padding:14px">Catalog empty</td></tr>';
 }
 async function mcSaveRow(id){
   const get=f=>document.querySelector(`[data-mc="${id}"][data-f="${f}"]`);
   const body={id, vendor:get('vendor').value.trim(), name:get('name').value.trim(),
+              category:get('category').value.trim(),
               unit:get('unit').value.trim()||'each', unit_price:parseFloat(get('unit_price').value)||0};
   if(!body.name){ showToast('Name required','error'); return; }
   const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
@@ -10503,11 +10530,12 @@ async function mcAddNew(){
   const name=(document.getElementById('mc-new-name').value||'').trim();
   if(!name){ showToast('Enter a name','error'); return; }
   const body={vendor:(document.getElementById('mc-new-vendor').value||'').trim(), name,
+              category:(document.getElementById('mc-new-category').value||'').trim(),
               unit:(document.getElementById('mc-new-unit').value||'each').trim(),
               unit_price:parseFloat(document.getElementById('mc-new-price').value)||0};
   const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(d.success){
-    ['mc-new-vendor','mc-new-name','mc-new-unit','mc-new-price'].forEach(i=>document.getElementById(i).value='');
+    ['mc-new-vendor','mc-new-name','mc-new-category','mc-new-unit','mc-new-price'].forEach(i=>document.getElementById(i).value='');
     loadMaterialsCatalog().then(mcRender);
     showToast('Added '+name);
   } else showToast(d.error||'Add failed','error');

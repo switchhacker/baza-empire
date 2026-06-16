@@ -52,9 +52,46 @@ def test_seed_populates_home_depot(app_module, tmp_path):
     n = conn.execute("SELECT COUNT(*) FROM ahb_materials_catalog").fetchone()[0]
     hd = conn.execute(
         "SELECT COUNT(*) FROM ahb_materials_catalog WHERE vendor='Home Depot'").fetchone()[0]
+    cats = conn.execute(
+        "SELECT COUNT(DISTINCT category) FROM ahb_materials_catalog").fetchone()[0]
     conn.close()
-    assert n >= 50
-    assert hd >= 40  # the bulk of the seed is Home Depot
+    assert n >= 120
+    assert hd >= 100   # the bulk of the seed is Home Depot
+    assert cats >= 10  # categories drive the picker's category nav
+
+
+def test_seed_is_idempotent_and_tops_up(app_module, tmp_path, monkeypatch):
+    dbp = str(tmp_path / "topup.db")
+    conn = sqlite3.connect(dbp)
+    monkeypatch.setattr(app_module, "_MATERIALS_SEED",
+                        [("Home Depot", "Alpha", "each", 1.0, "X")])
+    app_module._ensure_materials_catalog(conn)
+    app_module._ensure_materials_catalog(conn)  # second pass must not duplicate
+    assert conn.execute("SELECT COUNT(*) FROM ahb_materials_catalog").fetchone()[0] == 1
+    # grow the seed -> the new row is added on the next pass
+    monkeypatch.setattr(app_module, "_MATERIALS_SEED",
+                        [("Home Depot", "Alpha", "each", 1.0, "X"),
+                         ("Home Depot", "Beta", "each", 2.0, "X")])
+    app_module._ensure_materials_catalog(conn)
+    names = [r[0] for r in conn.execute(
+        "SELECT name FROM ahb_materials_catalog ORDER BY name").fetchall()]
+    conn.close()
+    assert names == ["Alpha", "Beta"]
+
+
+def test_seed_does_not_resurrect_deleted(app_module, tmp_path, monkeypatch):
+    dbp = str(tmp_path / "del.db")
+    conn = sqlite3.connect(dbp)
+    monkeypatch.setattr(app_module, "_MATERIALS_SEED",
+                        [("Home Depot", "Alpha", "each", 1.0, "X")])
+    app_module._ensure_materials_catalog(conn)
+    conn.execute("UPDATE ahb_materials_catalog SET active=0 WHERE name='Alpha'")
+    conn.commit()
+    app_module._ensure_materials_catalog(conn)  # must NOT re-add a soft-deleted seed row
+    n = conn.execute(
+        "SELECT COUNT(*) FROM ahb_materials_catalog WHERE name='Alpha'").fetchone()[0]
+    conn.close()
+    assert n == 1
 
 
 def test_list_returns_seeded_rows(client):
