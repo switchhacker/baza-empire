@@ -1612,6 +1612,27 @@
           </div>
         </div>
         <div id="m4-mat-items-row" style="display:none">
+          <div style="display:grid;grid-template-columns:150px 1fr 110px 90px 80px;gap:8px;margin-bottom:8px;align-items:end">
+            <div>
+              <label class="m4-lbl">Vendor</label>
+              <select id="m4-mat-vendor" class="m4-input" onchange="onMatVendorChange()"><option value="">All vendors</option></select>
+            </div>
+            <div>
+              <label class="m4-lbl">Pick a product (catalog ★ / receipts 🧾)</label>
+              <input id="m4-mat-pick" class="m4-input" list="m4-mat-datalist" placeholder="Type to search…" oninput="m4MatPickChanged()">
+              <datalist id="m4-mat-datalist"></datalist>
+            </div>
+            <div><label class="m4-lbl">Unit $</label><input id="m4-mat-pick-price" type="number" min="0" step="0.01" class="m4-input m4-mono" placeholder="0.00"></div>
+            <div><label class="m4-lbl">Qty</label><input id="m4-mat-pick-qty" type="number" min="0" step="0.5" value="1" class="m4-input m4-mono"></div>
+            <div><button type="button" class="btn-primary btn-sm" style="width:100%" onclick="m4AddMaterialFromPicker()">+ Add</button></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-size:10px;color:#555">Local catalog (you maintain it). 🧾 = suggested from past receipts at this vendor. <b>📌 Save to catalog</b> promotes a pick to a permanent row.</div>
+            <div style="display:flex;gap:6px">
+              <button type="button" class="btn-secondary btn-sm" onclick="m4SaveMatPickToCatalog()">📌 Save to catalog</button>
+              <button type="button" class="btn-secondary btn-sm" onclick="openMaterialsCatalogModal()">🧱 Manage Catalog</button>
+            </div>
+          </div>
           <table id="m4-mat-table" class="line-items-table" style="margin-bottom:0">
             <thead>
               <tr>
@@ -1947,6 +1968,33 @@
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('eqCatalogModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Materials Catalog Modal -->
+<div class="modal-bg" id="materialsCatalogModal">
+  <div class="modal" style="max-width:820px">
+    <h2>🧱 Materials Catalog</h2>
+    <div class="modal-sub">Local product catalog for Method 4 materials — vendor + product + unit price. Reference prices, editable anytime (receipt totals stay authoritative).</div>
+    <div style="max-height:420px;overflow-y:auto;margin:12px 0">
+      <table class="line-items-table" id="mc-table">
+        <thead><tr>
+          <th style="width:22%">Vendor</th><th style="width:40%">Name</th><th style="width:12%">Unit</th>
+          <th style="width:14%">Unit $</th><th style="width:12%"></th>
+        </tr></thead>
+        <tbody id="mc-tbody"></tbody>
+      </table>
+    </div>
+    <div style="display:grid;grid-template-columns:1.2fr 2fr 0.8fr 1fr auto;gap:6px;align-items:end;background:#070712;border:1px solid #1a1a2e;border-radius:8px;padding:10px">
+      <div><label class="m4-lbl">Vendor</label><input id="mc-new-vendor" class="m4-input" placeholder="Home Depot"></div>
+      <div><label class="m4-lbl">New product</label><input id="mc-new-name" class="m4-input" placeholder="e.g. 2x4x8 Stud"></div>
+      <div><label class="m4-lbl">Unit</label><input id="mc-new-unit" class="m4-input" placeholder="each"></div>
+      <div><label class="m4-lbl">Unit $</label><input id="mc-new-price" type="number" min="0" step="0.01" class="m4-input m4-mono"></div>
+      <button class="btn-primary btn-sm" onclick="mcAddNew()">+ Add</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('materialsCatalogModal')">Close</button>
     </div>
   </div>
 </div>
@@ -9489,6 +9537,7 @@ async function estimatorTabInit(){
   await loadEstimatorSettings();
   loadEstHistory();
   loadEquipmentCatalog();
+  loadMaterialsCatalog();
   loadCostBook().then(m5UpdateUnitHint);
   const scopeSel=document.getElementById('est-scope');
   if(scopeSel && !scopeSel.dataset.m5wired){
@@ -9863,6 +9912,12 @@ let m4MatRows=[];         // [{name,qty,rate}]
 let m4InitDone=false;
 let EQ_CATALOG=[];        // DB-backed equipment catalog (falls back to M4_RENTAL_CATALOG)
 
+// ── Materials catalog picker (mirrors the equipment catalog) ──
+const DEFAULT_MAT_VENDORS=['Home Depot',"Lowe's",'Amazon','Menards','Ace Hardware','Sherwin-Williams','Ferguson','Harbor Freight'];
+let MAT_CATALOG=[];       // DB-backed local materials catalog
+let m4MatPickIndex={};    // datalist label -> {name,price,vendor,unit,source,id}
+let m4MatSuggestTimer=null;
+
 function m4Catalog(){ return EQ_CATALOG.length?EQ_CATALOG:M4_RENTAL_CATALOG; }
 
 async function loadEquipmentCatalog(){
@@ -9888,8 +9943,10 @@ function m4PopulateEqSelect(){
 }
 
 function m4Init(){
-  if(m4InitDone){ m4PopulateEqSelect(); return; }
+  if(m4InitDone){ m4PopulateEqSelect(); m4PopulateMaterialVendors(); m4BuildMatDatalist([]); return; }
   m4PopulateEqSelect();
+  m4PopulateMaterialVendors();
+  m4BuildMatDatalist([]);
   // Seed labor rates from saved estimator settings if available
   if(estimatorSettings && estimatorSettings.lead_day_rate){
     document.getElementById('m4-lab-lead-rate').value=estimatorSettings.lead_day_rate;
@@ -10292,6 +10349,151 @@ async function eqcAddNew(){
     ['eqc-new-name','eqc-new-hr4','eqc-new-day','eqc-new-week'].forEach(i=>document.getElementById(i).value='');
     document.getElementById('eqc-new-owned').checked=false;
     loadEquipmentCatalog().then(eqcRender);
+    showToast('Added '+name);
+  } else showToast(d.error||'Add failed','error');
+}
+
+/* ── Materials catalog picker (Method 4) ── */
+async function loadMaterialsCatalog(){
+  try{
+    const rows=await fetch('/api/ahb/estimator/materials').then(r=>r.json());
+    if(Array.isArray(rows)) MAT_CATALOG=rows;
+  }catch(e){}
+  m4PopulateMaterialVendors();
+  m4BuildMatDatalist([]);
+  return MAT_CATALOG;
+}
+
+function m4PopulateMaterialVendors(){
+  const sel=document.getElementById('m4-mat-vendor');
+  if(!sel) return;
+  const cur=sel.value;
+  const set=new Set(DEFAULT_MAT_VENDORS);
+  MAT_CATALOG.forEach(r=>{ if(r.vendor) set.add(r.vendor); });
+  sel.innerHTML='<option value="">All vendors</option>'+[...set].sort().map(v=>`<option>${escHtml(v)}</option>`).join('');
+  sel.value=cur;
+}
+
+function m4BuildMatDatalist(receiptSugs){
+  const dl=document.getElementById('m4-mat-datalist');
+  if(!dl) return;
+  const vendor=(document.getElementById('m4-mat-vendor')||{}).value||'';
+  m4MatPickIndex={};
+  const opts=[];
+  MAT_CATALOG.filter(r=>!vendor||r.vendor===vendor).forEach(r=>{
+    const label='★ '+r.name+(r.vendor?` — ${r.vendor}`:'')+`  ($${(r.unit_price||0)})`;
+    m4MatPickIndex[label]={name:r.name, price:r.unit_price||0, vendor:r.vendor||'', unit:r.unit||'each', source:'catalog', id:r.id};
+    opts.push(label);
+  });
+  (receiptSugs||[]).forEach(s=>{
+    const label='🧾 '+s.name+(s.vendor?` — ${s.vendor}`:'')+`  ($${(s.last_price||0)})`;
+    if(m4MatPickIndex[label]) return;
+    m4MatPickIndex[label]={name:s.name, price:s.last_price||0, vendor:s.vendor||'', unit:'each', source:'receipt'};
+    opts.push(label);
+  });
+  dl.innerHTML=opts.map(o=>`<option value="${escHtml(o)}"></option>`).join('');
+}
+
+function m4FetchMatSuggest(){
+  clearTimeout(m4MatSuggestTimer);
+  m4MatSuggestTimer=setTimeout(async()=>{
+    const vendor=(document.getElementById('m4-mat-vendor')||{}).value||'';
+    const q=(document.getElementById('m4-mat-pick')||{}).value||'';
+    try{
+      const url='/api/ahb/estimator/material-suggest?vendor='+encodeURIComponent(vendor)+'&q='+encodeURIComponent(q.trim());
+      const sugs=await fetch(url).then(r=>r.json());
+      m4BuildMatDatalist(Array.isArray(sugs)?sugs:[]);
+    }catch(e){ m4BuildMatDatalist([]); }
+  },220);
+}
+
+function onMatVendorChange(){ m4BuildMatDatalist([]); m4FetchMatSuggest(); }
+
+function m4MatPickChanged(){
+  const inp=document.getElementById('m4-mat-pick');
+  const hit=m4MatPickIndex[inp.value];
+  if(hit) document.getElementById('m4-mat-pick-price').value=hit.price||0;
+  m4FetchMatSuggest();
+}
+
+function m4AddMaterialFromPicker(){
+  const inp=document.getElementById('m4-mat-pick');
+  const label=(inp.value||'').trim();
+  const vendor=(document.getElementById('m4-mat-vendor')||{}).value||'';
+  let price=parseFloat(document.getElementById('m4-mat-pick-price').value)||0;
+  const qty=parseFloat(document.getElementById('m4-mat-pick-qty').value)||0;
+  if(!label){ showToast('Pick or type a material','error'); return; }
+  if(!qty){ showToast('Enter a qty','error'); return; }
+  const hit=m4MatPickIndex[label];
+  let name=hit?hit.name:label;
+  name=name.replace(/^[★🧾]\s*/,'').replace(/\s+—\s+.*\(\$[0-9.]*\)$/,'');
+  const vlabel=vendor||(hit&&hit.vendor)||'';
+  if(hit && !price) price=hit.price||0;
+  m4MatRows.push({name:name+(vlabel?` (${vlabel})`:''), qty, rate:price});
+  m4MatModeVal='items';
+  m4RenderMaterials();
+  inp.value='';
+  document.getElementById('m4-mat-pick-price').value='';
+  document.getElementById('m4-mat-pick-qty').value='1';
+  inp.focus();
+}
+
+async function m4SaveMatPickToCatalog(){
+  const inp=document.getElementById('m4-mat-pick');
+  const label=(inp.value||'').trim();
+  if(!label){ showToast('Pick or type a material first','error'); return; }
+  const hit=m4MatPickIndex[label];
+  const vendor=(document.getElementById('m4-mat-vendor')||{}).value || (hit&&hit.vendor) || '';
+  let name=hit?hit.name:label;
+  name=name.replace(/^[★🧾]\s*/,'').replace(/\s+—\s+.*\(\$[0-9.]*\)$/,'');
+  const price=parseFloat(document.getElementById('m4-mat-pick-price').value)||(hit&&hit.price)||0;
+  const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vendor, name, unit:(hit&&hit.unit)||'each', unit_price:price})}).then(r=>r.json());
+  if(d.success){ showToast('Saved to catalog: '+name); loadMaterialsCatalog(); }
+  else showToast(d.error||'Save failed','error');
+}
+
+/* ── Materials catalog modal ── */
+function openMaterialsCatalogModal(){
+  loadMaterialsCatalog().then(()=>{ mcRender(); document.getElementById('materialsCatalogModal').classList.add('open'); });
+}
+function mcRender(){
+  const tb=document.getElementById('mc-tbody');
+  tb.innerHTML=(MAT_CATALOG||[]).map(it=>`<tr>
+    <td><input type="text" value="${escHtml(it.vendor||'')}" data-mc="${it.id}" data-f="vendor"></td>
+    <td><input type="text" value="${escHtml(it.name||'')}" data-mc="${it.id}" data-f="name"></td>
+    <td><input type="text" value="${escHtml(it.unit||'each')}" data-mc="${it.id}" data-f="unit" style="width:70px"></td>
+    <td><input type="number" min="0" step="0.01" value="${it.unit_price||0}" data-mc="${it.id}" data-f="unit_price"></td>
+    <td style="white-space:nowrap">
+      <button class="btn-secondary btn-sm" onclick="mcSaveRow(${it.id})">Save</button>
+      <button class="btn-icon del" onclick="mcDeleteRow(${it.id})">&#10005;</button>
+    </td>
+  </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#444;padding:14px">Catalog empty</td></tr>';
+}
+async function mcSaveRow(id){
+  const get=f=>document.querySelector(`[data-mc="${id}"][data-f="${f}"]`);
+  const body={id, vendor:get('vendor').value.trim(), name:get('name').value.trim(),
+              unit:get('unit').value.trim()||'each', unit_price:parseFloat(get('unit_price').value)||0};
+  if(!body.name){ showToast('Name required','error'); return; }
+  const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  if(d.success){ showToast('Saved '+body.name); loadMaterialsCatalog(); }
+  else showToast(d.error||'Save failed','error');
+}
+async function mcDeleteRow(id){
+  if(!confirm('Remove this catalog item?')) return;
+  await fetch('/api/ahb/estimator/materials/'+id,{method:'DELETE'});
+  loadMaterialsCatalog().then(mcRender);
+}
+async function mcAddNew(){
+  const name=(document.getElementById('mc-new-name').value||'').trim();
+  if(!name){ showToast('Enter a name','error'); return; }
+  const body={vendor:(document.getElementById('mc-new-vendor').value||'').trim(), name,
+              unit:(document.getElementById('mc-new-unit').value||'each').trim(),
+              unit_price:parseFloat(document.getElementById('mc-new-price').value)||0};
+  const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  if(d.success){
+    ['mc-new-vendor','mc-new-name','mc-new-unit','mc-new-price'].forEach(i=>document.getElementById(i).value='');
+    loadMaterialsCatalog().then(mcRender);
     showToast('Added '+name);
   } else showToast(d.error||'Add failed','error');
 }

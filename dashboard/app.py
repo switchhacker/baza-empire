@@ -14025,6 +14025,120 @@ _EQUIPMENT_SEED = [
     ('Power Auger', 32, 46, 184),
 ]
 
+# Local materials catalog seed: most-common construction materials with
+# reference prices (Home Depot Greater Philly 2025-26), plus a handful of
+# Lowe's / Amazon rows. These are EDITABLE seed values only — receipt totals
+# remain the authoritative price source; this is a convenience starting point.
+_MATERIALS_SEED = [
+    # (vendor, name, unit, unit_price, category)
+    # ── Lumber ──
+    ('Home Depot', '2x4x8 Stud (SPF)',                 'each',  3.98, 'Lumber'),
+    ('Home Depot', '2x4x10 (SPF)',                     'each',  6.47, 'Lumber'),
+    ('Home Depot', '2x6x8 (SPF)',                      'each',  7.28, 'Lumber'),
+    ('Home Depot', '2x8x10 (SPF)',                     'each', 14.97, 'Lumber'),
+    ('Home Depot', '2x10x10 (SPF)',                    'each', 21.62, 'Lumber'),
+    ('Home Depot', '2x4x8 Pressure-Treated',           'each',  6.98, 'Lumber'),
+    ('Home Depot', '2x6x8 Pressure-Treated',           'each', 10.97, 'Lumber'),
+    ('Home Depot', '4x8 1/2" CDX Plywood',             'sheet', 38.98, 'Lumber'),
+    ('Home Depot', '4x8 3/4" CDX Plywood',             'sheet', 58.97, 'Lumber'),
+    ('Home Depot', '4x8 7/16" OSB',                    'sheet', 21.98, 'Lumber'),
+    ('Home Depot', '4x8 3/4" OSB Tongue & Groove',     'sheet', 42.97, 'Lumber'),
+    ('Home Depot', '1x4x8 Pine Board',                 'each',  6.48, 'Lumber'),
+    ('Home Depot', '1x6x8 Pine Board',                 'each', 10.98, 'Lumber'),
+    ('Home Depot', '1x2x8 Furring Strip',              'each',  1.98, 'Lumber'),
+    # ── Drywall ──
+    ('Home Depot', '4x8 1/2" Drywall Sheet',           'sheet', 16.98, 'Drywall'),
+    ('Home Depot', '4x8 5/8" Type X Drywall',          'sheet', 19.98, 'Drywall'),
+    ('Home Depot', 'Joint Compound (4.5 gal)',         'each', 17.98, 'Drywall'),
+    ('Home Depot', 'Drywall Joint Tape (500 ft)',      'roll',  6.98, 'Drywall'),
+    ('Home Depot', 'Drywall Screws 1-1/4" (1 lb)',     'box',   8.47, 'Drywall'),
+    ('Home Depot', 'Metal Corner Bead (8 ft)',         'each',  4.98, 'Drywall'),
+    # ── Concrete / Masonry ──
+    ('Home Depot', 'Concrete Mix 60 lb',               'bag',   5.65, 'Concrete'),
+    ('Home Depot', 'Concrete Mix 80 lb',               'bag',   7.48, 'Concrete'),
+    ('Home Depot', 'Quikrete Fast-Setting 50 lb',      'bag',   7.98, 'Concrete'),
+    ('Home Depot', 'Mortar Mix 60 lb',                 'bag',   8.97, 'Concrete'),
+    ('Home Depot', 'All-Purpose Sand 50 lb',           'bag',   6.48, 'Concrete'),
+    ('Home Depot', 'Paver Base Gravel 0.5 cu ft',      'bag',   5.28, 'Concrete'),
+    # ── Fasteners / Hardware ──
+    ('Home Depot', 'Deck Screws 2-1/2" (5 lb)',        'box',  28.97, 'Fasteners'),
+    ('Home Depot', 'Wood Screws 2" (1 lb)',            'box',   8.98, 'Fasteners'),
+    ('Home Depot', 'Framing Nails 3-1/4" (5 lb)',      'box',  24.98, 'Fasteners'),
+    ('Home Depot', 'Construction Adhesive (10 oz)',    'tube',  4.98, 'Fasteners'),
+    ('Home Depot', 'Drywall Anchors (50 pk)',          'pack',  7.98, 'Fasteners'),
+    ('Home Depot', '3.5" Door Hinge',                  'each',  3.98, 'Hardware'),
+    ('Home Depot', 'Cabinet Pull (5")',               'each',  3.48, 'Hardware'),
+    # ── Paint / Finishing ──
+    ('Home Depot', 'Interior Paint (1 gal)',           'gal',  34.98, 'Paint'),
+    ('Home Depot', 'Primer/Sealer (1 gal)',            'gal',  22.98, 'Paint'),
+    ('Home Depot', 'Painters Caulk (10 oz)',           'tube',  4.48, 'Paint'),
+    ('Home Depot', "Painter's Tape 1.88\" (60 yd)",    'roll',  7.98, 'Paint'),
+    ('Home Depot', 'Roller & Tray Kit (9")',           'each', 12.98, 'Paint'),
+    ('Home Depot', 'Sandpaper Assortment (Pack)',      'pack',  9.98, 'Paint'),
+    # ── Electrical ──
+    ('Home Depot', '14/2 Romex NM-B (250 ft)',         'roll', 89.00, 'Electrical'),
+    ('Home Depot', '12/2 Romex NM-B (250 ft)',         'roll', 134.00, 'Electrical'),
+    ('Home Depot', 'Single-Gang Old Work Box',         'each',  1.98, 'Electrical'),
+    ('Home Depot', 'Duplex Receptacle 15A',            'each',  2.48, 'Electrical'),
+    ('Home Depot', 'Single-Pole Switch',               'each',  2.18, 'Electrical'),
+    ('Home Depot', 'Wall Plate (1-Gang)',              'each',  0.98, 'Electrical'),
+    ('Home Depot', 'Wire Connectors (25 pk)',          'box',   4.98, 'Electrical'),
+    ('Home Depot', 'LED Recessed Light 6"',            'each', 12.98, 'Electrical'),
+    # ── Plumbing ──
+    ('Home Depot', '1/2" PEX-B Tubing (100 ft)',       'roll', 39.98, 'Plumbing'),
+    ('Home Depot', '3/4" PEX-B Tubing (100 ft)',       'roll', 62.98, 'Plumbing'),
+    ('Home Depot', '1/2" Copper Pipe Type L (10 ft)',  'each', 32.98, 'Plumbing'),
+    ('Home Depot', '3" PVC DWV Pipe (10 ft)',          'each', 19.98, 'Plumbing'),
+    ('Home Depot', 'P-Trap 1-1/2"',                    'each',  6.98, 'Plumbing'),
+    ('Home Depot', 'Toilet Wax Ring',                  'each',  4.48, 'Plumbing'),
+    ('Home Depot', '1/2" Brass Ball Valve',            'each',  9.98, 'Plumbing'),
+    ('Home Depot', 'Teflon Tape',                      'roll',  1.18, 'Plumbing'),
+    # ── Insulation / Weather ──
+    ('Home Depot', 'R-13 Batt Insulation (Roll)',      'roll', 19.98, 'Insulation'),
+    ('Home Depot', 'R-19 Batt Insulation (Roll)',      'roll', 24.98, 'Insulation'),
+    ('Home Depot', '4x8 1" Foam Board (R-5)',          'sheet', 24.98, 'Insulation'),
+    ('Home Depot', 'Spray Foam Sealant (12 oz)',       'each',  6.98, 'Insulation'),
+    # ── Fixtures (common) ──
+    ('Home Depot', 'Standard 2-Piece Toilet',          'each', 129.00, 'Fixtures'),
+    ('Home Depot', '36" Bathroom Vanity w/ Top',       'each', 299.00, 'Fixtures'),
+    ('Home Depot', 'Stainless Kitchen Sink (Drop-In)', 'each', 149.00, 'Fixtures'),
+    ('Home Depot', 'Bath Faucet (Widespread)',         'each',  89.00, 'Fixtures'),
+    ('Home Depot', 'Interior Door Slab (Hollow)',      'each',  44.98, 'Fixtures'),
+    ('Home Depot', 'Interior Door Knob Set',           'each', 19.98, 'Fixtures'),
+    # ── Lowe's ──
+    ("Lowe's", '2x4x8 Stud (SPF)',                     'each',  4.18, 'Lumber'),
+    ("Lowe's", '4x8 1/2" Drywall Sheet',              'sheet', 15.48, 'Drywall'),
+    ("Lowe's", 'Concrete Mix 80 lb',                  'bag',   7.28, 'Concrete'),
+    ("Lowe's", 'Interior Paint (1 gal)',              'gal',  33.98, 'Paint'),
+    ("Lowe's", 'Deck Screws 2-1/2" (5 lb)',           'box',  27.98, 'Fasteners'),
+    # ── Amazon ──
+    ('Amazon', 'Drywall Screws 1-1/4" (5 lb)',         'box',  21.99, 'Drywall'),
+    ('Amazon', 'Construction Adhesive (10 oz)',        'tube',  5.49, 'Fasteners'),
+    ('Amazon', 'Wire Connectors (100 pk)',             'box',  12.99, 'Electrical'),
+    ('Amazon', 'Painters Tape 1.88" (6 pk)',           'pack', 18.99, 'Paint'),
+    ('Amazon', 'Utility Knife Blades (100 pk)',        'pack',  9.99, 'Hardware'),
+]
+
+
+def _ensure_materials_catalog(conn):
+    """Local materials catalog for Method 4 (mirrors ahb_equipment_catalog).
+    Seeds common Home Depot/Lowe's/Amazon products on first create. Idempotent."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS ahb_materials_catalog (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vendor TEXT,
+        name TEXT NOT NULL,
+        unit TEXT DEFAULT 'each',
+        unit_price REAL DEFAULT 0,
+        sku TEXT,
+        category TEXT,
+        notes TEXT,
+        active INTEGER DEFAULT 1
+    )""")
+    if conn.execute("SELECT COUNT(*) FROM ahb_materials_catalog").fetchone()[0] == 0:
+        conn.executemany(
+            "INSERT INTO ahb_materials_catalog (vendor,name,unit,unit_price,category) VALUES (?,?,?,?,?)",
+            _MATERIALS_SEED)
+
 
 def _ensure_estimator_v2():
     """EstimatOR v2 schema: saved-estimate columns, cost book, equipment catalog.
@@ -14067,6 +14181,7 @@ def _ensure_estimator_v2():
             conn.executemany(
                 "INSERT INTO ahb_equipment_catalog (name,hr4,day,week) VALUES (?,?,?,?)",
                 _EQUIPMENT_SEED)
+        _ensure_materials_catalog(conn)
         conn.commit()
         conn.close()
     except sqlite3.OperationalError as e:
@@ -14347,6 +14462,117 @@ def api_estimator_equipment_delete(eid):
     conn.commit()
     conn.close()
     return jsonify({'success': True})
+
+
+@app.route('/api/ahb/estimator/materials', methods=['GET', 'POST'])
+def api_estimator_materials():
+    conn = _ahb_db()
+    if request.method == 'GET':
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM ahb_materials_catalog WHERE active=1 ORDER BY vendor, name").fetchall()]
+        conn.close()
+        return jsonify(rows)
+    d = request.get_json() or {}
+    name = (d.get('name') or '').strip()
+    if not name:
+        conn.close()
+        return jsonify({'success': False, 'error': 'name required'}), 400
+    vals = ((d.get('vendor') or '').strip(), name, (d.get('unit') or 'each').strip(),
+            float(d.get('unit_price') or 0), d.get('sku'), d.get('category'), d.get('notes'))
+    if d.get('id'):
+        conn.execute("""UPDATE ahb_materials_catalog
+                        SET vendor=?, name=?, unit=?, unit_price=?, sku=?, category=?, notes=? WHERE id=?""",
+                     vals + (int(d['id']),))
+        mid = int(d['id'])
+    else:
+        cur = conn.execute("""INSERT INTO ahb_materials_catalog (vendor,name,unit,unit_price,sku,category,notes)
+                              VALUES (?,?,?,?,?,?,?)""", vals)
+        mid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'id': mid})
+
+
+@app.route('/api/ahb/estimator/materials/<int:mid>', methods=['DELETE'])
+def api_estimator_materials_delete(mid):
+    conn = _ahb_db()
+    conn.execute("UPDATE ahb_materials_catalog SET active=0 WHERE id=?", (mid,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+
+def _vendor_loose_match(a, b):
+    """Loose vendor equivalence so the catalog form ('Home Depot') matches the
+    receipt form ('The Home Depot'). Strips a leading 'the ', lowercases, and
+    accepts an exact or containment match (vendor names are distinctive enough)."""
+    a = (a or '').lower().strip()
+    b = (b or '').lower().strip()
+    for s in ('the ',):
+        if a.startswith(s):
+            a = a[len(s):]
+        if b.startswith(s):
+            b = b[len(s):]
+    return bool(a) and bool(b) and (a == b or a in b or b in a)
+
+
+@app.route('/api/ahb/estimator/material-suggest', methods=['GET'])
+def api_estimator_material_suggest():
+    """Best-effort product/price hints mined from past receipts' items_json.
+    Read-only; tolerant of noisy/empty/malformed item data."""
+    vendor = (request.args.get('vendor') or '').strip()
+    q = (request.args.get('q') or '').strip().lower()
+    conn = _ahb_db()
+    try:
+        rows = conn.execute("""
+            SELECT COALESCE(NULLIF(store_name,''), vendor) AS v, items_json, receipt_date
+            FROM ahb_receipts
+            WHERE category='Materials' AND items_json IS NOT NULL AND items_json != ''
+        """).fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return jsonify([])
+    conn.close()
+    agg = {}
+    for r in rows:
+        v = (r['v'] or '').strip()
+        if vendor and not _vendor_loose_match(vendor, v):
+            continue
+        try:
+            items = json.loads(r['items_json'] or '[]')
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(items, list):
+            continue
+        date = r['receipt_date'] or ''
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            nm = str(it.get('name') or '').strip()
+            if len(nm) < 3:
+                continue
+            # Drop generic OCR placeholders ("Item 1", "Item", "Line 2", etc.)
+            if re.fullmatch(r'(?:item|line|product)\s*\d*', nm.lower()):
+                continue
+            if q and q not in nm.lower():
+                continue
+            try:
+                price = float(it.get('price') or 0)
+            except (ValueError, TypeError):
+                price = 0.0
+            key = (v.lower(), nm.lower())
+            cur = agg.get(key)
+            if cur is None:
+                agg[key] = {'vendor': v, 'name': nm, 'last_price': price, 'freq': 1, '_date': date}
+            else:
+                cur['freq'] += 1
+                if date >= cur['_date']:
+                    cur['_date'] = date
+                    cur['last_price'] = price
+    out = sorted(agg.values(), key=lambda x: x['freq'], reverse=True)[:25]
+    for o in out:
+        o.pop('_date', None)
+    return jsonify(out)
 
 
 # ── ahb123.com Static Site Server ───────────────────────────────────────────
