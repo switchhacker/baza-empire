@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 import urllib.request
 import uuid
@@ -218,7 +219,26 @@ def _ensure_email_schema(db_path: Optional[str] = None) -> None:
 
 # ── Gmail client (multi-account) ──────────────────────────────────────────
 
-_gmail_cache: dict[str, tuple[Any, float]] = {}  # account_id -> (service, loaded_at)
+# NOTE: services are NO LONGER cached. A cached googleapiclient service holds a
+# single httplib2/OpenSSL connection that is not thread-safe; Flask's dev server
+# runs threaded (app.run(threaded=True)), so concurrent requests ("All inboxes"
+# fires threads+labels+sync at once) reusing one connection corrupted the TLS
+# stream -> [SSL: WRONG_VERSION_NUMBER]. _gmail() now builds a fresh service
+# (its own connection) per call. This dict is retained only so the existing
+# invalidation calls (account activate/remove) stay harmless no-ops.
+_gmail_cache: dict[str, tuple[Any, float]] = {}  # account_id -> (service, loaded_at) — unused
+# Per-account locks guard token refresh + token.json writes so concurrent
+# requests don't race on the same credential file at expiry.
+_token_locks: dict[str, threading.Lock] = {}
+_token_locks_guard = threading.Lock()
+
+
+def _token_lock(aid: str) -> threading.Lock:
+    with _token_locks_guard:
+        lk = _token_locks.get(aid)
+        if lk is None:
+            lk = _token_locks[aid] = threading.Lock()
+        return lk
 
 
 def _active_account() -> Optional[sqlite3.Row]:
@@ -261,23 +281,28 @@ def _gmail(account_id: Optional[str] = None):
             "or add an account from /email."
         )
     aid = acc["id"]
-    cached = _gmail_cache.get(aid)
-    if cached and (time.time() - cached[1]) < 1500:
-        return cached[0]
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     import googleapiclient.discovery
 
     token_path = acc["token_path"]
-    creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(token_path, "w") as f:
-            f.write(creds.to_json())
+    # Load + refresh credentials under a per-account lock so concurrent requests
+    # can't race on writing token.json at the expiry boundary. The lock is held
+    # only for the (local, fast) refresh — NOT for the API calls themselves.
+    with _token_lock(aid):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open(token_path, "w") as f:
+                f.write(creds.to_json())
+    # Build a FRESH service (its own httplib2 connection) on every call so no
+    # connection is shared across Flask worker threads. static_discovery=True
+    # uses the discovery doc bundled in googleapiclient, so this is cheap
+    # (~1ms, no network) — the reason the old cache existed no longer applies.
     svc = googleapiclient.discovery.build(
-        "gmail", "v1", credentials=creds, cache_discovery=False
+        "gmail", "v1", credentials=creds,
+        cache_discovery=False, static_discovery=True,
     )
-    _gmail_cache[aid] = (svc, time.time())
     # Touch last_used
     try:
         con = _conn()
