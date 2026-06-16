@@ -4780,7 +4780,27 @@
             <button class="btn btn-sm btn-secondary" onclick="invoiceFromProjectDetail()" title="Auto-generate an invoice from this project's value/phases">⚙ From Phases</button>
             <button class="btn btn-sm btn-secondary" onclick="syncInvoiceFromPhases()" title="Re-sync the linked invoice's line items from the phase list">Sync Line Items</button>
             <button class="btn btn-sm btn-secondary" style="border-color:#00d084;color:#00d084" onclick="pdCreateBalanceInvoice()" title="Generate the next payment invoice from the primary: contract total less payments received (deposit credited); add extras in the editor before sending">⚖ Balance Invoice</button>
+            <button class="btn btn-sm btn-secondary" style="border-color:#60a5fa;color:#60a5fa" onclick="pdGenerateNextInvoice()" title="Generate the next milestone invoice from the project's payment terms (deposit → progress → final), crediting payments already received">＋ Next Milestone Invoice</button>
           </div>
+        </div>
+        <div id="pd-terms-box" style="margin:4px 0 10px;font-size:12px;">
+          <label style="color:#94a3b8;">Payment terms:
+            <select id="pd-terms-preset" onchange="pdOnTermsPreset()" style="margin-left:6px;">
+              <option value="">— none —</option>
+              <option value="50_50">50% deposit / 50% completion</option>
+              <option value="30_30_40">30 / 30 / 40 (deposit / progress / final)</option>
+              <option value="100_completion">100% on completion</option>
+              <option value="net_30">Net 30</option>
+              <option value="custom">Custom…</option>
+            </select>
+          </label>
+          <div id="pd-terms-custom" style="display:none;margin-top:6px;">
+            <div id="pd-terms-rows"></div>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="pdAddTermRow()">+ milestone</button>
+            <span id="pd-terms-sum" style="margin-left:8px;"></span>
+          </div>
+          <button type="button" id="pd-terms-save" class="btn btn-sm btn-primary" style="margin-top:6px;" onclick="pdSaveTerms()">Save terms</button>
+          <span id="pd-terms-current" style="margin-left:8px;color:#22c55e;"></span>
         </div>
         <div id="pd-billing-summary" style="margin-bottom:10px"></div>
         <div id="pd-invoice-info" style="font-size:13px;color:#888"></div>
@@ -6350,7 +6370,7 @@ function renderUnlinkedInvoices(){
       <div class="row-actions" style="margin-left:auto" onclick="event.stopPropagation()">
         <button class="btn-icon" onclick="_invoiceReturnPid=null;editInvoice('${i.id}')" title="Edit / link to a project">&#9998;</button>
         <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
-        <button class="btn-icon" title="Share PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${escHtml(String(i.invoice_number||''))}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:${i.id}}}]})">✉</button>
+        <button class="btn-icon" title="Share PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${escHtml(String(i.invoice_number||''))}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:'${i.id}'}}]})">✉</button>
         <button class="btn-icon del" onclick="deleteInvoice('${i.id}','${escHtml(String(i.invoice_number||''))}')" title="Delete">&#10005;</button>
       </div>
     </div>`).join('');
@@ -11104,10 +11124,7 @@ async function pdAddManualQuote(){
   const total=parseFloat(v.replace(/[$,]/g,''));
   if(!total){showToast('Invalid amount','error');return;}
   const notes=prompt('Notes (optional):','')||'';
-  await fetch('/api/ahb/projects/'+pid+'/quotes',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({total,method:'manual',notes,make_active:true})
-  });
+  await _pdPostQuoteWithDecision(pid,{total,method:'manual',notes,make_active:true});
   showToast('Quote saved');
   pdLoadQuotes(pid);
   openProjectDetail(pid);
@@ -11211,15 +11228,29 @@ async function pdRunMethod(m){
   }
 }
 
+// POST a quote; if the project already has a primary invoice and the quote is
+// active, the backend returns 409 needs_decision — prompt replace-vs-new and
+// retry. Returns the final fetch Response.
+async function _pdPostQuoteWithDecision(pid, payload){
+  let r=await fetch('/api/ahb/projects/'+pid+'/quotes',
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(r.status===409){
+    let j={}; try{ j=await r.clone().json(); }catch(e){}
+    if(j.needs_decision){
+      const replace=confirm("This project already has a primary invoice.\n\nOK = REPLACE its line items with this quote.\nCancel = create a NEW invoice from this quote.");
+      r=await fetch('/api/ahb/projects/'+pid+'/quotes',
+        {method:'POST',headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({...payload, on_existing: replace?'replace':'new'})});
+    }
+  }
+  return r;
+}
 async function pdSaveQuote(total, method, makeActive){
   const pid=document.getElementById('pd-id').value;
   const q=window._pdLastQuote||{};
-  await fetch('/api/ahb/projects/'+pid+'/quotes',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      total, method, scope:q.scope, description:q.description,
-      breakdown:q.breakdown, make_active:!!makeActive
-    })
+  await _pdPostQuoteWithDecision(pid,{
+    total, method, scope:q.scope, description:q.description,
+    breakdown:q.breakdown, make_active:!!makeActive
   });
   // "Save as new" exits edit mode (a fresh row was just created)
   if(window._pdEditingQid){
@@ -14596,6 +14627,8 @@ async function openProjectDetail(pid){
     pdLoadPayments(pid, inv||null);
     // Quotes
     pdLoadQuotes(pid);
+    // Payment terms (milestone schedule)
+    pdLoadTerms(pid);
     // Schedule
     pdRenderSchedule(p.events||[]);
     // Pre-fill estimator address from project
@@ -15485,6 +15518,7 @@ function pdRenderInvoices(p){
       ${i.is_primary?'<span class="badge" style="background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b" title="Primary invoice — basis for payment terms & balance invoices">★ PRIMARY</span>':''}
       ${i.is_change_order?'<span class="badge" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed">CHANGE ORDER</span>':''}
       ${i.parent_invoice_id&&!i.is_change_order?'<span class="badge" style="background:#00d08422;color:#00d084;border:1px solid #00d08466" title="Follow-up invoice generated from the primary">BALANCE</span>':''}
+      ${(i.milestone_index!=null&&i.milestone_index>=0)?`<span class="badge" style="background:#60a5fa22;color:#60a5fa;border:1px solid #60a5fa66" title="Payment-term milestone — amount due this invoice">${escHtml(String(i.milestone_label||'Milestone'))} · due ${fmtCurrency(i.amount_due||0)}</span>`:''}
       <span style="font-size:11px;color:#555">${i.due_date?'Due '+fmtDate(i.due_date):''}${lineCount?` · ${lineCount} line${lineCount===1?'':'s'}`:''}${st==='paid'?` · <span style="color:#00d084" title="Counted in Uncle Sam's cash-basis gross revenue for tax year ${_pdInvTaxYear(i)}">Paid${i.paid_date?' '+fmtDate(i.paid_date):''} → tax yr ${_pdInvTaxYear(i)}</span>`:''}</span>
       <div class="row-actions" style="margin-left:auto">
         ${i.is_primary?'':`<button class="btn-icon" onclick="pdSetPrimaryInvoice('${i.id}')" title="Make this the primary invoice (basis for payment terms & balance invoice)" style="color:#f59e0b">&#9733;</button>`}
@@ -15492,7 +15526,7 @@ function pdRenderInvoices(p){
         <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
         <button class="btn-icon" onclick="downloadInvoicePDF('${i.id}')" title="Download PDF">&#11015;</button>
         <button class="btn-icon" onclick="shareInvoice('${i.id}','${num}')" title="Share PDF link with client">&#128279;</button>
-        <button class="btn-icon" title="Share Invoice PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${num}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:${i.id}}}]})">✉</button>
+        <button class="btn-icon" title="Share Invoice PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${num}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:'${i.id}'}}]})">✉</button>
         ${st==='paid'
           ?`<button class="btn-icon" onclick="markInvoiceUnpaid('${i.id}')" title="Mark Unpaid (revert to Sent)" style="color:#f59e0b;border-color:#f59e0b">&#8617;</button>`
           :`<button class="btn-icon" onclick="markInvoicePaid('${i.id}')" title="Mark Paid" style="color:#00d084;border-color:#00d084">&#10003;</button>`}
@@ -15569,6 +15603,91 @@ async function pdCreateBalanceInvoice(){
     closeModal('projectDetailModal');
     editInvoice(d.id);
   }catch(e){showToast('Error: '+e.message,'error');}
+}
+
+// ── Payment terms + milestone (next) invoice ──────────────────────────────
+async function pdGenerateNextInvoice(){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid)return;
+  try{
+    const r=await fetch('/api/ahb/projects/'+pid+'/next-invoice',{method:'POST'});
+    const d=await r.json();
+    if(!d.success){
+      if(r.status===400){showToast('Set payment terms first','error');return;}
+      if(r.status===409){showToast('All milestones already invoiced','error');return;}
+      showToast(d.error||'Failed','error');return;
+    }
+    showToast('Created '+d.milestone_label+' invoice — '+fmtCurrency(d.amount_due)+' due. Add extras, then save.');
+    await loadInvoices();
+    _invoiceReturnPid=pid;
+    closeModal('projectDetailModal');
+    editInvoice(d.id);
+  }catch(e){showToast('Error: '+e.message,'error');}
+}
+function pdOnTermsPreset(){
+  const v=document.getElementById('pd-terms-preset').value;
+  document.getElementById('pd-terms-custom').style.display=(v==='custom')?'block':'none';
+  if(v==='custom' && !document.querySelectorAll('#pd-terms-rows .pd-term-row').length){
+    pdAddTermRow('Deposit',50); pdAddTermRow('Completion',50);
+  }
+  pdRecalcTermSum();
+}
+function pdAddTermRow(label,pct){
+  const row=document.createElement('div');
+  row.className='pd-term-row'; row.style.margin='3px 0';
+  row.innerHTML='<input class="pd-term-label" placeholder="Stage" value="'+(label||'')+'" style="width:120px;">'
+    +' <input class="pd-term-pct" type="number" min="0" max="100" value="'+(pct||0)+'" style="width:60px;" oninput="pdRecalcTermSum()">%'
+    +' <button type="button" class="btn btn-sm btn-secondary" onclick="this.parentNode.remove();pdRecalcTermSum()">✕</button>';
+  document.getElementById('pd-terms-rows').appendChild(row);
+  pdRecalcTermSum();
+}
+function pdRecalcTermSum(){
+  let s=0;
+  document.querySelectorAll('#pd-terms-rows .pd-term-pct').forEach(i=>s+=parseFloat(i.value||0));
+  const el=document.getElementById('pd-terms-sum');
+  const ok=Math.abs(s-100)<0.01;
+  el.textContent='sum = '+s+'%'+(ok?' ✓':' ✗'); el.style.color=ok?'#22c55e':'#ef4444';
+  const isCustom=document.getElementById('pd-terms-preset').value==='custom';
+  document.getElementById('pd-terms-save').disabled=isCustom && !ok;
+}
+function pdCollectMilestones(){
+  return [...document.querySelectorAll('#pd-terms-rows .pd-term-row')].map(r=>({
+    label:r.querySelector('.pd-term-label').value.trim(),
+    pct:parseFloat(r.querySelector('.pd-term-pct').value||0),
+  }));
+}
+async function pdSaveTerms(){
+  const pid=document.getElementById('pd-id').value;
+  const preset=document.getElementById('pd-terms-preset').value;
+  const payload={preset};
+  if(preset==='custom')payload.milestones=pdCollectMilestones();
+  const r=await fetch('/api/ahb/projects/'+pid+'/payment-terms',
+    {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const j=await r.json();
+  if(!j.success){showToast(j.error||'Failed to save terms','error');return;}
+  pdRenderCurrentTerms(j.terms);
+  showToast('Payment terms saved');
+  try{ await loadInvoices(); }catch(e){}
+}
+function pdRenderCurrentTerms(terms){
+  const el=document.getElementById('pd-terms-current');
+  if(!el)return;
+  if(!terms||!terms.milestones||!terms.milestones.length){el.textContent='';return;}
+  el.textContent=terms.milestones.map(m=>m.pct+'% '+m.label).join(' · ');
+}
+async function pdLoadTerms(pid){
+  try{
+    const j=await fetch('/api/ahb/projects/'+pid+'/payment-terms').then(r=>r.json());
+    if(j.success && j.terms){
+      const sel=document.getElementById('pd-terms-preset');
+      if(sel){ sel.value=j.terms.preset||''; pdOnTermsPreset(); }
+      if(j.terms.preset==='custom'){
+        document.getElementById('pd-terms-rows').innerHTML='';
+        (j.terms.milestones||[]).forEach(m=>pdAddTermRow(m.label,m.pct));
+      }
+      pdRenderCurrentTerms(j.terms);
+    }
+  }catch(e){}
 }
 
 function pdEditReceipt(rid){
