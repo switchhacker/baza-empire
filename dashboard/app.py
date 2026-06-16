@@ -14204,8 +14204,8 @@ def api_estimator_method2():
         "}\n\nJSON:"
     )
     try:
-        result_text = _ollama_text(prompt, model="qwen3.6:27b", json_mode=True, max_tokens=900, think=False)
-        result = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', result_text).strip())
+        result_text = _ollama_text(prompt, model="qwen3.6:27b", json_mode=True, max_tokens=900, think=False, timeout=240)
+        result = _parse_llm_json(result_text)
         return jsonify({'success': True, 'method': 2, 'specter_analysis': result})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -14238,8 +14238,8 @@ def api_estimator_method3():
         "}\n\nJSON:"
     )
     try:
-        result_text = _ollama_text(prompt, model="qwen3.6:27b", json_mode=True, max_tokens=700, think=False)
-        result = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', result_text).strip())
+        result_text = _ollama_text(prompt, model="qwen3.6:27b", json_mode=True, max_tokens=700, think=False, timeout=240)
+        result = _parse_llm_json(result_text)
         avg = (float(result['low']['total']) + float(result['high']['total'])) / 2
         result['average'] = round(avg, 2)
         return jsonify({'success': True, 'method': 3, 'range': result})
@@ -15273,7 +15273,7 @@ def _get_doc(did: int):
     return d, d['file_path']
 
 
-def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = False, max_tokens: int = 1200, think=None) -> str:
+def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = False, max_tokens: int = 1200, think=None, timeout: int = 120) -> str:
     """Quick local Ollama text generation helper for doc actions.
     think=False is required for qwen3.x models under Ollama 0.30+ — otherwise
     the thinking field eats the token budget (same regression as qwen3-vl)."""
@@ -15292,11 +15292,28 @@ def _ollama_text(prompt: str, model: str = "qwen2.5:14b", json_mode: bool = Fals
         req = _ur.Request("http://localhost:11434/api/generate",
                           data=json.dumps(payload).encode(),
                           headers={"Content-Type": "application/json"})
-        with _ur.urlopen(req, timeout=120) as r:
+        with _ur.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
         return (data.get("response") or "").strip()
     except Exception as e:
         return f"[LLM error: {e}]"
+
+
+def _parse_llm_json(result_text: str):
+    """Parse a JSON object from an _ollama_text() result, surfacing the real
+    error instead of masking it.
+
+    _ollama_text() returns the string "[LLM error: ...]" on any Ollama failure
+    (e.g. the model call exceeding its timeout). Feeding that straight into
+    json.loads() yields a cryptic "Expecting value: line 1 column 2 (char 1)"
+    (the parser opens an array at '[' then chokes on 'L'), hiding the true
+    cause. Raise the real message instead — matching the .startswith("[LLM
+    error") guard the other _ollama_text callers already use."""
+    text = (result_text or "").strip()
+    if text.startswith("[LLM error"):
+        raise RuntimeError(text.strip("[]"))
+    cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', text).strip()
+    return json.loads(cleaned)
 
 
 @app.route('/api/ahb/documents/<int:did>/recurate', methods=['POST'])
