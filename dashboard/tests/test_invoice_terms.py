@@ -25,12 +25,48 @@ import app as appmod
 # Task 1 test
 # ---------------------------------------------------------------------------
 
-def test_invoice_settings_seeded():
-    appmod._ensure_invoice_settings()
-    con = sqlite3.connect(os.path.join(appmod.DASHBOARD_DIR, "baza_projects.db"))
-    row = con.execute("SELECT terms_default FROM ahb_invoice_settings WHERE id=1").fetchone()
+def _db():
+    return sqlite3.connect(os.path.join(appmod.DASHBOARD_DIR, "baza_projects.db"))
+
+
+def _save_terms_default():
+    con = _db()
+    row = con.execute(
+        "SELECT terms_default FROM ahb_invoice_settings WHERE id=1"
+    ).fetchone()
     con.close()
-    assert row and row[0] and "ALL HOME BUILDING" in row[0].upper()
+    return row[0] if row else None
+
+
+def _set_terms_default(val):
+    con = _db()
+    con.execute(
+        "INSERT INTO ahb_invoice_settings (id, terms_default) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET terms_default=excluded.terms_default",
+        (val,),
+    )
+    con.commit()
+    con.close()
+
+
+def test_invoice_settings_seeded():
+    """Seeding logic: a fresh row 1 gets DEFAULT_INVOICE_TERMS.
+
+    Non-destructive: save and restore the live company default around the test
+    so the production setting is never left mutated by the suite.
+    """
+    saved = _save_terms_default()
+    try:
+        con = _db()
+        con.execute("DELETE FROM ahb_invoice_settings WHERE id=1")
+        con.commit()
+        con.close()
+        appmod._ensure_invoice_settings()
+        seeded = _save_terms_default()
+        assert seeded == appmod.DEFAULT_INVOICE_TERMS
+        assert "ALL HOME BUILDING" in seeded.upper()
+    finally:
+        _set_terms_default(saved if saved is not None else appmod.DEFAULT_INVOICE_TERMS)
 
 
 # ---------------------------------------------------------------------------
@@ -80,14 +116,19 @@ def a_project_id(client):
 
 
 def test_invoice_settings_get_put(client):
-    # Reset to a known value first
-    client.put(
-        "/api/ahb/invoice-settings",
-        json={"terms_default": "NEW CO TERMS"},
-        content_type="application/json",
-    )
-    got = client.get("/api/ahb/invoice-settings").get_json()
-    assert got["terms_default"] == "NEW CO TERMS"
+    """PUT then GET round-trips. Non-destructive: restore the original company
+    default afterwards so the suite never leaves production mutated."""
+    saved = _save_terms_default()
+    try:
+        client.put(
+            "/api/ahb/invoice-settings",
+            json={"terms_default": "NEW CO TERMS"},
+            content_type="application/json",
+        )
+        got = client.get("/api/ahb/invoice-settings").get_json()
+        assert got["terms_default"] == "NEW CO TERMS"
+    finally:
+        _set_terms_default(saved if saved is not None else appmod.DEFAULT_INVOICE_TERMS)
 
 
 def test_project_update_persists_terms(client, a_project_id):

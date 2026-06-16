@@ -6347,6 +6347,7 @@ function renderUnlinkedInvoices(){
       <div class="row-actions" style="margin-left:auto" onclick="event.stopPropagation()">
         <button class="btn-icon" onclick="_invoiceReturnPid=null;editInvoice('${i.id}')" title="Edit / link to a project">&#9998;</button>
         <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
+        <button class="btn-icon" title="Share PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${escHtml(String(i.invoice_number||''))}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:${i.id}}}]})">✉</button>
         <button class="btn-icon del" onclick="deleteInvoice('${i.id}','${escHtml(String(i.invoice_number||''))}')" title="Delete">&#10005;</button>
       </div>
     </div>`).join('');
@@ -9862,6 +9863,7 @@ async function loadEstHistory(){
         <button class="btn-secondary btn-sm" title="Reload description + scope into the form" onclick="estHistReload('${e.id}')">↩</button>
         <button class="btn-secondary btn-sm" title="Attach to project as quote" onclick="estOpenAttach('${e.id}')">🔗</button>
         <button class="btn-secondary btn-sm" title="Printable PDF" onclick="window.open('/api/ahb/estimates/${e.id}/pdf','_blank')">🖨</button>
+        <button class="btn-secondary btn-sm" title="Share Estimate PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Project Estimate',body:'Please find your estimate attached.',attachments:[{type:'estimate_pdf',label:'Estimate PDF',ref:{type:'estimate_pdf',estimate_id:'${e.id}'}}]})">✉</button>
         <button class="btn-icon del" title="Delete" onclick="estHistDelete('${e.id}')">&#10005;</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
@@ -10863,6 +10865,7 @@ async function pdLoadQuotes(pid){
         </div>
         <div style="display:flex;gap:4px;align-items:center">
           <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="View this quote as PDF" onclick="pdViewQuotePDF(${q.id})">📄 PDF</button>
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="Share Quote PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Quote — '+(document.getElementById('pd-title')||{}).textContent,body:'Please find your quote attached.',attachments:[{type:'quote_pdf',label:'Quote PDF',ref:{type:'quote_pdf',quote_id:${q.id}}}]})">✉ Share</button>
           <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" title="Edit this quote in the ${escHtml((q.method||'manual').replace(/_/g,' '))} tool" onclick="pdEditQuote(${q.id},'${pid}')">✎ Edit</button>
           <button class="btn-icon del" title="Delete" onclick="pdDeleteQuote(${q.id},'${pid}')">&#10005;</button>
         </div>
@@ -14586,10 +14589,20 @@ async function openProjectDetail(pid){
     document.getElementById('pd-quote-toggle-btn').textContent='+ Add Quote';
     // Photos
     const files=p.files||[];
+    _pdSelectedFiles = [];
     ['before','during','after'].forEach(sec=>{
       const el=document.getElementById('pd-photos-'+sec);
       const imgs=files.filter(f=>(f.photo_section||'')==sec);
-      el.innerHTML=imgs.length?imgs.map(f=>`<div style="position:relative;display:inline-block"><img src="/api/ahb/files/serve/${f.id}" style="width:90px;height:70px;object-fit:cover;border-radius:6px;border:2px solid #2a2a4a;cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')" onerror="this.parentElement.style.display='none'"><button onclick="event.stopPropagation();pdDeleteFile('${f.id}')" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:#ff4444;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:18px;padding:0">&times;</button></div>`).join(''):'<span style="color:#444;font-size:11px">No photos yet</span>';
+      el.innerHTML=imgs.length?imgs.map(f=>{
+        const relPath = f.file_path ? f.file_path.split('/').pop() : f.name;
+        const pid2 = f.project_id || pid;
+        return `<div style="position:relative;display:inline-block">
+          <input type="checkbox" class="pd-file-cb" data-pid="${pid2}" data-path="${relPath}" data-name="${escHtml(f.name||relPath)}"
+            style="position:absolute;top:2px;left:2px;z-index:2;accent-color:#00d084" onchange="pdFileSelectToggle(this)">
+          <img src="/api/ahb/files/serve/${f.id}" style="width:90px;height:70px;object-fit:cover;border-radius:6px;border:2px solid #2a2a4a;cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')" onerror="this.parentElement.style.display='none'">
+          <button onclick="event.stopPropagation();pdDeleteFile('${f.id}')" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;background:#ff4444;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:18px;padding:0">&times;</button>
+        </div>`;
+      }).join(''):'<span style="color:#444;font-size:11px">No photos yet</span>';
     });
     // Documents (from ahb_files)
     renderProjectDocs(files.filter(f=>f.document_type),'');
@@ -15084,7 +15097,20 @@ async function saveProjectDetails(){
 function renderProjectDocs(docs,filter){
   const el=document.getElementById('pd-docs');
   const filtered=filter?docs.filter(d=>d.document_type===filter):docs;
-  el.innerHTML=filtered.length?filtered.map(f=>`<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;font-size:12px;position:relative"><div style="cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')"><div style="color:#c4b5fd;font-weight:700">${escHtml(f.document_type)}</div><div style="color:#ddd">${escHtml(f.name)}</div><div style="color:#555;font-size:10px">${fmtDate(f.created_at)}</div></div><button onclick="pdDeleteFile('${f.id}')" style="position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:#ff4444;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:18px;padding:0">&times;</button></div>`).join(''):'<span style="color:#444">No documents</span>';
+  el.innerHTML=filtered.length?filtered.map(f=>{
+    const relPath = f.file_path ? f.file_path.split('/').pop() : f.name;
+    const fpid = f.project_id || (currentProjectDetail&&currentProjectDetail.id) || '';
+    return `<div style="background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;padding:10px 14px;font-size:12px;position:relative">
+      <input type="checkbox" class="pd-file-cb" data-pid="${fpid}" data-path="${relPath}" data-name="${escHtml(f.name||relPath)}"
+        style="position:absolute;top:6px;left:8px;accent-color:#00d084" onchange="pdFileSelectToggle(this)">
+      <div style="padding-left:20px;cursor:pointer" onclick="window.open('/api/ahb/files/serve/${f.id}','_blank')">
+        <div style="color:#c4b5fd;font-weight:700">${escHtml(f.document_type)}</div>
+        <div style="color:#ddd">${escHtml(f.name)}</div>
+        <div style="color:#555;font-size:10px">${fmtDate(f.created_at)}</div>
+      </div>
+      <button onclick="pdDeleteFile('${f.id}')" style="position:absolute;top:4px;right:4px;width:18px;height:18px;border-radius:50%;background:#ff4444;color:#fff;border:none;font-size:10px;cursor:pointer;line-height:18px;padding:0">&times;</button>
+    </div>`;
+  }).join(''):'<span style="color:#444">No documents</span>';
   document.querySelectorAll('.pd-doc-filter').forEach(b=>b.classList.remove('active'));
 }
 function filterProjectDocs(type){
@@ -15449,6 +15475,7 @@ function pdRenderInvoices(p){
         <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
         <button class="btn-icon" onclick="downloadInvoicePDF('${i.id}')" title="Download PDF">&#11015;</button>
         <button class="btn-icon" onclick="shareInvoice('${i.id}','${num}')" title="Share PDF link with client">&#128279;</button>
+        <button class="btn-icon" title="Share Invoice PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${num}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:${i.id}}}]})">✉</button>
         ${st==='paid'
           ?`<button class="btn-icon" onclick="markInvoiceUnpaid('${i.id}')" title="Mark Unpaid (revert to Sent)" style="color:#f59e0b;border-color:#f59e0b">&#8617;</button>`
           :`<button class="btn-icon" onclick="markInvoicePaid('${i.id}')" title="Mark Paid" style="color:#00d084;border-color:#00d084">&#10003;</button>`}
@@ -25085,6 +25112,153 @@ SocialStudio.modules.tags = (function(){
 
   return { manager, picker, loadForPost };
 })();
+</script>
+
+<!-- ── Share via Email modal (body-level — dashboard modal rule) ────────────── -->
+<div class="modal-bg" id="shareModal">
+  <div class="modal" style="max-width:520px;width:100%">
+    <h2 style="margin:0 0 12px">✉️ Share via Email</h2>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>To</label>
+      <input type="email" id="share-to" placeholder="recipient@example.com" style="width:100%">
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Send from</label>
+      <select id="share-from" style="width:100%">
+        <option value="">Loading accounts…</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Subject</label>
+      <input type="text" id="share-subject" style="width:100%">
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Message</label>
+      <textarea id="share-body" rows="4" style="width:100%;resize:vertical"></textarea>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Attachments</label>
+      <div id="share-attach" style="font-size:12px;color:#888;padding:6px;background:#111;border-radius:6px;min-height:24px">No attachments</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="sendShareEmail()">Send</button>
+      <button class="btn-cancel" onclick="closeModal('shareModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Artifact multi-select share ───────────────────────────────────────────────
+let _pdSelectedFiles = [];
+
+function pdFileSelectToggle(cb){
+  const pid2 = cb.dataset.pid;
+  const path = cb.dataset.path;
+  const name = cb.dataset.name;
+  if(cb.checked){
+    if(!_pdSelectedFiles.find(x=>x.pid===pid2&&x.path===path))
+      _pdSelectedFiles.push({pid: pid2, path, name});
+  } else {
+    _pdSelectedFiles = _pdSelectedFiles.filter(x=>!(x.pid===pid2&&x.path===path));
+  }
+  _pdUpdateShareBar();
+}
+
+function _pdUpdateShareBar(){
+  let bar = document.getElementById('pd-share-selected-bar');
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id = 'pd-share-selected-bar';
+    bar.style.cssText = 'display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0a2a18;border:1px solid #00d084;border-radius:12px;padding:10px 18px;display:flex;align-items:center;gap:12px;z-index:2000;box-shadow:0 4px 20px rgba(0,0,0,.6)';
+    bar.innerHTML = '<span id="pd-share-selected-count" style="color:#a7f3d0;font-size:13px;font-weight:700"></span>'
+      + '<button class="btn btn-primary btn-sm" onclick="pdShareSelectedFiles()" style="padding:5px 14px">✉ Share selected</button>'
+      + '<button class="btn-secondary btn-sm" onclick="pdClearFileSelection()" style="padding:4px 10px">✕</button>';
+    document.body.appendChild(bar);
+  }
+  if(_pdSelectedFiles.length){
+    bar.style.display = 'flex';
+    document.getElementById('pd-share-selected-count').textContent = _pdSelectedFiles.length + ' file' + (_pdSelectedFiles.length===1?'':'s') + ' selected';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function pdClearFileSelection(){
+  _pdSelectedFiles = [];
+  document.querySelectorAll('.pd-file-cb').forEach(cb=>cb.checked=false);
+  _pdUpdateShareBar();
+}
+
+function pdShareSelectedFiles(){
+  if(!_pdSelectedFiles.length){ alert('No files selected'); return; }
+  const title = (document.getElementById('pd-title')||{}).textContent || 'Project';
+  openShareEmail({
+    to: currentClientEmail(),
+    subject: title + ' — files',
+    body: 'Please find the attached files.',
+    attachments: _pdSelectedFiles.map(s=>({
+      type: 'artifact',
+      label: s.name,
+      ref: {type:'artifact', project_id: s.pid, path: s.path}
+    }))
+  });
+}
+
+// ── Share via Email driver ────────────────────────────────────────────────────
+function currentClientEmail(){
+  return (document.getElementById('project-client-email')||{}).value||'';
+}
+
+let _shareCtx = {attachments: [], to: ''};
+
+async function openShareEmail({to, subject, body, attachments}){
+  _shareCtx = {attachments: attachments||[], to: to||''};
+  document.getElementById('share-to').value = to||'';
+  document.getElementById('share-subject').value = subject||'';
+  document.getElementById('share-body').value = body||'';
+  document.getElementById('share-attach').textContent =
+    (attachments||[]).map(a=>a.label||a.type).join(', ') || 'No attachments';
+  // populate From accounts
+  try {
+    const d = await fetch('/api/email2/accounts').then(r=>r.json());
+    const sel = document.getElementById('share-from');
+    sel.innerHTML = (d.accounts||[]).map(a=>`<option value="${a.id}" ${a.is_active?'selected':''}>${a.email}</option>`).join('');
+    if(!(d.accounts||[]).length) {
+      sel.innerHTML = '<option value="">No email accounts configured</option>';
+      sel.disabled = true;
+    } else {
+      sel.disabled = false;
+    }
+  } catch(e) {
+    document.getElementById('share-from').innerHTML = '<option value="">Error loading accounts</option>';
+  }
+  document.getElementById('shareModal').classList.add('open');
+}
+
+async function sendShareEmail(){
+  const toVal = document.getElementById('share-to').value.trim();
+  if(!toVal){ alert('Recipient required'); return; }
+  const body = {
+    account: document.getElementById('share-from').value,
+    mode: 'compose',
+    to: toVal,
+    subject: document.getElementById('share-subject').value,
+    body: document.getElementById('share-body').value,
+    attachments: _shareCtx.attachments.map(a=>a.ref),
+  };
+  try {
+    const r = await fetch('/api/email2/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d = await r.json();
+    if(d.ok){
+      document.getElementById('shareModal').classList.remove('open');
+      if(typeof showToast==='function') showToast('Email sent!','success');
+    } else {
+      alert('Send failed: ' + (d.error||'Unknown error'));
+    }
+  } catch(e) {
+    alert('Send failed: ' + e.message);
+  }
+}
 </script>
 
 </body>

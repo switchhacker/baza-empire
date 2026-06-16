@@ -6005,74 +6005,72 @@ def api_ahb_quote_modify(qid):
     return jsonify({'success': True})
 
 
-@app.route('/api/ahb/quotes/<int:qid>/pdf', methods=['GET'])
-def api_ahb_quote_pdf(qid):
-    """Generate a printable quote PDF for the project's estimates bin."""
-    try:
-        conn = _ahb_db()
-        row = conn.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
-        if not row:
-            conn.close()
-            return jsonify({'error': 'Quote not found'}), 404
-        q = dict(row)
-        try:
-            breakdown = json.loads(q['breakdown']) if q.get('breakdown') else {}
-        except (json.JSONDecodeError, TypeError):
-            breakdown = {}
-        project = None
-        client = None
-        if q.get('project_id'):
-            p = conn.execute("SELECT * FROM ahb_projects WHERE id=?", (q['project_id'],)).fetchone()
-            if p:
-                project = dict(p)
-                if project.get('client_id'):
-                    cl = conn.execute("SELECT * FROM ahb_clients WHERE id=?", (project['client_id'],)).fetchone()
-                    if cl:
-                        client = dict(cl)
+# ── PDF HTML builders (shared by routes + render_ahb_doc_pdf) ─────────────────
+
+def _quote_html(qid):
+    """Return (html_str, filename_base) for a quote PDF, or (None, None) if not found."""
+    conn = _ahb_db()
+    row = conn.execute("SELECT * FROM ahb_quotes WHERE id=?", (qid,)).fetchone()
+    if not row:
         conn.close()
+        return None, None
+    q = dict(row)
+    try:
+        breakdown = json.loads(q['breakdown']) if q.get('breakdown') else {}
+    except (json.JSONDecodeError, TypeError):
+        breakdown = {}
+    project = None
+    client = None
+    if q.get('project_id'):
+        p = conn.execute("SELECT * FROM ahb_projects WHERE id=?", (q['project_id'],)).fetchone()
+        if p:
+            project = dict(p)
+            if project.get('client_id'):
+                cl = conn.execute("SELECT * FROM ahb_clients WHERE id=?", (project['client_id'],)).fetchone()
+                if cl:
+                    client = dict(cl)
+    conn.close()
 
-        # Logo as base64
-        logo_b64 = ''
-        logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
-        if os.path.exists(logo_path):
-            import base64
-            with open(logo_path, 'rb') as lf:
-                logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
+    logo_b64 = ''
+    logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
+    if os.path.exists(logo_path):
+        import base64
+        with open(logo_path, 'rb') as lf:
+            logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
 
-        method_label = (q.get('method') or 'manual').replace('_', ' ').title()
-        total = float(q.get('total') or 0)
-        created = (q.get('created_at') or '')[:10]
-        desc_html = (q.get('description') or '').replace('<', '&lt;').replace('>', '&gt;')
-        scope_html = (q.get('scope') or '').replace('<', '&lt;').replace('>', '&gt;')
-        notes_html = (q.get('notes') or '').replace('<', '&lt;').replace('>', '&gt;')
-        proj_title = (project or {}).get('title') or ''
-        proj_addr = (project or {}).get('address') or ''
-        client_name = (client or {}).get('name') or (project or {}).get('client_name') or ''
-        client_addr = (client or {}).get('address') or ''
+    method_label = (q.get('method') or 'manual').replace('_', ' ').title()
+    total = float(q.get('total') or 0)
+    created = (q.get('created_at') or '')[:10]
+    desc_html = (q.get('description') or '').replace('<', '&lt;').replace('>', '&gt;')
+    scope_html = (q.get('scope') or '').replace('<', '&lt;').replace('>', '&gt;')
+    notes_html = (q.get('notes') or '').replace('<', '&lt;').replace('>', '&gt;')
+    proj_title = (project or {}).get('title') or ''
+    proj_addr = (project or {}).get('address') or ''
+    client_name = (client or {}).get('name') or (project or {}).get('client_name') or ''
+    client_addr = (client or {}).get('address') or ''
 
-        # Render breakdown rows (any numeric field in the breakdown blob)
-        bk_rows = ''
-        if isinstance(breakdown, dict):
-            for k, v in breakdown.items():
-                if isinstance(v, (int, float)) and k != 'total':
-                    label = str(k).replace('_', ' ').title()
-                    bk_rows += f'''<tr>
-                        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">{label}</td>
-                        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${float(v):,.2f}</td>
-                    </tr>'''
-        if not bk_rows:
-            bk_rows = f'''<tr>
-                <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">Estimate</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${total:,.2f}</td>
-            </tr>'''
+    bk_rows = ''
+    if isinstance(breakdown, dict):
+        for k, v in breakdown.items():
+            if isinstance(v, (int, float)) and k != 'total':
+                label = str(k).replace('_', ' ').title()
+                bk_rows += f'''<tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">{label}</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${float(v):,.2f}</td>
+                </tr>'''
+    if not bk_rows:
+        bk_rows = f'''<tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">Estimate</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${total:,.2f}</td>
+        </tr>'''
 
-        active_badge = '<span style="display:inline-block;padding:2px 10px;border-radius:10px;background:#dcfce7;color:#16a34a;font-size:11px;font-weight:700;">CHOSEN</span>' if q.get('is_active') else '<span style="display:inline-block;padding:2px 10px;border-radius:10px;background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:700;">INACTIVE</span>'
-        scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {scope_html}</div>' if scope_html else ''
-        scope_block = f'<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #7c3aed;"><div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Scope of Work</div><div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{desc_html}</div>{scope_line}</div>' if desc_html else ''
-        notes_block = f'<div style="margin-top:24px;padding:12px 16px;background:#fff8e1;border-radius:6px;border-left:3px solid #f59e0b;"><div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{notes_html}</div></div>' if notes_html else ''
-        logo_block = f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:50px;height:50px;object-fit:contain;margin-top:2px;">' if logo_b64 else '<div style="width:50px;height:50px;background:#7c3aed;border-radius:8px;margin-top:2px;"></div>'
+    active_badge = '<span style="display:inline-block;padding:2px 10px;border-radius:10px;background:#dcfce7;color:#16a34a;font-size:11px;font-weight:700;">CHOSEN</span>' if q.get('is_active') else '<span style="display:inline-block;padding:2px 10px;border-radius:10px;background:#f3f4f6;color:#6b7280;font-size:11px;font-weight:700;">INACTIVE</span>'
+    scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {scope_html}</div>' if scope_html else ''
+    scope_block = f'<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #7c3aed;"><div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Scope of Work</div><div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{desc_html}</div>{scope_line}</div>' if desc_html else ''
+    notes_block = f'<div style="margin-top:24px;padding:12px 16px;background:#fff8e1;border-radius:6px;border-left:3px solid #f59e0b;"><div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Notes</div><div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{notes_html}</div></div>' if notes_html else ''
+    logo_block = f'<img src="data:image/jpeg;base64,{logo_b64}" style="width:50px;height:50px;object-fit:contain;margin-top:2px;">' if logo_b64 else '<div style="width:50px;height:50px;background:#7c3aed;border-radius:8px;margin-top:2px;"></div>'
 
-        html = f'''<!DOCTYPE html>
+    html = f'''<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Quote #{qid}</title>
 <style>
@@ -6143,21 +6141,17 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
 </div>
 </body>
 </html>'''
+    return html, f"quote_{qid}"
 
-        download = request.args.get('download', '0') == '1'
-        try:
-            from weasyprint import HTML as WeasyHTML
-            pdf_bytes = WeasyHTML(string=html).write_pdf()
-            response = make_response(pdf_bytes)
-            response.headers['Content-Type'] = 'application/pdf'
-            disposition = 'attachment' if download else 'inline'
-            response.headers['Content-Disposition'] = f'{disposition}; filename="quote_{qid}.pdf"'
-            return response
-        except ImportError:
-            response = make_response(html)
-            response.headers['Content-Type'] = 'text/html; charset=utf-8'
-            response.headers['Content-Disposition'] = f'inline; filename="quote_{qid}.html"'
-            return response
+
+@app.route('/api/ahb/quotes/<int:qid>/pdf', methods=['GET'])
+def api_ahb_quote_pdf(qid):
+    """Generate a printable quote PDF for the project's estimates bin."""
+    try:
+        html, _ = _quote_html(qid)
+        if html is None:
+            return jsonify({'error': 'Quote not found'}), 404
+        return _pdf_response("quote", qid, request.args.get('download', '0') == '1')
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -7365,53 +7359,50 @@ def api_ahb_estimate_to_quote(eid):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/ahb/estimates/<eid>/pdf', methods=['GET'])
-def api_ahb_estimate_pdf(eid):
-    """Branded printable estimate sheet (WeasyPrint PDF, HTML fallback) —
-    same visual family as the project quote PDF."""
+def _estimate_html(eid):
+    """Return (html_str, filename_base) for an estimate PDF, or (None, None) if not found."""
+    conn = _ahb_db()
+    row = conn.execute("SELECT * FROM ahb_estimates WHERE id=?", (eid,)).fetchone()
+    conn.close()
+    if not row:
+        return None, None
+    e = dict(row)
     try:
-        conn = _ahb_db()
-        row = conn.execute("SELECT * FROM ahb_estimates WHERE id=?", (eid,)).fetchone()
-        conn.close()
-        if not row:
-            return jsonify({'error': 'Estimate not found'}), 404
-        e = dict(row)
-        try:
-            breakdown = json.loads(e['breakdown']) if e.get('breakdown') else {}
-        except (json.JSONDecodeError, TypeError):
-            breakdown = {}
+        breakdown = json.loads(e['breakdown']) if e.get('breakdown') else {}
+    except (json.JSONDecodeError, TypeError):
+        breakdown = {}
 
-        logo_b64 = ''
-        logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
-        if os.path.exists(logo_path):
-            import base64
-            with open(logo_path, 'rb') as lf:
-                logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
+    logo_b64 = ''
+    logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
+    if os.path.exists(logo_path):
+        import base64
+        with open(logo_path, 'rb') as lf:
+            logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
 
-        total = float(e.get('total') or 0)
-        created = (e.get('created_at') or '')[:10]
-        method_label = {'1': 'Time × Crew', '2': 'Market Research', '3': 'Low / High Range',
-                        '4': 'Custom Build-Up', '5': 'Unit Cost'}.get(str(e.get('method') or ''), 'Manual')
-        esc = lambda s: (s or '').replace('<', '&lt;').replace('>', '&gt;')
+    total = float(e.get('total') or 0)
+    created = (e.get('created_at') or '')[:10]
+    method_label = {'1': 'Time × Crew', '2': 'Market Research', '3': 'Low / High Range',
+                    '4': 'Custom Build-Up', '5': 'Unit Cost'}.get(str(e.get('method') or ''), 'Manual')
+    esc = lambda s: (s or '').replace('<', '&lt;').replace('>', '&gt;')
 
-        bk_rows = ''
-        if isinstance(breakdown, dict):
-            for k, v in breakdown.items():
-                if isinstance(v, (int, float)) and k != 'total':
-                    label = str(k).replace('_', ' ').title()
-                    bk_rows += f'''<tr>
-                        <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">{label}</td>
-                        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${float(v):,.2f}</td>
-                    </tr>'''
-        if not bk_rows:
-            bk_rows = f'''<tr>
-                <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">Estimate</td>
-                <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${total:,.2f}</td>
-            </tr>'''
+    bk_rows = ''
+    if isinstance(breakdown, dict):
+        for k, v in breakdown.items():
+            if isinstance(v, (int, float)) and k != 'total':
+                label = str(k).replace('_', ' ').title()
+                bk_rows += f'''<tr>
+                    <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">{label}</td>
+                    <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${float(v):,.2f}</td>
+                </tr>'''
+    if not bk_rows:
+        bk_rows = f'''<tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#333;">Estimate</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-family:monospace;">${total:,.2f}</td>
+        </tr>'''
 
-        logo_html = f'<img src="data:image/jpeg;base64,{logo_b64}" style="height:64px;border-radius:8px;">' if logo_b64 else '<div style="font-size:24px;font-weight:800;color:#7c3aed;">AHBCO</div>'
-        notes_block = f'<div style="margin-top:20px;padding:12px 16px;background:#f9fafb;border-radius:8px;font-size:12px;color:#555;"><b>Notes:</b> {esc(e.get("notes"))}</div>' if e.get('notes') else ''
-        html = f'''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estimate {eid}</title></head>
+    logo_html = f'<img src="data:image/jpeg;base64,{logo_b64}" style="height:64px;border-radius:8px;">' if logo_b64 else '<div style="font-size:24px;font-weight:800;color:#7c3aed;">AHBCO</div>'
+    notes_block = f'<div style="margin-top:20px;padding:12px 16px;background:#f9fafb;border-radius:8px;font-size:12px;color:#555;"><b>Notes:</b> {esc(e.get("notes"))}</div>' if e.get('notes') else ''
+    html = f'''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estimate {eid}</title></head>
 <body style="font-family:Helvetica,Arial,sans-serif;max-width:720px;margin:0 auto;padding:32px;color:#222;">
 <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #7c3aed;padding-bottom:16px;">
     {logo_html}
@@ -7446,21 +7437,18 @@ def api_ahb_estimate_pdf(eid):
     Final pricing may adjust based on actual scope, materials chosen, and site conditions discovered during work.
 </div>
 </body></html>'''
+    return html, f"estimate_{eid}"
 
-        download = request.args.get('download', '0') == '1'
-        try:
-            from weasyprint import HTML as WeasyHTML
-            pdf_bytes = WeasyHTML(string=html).write_pdf()
-            response = make_response(pdf_bytes)
-            response.headers['Content-Type'] = 'application/pdf'
-            disposition = 'attachment' if download else 'inline'
-            response.headers['Content-Disposition'] = f'{disposition}; filename="estimate_{eid}.pdf"'
-            return response
-        except ImportError:
-            response = make_response(html)
-            response.headers['Content-Type'] = 'text/html; charset=utf-8'
-            response.headers['Content-Disposition'] = f'inline; filename="estimate_{eid}.html"'
-            return response
+
+@app.route('/api/ahb/estimates/<eid>/pdf', methods=['GET'])
+def api_ahb_estimate_pdf(eid):
+    """Branded printable estimate sheet (WeasyPrint PDF, HTML fallback) —
+    same visual family as the project quote PDF."""
+    try:
+        html, _ = _estimate_html(eid)
+        if html is None:
+            return jsonify({'error': 'Estimate not found'}), 404
+        return _pdf_response("estimate", eid, request.args.get('download', '0') == '1')
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -9907,154 +9895,152 @@ def api_ahb_invoice_interest(iid):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/ahb/invoices/<iid>/pdf', methods=['GET'])
-def api_ahb_invoice_pdf(iid):
-    """Generate professional invoice PDF matching Shaski template."""
-    try:
-        conn = _ahb_db()
-        inv = conn.execute("SELECT * FROM ahb_invoices WHERE id = ?", (iid,)).fetchone()
-        if not inv:
-            conn.close()
-            return jsonify({'error': 'Invoice not found'}), 404
-        inv = dict(inv)
-        # Get project details if linked
-        project = None
-        if inv.get('project_id'):
-            p = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (inv['project_id'],)).fetchone()
-            if p:
-                project = dict(p)
-        # Get phases for this project
-        phases = []
-        if inv.get('project_id'):
-            phases = [dict(r) for r in conn.execute(
-                "SELECT * FROM ahb_project_phases WHERE project_id = ? ORDER BY phase_number", (inv['project_id'],)).fetchall()]
+def _invoice_html(iid):
+    """Return (html_str, filename_base) for an invoice PDF, or (None, None) if not found."""
+    conn = _ahb_db()
+    inv = conn.execute("SELECT * FROM ahb_invoices WHERE id = ?", (iid,)).fetchone()
+    if not inv:
         conn.close()
+        return None, None
+    inv = dict(inv)
+    # Get project details if linked
+    project = None
+    if inv.get('project_id'):
+        p = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (inv['project_id'],)).fetchone()
+        if p:
+            project = dict(p)
+    # Get phases for this project
+    phases = []
+    if inv.get('project_id'):
+        phases = [dict(r) for r in conn.execute(
+            "SELECT * FROM ahb_project_phases WHERE project_id = ? ORDER BY phase_number", (inv['project_id'],)).fetchall()]
+    conn.close()
 
-        # Parse line items
-        line_items = []
-        if inv.get('line_items'):
-            try:
-                line_items = json.loads(inv['line_items']) if isinstance(inv['line_items'], str) else inv['line_items']
-            except (json.JSONDecodeError, TypeError):
-                line_items = []
+    # Parse line items
+    line_items = []
+    if inv.get('line_items'):
+        try:
+            line_items = json.loads(inv['line_items']) if isinstance(inv['line_items'], str) else inv['line_items']
+        except (json.JSONDecodeError, TypeError):
+            line_items = []
 
-        # Build line items HTML. We render Materials + Labor columns when ANY line
-        # carries a non-zero breakdown — that way old single-total invoices still
-        # render cleanly while new ones show the material/labor split that sums to
-        # the line total.
-        any_breakdown = any(
-            (float(item.get('materials') or 0) > 0) or (float(item.get('labor') or 0) > 0)
-            for item in line_items
+    # Build line items HTML. We render Materials + Labor columns when ANY line
+    # carries a non-zero breakdown — that way old single-total invoices still
+    # render cleanly while new ones show the material/labor split that sums to
+    # the line total.
+    any_breakdown = any(
+        (float(item.get('materials') or 0) > 0) or (float(item.get('labor') or 0) > 0)
+        for item in line_items
+    )
+
+    def _m(v):
+        """Money — credit/negative amounts render as -$1,234.00."""
+        v = float(v or 0)
+        return f"-${abs(v):,.2f}" if v < 0 else f"${v:,.2f}"
+
+    items_html = ''
+    for i, item in enumerate(line_items, 1):
+        desc = item.get('description', '')
+        qty   = item.get('qty')   if item.get('qty')   is not None else item.get('quantity', 1)
+        price = item.get('rate')  if item.get('rate')  is not None else item.get('unit_price', 0)
+        unit  = item.get('unit') or 'qty'
+        try: qty = float(qty or 0)
+        except: qty = 0
+        try: price = float(price or 0)
+        except: price = 0
+        try: materials = float(item.get('materials') or 0)
+        except: materials = 0
+        try: labor = float(item.get('labor') or 0)
+        except: labor = 0
+        # Honor stored total if it was manually overridden
+        stored_total = item.get('total')
+        try:
+            stored_total = float(stored_total) if stored_total is not None else None
+        except:
+            stored_total = None
+        if materials or labor:
+            total_item = materials + labor
+        elif stored_total is not None:
+            total_item = stored_total
+        else:
+            total_item = qty * price
+        qty_display = f"{qty:g} {unit}" if unit and unit != 'qty' else f"{qty:g}"
+        # Lines excluded from the total (include_in_total=False) are
+        # informational — print the description, dash out the money cells.
+        excluded = item.get('include_in_total') is False
+        mat_cell   = '—' if excluded else _m(materials)
+        lab_cell   = '—' if excluded else _m(labor)
+        price_cell = '—' if excluded else _m(price)
+        total_cell = '—' if excluded else _m(total_item)
+        if any_breakdown:
+            items_html += f'''<tr>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">{mat_cell}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">{lab_cell}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">{total_cell}</td>
+            </tr>'''
+        else:
+            items_html += f'''<tr>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">{price_cell}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">{total_cell}</td>
+            </tr>'''
+
+    # Build scope of work section for PDF.
+    # Avoid duplicating the description in three places (scope block + notes +
+    # line items). If the line items already break the work down (>1 row, or a
+    # single row whose description differs from the project title), the line
+    # items table is sufficient — only show the Trade/Scope tag for context.
+    scope_of_work_html = ''
+    if project:
+        proj_desc = (project.get('description') or '').strip()
+        proj_scope = (project.get('scope') or '').strip()
+        line_items_carry_detail = (
+            len(line_items) > 1 or
+            (len(line_items) == 1 and (line_items[0].get('description') or '').strip()
+                and (line_items[0].get('description') or '').strip() != (project.get('title') or '').strip())
         )
-
-        def _m(v):
-            """Money — credit/negative amounts render as -$1,234.00."""
-            v = float(v or 0)
-            return f"-${abs(v):,.2f}" if v < 0 else f"${v:,.2f}"
-
-        items_html = ''
-        for i, item in enumerate(line_items, 1):
-            desc = item.get('description', '')
-            qty   = item.get('qty')   if item.get('qty')   is not None else item.get('quantity', 1)
-            price = item.get('rate')  if item.get('rate')  is not None else item.get('unit_price', 0)
-            unit  = item.get('unit') or 'qty'
-            try: qty = float(qty or 0)
-            except: qty = 0
-            try: price = float(price or 0)
-            except: price = 0
-            try: materials = float(item.get('materials') or 0)
-            except: materials = 0
-            try: labor = float(item.get('labor') or 0)
-            except: labor = 0
-            # Honor stored total if it was manually overridden
-            stored_total = item.get('total')
-            try:
-                stored_total = float(stored_total) if stored_total is not None else None
-            except:
-                stored_total = None
-            if materials or labor:
-                total_item = materials + labor
-            elif stored_total is not None:
-                total_item = stored_total
-            else:
-                total_item = qty * price
-            qty_display = f"{qty:g} {unit}" if unit and unit != 'qty' else f"{qty:g}"
-            # Lines excluded from the total (include_in_total=False) are
-            # informational — print the description, dash out the money cells.
-            excluded = item.get('include_in_total') is False
-            mat_cell   = '—' if excluded else _m(materials)
-            lab_cell   = '—' if excluded else _m(labor)
-            price_cell = '—' if excluded else _m(price)
-            total_cell = '—' if excluded else _m(total_item)
-            if any_breakdown:
-                items_html += f'''<tr>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">{mat_cell}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#666;">{lab_cell}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">{total_cell}</td>
-                </tr>'''
-            else:
-                items_html += f'''<tr>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;">{i}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#333;font-weight:500;">{desc}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:center;color:#333;">{qty_display}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;">{price_cell}</td>
-                    <td style="padding:10px 12px;border-bottom:1px solid #eee;text-align:right;color:#333;font-weight:600;">{total_cell}</td>
-                </tr>'''
-
-        # Build scope of work section for PDF.
-        # Avoid duplicating the description in three places (scope block + notes +
-        # line items). If the line items already break the work down (>1 row, or a
-        # single row whose description differs from the project title), the line
-        # items table is sufficient — only show the Trade/Scope tag for context.
-        scope_of_work_html = ''
-        if project:
-            proj_desc = (project.get('description') or '').strip()
-            proj_scope = (project.get('scope') or '').strip()
-            line_items_carry_detail = (
-                len(line_items) > 1 or
-                (len(line_items) == 1 and (line_items[0].get('description') or '').strip()
-                    and (line_items[0].get('description') or '').strip() != (project.get('title') or '').strip())
-            )
-            notes_text = (inv.get('notes') or '').strip()
-            notes_overlaps = bool(notes_text) and proj_desc and (proj_desc[:60].lower() in notes_text.lower())
-            show_desc_block = bool(proj_desc) and not line_items_carry_detail and not notes_overlaps
-            if show_desc_block:
-                proj_desc_html  = proj_desc.replace('<', '&lt;').replace('>', '&gt;')
-                proj_scope_html = proj_scope.replace('<', '&lt;').replace('>', '&gt;')
-                scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope_html}</div>' if proj_scope_html else ''
-                scope_of_work_html = f'''<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #2563eb;">
+        notes_text = (inv.get('notes') or '').strip()
+        notes_overlaps = bool(notes_text) and proj_desc and (proj_desc[:60].lower() in notes_text.lower())
+        show_desc_block = bool(proj_desc) and not line_items_carry_detail and not notes_overlaps
+        if show_desc_block:
+            proj_desc_html  = proj_desc.replace('<', '&lt;').replace('>', '&gt;')
+            proj_scope_html = proj_scope.replace('<', '&lt;').replace('>', '&gt;')
+            scope_line = f'<div style="margin-top:6px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope_html}</div>' if proj_scope_html else ''
+            scope_of_work_html = f'''<div style="margin-bottom:20px;padding:12px 16px;background:#f8fafc;border-radius:6px;border-left:3px solid #2563eb;">
     <div style="font-size:11px;color:#999;text-transform:uppercase;font-weight:700;margin-bottom:6px;">Scope of Work</div>
     <div style="font-size:13px;color:#444;line-height:1.5;white-space:pre-wrap;">{proj_desc_html}</div>
     {scope_line}
 </div>'''
-            elif proj_scope:
-                proj_scope_html = proj_scope.replace('<', '&lt;').replace('>', '&gt;')
-                scope_of_work_html = f'''<div style="margin-bottom:14px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope_html}</div>'''
+        elif proj_scope:
+            proj_scope_html = proj_scope.replace('<', '&lt;').replace('>', '&gt;')
+            scope_of_work_html = f'''<div style="margin-bottom:14px;font-size:12px;color:#666;"><strong>Trade/Scope:</strong> {proj_scope_html}</div>'''
 
-        subtotal = inv.get('subtotal') or inv.get('total') or 0
-        tax = inv.get('tax') or 0
-        total = inv.get('total') or 0
-        inv_date = inv.get('date') or (inv.get('created_at', '')[:10] if inv.get('created_at') else '')
-        project_location = inv.get('project_address') or (project.get('address', '') if project else '') or ''
-        interest_rate = inv.get('overdue_interest_per_week') or 50
+    subtotal = inv.get('subtotal') or inv.get('total') or 0
+    tax = inv.get('tax') or 0
+    total = inv.get('total') or 0
+    inv_date = inv.get('date') or (inv.get('created_at', '')[:10] if inv.get('created_at') else '')
+    project_location = inv.get('project_address') or (project.get('address', '') if project else '') or ''
+    interest_rate = inv.get('overdue_interest_per_week') or 50
 
-        # Logo as base64 for embedding in PDF
-        logo_b64 = ''
-        logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
-        if os.path.exists(logo_path):
-            import base64
-            with open(logo_path, 'rb') as lf:
-                logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
+    # Logo as base64 for embedding in PDF
+    logo_b64 = ''
+    logo_path = os.path.join(DASHBOARD_DIR, 'static', 'img', 'ahb_logo.jpeg')
+    if os.path.exists(logo_path):
+        import base64
+        with open(logo_path, 'rb') as lf:
+            logo_b64 = base64.b64encode(lf.read()).decode('utf-8')
 
-        # Resolve Terms & Conditions: project override → company default → built-in constant
-        terms_text = _resolve_invoice_terms(project, _company_terms_default())
-        terms_html = _render_terms_html(terms_text)
+    # Resolve Terms & Conditions: project override → company default → built-in constant
+    terms_text = _resolve_invoice_terms(project, _company_terms_default())
+    terms_html = _render_terms_html(terms_text)
 
-        # Page 1: Invoice
-        html = f'''<!DOCTYPE html>
+    # Page 1: Invoice
+    html = f'''<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>Invoice {inv.get('invoice_number','')}</title>
 <style>
@@ -10178,24 +10164,57 @@ body {{ font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;max-width:780px;
 
 </body>
 </html>'''
+    return html, f"invoice_{inv.get('invoice_number', iid)}"
 
-        # Try to use weasyprint for real PDF, fall back to HTML
-        download = request.args.get('download', '0') == '1'
+
+# ── Shared PDF helpers (all 3 builder functions are now defined above) ─────────
+
+try:
+    from weasyprint import HTML as WeasyHTML
+except Exception:
+    WeasyHTML = None
+
+_DOC_HTML_BUILDERS = {
+    "invoice":  lambda i: _invoice_html(i),
+    "quote":    lambda i: _quote_html(i),
+    "estimate": lambda i: _estimate_html(i),
+}
+
+
+def render_ahb_doc_pdf(kind, doc_id):
+    """Return (filename, mimetype, data_bytes) for an AHB document.
+    PDF when WeasyPrint is available, else HTML fallback bytes."""
+    builder = _DOC_HTML_BUILDERS.get(kind)
+    if not builder:
+        raise ValueError(f"unknown doc kind: {kind}")
+    html, base = builder(doc_id)
+    if html is None:
+        raise LookupError(f"{kind} {doc_id} not found")
+    if WeasyHTML is not None:
         try:
-            from weasyprint import HTML as WeasyHTML
-            pdf_bytes = WeasyHTML(string=html).write_pdf()
-            response = make_response(pdf_bytes)
-            response.headers['Content-Type'] = 'application/pdf'
-            disposition = 'attachment' if download else 'inline'
-            response.headers['Content-Disposition'] = f'{disposition}; filename="invoice_{inv.get("invoice_number","")}.pdf"'
-            return response
-        except ImportError:
-            # weasyprint not installed — return HTML with PDF-like content type hint
-            response = make_response(html)
-            response.headers['Content-Type'] = 'text/html; charset=utf-8'
-            response.headers['Content-Disposition'] = f'inline; filename="invoice_{inv.get("invoice_number","")}.html"'
-            return response
+            return f"{base}.pdf", "application/pdf", WeasyHTML(string=html).write_pdf()
+        except Exception as e:
+            print(f"[pdf] weasyprint failed for {kind} {doc_id}: {e}", flush=True)
+    return f"{base}.html", "text/html", html.encode("utf-8")
 
+
+def _pdf_response(kind, doc_id, download):
+    fn, mime, data = render_ahb_doc_pdf(kind, doc_id)
+    resp = make_response(data)
+    resp.headers['Content-Type'] = mime
+    disposition = 'attachment' if download else 'inline'
+    resp.headers['Content-Disposition'] = f'{disposition}; filename="{fn}"'
+    return resp
+
+
+@app.route('/api/ahb/invoices/<iid>/pdf', methods=['GET'])
+def api_ahb_invoice_pdf(iid):
+    """Generate professional invoice PDF matching Shaski template."""
+    try:
+        html, _ = _invoice_html(iid)
+        if html is None:
+            return jsonify({'error': 'Invoice not found'}), 404
+        return _pdf_response("invoice", iid, request.args.get('download', '0') == '1')
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

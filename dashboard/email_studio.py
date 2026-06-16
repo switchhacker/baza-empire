@@ -19,6 +19,7 @@ import sqlite3
 import time
 import urllib.request
 import uuid
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr
@@ -29,6 +30,9 @@ from flask import Blueprint, jsonify, request
 DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 FRAMEWORK_DIR = os.path.dirname(DASHBOARD_DIR)
 DB_PATH_DEFAULT = os.path.join(DASHBOARD_DIR, "baza_projects.db")
+ARTIFACTS_DIR = os.path.join(DASHBOARD_DIR, "artifacts")
+_MAX_ATTACH_BYTES = 25 * 1024 * 1024
+_DENY_ARTIFACT_DIRS = (".private-inbound", ".vault_meta")
 EMAIL_PIPELINE_DIR = os.path.join(FRAMEWORK_DIR, "email-pipeline")
 ACCOUNTS_DIR = os.path.join(EMAIL_PIPELINE_DIR, "accounts")
 LEGACY_TOKEN_PATH = os.path.join(EMAIL_PIPELINE_DIR, "token.json")
@@ -717,11 +721,63 @@ def api_sync():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+def _resolve_attachments(refs):
+    """refs: list of server-side refs -> list of {filename, mimetype, data}. Raises ValueError on bad ref."""
+    out, total = [], 0
+    for ref in refs or []:
+        t = ref.get("type")
+        if t in ("invoice_pdf", "quote_pdf", "estimate_pdf"):
+            from app import render_ahb_doc_pdf  # deferred import avoids circular import
+            kind = t.replace("_pdf", "")
+            doc_id = ref.get(kind + "_id") or ref.get("id")
+            fn, mime, data = render_ahb_doc_pdf(kind, doc_id)
+        elif t == "artifact":
+            pid = str(ref.get("project_id") or "")
+            rel = str(ref.get("path") or "")
+            base = os.path.realpath(os.path.join(ARTIFACTS_DIR, pid))
+            full = os.path.realpath(os.path.join(base, rel))
+            if not (full == base or full.startswith(base + os.sep)):
+                raise ValueError("invalid artifact path")
+            if any(seg in full.split(os.sep) for seg in _DENY_ARTIFACT_DIRS):
+                raise ValueError("artifact is private and cannot be shared")
+            if not os.path.isfile(full):
+                raise ValueError("artifact not found")
+            with open(full, "rb") as f:
+                data = f.read()
+            fn = os.path.basename(full)
+            import mimetypes
+            mime = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+        else:
+            raise ValueError(f"unknown attachment type: {t}")
+        total += len(data)
+        if total > _MAX_ATTACH_BYTES:
+            raise ValueError("attachments exceed the 25 MB limit")
+        out.append({"filename": fn, "mimetype": mime, "data": data})
+    return out
+
+
 def _mime_message(to: str, subject: str, body: str,
                   cc: str = "", bcc: str = "",
                   in_reply_to: str = "", references: str = "",
-                  from_addr: str = "") -> str:
-    msg = MIMEMultipart("alternative")
+                  from_addr: str = "", attachments=None) -> str:
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(body, "plain", _charset="utf-8"))
+    html_body = "<pre style='font-family:inherit;white-space:pre-wrap'>" + \
+                body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + \
+                "</pre>"
+    alt.attach(MIMEText(html_body, "html", _charset="utf-8"))
+
+    if attachments:
+        msg = MIMEMultipart("mixed")
+        msg.attach(alt)
+        for a in attachments:
+            maintype, _, subtype = (a.get("mimetype") or "application/octet-stream").partition("/")
+            part = MIMEApplication(a["data"], _subtype=subtype or "octet-stream")
+            part.add_header("Content-Disposition", "attachment", filename=a["filename"])
+            msg.attach(part)
+    else:
+        msg = alt
+
     msg["To"] = to
     if cc:
         msg["Cc"] = cc
@@ -734,11 +790,6 @@ def _mime_message(to: str, subject: str, body: str,
         msg["In-Reply-To"] = in_reply_to
     if references:
         msg["References"] = references
-    msg.attach(MIMEText(body, "plain", _charset="utf-8"))
-    html_body = "<pre style='font-family:inherit;white-space:pre-wrap'>" + \
-                body.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + \
-                "</pre>"
-    msg.attach(MIMEText(html_body, "html", _charset="utf-8"))
     return base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
 
 
@@ -781,9 +832,17 @@ def api_send():
             print(f"[email] reply-thread lookup failed: {e}", flush=True)
 
     try:
+        attach_objs = _resolve_attachments(data.get("attachments"))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except LookupError as e:
+        return jsonify({"ok": False, "error": str(e)}), 404
+
+    try:
         svc = _gmail(_req_account_id())
         raw = _mime_message(to, subject, body, cc=cc, bcc=bcc,
-                            in_reply_to=in_reply_to, references=references)
+                            in_reply_to=in_reply_to, references=references,
+                            attachments=attach_objs)
         send_body = {"raw": raw}
         if thread_id:
             send_body["threadId"] = thread_id
