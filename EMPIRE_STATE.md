@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-14 Claw hourly digest — 14 new (0 bug, 0 regression, 0 security, 0 warn, 14 info)
-- 2026-06-14 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 2 warn, 5 info)
-- 2026-06-14 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 0 warn, 9 info)
-- 2026-06-14 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
-- 2026-06-14 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 0 warn, 8 info)
-- 2026-06-14 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 0 warn, 3 info)
-- 2026-06-14 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
-- 2026-06-14 Pinout-with-wiring added + silkscreen option for every project
-- 2026-06-14 Fix: silkscreen side-panel opened off-screen
-- 2026-06-14 Silkscreen viewer: zoom + pan
-- 2026-06-14 Committed silkscreen feature to agent-framework-v3
-- 2026-06-14 Claw hourly digest — 49 new (1 bug, 0 regression, 0 security, 11 warn, 37 info)
-- 2026-06-14 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
-- 2026-06-14 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
-- 2026-06-14 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 2 warn, 2 info)
+- 2026-06-15 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 2 warn, 8 info)
+- 2026-06-15 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 0 warn, 12 info)
+- 2026-06-15 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-06-15 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
+- 2026-06-15 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 0 warn, 4 info)
+- 2026-06-15 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 0 warn, 10 info)
+- 2026-06-15 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
+- 2026-06-15 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 0 warn, 3 info)
+- 2026-06-15 Claw hourly digest — 10 new (1 bug, 0 regression, 0 security, 1 warn, 8 info)
+- 2026-06-15 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 2 warn, 5 info)
+- 2026-06-15 Claw hourly digest — 59 new (2 bug, 0 regression, 1 security, 15 warn, 41 info)
+- 2026-06-15 Claw hourly digest — 9 new (1 bug, 0 regression, 0 security, 2 warn, 6 info)
+- 2026-06-15 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 0 warn, 9 info)
+- 2026-06-15 Claw hourly digest — 18 new (0 bug, 0 regression, 0 security, 1 warn, 17 info)
+- 2026-06-15 AHB123 billing CRUD + email sharing — design spec written
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
