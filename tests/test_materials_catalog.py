@@ -226,6 +226,50 @@ def test_price_sync_apply_updates_prices(client, temp_ahb_db):
     assert any(x["id"] == mid and x["unit_price"] == 8.5 for x in rows)
 
 
+def test_export_csv_returns_catalog(client):
+    r = client.get("/api/ahb/estimator/materials/export.csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("Content-Type", "")
+    body = r.get_data(as_text=True)
+    lines = body.strip().splitlines()
+    assert lines[0].lower().startswith("vendor,name,category,unit,unit_price")
+    assert len(lines) >= 50  # header + seeded rows
+    assert "Stud" in body
+
+
+def test_import_csv_inserts_and_updates(client):
+    # existing seeded "2x4x8 Stud (SPF)" at Home Depot gets its price updated;
+    # a brand-new row gets inserted.
+    csv_text = (
+        "vendor,name,category,unit,unit_price,sku\n"
+        "Home Depot,2x4x8 Stud (SPF),Lumber,each,4.55,\n"
+        "Amazon,Brand New Gizmo,Hardware,each,7.77,GZ-1\n"
+    )
+    r = client.post("/api/ahb/estimator/materials/import", json={"csv": csv_text})
+    body = r.get_json()
+    assert body["success"] is True
+    assert body["updated"] >= 1 and body["imported"] >= 1
+    rows = client.get("/api/ahb/estimator/materials").get_json()
+    stud = [x for x in rows if x["name"] == "2x4x8 Stud (SPF)" and x["vendor"] == "Home Depot"][0]
+    assert stud["unit_price"] == 4.55
+    assert any(x["name"] == "Brand New Gizmo" and x["unit_price"] == 7.77 for x in rows)
+
+
+def test_import_csv_counts_bad_rows(client):
+    csv_text = "vendor,name,unit_price\nHome Depot,,9.99\nAmazon,Valid Item,3.00\n"
+    r = client.post("/api/ahb/estimator/materials/import", json={"csv": csv_text})
+    body = r.get_json()
+    assert body["success"] is True
+    assert body["errors"] >= 1  # the nameless row
+    assert body["imported"] >= 1
+
+
+def test_import_csv_requires_payload(client):
+    r = client.post("/api/ahb/estimator/materials/import", json={"csv": "   "})
+    assert r.status_code == 400
+    assert r.get_json()["success"] is False
+
+
 def test_suggest_tolerates_bad_items_json(client, temp_ahb_db):
     c = sqlite3.connect(temp_ahb_db)
     c.execute("INSERT INTO ahb_receipts (id,vendor,store_name,category,receipt_date,items_json) VALUES (?,?,?,?,?,?)",

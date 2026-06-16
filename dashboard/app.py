@@ -73,7 +73,9 @@ def init_ahb_tables():
         print(f"[startup] init_ahb_tables deferred — DB busy: {e}", flush=True)
 
 def _init_ahb_tables_inner():
-    conn = sqlite3.connect(os.path.join(DASHBOARD_DIR, 'baza_projects.db'), timeout=8.0)
+    conn = sqlite3.connect(
+        os.environ.get('BAZA_PROJECTS_DB') or os.path.join(DASHBOARD_DIR, 'baza_projects.db'),
+        timeout=8.0)
     conn.execute("PRAGMA busy_timeout = 8000")
     # WAL is a persistent journal mode; setting it once on the DB file lets
     # readers run concurrently with a writer (eliminates most "database is
@@ -473,6 +475,12 @@ def _init_ahb_tables_inner():
                            ORDER BY y.created_at ASC, y.id ASC LIMIT 1)
            )""",
         "ALTER TABLE ahb_projects ADD COLUMN terms_conditions TEXT",
+        # Payment terms + milestone invoices (2026-06-16)
+        "ALTER TABLE ahb_projects ADD COLUMN payment_terms TEXT DEFAULT ''",
+        "ALTER TABLE ahb_invoices ADD COLUMN milestone_label TEXT DEFAULT ''",
+        "ALTER TABLE ahb_invoices ADD COLUMN milestone_index INTEGER DEFAULT -1",
+        "ALTER TABLE ahb_invoices ADD COLUMN amount_due REAL",
+        "ALTER TABLE ahb_invoices ADD COLUMN terms_snapshot TEXT DEFAULT ''",
     ]
     for stmt in alter_stmts:
         try:
@@ -5378,6 +5386,12 @@ def api_taskrunner_logs():
 
 # ── Routes — AHB123 Business Hub ──────────────────────────────────────────────
 
+def _ahb_db_path():
+    """Resolve the AHB projects DB path. Honors the BAZA_PROJECTS_DB env var
+    (used by tests for isolation; unset in production → the real file)."""
+    return os.environ.get('BAZA_PROJECTS_DB') or os.path.join(DASHBOARD_DIR, 'baza_projects.db')
+
+
 def _ahb_db():
     """SQLite connection to baza_projects.db with row factory and a lock-tolerant
     `busy_timeout` so concurrent writers wait instead of failing instantly with
@@ -5385,7 +5399,7 @@ def _ahb_db():
     write lock for tens of seconds at a time (e.g. the Takeout dedup commits
     every ~24s). WAL is enabled once at startup so readers don't block writers."""
     conn = sqlite3.connect(
-        os.path.join(DASHBOARD_DIR, 'baza_projects.db'),
+        _ahb_db_path(),
         timeout=30.0,
     )
     conn.row_factory = sqlite3.Row
@@ -5940,6 +5954,75 @@ def api_ahb_project_quotes(pid):
     rows = c.execute("SELECT * FROM ahb_quotes WHERE project_id=? ORDER BY id DESC", (pid,)).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+_PAYMENT_TERM_PRESETS = {
+    "50_50": [{"label": "Deposit", "pct": 50}, {"label": "Completion", "pct": 50}],
+    "30_30_40": [{"label": "Deposit", "pct": 30}, {"label": "Progress", "pct": 30},
+                 {"label": "Final", "pct": 40}],
+    "100_completion": [{"label": "Completion", "pct": 100}],
+    "net_30": [{"label": "Net 30", "pct": 100}],
+}
+
+
+def _resolve_payment_terms(preset, milestones):
+    """Normalize a preset name or a custom milestone list into a validated
+    terms dict: {preset, net_days, milestones:[{label,pct}]}. Raises
+    ValueError if a custom list lacks labels or its pct does not sum to 100."""
+    preset = (preset or "").strip()
+    net_days = 30 if preset == "net_30" else 0
+    if preset in _PAYMENT_TERM_PRESETS:
+        ms = [dict(m) for m in _PAYMENT_TERM_PRESETS[preset]]
+    else:
+        preset = "custom"
+        ms = []
+        for m in (milestones or []):
+            label = (m.get("label") or "").strip()
+            if not label:
+                raise ValueError("each milestone needs a label")
+            try:
+                pct = float(m.get("pct") or 0)
+            except (TypeError, ValueError):
+                raise ValueError("milestone pct must be a number")
+            ms.append({"label": label, "pct": pct})
+    if not ms:
+        raise ValueError("at least one milestone is required")
+    total = round(sum(float(m["pct"]) for m in ms), 2)
+    if abs(total - 100.0) > 0.01:
+        raise ValueError(f"milestone percentages must sum to 100 (got {total})")
+    return {"preset": preset, "net_days": net_days, "milestones": ms}
+
+
+def _stamp_primary_as_deposit(conn, pid, terms):
+    """Stamp the project's primary invoice as milestone 0. Filled in Task 9."""
+    return None
+
+
+@app.route('/api/ahb/projects/<pid>/payment-terms', methods=['GET', 'PUT'])
+def api_ahb_project_payment_terms(pid):
+    conn = _ahb_db()
+    try:
+        proj = conn.execute("SELECT id, payment_terms FROM ahb_projects WHERE id=?", (pid,)).fetchone()
+        if not proj:
+            return jsonify({'success': False, 'error': 'Project not found'}), 404
+        if request.method == 'GET':
+            raw = (dict(proj).get('payment_terms') or '').strip()
+            terms = json.loads(raw) if raw else {'preset': '', 'net_days': 0, 'milestones': []}
+            return jsonify({'success': True, 'terms': terms})
+        d = request.get_json() or {}
+        try:
+            terms = _resolve_payment_terms(d.get('preset'), d.get('milestones'))
+        except ValueError as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
+        conn.execute("UPDATE ahb_projects SET payment_terms=?, updated_at=? WHERE id=?",
+                     (json.dumps(terms), datetime.datetime.now().isoformat(), pid))
+        # Stamp the primary invoice as milestone 0 (the deposit) so its
+        # schedule/amount-due reflect the chosen terms immediately.
+        _stamp_primary_as_deposit(conn, pid, terms)
+        conn.commit()
+        return jsonify({'success': True, 'terms': terms})
+    finally:
+        conn.close()
 
 
 @app.route('/api/ahb/quotes/<int:qid>', methods=['GET', 'DELETE', 'PUT'])
@@ -14709,6 +14792,69 @@ def api_estimator_materials_delete(mid):
     conn.commit()
     conn.close()
     return jsonify({'success': True})
+
+
+@app.route('/api/ahb/estimator/materials/export.csv', methods=['GET'])
+def api_estimator_materials_export():
+    import csv as _csv
+    import io as _io
+    conn = _ahb_db()
+    rows = conn.execute("""SELECT vendor, name, category, unit, unit_price, sku
+                           FROM ahb_materials_catalog WHERE active=1
+                           ORDER BY vendor, name""").fetchall()
+    conn.close()
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(['vendor', 'name', 'category', 'unit', 'unit_price', 'sku'])
+    for r in rows:
+        w.writerow([r['vendor'] or '', r['name'] or '', r['category'] or '',
+                    r['unit'] or 'each', r['unit_price'] or 0, r['sku'] or ''])
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = 'text/csv'
+    resp.headers['Content-Disposition'] = 'attachment; filename=materials_catalog.csv'
+    return resp
+
+
+@app.route('/api/ahb/estimator/materials/import', methods=['POST'])
+def api_estimator_materials_import():
+    import csv as _csv
+    import io as _io
+    d = request.get_json() or {}
+    text = d.get('csv') or ''
+    if not text.strip():
+        return jsonify({'success': False, 'error': 'no csv provided'}), 400
+    reader = _csv.DictReader(_io.StringIO(text))
+    imported = updated = errors = 0
+    conn = _ahb_db()
+    for row in reader:
+        r = {(k or '').strip().lower(): (v or '').strip()
+             for k, v in row.items() if k}
+        name = (r.get('name') or '').strip()
+        if not name:
+            errors += 1
+            continue
+        vendor = (r.get('vendor') or '').strip()
+        category = (r.get('category') or '').strip()
+        unit = (r.get('unit') or 'each').strip() or 'each'
+        sku = (r.get('sku') or '').strip() or None
+        try:
+            price = float(r.get('unit_price') or 0)
+        except (ValueError, TypeError):
+            price = 0.0
+        ex = conn.execute("SELECT id FROM ahb_materials_catalog WHERE vendor=? AND name=?",
+                          (vendor, name)).fetchone()
+        if ex:
+            conn.execute("""UPDATE ahb_materials_catalog
+                            SET category=?, unit=?, unit_price=?, sku=?, active=1 WHERE id=?""",
+                         (category, unit, price, sku, ex['id']))
+            updated += 1
+        else:
+            conn.execute("""INSERT INTO ahb_materials_catalog (vendor,name,unit,unit_price,sku,category)
+                            VALUES (?,?,?,?,?,?)""", (vendor, name, unit, price, sku, category))
+            imported += 1
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'imported': imported, 'updated': updated, 'errors': errors})
 
 
 def _vendor_loose_match(a, b):
