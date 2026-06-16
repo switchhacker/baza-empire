@@ -1912,6 +1912,11 @@
         <input id="set-permit" type="number" step="50" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px;font-family:monospace">
       </div>
     </div>
+    <div style="margin:14px 0 4px">
+      <label style="font-size:11px;color:#888">Invoice Terms &amp; Conditions (company default)</label>
+      <div style="font-size:10px;color:#555;margin:2px 0 6px">Appears on every invoice unless a project overrides it. One clause per line.</div>
+      <textarea id="set-invoice-terms" rows="8" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:12px;line-height:1.5;resize:vertical"></textarea>
+    </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('estSettingsModal')">Cancel</button>
       <button class="btn-primary" onclick="saveEstimatorSettings()">Save Settings</button>
@@ -1997,6 +2002,22 @@
       <div><label class="m4-lbl">Unit</label><input id="mc-new-unit" class="m4-input" placeholder="each"></div>
       <div><label class="m4-lbl">Unit $</label><input id="mc-new-price" type="number" min="0" step="0.01" class="m4-input m4-mono"></div>
       <button class="btn-primary btn-sm" onclick="mcAddNew()">+ Add</button>
+    </div>
+    <div style="text-align:right;margin-top:8px">
+      <button class="btn-secondary btn-sm" onclick="mcSyncPrices()">💲 Sync prices from receipts</button>
+    </div>
+    <div id="mc-sync-panel" style="display:none;margin-top:10px;border:1px solid #1a1a2e;border-radius:8px;padding:10px;background:#070712">
+      <div style="font-size:11px;color:#ccc;margin-bottom:6px">Proposed price updates from your most recent matching receipts (local, conservative match). Review and apply.</div>
+      <div style="max-height:220px;overflow-y:auto">
+        <table class="line-items-table">
+          <thead><tr><th style="width:6%"></th><th style="width:42%">Catalog item</th><th style="width:26%">Price</th><th style="width:26%">Matched receipt</th></tr></thead>
+          <tbody id="mc-sync-body"></tbody>
+        </table>
+      </div>
+      <div style="text-align:right;margin-top:8px">
+        <button class="btn-secondary btn-sm" onclick="document.getElementById('mc-sync-panel').style.display='none'">Cancel</button>
+        <button class="btn-primary btn-sm" onclick="mcApplySync()">Apply selected</button>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('materialsCatalogModal')">Close</button>
@@ -9356,6 +9377,9 @@ function openEstimatorSettings(){
     document.getElementById('set-admin').value=estimatorSettings.admin_fee_pct||0.05;
     document.getElementById('set-contingency').value=estimatorSettings.contingency_pct||0.10;
     document.getElementById('set-permit').value=estimatorSettings.permit_fee_default||350;
+    fetch('/api/ahb/invoice-settings').then(r=>r.json()).then(d=>{
+      document.getElementById('set-invoice-terms').value = d.terms_default || '';
+    }).catch(()=>{});
     document.getElementById('estSettingsModal').classList.add('open');
   });
 }
@@ -9374,6 +9398,7 @@ async function saveEstimatorSettings(){
   };
   try{
     await fetch('/api/ahb/estimator/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await fetch('/api/ahb/invoice-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({terms_default:document.getElementById('set-invoice-terms').value})});
     estimatorSettings={...estimatorSettings,...body};
     showToast('Settings saved');
     closeModal('estSettingsModal');
@@ -10539,6 +10564,40 @@ async function mcAddNew(){
     loadMaterialsCatalog().then(mcRender);
     showToast('Added '+name);
   } else showToast(d.error||'Add failed','error');
+}
+
+let _mcSyncProposals=[];
+async function mcSyncPrices(){
+  let proposals=[];
+  try{ proposals=await fetch('/api/ahb/estimator/material-price-sync').then(r=>r.json()); }catch(e){}
+  const panel=document.getElementById('mc-sync-panel');
+  if(!Array.isArray(proposals)||!proposals.length){
+    panel.style.display='none';
+    showToast('No receipt-based price changes found');
+    return;
+  }
+  _mcSyncProposals=proposals;
+  document.getElementById('mc-sync-body').innerHTML=proposals.map((p,i)=>`<tr>
+    <td style="text-align:center"><input type="checkbox" data-sync="${i}" checked></td>
+    <td>${escHtml(p.vendor)} — ${escHtml(p.name)}</td>
+    <td style="font-family:monospace">$${p.old_price} → <b style="color:#00d084">$${p.new_price}</b></td>
+    <td style="font-size:10px;color:#888">${escHtml((p.matched||'').slice(0,32))} (${escHtml(p.date||'')})</td>
+  </tr>`).join('');
+  panel.style.display='block';
+}
+async function mcApplySync(){
+  const updates=[];
+  document.querySelectorAll('#mc-sync-body input[data-sync]:checked').forEach(cb=>{
+    const p=_mcSyncProposals[parseInt(cb.dataset.sync)];
+    if(p) updates.push({id:p.id, new_price:p.new_price});
+  });
+  if(!updates.length){ showToast('Nothing selected','error'); return; }
+  const d=await fetch('/api/ahb/estimator/material-price-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})}).then(r=>r.json());
+  if(d.success){
+    showToast('Updated '+d.updated+' price'+(d.updated===1?'':'s'));
+    document.getElementById('mc-sync-panel').style.display='none';
+    loadMaterialsCatalog().then(mcRender);
+  } else showToast('Sync failed','error');
 }
 
 function m4PullFromInvoice(){

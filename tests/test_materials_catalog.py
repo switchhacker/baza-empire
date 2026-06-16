@@ -174,6 +174,58 @@ def test_suggest_drops_generic_placeholder_names(client, temp_ahb_db):
     assert "Item 1" not in names and "Line 2" not in names
 
 
+def test_price_sync_preview_proposes_from_matching_receipt(client, temp_ahb_db):
+    mid = client.post("/api/ahb/estimator/materials",
+                      json={"vendor": "Home Depot", "name": "2x4x8 Stud Special",
+                            "unit": "each", "unit_price": 3.00}).get_json()["id"]
+    _seed_receipt(temp_ahb_db, "r1", "The Home Depot",
+                  [{"name": "2X4X8 STUD SPECIAL -A-", "price": 4.25}], date="2026-05-01")
+    props = client.get("/api/ahb/estimator/material-price-sync").get_json()
+    p = [x for x in props if x["id"] == mid]
+    assert p, "expected a proposal for the matching catalog row"
+    assert p[0]["new_price"] == 4.25 and p[0]["old_price"] == 3.0
+
+
+def test_price_sync_skips_low_overlap(client, temp_ahb_db):
+    client.post("/api/ahb/estimator/materials",
+                json={"vendor": "Home Depot", "name": "Toilet Wax Ring Premium",
+                      "unit": "each", "unit_price": 4.48})
+    _seed_receipt(temp_ahb_db, "r1", "Home Depot", [{"name": "RING", "price": 99}])
+    props = client.get("/api/ahb/estimator/material-price-sync").get_json()
+    assert not any(x["name"] == "Toilet Wax Ring Premium" for x in props)
+
+
+def test_price_sync_skips_implausible_price_jump(client, temp_ahb_db):
+    # An ~18x jump is almost certainly a line-total / wrong-product match, not drift.
+    client.post("/api/ahb/estimator/materials",
+                json={"vendor": "Home Depot", "name": "Foo Bar Baz Widget",
+                      "unit": "each", "unit_price": 5.00})
+    _seed_receipt(temp_ahb_db, "r1", "Home Depot",
+                  [{"name": "FOO BAR BAZ WIDGET", "price": 99.00}])
+    props = client.get("/api/ahb/estimator/material-price-sync").get_json()
+    assert not any(x["name"] == "Foo Bar Baz Widget" for x in props)
+
+
+def test_price_sync_vendor_scoped(client, temp_ahb_db):
+    client.post("/api/ahb/estimator/materials",
+                json={"vendor": "Home Depot", "name": "Special Widget XYZ",
+                      "unit": "each", "unit_price": 2.00})
+    _seed_receipt(temp_ahb_db, "r1", "Lowe's", [{"name": "SPECIAL WIDGET XYZ", "price": 9.99}])
+    props = client.get("/api/ahb/estimator/material-price-sync").get_json()
+    assert not any(x["name"] == "Special Widget XYZ" for x in props)
+
+
+def test_price_sync_apply_updates_prices(client, temp_ahb_db):
+    mid = client.post("/api/ahb/estimator/materials",
+                      json={"vendor": "Home Depot", "name": "PVC Pipe Sync Test",
+                            "unit": "each", "unit_price": 5.00}).get_json()["id"]
+    r = client.post("/api/ahb/estimator/material-price-sync",
+                    json={"updates": [{"id": mid, "new_price": 8.50}]})
+    assert r.get_json()["updated"] == 1
+    rows = client.get("/api/ahb/estimator/materials").get_json()
+    assert any(x["id"] == mid and x["unit_price"] == 8.5 for x in rows)
+
+
 def test_suggest_tolerates_bad_items_json(client, temp_ahb_db):
     c = sqlite3.connect(temp_ahb_db)
     c.execute("INSERT INTO ahb_receipts (id,vendor,store_name,category,receipt_date,items_json) VALUES (?,?,?,?,?,?)",

@@ -14765,6 +14765,121 @@ def api_estimator_material_suggest():
     return jsonify(out)
 
 
+# Tokens too generic to carry matching signal between a clean catalog name and a
+# noisy OCR'd receipt line (units, packaging words, filler).
+_PRICE_SYNC_STOPWORDS = {
+    'the', 'and', 'for', 'with', 'each', 'set', 'kit', 'pack', 'box', 'roll',
+    'bag', 'gal', 'sheet', 'tube', 'bundle', 'sqft', 'lnft', 'lin', 'sq', 'ft',
+    'in', 'lb', 'oz', 'pk', 'ct', 'pc', 'pcs', 'piece', 'pieces', 'premium', 'pro',
+}
+
+
+def _norm_tokens(s):
+    toks = re.sub(r'[^a-z0-9]+', ' ', (s or '').lower()).split()
+    return {t for t in toks if len(t) >= 2 and t not in _PRICE_SYNC_STOPWORDS}
+
+
+def _price_sync_proposals(catalog_rows, receipt_rows):
+    """Match clean catalog names against noisy receipt item names by token
+    overlap, scoped to the same (loose) vendor. Conservative on purpose — only
+    proposes a change when >=2 tokens overlap and they cover >=60% of the
+    catalog name's tokens — so a bad OCR match can't silently rewrite a price.
+    Returns proposals; the caller reviews before applying."""
+    rcache = []
+    for r in receipt_rows:
+        toks = _norm_tokens(r.get('name'))
+        price = r.get('price') or 0
+        if toks and price > 0:
+            rcache.append((r.get('vendor') or '', toks, float(price),
+                           r.get('date') or '', r.get('name') or ''))
+    proposals = []
+    for c in catalog_rows:
+        ctoks = _norm_tokens(c.get('name'))
+        if len(ctoks) < 2:
+            continue
+        best = None
+        for (rv, rtoks, rprice, rdate, rname) in rcache:
+            if not _vendor_loose_match(c.get('vendor'), rv):
+                continue
+            inter = ctoks & rtoks
+            if len(inter) < 2:
+                continue
+            score = len(inter) / len(ctoks)
+            if score < 0.6:
+                continue
+            if best is None or rdate > best['date'] or (rdate == best['date'] and score > best['score']):
+                best = {'price': round(rprice, 2), 'date': rdate, 'score': score, 'name': rname}
+        if not best:
+            continue
+        old = round(float(c.get('unit_price') or 0), 2)
+        new = best['price']
+        # Plausibility guard: a receipt "price" is often a line-extended total
+        # (qty x unit) or a different token-sharing product, so big swings are
+        # almost always mismatches, not real drift. Skip jumps outside ~0.4x-2.5x
+        # of the current price (when there is a current price to compare).
+        if old > 0 and not (0.4 * old <= new <= 2.5 * old):
+            continue
+        if new > 0 and abs(new - old) >= max(0.01, old * 0.01):
+            proposals.append({
+                'id': c['id'], 'vendor': c.get('vendor') or '', 'name': c.get('name') or '',
+                'old_price': old, 'new_price': new, 'matched': best['name'],
+                'date': best['date'], 'score': round(best['score'], 2),
+            })
+    return proposals
+
+
+@app.route('/api/ahb/estimator/material-price-sync', methods=['GET', 'POST'])
+def api_estimator_material_price_sync():
+    """GET = preview proposed catalog price updates mined from receipts (no
+    writes). POST {updates:[{id,new_price}]} = apply the user-selected subset."""
+    conn = _ahb_db()
+    if request.method == 'POST':
+        d = request.get_json() or {}
+        n = 0
+        for u in (d.get('updates') or []):
+            try:
+                conn.execute("UPDATE ahb_materials_catalog SET unit_price=? WHERE id=?",
+                             (float(u['new_price']), int(u['id'])))
+                n += 1
+            except (ValueError, TypeError, KeyError):
+                continue
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'updated': n})
+    catalog = [dict(r) for r in conn.execute(
+        "SELECT id, vendor, name, unit_price FROM ahb_materials_catalog WHERE active=1").fetchall()]
+    try:
+        rrows = conn.execute("""
+            SELECT COALESCE(NULLIF(store_name,''), vendor) AS v, items_json, receipt_date
+            FROM ahb_receipts
+            WHERE category='Materials' AND items_json IS NOT NULL AND items_json != ''
+        """).fetchall()
+    except sqlite3.OperationalError:
+        rrows = []
+    conn.close()
+    receipts = []
+    for r in rrows:
+        try:
+            items = json.loads(r['items_json'] or '[]')
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(items, list):
+            continue
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            nm = str(it.get('name') or '').strip()
+            if len(nm) < 3:
+                continue
+            try:
+                pr = float(it.get('price') or 0)
+            except (ValueError, TypeError):
+                pr = 0.0
+            receipts.append({'vendor': (r['v'] or '').strip(), 'name': nm,
+                             'price': pr, 'date': r['receipt_date'] or ''})
+    return jsonify(_price_sync_proposals(catalog, receipts))
+
+
 # ── ahb123.com Static Site Server ───────────────────────────────────────────
 # Serves the static HTML/images at /site/* so you can preview the live site
 # locally and the embedded JS API calls run on the same origin (no CORS issues).
