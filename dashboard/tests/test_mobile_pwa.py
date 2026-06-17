@@ -62,3 +62,5 @@ def test_nav_injects_pwa_and_desktop_scaling(client):
     assert "serviceWorker.register('/sw.js'" in html
     # Mobile-only true-desktop scaling:
     assert "width=1280" in html
+    # Mobile-only safe-area offset keeps the sticky nav clear of the notch/camera:
+    assert "safe-area-inset-top" in html

@@ -129,7 +129,9 @@ document.querySelectorAll("[data-fluid-link]").forEach(a => {
   ensure('link[rel="manifest"]', function(){ return el('link', {rel:'manifest', href:'/mobile/manifest.json'}); });
   ensure('meta[name="apple-mobile-web-app-capable"]', function(){ return el('meta', {name:'apple-mobile-web-app-capable', content:'yes'}); });
   ensure('meta[name="mobile-web-app-capable"]', function(){ return el('meta', {name:'mobile-web-app-capable', content:'yes'}); });
-  ensure('meta[name="apple-mobile-web-app-status-bar-style"]', function(){ return el('meta', {name:'apple-mobile-web-app-status-bar-style', content:'black-translucent'}); });
+  // 'black' (NOT black-translucent) so iOS reserves the status-bar area and the
+  // page begins BELOW it, instead of drawing underneath the clock/camera.
+  ensure('meta[name="apple-mobile-web-app-status-bar-style"]', function(){ return el('meta', {name:'apple-mobile-web-app-status-bar-style', content:'black'}); });
   ensure('meta[name="apple-mobile-web-app-title"]', function(){ return el('meta', {name:'apple-mobile-web-app-title', content:'Baza'}); });
   ensure('meta[name="theme-color"]', function(){ return el('meta', {name:'theme-color', content:'#07070f'}); });
   ensure('link[rel="apple-touch-icon"]', function(){ return el('link', {rel:'apple-touch-icon', href:'/static/img/ahb_logo.jpeg'}); });
@@ -140,7 +142,17 @@ document.querySelectorAll("[data-fluid-link]").forEach(a => {
     var scale = Math.max(0.1, dw / 1280);
     var vp = head.querySelector('meta[name="viewport"]');
     if (!vp) { vp = el('meta', {name:'viewport'}); head.appendChild(vp); }
-    vp.setAttribute('content', 'width=1280, initial-scale=' + scale.toFixed(4) + ', user-scalable=yes, viewport-fit=cover');
+    // No viewport-fit=cover: let the browser keep content within the safe area
+    // so the page starts below the status bar / notch instead of under it.
+    vp.setAttribute('content', 'width=1280, initial-scale=' + scale.toFixed(4) + ', user-scalable=yes');
+    // Belt-and-suspenders: also offset the sticky nav and page top by the
+    // safe-area inset (+ a little breathing room) for notch/landscape cases.
+    ensure('style[data-baza-safe-area]', function(){
+      var s = el('style', {'data-baza-safe-area':''});
+      s.textContent = '.nav{top:calc(env(safe-area-inset-top) + 6px)!important}'
+                    + 'body{padding-top:calc(env(safe-area-inset-top) + 6px)!important}';
+      return s;
+    });
   }
 
   // --- Service worker: satisfies install criteria + speeds cold loads ---
