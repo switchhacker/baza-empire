@@ -336,25 +336,76 @@ def _all_accounts() -> list:
         con.close()
 
 
+class _LazyGmail:
+    """Defers building the real Gmail service until first attribute access, so a
+    cache-hit hydration (which never touches the service) builds nothing."""
+    __slots__ = ("_aid", "_svc")
+
+    def __init__(self, aid):
+        self._aid = aid
+        self._svc = None
+
+    def __getattr__(self, name):
+        # Only reached for attributes not in __slots__ (e.g. .users()).
+        if self._svc is None:
+            self._svc = _gmail(self._aid)
+        return getattr(self._svc, name)
+
+
 def _threads_all(limit: int, q: str):
-    """Fetch threads from every account, merge, sort descending by received_at."""
+    """Fetch threads from every account, merge, sort descending by received_at.
+
+    Fetched concurrently in two bounded phases: (1) list thread stubs per
+    account, (2) hydrate every stub. Each task builds its OWN Gmail service and
+    opens its OWN sqlite connection — never sharing a connection across threads
+    (a shared httplib2/OpenSSL socket is not thread-safe and was the cause of
+    the [SSL: WRONG_VERSION_NUMBER] error). _gmail() is cheap now
+    (static_discovery, no network), so per-task construction is fine.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    accounts = _all_accounts()
+    if not accounts:
+        return jsonify({"threads": [], "next_page_token": None})
+
+    def _list_account(acc):
+        """List thread stubs for one account; returns [(acc, stub), ...]."""
+        try:
+            svc = _gmail(acc["id"])
+            kwargs = {"userId": "me", "maxResults": limit, "labelIds": ["INBOX"]}
+            if q:
+                kwargs["q"] = q
+            resp = svc.users().threads().list(**kwargs).execute()
+            return [(acc, t) for t in (resp.get("threads", []) or [])]
+        except Exception as e:
+            print(f"[email] ALL-inbox list failed for {acc.get('email')}: {e}", flush=True)
+            return []
+
+    def _fetch_one(acc, t):
+        """Hydrate one stub with its own connection (thread-safe). The Gmail
+        service is built lazily — a cache hit never builds one (avoids a
+        needless last_used UPDATE+commit per cached thread)."""
+        con = _conn()
+        try:
+            return _hydrate_thread(_LazyGmail(acc["id"]), con, t, acc["id"], acc["email"])
+        finally:
+            con.close()
+
+    # Phase 1 — list every account concurrently.
+    with ThreadPoolExecutor(max_workers=min(8, len(accounts))) as ex:
+        stubs = [pair for sub in ex.map(_list_account, accounts) for pair in sub]
+
+    # Phase 2 — hydrate every stub concurrently (cache hit = db read, miss = gmail get).
     merged = []
-    con = _conn()
-    try:
-        for acc in _all_accounts():
-            try:
-                svc = _gmail(acc["id"])
-                kwargs = {"userId": "me", "maxResults": limit, "labelIds": ["INBOX"]}
-                if q:
-                    kwargs["q"] = q
-                resp = svc.users().threads().list(**kwargs).execute()
-                for t in resp.get("threads", []) or []:
-                    merged.append(_hydrate_thread(svc, con, t, acc["id"], acc["email"]))
-            except Exception as e:
-                print(f"[email] ALL-inbox fetch failed for {acc.get('email')}: {e}", flush=True)
-                continue
-    finally:
-        con.close()
+    if stubs:
+        with ThreadPoolExecutor(max_workers=min(12, len(stubs))) as ex:
+            futures = [ex.submit(_fetch_one, acc, t) for acc, t in stubs]
+            for fut in as_completed(futures):
+                try:
+                    merged.append(fut.result())
+                except Exception as e:
+                    print(f"[email] ALL-inbox hydrate failed: {e}", flush=True)
+
     merged.sort(key=lambda x: x.get("received_at") or "", reverse=True)
     return jsonify({"threads": merged[:limit], "next_page_token": None})
 
