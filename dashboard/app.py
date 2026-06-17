@@ -5416,6 +5416,14 @@ def ahb123_page(tab='dashboard'):
 
 @app.route('/mobile')
 def mobile_page():
+    # The mobile PWA now IS the full desktop dashboard. Send installs/links to
+    # the desktop root; _nav.html scales it to fit on phones and keeps it
+    # installable/standalone. The old curated mobile app lives at /mobile-classic.
+    return redirect('/')
+
+
+@app.route('/mobile-classic')
+def mobile_classic_page():
     resp = make_response(render_template('mobile.html'))
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
@@ -5427,7 +5435,7 @@ def mobile_manifest():
     manifest = {
         "name": "Baza Empire",
         "short_name": "Baza",
-        "start_url": "/mobile",
+        "start_url": "/",
         "scope": "/",
         "display": "standalone",
         "background_color": "#07070f",

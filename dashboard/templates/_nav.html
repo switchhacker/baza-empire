@@ -114,3 +114,40 @@ document.querySelectorAll("[data-fluid-link]").forEach(a => {
   else init();
 })();
 </script>
+<script>
+/* PWA-everywhere + true-desktop-on-mobile.
+   _nav.html is included by every desktop dashboard page, so this single block
+   makes the whole dashboard installable/standalone and, on phones, renders the
+   real desktop layout scaled to fit (pinch-zoomable). Desktop browsers (wide
+   viewport) are left exactly as they were. */
+(function(){
+  var head = document.head;
+  function el(tag, attrs){ var e = document.createElement(tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function ensure(sel, make){ if (!head.querySelector(sel)) head.appendChild(make()); }
+
+  // --- Installable PWA head tags (idempotent; copied from the old mobile.html) ---
+  ensure('link[rel="manifest"]', function(){ return el('link', {rel:'manifest', href:'/mobile/manifest.json'}); });
+  ensure('meta[name="apple-mobile-web-app-capable"]', function(){ return el('meta', {name:'apple-mobile-web-app-capable', content:'yes'}); });
+  ensure('meta[name="mobile-web-app-capable"]', function(){ return el('meta', {name:'mobile-web-app-capable', content:'yes'}); });
+  ensure('meta[name="apple-mobile-web-app-status-bar-style"]', function(){ return el('meta', {name:'apple-mobile-web-app-status-bar-style', content:'black-translucent'}); });
+  ensure('meta[name="apple-mobile-web-app-title"]', function(){ return el('meta', {name:'apple-mobile-web-app-title', content:'Baza'}); });
+  ensure('meta[name="theme-color"]', function(){ return el('meta', {name:'theme-color', content:'#07070f'}); });
+  ensure('link[rel="apple-touch-icon"]', function(){ return el('link', {rel:'apple-touch-icon', href:'/static/img/ahb_logo.jpeg'}); });
+
+  // --- Mobile only: render the full desktop at a fixed 1280px width, scaled to fit ---
+  if (window.innerWidth && window.innerWidth < 1024) {
+    var dw = window.innerWidth;                       // device CSS width before we change the viewport
+    var scale = Math.max(0.1, dw / 1280);
+    var vp = head.querySelector('meta[name="viewport"]');
+    if (!vp) { vp = el('meta', {name:'viewport'}); head.appendChild(vp); }
+    vp.setAttribute('content', 'width=1280, initial-scale=' + scale.toFixed(4) + ', user-scalable=yes, viewport-fit=cover');
+  }
+
+  // --- Service worker: satisfies install criteria + speeds cold loads ---
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(){});
+    });
+  }
+})();
+</script>
