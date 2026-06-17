@@ -4610,7 +4610,7 @@
             </div>
             <div style="font-size:9px;color:#555;margin-top:4px">This description and scope are sent to the estimator and saved with the quote for reference.</div>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px">
             <button class="est-method-btn pd-est-method active" data-m="1" onclick="pdSwitchEstMethod(1)" style="padding:10px">
               <div style="font-size:18px">⏱</div>
               <div style="font-size:11px;font-weight:800;margin-top:4px">Time × Crew</div>
@@ -4626,6 +4626,10 @@
             <button class="est-method-btn pd-est-method" data-m="4" onclick="pdSwitchEstMethod(4)" style="padding:10px">
               <div style="font-size:18px">🛠</div>
               <div style="font-size:11px;font-weight:800;margin-top:4px">Custom Pricing</div>
+            </button>
+            <button class="est-method-btn pd-est-method" data-m="5" onclick="pdSwitchEstMethod(5)" style="padding:10px">
+              <div style="font-size:18px">📐</div>
+              <div style="font-size:11px;font-weight:800;margin-top:4px">Unit Cost</div>
             </button>
           </div>
           <!-- Method 1: Time × Crew -->
@@ -4667,7 +4671,36 @@
                 <span style="width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px">1</span>
                 Material Cost <span style="margin-left:auto;color:#00d084;font-family:monospace" id="pd-m4-mat-total">$0.00</span>
               </div>
-              <input id="pd-m4-mat-cost" type="number" min="0" step="0.01" value="0" placeholder="Materials $" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace" oninput="recalcPdM4()">
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <button type="button" class="m4-tab active" data-pdmat="lump" onclick="pdM4MatMode('lump')">✎ Lump Sum</button>
+                <button type="button" class="m4-tab" data-pdmat="items" onclick="pdM4MatMode('items')">📋 Itemized</button>
+              </div>
+              <div id="pd-m4-mat-lump-row">
+                <input id="pd-m4-mat-cost" type="number" min="0" step="0.01" value="0" placeholder="Materials $" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace" oninput="recalcPdM4()">
+              </div>
+              <div id="pd-m4-mat-items-row" style="display:none">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
+                  <select id="pd-m4-mat-vendor" onchange="pdOnMatVendorChange()" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px"><option value="">All vendors</option></select>
+                  <select id="pd-m4-mat-category" onchange="pdOnMatCategoryChange()" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px"><option value="">All categories</option></select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 64px 52px 46px;gap:5px;margin-bottom:5px;align-items:end">
+                  <div>
+                    <input id="pd-m4-mat-pick" list="pd-m4-mat-datalist" placeholder="Search catalog ★ / receipts 🧾" oninput="pdM4MatPickChanged()" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px">
+                    <datalist id="pd-m4-mat-datalist"></datalist>
+                  </div>
+                  <input id="pd-m4-mat-pick-price" type="number" min="0" step="0.01" placeholder="Unit $" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace">
+                  <input id="pd-m4-mat-pick-qty" type="number" min="0" step="0.5" value="1" placeholder="Qty" style="background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:6px;color:#e0e0e0;font-size:11px;font-family:monospace">
+                  <button type="button" class="btn btn-sm btn-primary" style="padding:6px" onclick="pdM4AddMaterialFromPicker()">+ Add</button>
+                </div>
+                <div style="display:flex;justify-content:space-between;gap:6px;margin-bottom:5px">
+                  <button type="button" class="btn btn-sm btn-secondary" style="font-size:10px;padding:4px 8px" onclick="pdM4SaveMatPickToCatalog()">📌 Save to catalog</button>
+                  <button type="button" class="btn btn-sm btn-secondary" style="font-size:10px;padding:4px 8px" onclick="openMaterialsCatalogModal()">🧱 Manage Catalog</button>
+                </div>
+                <table id="pd-m4-mat-table" class="line-items-table" style="margin-bottom:0;font-size:11px">
+                  <thead><tr><th style="width:48%">Material</th><th style="width:16%">Qty</th><th style="width:20%">Unit $</th><th style="width:13%">Total</th><th style="width:3%"></th></tr></thead>
+                  <tbody id="pd-m4-mat-tbody"><tr id="pd-m4-mat-empty"><td colspan="5" style="text-align:center;color:#444;padding:10px;font-size:10px">No materials yet — search above and click + Add.</td></tr></tbody>
+                </table>
+              </div>
             </div>
 
             <!-- 2. Labor -->
@@ -4767,6 +4800,51 @@
             </div>
 
             <button class="btn btn-sm btn-primary" style="width:100%" onclick="pdRunMethod(4)">💾 Save Custom Quote</button>
+          </div>
+          <!-- Method 5: Unit Cost (cost book) -->
+          <div class="pd-est-pane" id="pd-est-pane-5" style="display:none">
+            <div style="background:#0a1a2a;border:1px solid #1a3a5a;border-radius:6px;padding:9px;margin-bottom:10px;font-size:10px;color:#aaa">📐 Qty × cost-book rate. Pick a scope that has a cost-book entry, enter quantity, quality tier and site condition — instant low/mid/high range, no LLM.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:10px;color:#666">Scope (cost book)</label>
+                <select id="pd-m5-scope" onchange="pdM5UpdateUnitHint()" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px">
+                  <option value="kitchen">Kitchen Remodel</option>
+                  <option value="bathroom">Bathroom Remodel</option>
+                  <option value="addition">Addition</option>
+                  <option value="basement">Basement Finish</option>
+                  <option value="deck">Deck Build</option>
+                  <option value="full-reno">Full Renovation</option>
+                  <option value="roofing">Roofing</option>
+                  <option value="flooring">Flooring</option>
+                  <option value="painting">Painting</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:10px;color:#666">Quantity <span id="pd-m5-unit-hint" style="color:#4da6ff">(sqft)</span></label>
+                <input id="pd-m5-qty" type="number" min="0" step="1" placeholder="200" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px;font-family:monospace">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+              <div>
+                <label style="font-size:10px;color:#666">Quality Tier</label>
+                <select id="pd-m5-tier" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px">
+                  <option value="low">Economy</option>
+                  <option value="mid" selected>Standard</option>
+                  <option value="high">Premium</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size:10px;color:#666">Site Condition</label>
+                <select id="pd-m5-mult" style="width:100%;background:#0a0a16;border:1px solid #2a2a4a;border-radius:5px;padding:7px;color:#e0e0e0;font-size:12px">
+                  <option value="0.9">Easy (×0.9)</option>
+                  <option value="1.0" selected>Normal (×1.0)</option>
+                  <option value="1.15">Tight (×1.15)</option>
+                  <option value="1.3">Difficult (×1.3)</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-primary" style="width:100%" onclick="pdRunMethod(5)">📐 Calculate Unit-Cost Estimate</button>
           </div>
           <div id="pd-est-results" style="margin-top:12px"></div>
         </div>
@@ -10684,8 +10762,30 @@ function pdToggleQuoteEstimator(){
 
 function pdSwitchEstMethod(m){
   document.querySelectorAll('.pd-est-method').forEach(b=>b.classList.toggle('active', String(b.dataset.m)===String(m)));
-  [1,2,3,4].forEach(i=>{const el=document.getElementById('pd-est-pane-'+i); if(el) el.style.display=(i===m?'block':'none');});
+  [1,2,3,4,5].forEach(i=>{const el=document.getElementById('pd-est-pane-'+i); if(el) el.style.display=(i===m?'block':'none');});
   if(m===4){ pdM4Init(); }
+  if(m===5){ pdM5Init(); }
+}
+
+/* ===== Project-detail Method 5: Unit Cost (cost book) ===== */
+let pdM5InitDone=false;
+function pdM5Init(){
+  // On first open, try to preselect the scope from the project's free-text scope.
+  if(!pdM5InitDone){
+    const sc=((document.getElementById('pd-quote-scope')||{}).value||'').toLowerCase();
+    const sel=document.getElementById('pd-m5-scope');
+    if(sel && sc){
+      for(const opt of sel.options){ if(opt.value!=='other' && sc.includes(opt.value)){ sel.value=opt.value; break; } }
+    }
+    pdM5InitDone=true;
+  }
+  loadCostBook().then(pdM5UpdateUnitHint);
+}
+function pdM5UpdateUnitHint(){
+  const scope=(document.getElementById('pd-m5-scope')||{}).value||'';
+  const row=(costBook||[]).find(c=>c.scope===scope);
+  const hint=document.getElementById('pd-m5-unit-hint');
+  if(hint) hint.textContent='('+(row?(row.unit||'sqft'):'sqft — no cost-book entry yet')+')';
 }
 
 /* ===== Project-detail Method 4: Custom Pricing (mini build-up) ===== */
@@ -10829,6 +10929,152 @@ function pdM4RemoveRental(i){
   pdM4RenderRentals();
 }
 
+/* ===== Project-detail Method 4: itemized materials picker ===== */
+let pdM4MatModeVal='lump';   // 'lump' | 'items'
+let pdM4MatRows=[];          // [{name,qty,rate}]
+let pdM4MatPickIndex={};     // datalist label -> {name,price,vendor,unit,category,source,id}
+let pdM4MatSuggestTimer=null;
+let pdMatLoaded=false;
+
+async function pdEnsureMaterials(){
+  if(!pdMatLoaded || !MAT_CATALOG.length){
+    try{ const rows=await fetch('/api/ahb/estimator/materials').then(r=>r.json()); if(Array.isArray(rows)) MAT_CATALOG=rows; }catch(e){}
+    pdMatLoaded=true;
+  }
+  pdPopulateMatVendors(); pdPopulateMatCategories(); pdBuildMatDatalist([]);
+}
+function pdPopulateMatVendors(){
+  const sel=document.getElementById('pd-m4-mat-vendor'); if(!sel) return;
+  const cur=sel.value; const set=new Set(DEFAULT_MAT_VENDORS);
+  MAT_CATALOG.forEach(r=>{ if(r.vendor) set.add(r.vendor); });
+  sel.innerHTML='<option value="">All vendors</option>'+[...set].sort().map(v=>`<option>${escHtml(v)}</option>`).join('');
+  sel.value=cur;
+}
+function pdPopulateMatCategories(){
+  const sel=document.getElementById('pd-m4-mat-category'); if(!sel) return;
+  const cur=sel.value; const set=new Set();
+  MAT_CATALOG.forEach(r=>{ if(r.category) set.add(r.category); });
+  sel.innerHTML='<option value="">All categories</option>'+[...set].sort().map(c=>`<option>${escHtml(c)}</option>`).join('');
+  sel.value=cur;
+}
+function pdBuildMatDatalist(receiptSugs){
+  const dl=document.getElementById('pd-m4-mat-datalist'); if(!dl) return;
+  const vendor=(document.getElementById('pd-m4-mat-vendor')||{}).value||'';
+  const category=(document.getElementById('pd-m4-mat-category')||{}).value||'';
+  pdM4MatPickIndex={}; const opts=[];
+  MAT_CATALOG.filter(r=>(!vendor||r.vendor===vendor)&&(!category||r.category===category)).forEach(r=>{
+    const tag=r.category?` [${r.category}]`:'';
+    const label='★ '+r.name+(r.vendor?` — ${r.vendor}`:'')+tag+`  ($${(r.unit_price||0)})`;
+    pdM4MatPickIndex[label]={name:r.name, price:r.unit_price||0, vendor:r.vendor||'', unit:r.unit||'each', category:r.category||'', source:'catalog', id:r.id};
+    opts.push(label);
+  });
+  if(!category){
+    (receiptSugs||[]).forEach(s=>{
+      const label='🧾 '+s.name+(s.vendor?` — ${s.vendor}`:'')+`  ($${(s.last_price||0)})`;
+      if(pdM4MatPickIndex[label]) return;
+      pdM4MatPickIndex[label]={name:s.name, price:s.last_price||0, vendor:s.vendor||'', unit:'each', category:'', source:'receipt'};
+      opts.push(label);
+    });
+  }
+  dl.innerHTML=opts.map(o=>`<option value="${escHtml(o)}"></option>`).join('');
+}
+function pdM4FetchMatSuggest(){
+  clearTimeout(pdM4MatSuggestTimer);
+  pdM4MatSuggestTimer=setTimeout(async()=>{
+    const vendor=(document.getElementById('pd-m4-mat-vendor')||{}).value||'';
+    const q=(document.getElementById('pd-m4-mat-pick')||{}).value||'';
+    try{
+      const url='/api/ahb/estimator/material-suggest?vendor='+encodeURIComponent(vendor)+'&q='+encodeURIComponent(q.trim());
+      const sugs=await fetch(url).then(r=>r.json());
+      pdBuildMatDatalist(Array.isArray(sugs)?sugs:[]);
+    }catch(e){ pdBuildMatDatalist([]); }
+  },220);
+}
+function pdOnMatVendorChange(){ pdBuildMatDatalist([]); pdM4FetchMatSuggest(); }
+function pdOnMatCategoryChange(){ pdBuildMatDatalist([]); pdM4FetchMatSuggest(); }
+function pdM4MatPickChanged(){
+  const inp=document.getElementById('pd-m4-mat-pick');
+  const hit=pdM4MatPickIndex[inp.value];
+  if(hit) document.getElementById('pd-m4-mat-pick-price').value=hit.price||0;
+  pdM4FetchMatSuggest();
+}
+function pdM4MatMode(mode){
+  pdM4MatModeVal=(mode==='items'?'items':'lump');
+  document.querySelectorAll('#pd-est-pane-4 .m4-tab[data-pdmat="lump"],#pd-est-pane-4 .m4-tab[data-pdmat="items"]').forEach(b=>b.classList.toggle('active', b.dataset.pdmat===pdM4MatModeVal));
+  document.getElementById('pd-m4-mat-lump-row').style.display=(pdM4MatModeVal==='lump'?'block':'none');
+  document.getElementById('pd-m4-mat-items-row').style.display=(pdM4MatModeVal==='items'?'block':'none');
+  if(pdM4MatModeVal==='items') pdEnsureMaterials();
+  recalcPdM4();
+}
+function pdM4AddMaterialFromPicker(){
+  const inp=document.getElementById('pd-m4-mat-pick');
+  const label=(inp.value||'').trim();
+  const vendor=(document.getElementById('pd-m4-mat-vendor')||{}).value||'';
+  let price=parseFloat(document.getElementById('pd-m4-mat-pick-price').value)||0;
+  const qty=parseFloat(document.getElementById('pd-m4-mat-pick-qty').value)||0;
+  if(!label){ showToast('Pick or type a material','error'); return; }
+  if(!qty){ showToast('Enter a qty','error'); return; }
+  const hit=pdM4MatPickIndex[label];
+  let name=hit?hit.name:label;
+  name=name.replace(/^[★🧾]\s*/,'').replace(/\s+—\s+.*\(\$[0-9.]*\)$/,'');
+  const vlabel=vendor||(hit&&hit.vendor)||'';
+  if(hit && !price) price=hit.price||0;
+  pdM4MatRows.push({name:name+(vlabel?` (${vlabel})`:''), qty, rate:price});
+  pdM4MatModeVal='items';
+  pdM4RenderMaterials();
+  inp.value=''; document.getElementById('pd-m4-mat-pick-price').value=''; document.getElementById('pd-m4-mat-pick-qty').value='1'; inp.focus();
+}
+async function pdM4SaveMatPickToCatalog(){
+  const inp=document.getElementById('pd-m4-mat-pick');
+  const label=(inp.value||'').trim();
+  if(!label){ showToast('Pick or type a material first','error'); return; }
+  const hit=pdM4MatPickIndex[label];
+  const vendor=(document.getElementById('pd-m4-mat-vendor')||{}).value || (hit&&hit.vendor) || '';
+  let name=hit?hit.name:label;
+  name=name.replace(/^[★🧾]\s*/,'').replace(/\s+—\s+.*\(\$[0-9.]*\)$/,'');
+  const price=parseFloat(document.getElementById('pd-m4-mat-pick-price').value)||(hit&&hit.price)||0;
+  const category=(hit&&hit.category)||(document.getElementById('pd-m4-mat-category')||{}).value||'';
+  const d=await fetch('/api/ahb/estimator/materials',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({vendor, name, unit:(hit&&hit.unit)||'each', unit_price:price, category})}).then(r=>r.json());
+  if(d.success){ showToast('Saved to catalog: '+name); pdMatLoaded=false; pdEnsureMaterials(); }
+  else showToast(d.error||'Save failed','error');
+}
+function pdM4RenderMaterials(){
+  const tb=document.getElementById('pd-m4-mat-tbody');
+  if(!pdM4MatRows.length){
+    tb.innerHTML='<tr id="pd-m4-mat-empty"><td colspan="5" style="text-align:center;color:#444;padding:10px;font-size:10px">No materials yet — search above and click + Add.</td></tr>';
+  } else {
+    tb.innerHTML=pdM4MatRows.map((r,i)=>{
+      const total=(parseFloat(r.rate)||0)*(parseFloat(r.qty)||0);
+      return `<tr>
+        <td><input type="text" value="${escHtml(r.name||'')}" oninput="pdM4UpdateMaterial(${i},'name',this.value)" style="width:100%"></td>
+        <td><input type="number" min="0" step="0.5" value="${r.qty}" oninput="pdM4UpdateMaterial(${i},'qty',this.value)" style="width:100%"></td>
+        <td><input type="number" min="0" step="0.01" value="${r.rate}" oninput="pdM4UpdateMaterial(${i},'rate',this.value)" style="width:100%"></td>
+        <td style="text-align:right;color:#00d084;font-weight:600;font-family:monospace">${fmtCurrency(total)}</td>
+        <td><button class="btn-icon del" onclick="pdM4RemoveMaterial(${i})">&#10005;</button></td>
+      </tr>`;
+    }).join('');
+  }
+  recalcPdM4();
+}
+function pdM4UpdateMaterial(i,field,val){
+  if(!pdM4MatRows[i])return;
+  if(field==='rate'||field==='qty') val=parseFloat(val)||0;
+  pdM4MatRows[i][field]=val;
+  const total=(parseFloat(pdM4MatRows[i].rate)||0)*(parseFloat(pdM4MatRows[i].qty)||0);
+  const tr=document.querySelectorAll('#pd-m4-mat-tbody tr')[i];
+  if(tr && tr.children[3]) tr.children[3].textContent=fmtCurrency(total);
+  recalcPdM4();
+}
+function pdM4RemoveMaterial(i){
+  pdM4MatRows.splice(i,1);
+  pdM4RenderMaterials();
+}
+function pdM4GetMaterialsTotal(){
+  if(pdM4MatModeVal==='items') return pdM4MatRows.reduce((a,r)=>a+((parseFloat(r.rate)||0)*(parseFloat(r.qty)||0)),0);
+  return parseFloat((document.getElementById('pd-m4-mat-cost')||{}).value)||0;
+}
+
 function recalcPdM4Labor(){
   const days=parseFloat(document.getElementById('pd-m4-lab-days').value)||0;
   const leads=parseFloat(document.getElementById('pd-m4-lab-leads').value)||0;
@@ -10848,7 +11094,7 @@ function pdM4GetLabor(){
 }
 
 function recalcPdM4(){
-  const mat=parseFloat(document.getElementById('pd-m4-mat-cost').value)||0;
+  const mat=pdM4GetMaterialsTotal();
   const lab=pdM4GetLabor();
   const eq=pdM4RentalRows.reduce((a,r)=>a+((parseFloat(r.rate)||0)*(parseFloat(r.qty)||0)),0);
   const direct=mat+lab+eq;
@@ -11165,6 +11411,45 @@ async function pdRunMethod(m){
     }
     det.innerHTML=rows.join('');
     window._pdLastQuote={total:b.total,method:'custom',breakdown,scope:qScope,description:qDesc};
+    return;
+  }
+
+  // Method 5 (Unit-Cost DB) — cost-book lookup; renders range + save buttons.
+  if(m===5){
+    const scope=(document.getElementById('pd-m5-scope')||{}).value||'';
+    const qty=parseFloat(document.getElementById('pd-m5-qty').value)||0;
+    const tier=document.getElementById('pd-m5-tier').value;
+    const mult=parseFloat(document.getElementById('pd-m5-mult').value)||1;
+    if(!qty){showToast('Enter a quantity','error');return;}
+    out.innerHTML='<div style="text-align:center;padding:20px;color:#666">Calculating…</div>';
+    try{
+      const r=await fetch('/api/ahb/estimator/method5',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope,qty,tier,multiplier:mult})});
+      const d=await r.json();
+      if(d.success===false){out.innerHTML='<div style="color:#ff6b6b;padding:12px">'+escHtml(d.error||'Failed')+'</div>';return;}
+      const t=d.totals;
+      const total=d.selected_total;
+      const breakdown={low:t.low, mid:t.mid, high:t.high, qty:d.qty, unit_rate:d.rates[tier]*mult, multiplier:mult, total};
+      const card=(lbl,val,sel,color)=>`<div style="background:${sel?'#0a1a2a':'#070712'};border:${sel?'2px solid #4da6ff':'1px solid #1a1a2e'};border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:9px;color:${color};font-weight:800;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">${lbl}${sel?' ⭐':''}</div>
+          <div style="font-size:${sel?'19':'15'}px;font-weight:800;color:${color}">${fmtCurrency(val)}</div>
+        </div>`;
+      out.innerHTML=`<div style="background:#0a0a16;border:1px solid #00d084;border-radius:10px;padding:14px">
+        <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">📐 ${escHtml(d.label||scope)} · ${d.qty} ${d.unit} · ×${mult} condition</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+          ${card('Economy',t.low,tier==='low','#00d084')}
+          ${card('Standard',t.mid,tier==='mid','#4da6ff')}
+          ${card('Premium',t.high,tier==='high','#f5a623')}
+        </div>
+        <div style="font-size:10px;color:#666;margin-bottom:10px">Cost-book rates: ${fmtCurrency(d.rates.low)} / ${fmtCurrency(d.rates.mid)} / ${fmtCurrency(d.rates.high)} per ${d.unit}${d.notes?' · '+escHtml(d.notes):''}</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm btn-primary" style="flex:1" onclick="pdSaveQuote(${total},'unit_cost',true)">💾 Save as ACTIVE Quote</button>
+          <button class="btn btn-sm btn-secondary" onclick="pdSaveQuote(${total},'unit_cost',false)">Save (not active)</button>
+        </div>
+      </div>`;
+      window._pdLastQuote={total,method:'unit_cost',breakdown,scope:qScope,description:qDesc};
+    }catch(e){
+      out.innerHTML='<div style="color:#ff6b6b;padding:12px">Error: '+escHtml(e.message)+'</div>';
+    }
     return;
   }
 
