@@ -15,7 +15,7 @@
     "baza-image-indexer.service": "dead",
     "baza-litellm.service": "running",
     "baza-route-watchdog.service": "dead",
-    "baza-scaffold-runner.service": "start",
+    "baza-scaffold-runner.service": "dead",
     "baza-sd-webui.service": "running",
     "baza-task-runner.service": "dead",
     "baza-terminal-bot.service": "running",
