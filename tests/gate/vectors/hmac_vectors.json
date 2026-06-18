@@ -1,0 +1,20 @@
+{
+  "secret": "baza-gate-test-vector-secret",
+  "cases": [
+    {
+      "nonce": "00000000000000000000000000000000",
+      "action": "OPEN",
+      "token": "192ef0cf393cf305543a389944390f6e1fcc5af90c9e001ce6780a48ef4639ba"
+    },
+    {
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "action": "OPEN",
+      "token": "2870cb5e83bef63010ea1ad6272d5a098cf639ce9bb0b535d7fa9a92444e2b59"
+    },
+    {
+      "nonce": "ffffffffffffffffffffffffffffffff",
+      "action": "ARM",
+      "token": "d29b1535e6c93b7b154906b98e63efea21c5f31ca09db10391fdeba91d6cb99a"
+    }
+  ]
+}
