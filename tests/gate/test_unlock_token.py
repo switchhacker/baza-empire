@@ -1,4 +1,7 @@
+import json
 import os
+from pathlib import Path
+
 import pytest
 from gate import unlock_token
 
@@ -51,8 +54,13 @@ def test_new_nonce_is_unique_hex():
     assert len(n1) == 32 and int(n1, 16) >= 0  # 16 bytes hex, valid hex
 
 
-import json
-from pathlib import Path
+def test_verify_returns_false_for_none_nonce():
+    assert unlock_token.verify(None, "deadbeef" * 8) is False
+
+
+def test_verify_returns_false_for_none_token():
+    assert unlock_token.verify("aabbcc", None) is False
+
 
 VECTORS = Path(__file__).parent / "vectors" / "hmac_vectors.json"
 

@@ -19,7 +19,11 @@ def _secret() -> bytes:
 
 
 def new_nonce() -> str:
-    """16 random bytes as lowercase hex (host-side helper; the R3 makes its own)."""
+    """Return 16 cryptographically-random bytes as lowercase hex (32 chars).
+
+    In production the R3 generates the nonce and sends it in the challenge;
+    this helper exists for host-side tests and tooling.
+    """
     return secrets.token_hex(16)
 
 
@@ -30,7 +34,13 @@ def sign(nonce_hex: str, action: str = "OPEN") -> str:
 
 
 def verify(nonce_hex: str, token_hex: str, action: str = "OPEN") -> bool:
-    """Constant-time check that token_hex is the valid signature for the nonce."""
+    """Constant-time check that token_hex is the valid signature for the nonce.
+
+    Returns False (never raises) for any malformed input — this guards a
+    door-open code path, so a bad/typed packet must deny, not crash.
+    """
+    if not isinstance(nonce_hex, str) or not isinstance(token_hex, str):
+        return False
     try:
         expected = sign(nonce_hex, action)
     except ValueError:

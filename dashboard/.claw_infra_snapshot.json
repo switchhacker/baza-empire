@@ -77,6 +77,7 @@
     "docs",
     "email-pipeline",
     "firmware",
+    "gate",
     "scripts",
     "skills",
     "systemd",
