@@ -11,7 +11,7 @@
     "baza-backup.service": "dead",
     "baza-dashboard.service": "running",
     "baza-email-fetch.service": "dead",
-    "baza-email-summarize.service": "dead",
+    "baza-email-summarize.service": "start",
     "baza-image-indexer.service": "dead",
     "baza-litellm.service": "running",
     "baza-route-watchdog.service": "dead",
