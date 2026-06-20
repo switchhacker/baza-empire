@@ -972,14 +972,67 @@ reload();
     if (name === 'power') return '#ef4444';
     if (name === 'ground') return '#1f2937';
     if (name === 'signal') return '#3b82f6';
+    if (name === 'load') return '#f59e0b';   // switched high-current leg (MOSFET drain)
+    if (name === 'gate') return '#22c55e';
     return '#9ca3af';
+  }
+
+  // Outward unit direction for a pin sitting on a given side.
+  function _sideDir(side) {
+    if (side === 'left')   return { dx: -1, dy: 0 };
+    if (side === 'right')  return { dx:  1, dy: 0 };
+    if (side === 'top')    return { dx:  0, dy: -1 };
+    return { dx: 0, dy: 1 }; // bottom / unknown
+  }
+
+  // Pick a clear lane coordinate near `desired`, avoiding the spans (each
+  // [start,end]) of component bodies so wires run in the gutters, not through
+  // the parts. Returns `desired` if it's already clear.
+  function _clearLane(desired, spans, pad) {
+    pad = pad || 10;
+    const hit = spans.find(s => desired > s[0] - pad && desired < s[1] + pad);
+    if (!hit) return desired;
+    const sorted = spans.slice().sort((p, q) => p[0] - q[0]);
+    const merged = [];
+    sorted.forEach(s => {
+      const last = merged[merged.length - 1];
+      if (!last || s[0] > last[1] + 1) merged.push([s[0], s[1]]);
+      else last[1] = Math.max(last[1], s[1]);
+    });
+    const cands = [merged[0][0] - pad - 8];
+    for (let k = 0; k < merged.length - 1; k++) cands.push((merged[k][1] + merged[k + 1][0]) / 2);
+    cands.push(merged[merged.length - 1][1] + pad + 8);
+    cands.sort((p, q) => Math.abs(p - desired) - Math.abs(q - desired));
+    return cands[0];
+  }
+
+  // Build an orthogonal (Manhattan) polyline point list from pin A to pin B,
+  // exiting each pin perpendicular to its edge and routing through a clear
+  // gutter so the wire visibly bends around components instead of crossing them.
+  function _routeWire(a, b, xSpans, ySpans, lane) {
+    const STUB = 16;
+    const da = _sideDir(a.side), db = _sideDir(b.side);
+    const ax = a.x + da.dx * STUB, ay = a.y + da.dy * STUB;
+    const bx = b.x + db.dx * STUB, by = b.y + db.dy * STUB;
+    const pts = [[a.x, a.y], [ax, ay]];
+    const off = ((lane % 7) - 3) * 7;   // spread parallel wires apart
+    if (da.dx !== 0) {                    // A exits horizontally -> vertical gutter
+      const chX = _clearLane((ax + bx) / 2 + off, xSpans);
+      pts.push([chX, ay], [chX, by]);
+    } else {                             // A exits vertically -> horizontal gutter
+      const chY = _clearLane((ay + by) / 2 + off, ySpans);
+      pts.push([ax, chY], [bx, chY]);
+    }
+    pts.push([bx, by], [b.x, b.y]);
+    return pts;
   }
 
   function _categoryFill(cat) {
     return ({
       mcu: '#1e3a5f', sensor: '#3a5f1e', actuator: '#5f1e3a',
       display: '#3a3a5f', communication: '#5f3a1e',
-      power: '#5f5f1e', passive: '#3a3a3a', module: '#3a5f5f'
+      power: '#5f5f1e', passive: '#3a3a3a', module: '#3a5f5f',
+      switch: '#1e5f5f'
     }[cat]) || '#333';
   }
 
@@ -1010,6 +1063,7 @@ reload();
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
         <button id="schem-add-btn" class="btn-sm">➕ Add Component</button>
         <button id="schem-save-btn" class="btn-sm" style="background:#1e3a5f;color:#fff;">💾 Save</button>
+        <button id="schem-rebuild-btn" class="btn-sm" style="background:#0f5132;color:#fff;" title="Rebuild the whole device from the BOM with full power/MOSFET topology — supply rail, common ground, per-channel MOSFET wiring, all pins routed. Overwrites layout + wires.">⟳ Rebuild (full detail)</button>
         <button id="schem-clear-btn" class="btn-sm" style="background:#7a1d1d;color:#fff;">🗑 Clear Wires</button>
         <button id="schem-close-btn" class="btn-sm">✕ Close</button>
       </div>
@@ -1080,39 +1134,61 @@ reload();
       wiresG.innerHTML = '';
       compsG.innerHTML = '';
 
-      // Build lookup for components + pin coords
+      // Grow the canvas to fit the full layout (rich rebuilds can be wide/tall)
+      const svg = document.getElementById('schem-svg');
+      if (svg) {
+        let maxX = 760, maxY = 500;
+        _schem.components.forEach(c => {
+          const d = _getComponentDef(catalog, c.component_id);
+          maxX = Math.max(maxX, c.x + ((d && d.width) || 120) + 60);
+          maxY = Math.max(maxY, c.y + ((d && d.height) || 80) + 60);
+        });
+        svg.setAttribute('width', maxX);
+        svg.setAttribute('height', maxY);
+        const bg = svg.querySelector('rect');
+        if (bg) { bg.setAttribute('width', maxX); bg.setAttribute('height', maxY); }
+      }
+
+      // Build lookup for components + pin coords + body spans (for routing)
       const compByInst = {};
-      const pinCoord = {};   // "instId.pinName" -> {x,y,kind}
+      const pinCoord = {};   // "instId.pinName" -> {x,y,kind,side}
+      const xSpans = [];     // component x-extents -> vertical-gutter avoidance
+      const ySpans = [];     // component y-extents -> horizontal-gutter avoidance
       _schem.components.forEach(c => {
         const def = _getComponentDef(catalog, c.component_id);
         compByInst[c.instance_id] = { c, def };
+        const cw = (def && def.width) || 120, ch = (def && def.height) || 80;
+        xSpans.push([c.x, c.x + cw]);
+        ySpans.push([c.y, c.y + ch]);
         if (def && def.pins) {
           def.pins.forEach(p => {
             const xy = _pinXY(c, def, p);
-            pinCoord[c.instance_id + '.' + p.name] = { x: xy.x, y: xy.y, kind: p.kind };
+            pinCoord[c.instance_id + '.' + p.name] = { x: xy.x, y: xy.y, kind: p.kind, side: p.position };
           });
         }
       });
 
-      // Wires first (under components)
+      // Wires first (under components) — orthogonal routing around bodies
       _schem.wires.forEach((w, wi) => {
         const a = pinCoord[w.from];
         const b = pinCoord[w.to];
         if (!a || !b) return;
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-        line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-        line.setAttribute('stroke', _wireColor(w.color || 'signal'));
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('stroke-linecap', 'round');
-        line.style.cursor = 'pointer';
-        line.addEventListener('contextmenu', evt => {
+        const pts = _routeWire(a, b, xSpans, ySpans, wi);
+        const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        poly.setAttribute('points', pts.map(p => p[0] + ',' + p[1]).join(' '));
+        poly.setAttribute('fill', 'none');
+        poly.setAttribute('stroke', _wireColor(w.color || 'signal'));
+        poly.setAttribute('stroke-width', '2');
+        poly.setAttribute('stroke-linejoin', 'round');
+        poly.setAttribute('stroke-linecap', 'round');
+        poly.style.cursor = 'pointer';
+        poly.addEventListener('contextmenu', evt => {
           evt.preventDefault();
           _schem.wires.splice(wi, 1);
           _renderCanvas();
           _scheduleAutoSave();
         });
-        wiresG.appendChild(line);
+        wiresG.appendChild(poly);
       });
 
       // Components
@@ -1325,6 +1401,30 @@ reload();
       _renderCanvas();
       if (_schemSaveTimer) { clearTimeout(_schemSaveTimer); _schemSaveTimer = null; }
       _save();
+    });
+    document.getElementById('schem-rebuild-btn').addEventListener('click', async () => {
+      if (!confirm('Rebuild the full device schematic from the BOM?\n\nThis overwrites the current layout and wires with a complete power/MOSFET topology (supply rail, common ground, per-channel MOSFET wiring, all pins).')) return;
+      const btn = document.getElementById('schem-rebuild-btn');
+      const prev = btn.textContent; btn.textContent = '⟳ Rebuilding…'; btn.disabled = true;
+      try {
+        const resp = await _api(`/scaffold/schematic/${n.id}/rebuild`, { method: 'POST' });
+        const sp = resp && resp.schematic;
+        if (sp) {
+          _schem.components = sp.components || [];
+          _schem.wires = sp.wires || [];
+          _schem.notes = sp.notes || _schem.notes;
+          n.payload = Object.assign({}, n.payload, { schematic: _schem });
+          const noteEl = document.getElementById('schem-notes');
+          if (noteEl) noteEl.value = _schem.notes || '';
+        }
+        _renderCanvas();
+        _flashSaved();
+      } catch (e) {
+        console.error('rebuild failed', e);
+        alert('Rebuild failed — see console.');
+      } finally {
+        btn.textContent = prev; btn.disabled = false;
+      }
     });
     document.getElementById('schem-close-btn').addEventListener('click', closeSidePanel);
     document.getElementById('schem-notes').addEventListener('input', _scheduleAutoSave);

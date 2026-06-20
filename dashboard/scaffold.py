@@ -255,13 +255,285 @@ def bom_list(pid):
     return jsonify({"items": [dict(r) for r in rows]})
 
 
+def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
+    """Full-device schematic with real power topology (used for a from-scratch
+    rebuild, where every connection of every component is drawn):
+
+      * DC supply / battery: V+ is the raw high-current rail (feeds the loads
+        and the MCU VIN); V- is the common ground rail for the whole device.
+      * High-current loads (LED strips, motors) are switched LOW-SIDE by an
+        N-MOSFET — MCU GPIO -> GATE, load V+ -> supply rail, load V- -> DRAIN,
+        MOSFET SOURCE -> GND rail. (Loads are NOT powered off the MCU.)
+      * Sensors / buttons / displays / comms get power from the MCU 3V3 rail,
+        ground to the GND rail, and a data line to an I2C bus or a free GPIO.
+      * BOM qty is expanded into discrete instances for switches/loads, so each
+        switched channel is drawn individually (e.g. 4 LED strips + 4 MOSFETs).
+
+    Returns dict with counts. Overwrites the schematic payload wholesale.
+    """
+    import json as _json
+    import sqlite3 as _sq
+    from core.baza_components_library import match_component
+
+    cur = _sq.connect(_db_path()); cur.row_factory = _sq.Row
+    try:
+        bom_rows = cur.execute(
+            "SELECT * FROM project_bom WHERE project_id=?", (pid,)).fetchall()
+    finally:
+        cur.close()
+
+    MAX_INSTANCES = 24
+    EXPAND_CATS = {"switch", "actuator"}  # draw each unit of these separately
+
+    def _qty(b):
+        try:
+            return max(1, int(b["qty"] or 1))
+        except Exception:
+            return 1
+
+    # 1. Expand BOM -> component instances (qty-aware)
+    instances = []
+    for b in bom_rows:
+        m = match_component(b["name"] or "")
+        if not m:
+            continue
+        n = _qty(b) if m.get("category") in EXPAND_CATS else 1
+        for k in range(n):
+            if len(instances) >= MAX_INSTANCES:
+                break
+            lbl = (b["name"] or m["name"])[:38]
+            if n > 1:
+                lbl = f"{lbl} #{k+1}"
+            instances.append({"instance_id": f"c{len(instances)+1}",
+                              "component_id": m["id"], "def": m, "label": lbl})
+        if len(instances) >= MAX_INSTANCES:
+            break
+
+    def cat(i):
+        return i["def"].get("category") or ""
+    def pins_of(i):
+        return i["def"].get("pins") or []
+    def find_pin(i, kinds, names=()):
+        for p in pins_of(i):
+            if p["kind"] in kinds:
+                return p["name"]
+        upper = {n.upper() for n in names}
+        for p in pins_of(i):
+            if (p["name"] or "").upper() in upper:
+                return p["name"]
+        return None
+    def all_pins(i, kind):
+        return [p["name"] for p in pins_of(i) if p["kind"] == kind]
+
+    # 2. Classify
+    mcu = next((i for i in instances if cat(i) == "mcu"), None)
+    source = next((i for i in instances if cat(i) == "power"), None)
+    switches = [i for i in instances if cat(i) == "switch"]
+    loads = [i for i in instances if cat(i) == "actuator"]
+    harvesters = [i for i in instances if cat(i) == "harvester"]
+    converters = [i for i in instances if cat(i) == "converter"]
+    storages = [i for i in instances if cat(i) == "storage"]
+    chain = set(id(i) for i in harvesters + converters + storages)
+    has_harvest = bool(harvesters or converters or storages)
+    others = [i for i in instances
+              if i is not mcu and i is not source
+              and i not in switches and i not in loads
+              and id(i) not in chain]
+
+    # 3. Layout
+    components_out = []
+    def place(i, x, y):
+        components_out.append({"instance_id": i["instance_id"],
+                               "component_id": i["component_id"],
+                               "x": x, "y": y, "label": i["label"]})
+    if has_harvest:
+        # Energy flows left->right: harvesters | converters | storage | MCU | (switch|load)
+        def _column(items, x, y0=40, dy=150):
+            y = y0
+            for it in items:
+                place(it, x, y); y += dy
+            return y
+        _column(harvesters, 40)
+        _column(converters, 270)
+        y_store = _column(storages, 500)
+        if source:
+            place(source, 500, max(y_store, 40))
+        mcu_x = 740
+        if mcu:
+            place(mcu, mcu_x, 40)
+        row_y = 40
+        for idx in range(max(len(switches), len(loads))):
+            if idx < len(loads):
+                place(loads[idx], mcu_x + 560, row_y)
+            if idx < len(switches):
+                place(switches[idx], mcu_x + 330, row_y + 10)
+            row_y += 150
+        oy = 340
+        for j, o in enumerate(others):
+            place(o, mcu_x + (j % 2) * 250, oy + (j // 2) * 150)
+    else:
+        if source:
+            place(source, 40, 40)
+        if mcu:
+            place(mcu, 40, 220)
+        row_y = 40
+        for idx in range(max(len(switches), len(loads))):
+            if idx < len(loads):
+                place(loads[idx], 600, row_y)
+            if idx < len(switches):
+                place(switches[idx], 370, row_y + 10)
+            row_y += 150
+        oy = max(row_y, 360)
+        for j, o in enumerate(others):
+            place(o, 300 + (j % 3) * 250, oy + (j // 3) * 150)
+
+    # 4. Wiring
+    wires = []
+    def wire(ai, ap, bi, bp, color):
+        if ap and bp:
+            wires.append({"from": f"{ai}.{ap}", "to": f"{bi}.{bp}", "color": color})
+
+    # Rail (V+) + ground anchors: prefer storage output, then raw supply, then
+    # a converter's regulated output, then the MCU itself.
+    gnd_inst = gnd_pin = vpos_inst = vpos_pin = None
+    if storages:
+        st0 = storages[0]
+        gnd_inst, gnd_pin = st0["instance_id"], find_pin(st0, {"ground"})
+        vpos_inst, vpos_pin = st0["instance_id"], find_pin(st0, {"power"})
+    elif source:
+        gnd_inst, gnd_pin = source["instance_id"], find_pin(source, {"ground"})
+        vpos_inst, vpos_pin = source["instance_id"], find_pin(source, {"power"})
+    elif converters:
+        cv0 = converters[0]
+        vpos_inst, vpos_pin = cv0["instance_id"], (
+            find_pin(cv0, set(), names={"VOUT", "VSTOR", "VSTORE"}) or find_pin(cv0, {"power"}))
+        gnd_inst, gnd_pin = cv0["instance_id"], find_pin(cv0, {"ground"})
+    elif mcu:
+        gnd_inst, gnd_pin = mcu["instance_id"], find_pin(mcu, {"ground"})
+
+    # Harvest chain: harvester out -> converter VIN; converter VBAT/VOUT ->
+    # storage; every chain ground -> common ground rail. (PV/TEG/RF -> charger
+    # -> supercap/LiFePO4 -> rail.)
+    for idx, h in enumerate(harvesters):
+        hv = find_pin(h, set(), names={"V+", "TEG+", "VOUT", "VCAP"}) or find_pin(h, {"power"})
+        hg = find_pin(h, {"ground"})
+        cv = converters[idx] if idx < len(converters) else (converters[0] if converters else None)
+        if cv:
+            cv_in = find_pin(cv, set(), names={"VIN", "VIN_DC"}) or find_pin(cv, {"power"})
+            wire(h["instance_id"], hv, cv["instance_id"], cv_in, "power")
+        elif vpos_inst:
+            wire(h["instance_id"], hv, vpos_inst, vpos_pin, "power")
+        if gnd_inst and hg:
+            wire(gnd_inst, gnd_pin, h["instance_id"], hg, "ground")
+    for cv in converters:
+        cv_out = find_pin(cv, set(), names={"VBAT", "VOUT", "VSTOR", "VSTORE"}) or find_pin(cv, {"power"})
+        cv_g = find_pin(cv, {"ground"})
+        if storages:
+            st = storages[0]
+            wire(cv["instance_id"], cv_out, st["instance_id"], find_pin(st, {"power"}), "power")
+        if gnd_inst and cv_g:
+            wire(gnd_inst, gnd_pin, cv["instance_id"], cv_g, "ground")
+    for st in storages[1:]:   # extra storage banks in parallel on the rail
+        wire(vpos_inst, vpos_pin, st["instance_id"], find_pin(st, {"power"}), "power")
+        wire(gnd_inst, gnd_pin, st["instance_id"], find_pin(st, {"ground"}), "ground")
+
+    # Rail -> MCU power input (prefer VIN/5V over the 3V3 pin)
+    if mcu and vpos_inst and vpos_inst != mcu["instance_id"]:
+        mcu_vin = find_pin(mcu, set(), names={"VIN", "5V"}) or find_pin(mcu, {"power"})
+        wire(vpos_inst, vpos_pin, mcu["instance_id"], mcu_vin, "power")
+        wire(gnd_inst, gnd_pin, mcu["instance_id"], find_pin(mcu, {"ground"}), "ground")
+
+    gpio_pool = all_pins(mcu, "gpio") if mcu else []
+    if mcu and not gpio_pool:
+        gpio_pool = [p["name"] for p in pins_of(mcu)
+                     if p["kind"] in ("gpio", "pwm", "signal")]
+    gi = 0
+
+    # switched channels: GPIO->GATE, load V+->rail, load V-->DRAIN, SOURCE->GND
+    for idx, sw in enumerate(switches):
+        gate = find_pin(sw, {"gpio", "signal"}, names={"GATE"})
+        drain = find_pin(sw, {"drain"}, names={"DRAIN"})
+        src_pin = find_pin(sw, {"ground"}, names={"SOURCE"})
+        if mcu and gate and gi < len(gpio_pool):
+            wire(mcu["instance_id"], gpio_pool[gi], sw["instance_id"], gate, "signal")
+            gi += 1
+        if gnd_inst and src_pin:
+            wire(gnd_inst, gnd_pin, sw["instance_id"], src_pin, "ground")
+        if idx < len(loads):
+            ld = loads[idx]
+            ld_vp = find_pin(ld, {"power"}, names={"V+"})
+            ld_vn = find_pin(ld, {"drain"}, names={"V-"})
+            if vpos_inst and ld_vp:
+                wire(vpos_inst, vpos_pin, ld["instance_id"], ld_vp, "power")
+            if drain and ld_vn:
+                wire(sw["instance_id"], drain, ld["instance_id"], ld_vn, "load")
+
+    # loads without a switch -> rail + ground directly
+    for idx, ld in enumerate(loads):
+        if idx < len(switches):
+            continue
+        ld_vp = find_pin(ld, {"power"})
+        ld_vn = find_pin(ld, {"drain", "ground", "signal"})
+        if vpos_inst and ld_vp:
+            wire(vpos_inst, vpos_pin, ld["instance_id"], ld_vp, "power")
+        if gnd_inst and ld_vn:
+            wire(gnd_inst, gnd_pin, ld["instance_id"], ld_vn, "ground")
+
+    # other modules: 3V3 power, GND, data line (I2C bus or free GPIO)
+    mcu_3v3 = find_pin(mcu, {"power"}, names={"3V3", "3.3V"}) if mcu else None
+    for o in others:
+        if mcu and mcu_3v3 and find_pin(o, {"power"}):
+            wire(mcu["instance_id"], mcu_3v3, o["instance_id"], find_pin(o, {"power"}), "power")
+        if gnd_inst and find_pin(o, {"ground"}):
+            wire(gnd_inst, gnd_pin, o["instance_id"], find_pin(o, {"ground"}), "ground")
+        o_sda, o_scl = find_pin(o, {"i2c_sda"}), find_pin(o, {"i2c_scl"})
+        if mcu and o_sda and o_scl:
+            m_sda, m_scl = find_pin(mcu, {"i2c_sda"}), find_pin(mcu, {"i2c_scl"})
+            wire(mcu["instance_id"], m_sda, o["instance_id"], o_sda, "signal")
+            wire(mcu["instance_id"], m_scl, o["instance_id"], o_scl, "signal")
+        else:
+            d = find_pin(o, {"signal", "gpio", "analog", "pwm"})
+            if mcu and d and gi < len(gpio_pool):
+                wire(mcu["instance_id"], gpio_pool[gi], o["instance_id"], d, "signal")
+                gi += 1
+        # high-side power monitors (INA226): put IN+ on the rail
+        in_plus = find_pin(o, set(), names={"IN+", "VBUS"})
+        if in_plus and vpos_inst:
+            wire(vpos_inst, vpos_pin, o["instance_id"], in_plus, "power")
+
+    notes = ("Full-device auto-route. Red = supply (V+) rail, black = common "
+             "ground. LED loads are switched low-side by N-MOSFETs "
+             "(GPIO->GATE, load->DRAIN, SOURCE->GND).")
+    if has_harvest:
+        notes += (" Energy chain (left->right): harvesters (PV/TEG/RF) -> "
+                  "converters (MPPT/boost charger) -> storage (supercap/LiFePO4) "
+                  "-> rail -> MCU + loads. INA226 monitors sit on the rail.")
+    notes += (" Drag to rearrange; click two pins to add a wire; right-click a "
+              "wire to delete.")
+    schematic = {
+        "components": components_out,
+        "wires": wires,
+        "notes": notes,
+    }
+    node = eng.get_node(schematic_node_id)
+    payload = _json.loads(node.get("payload_json") or "{}")
+    payload["schematic"] = schematic
+    eng.update_node(schematic_node_id, payload_json=_json.dumps(payload, default=str))
+    return {"total_components": len(components_out), "wires": len(wires)}
+
+
 def _build_schematic_from_bom(eng, pid, schematic_node_id, preserve_existing=True):
     """Build/refresh the schematic payload for `schematic_node_id` from
     the project's current BOM. If preserve_existing=True, keep the
     positions and labels of components that already exist in the schematic
     (matched by component_id), and only APPEND newly-matched BOM rows
     that aren't yet represented. Returns dict with counts.
+
+    If preserve_existing=False, do a full from-scratch rebuild with real
+    power/MOSFET topology via _build_rich_schematic_from_bom().
     """
+    if not preserve_existing:
+        return _build_rich_schematic_from_bom(eng, pid, schematic_node_id)
     import json as _json
     import sqlite3 as _sq
     from core.baza_components_library import match_component, get_component
@@ -639,6 +911,24 @@ scaffold_bp.add_url_rule("/api/baza/equipment/<int:item_id>", "eq_delete", _eq_d
 def components_catalog():
     from core.baza_components_library import list_components
     return jsonify({"items": list_components()})
+
+
+@scaffold_bp.route(
+    "/api/baza/projects/<pid>/scaffold/schematic/<int:nid>/rebuild",
+    methods=["POST"])
+def schematic_rebuild(pid, nid):
+    """Full from-scratch rebuild of a schematic node with real power/MOSFET
+    topology (overwrites positions + wires). Used by the 'Rebuild (full
+    detail)' button in the wiring editor."""
+    eng = _engine()
+    node = eng.get_node(nid)
+    if not node or node.get("node_type") != "schematic":
+        return jsonify({"error": "schematic node not found"}), 404
+    res = _build_schematic_from_bom(eng, pid, nid, preserve_existing=False)
+    import json as _json
+    fresh = eng.get_node(nid)
+    schem = (_json.loads(fresh.get("payload_json") or "{}") or {}).get("schematic")
+    return jsonify({"ok": True, "schematic": schem, **res})
 
 
 # ---------------- Supplies needed (Phase 3 stub returning real data) ----------------
