@@ -166,6 +166,36 @@ _COMPONENT_LIST = [
            _pin("GPIO15", "gpio", "right"),
            _pin("GPIO2", "gpio", "right"),
        ]),
+    _c("esp32-s3-devkit", "ESP32-S3 DevKitC-1 / WROOM", "mcu",
+       width=170, height=360,
+       match_keywords=["esp32-s3", "esp32 s3", "esp32s3", "s3 devkit",
+                       "esp32-s3-wroom", "esp32-s3 wroom", "s3-devkit",
+                       "esp32-s3 board", "freenove esp32-s3", "wroom cam",
+                       "esp32-s3 cam"],
+       pins=[
+           # Left rail: power in + low GPIO bank
+           _pin("5V", "power", "left"),
+           _pin("3V3", "power", "left"),
+           _pin("GND", "ground", "left"),
+           _pin("GPIO4", "gpio", "left"),
+           _pin("GPIO5", "gpio", "left"),
+           _pin("GPIO6", "gpio", "left"),
+           _pin("GPIO7", "gpio", "left"),
+           _pin("GPIO15", "gpio", "left"),
+           _pin("GPIO16", "gpio", "left"),
+           _pin("GPIO17", "gpio", "left"),
+           # Right rail: VIN + buses + high GPIO bank
+           _pin("VIN", "power", "right"),
+           _pin("GND", "ground", "right"),
+           _pin("GPIO8", "i2c_sda", "right"),
+           _pin("GPIO9", "i2c_scl", "right"),
+           _pin("GPIO10", "spi_cs", "right"),
+           _pin("GPIO11", "spi_mosi", "right"),
+           _pin("GPIO12", "spi_sck", "right"),
+           _pin("GPIO13", "spi_miso", "right"),
+           _pin("GPIO43", "uart_tx", "right"),
+           _pin("GPIO44", "uart_rx", "right"),
+       ]),
     _c("micro-bit", "BBC micro:bit", "mcu",
        width=180, height=140,
        match_keywords=["microbit", "micro:bit", "micro-bit", "bbc microbit"],
@@ -340,6 +370,31 @@ _COMPONENT_LIST = [
            _pin("IN4", "signal", "left"),
        ]),
 
+    _c("mosfet-nch-logic", "N-MOSFET Low-Side Switch (IRLZ44N/AO3400)", "switch",
+       width=120, height=120,
+       match_keywords=["mosfet", "n-mosfet", "n-channel mosfet",
+                       "logic-level mosfet", "logic level mosfet",
+                       "logic-level n-mosfet", "mosfet module", "mosfet driver",
+                       "fet driver", "low-side driver", "low side switch",
+                       "irlz44n", "ao3400", "irf520", "high-power mosfet"],
+       pins=[
+           # GATE driven by MCU GPIO (through a gate resistor); DRAIN sinks the
+           # load's negative leg; SOURCE returns to the common ground rail.
+           _pin("GATE", "gpio", "left"),
+           _pin("DRAIN", "drain", "right"),
+           _pin("SOURCE", "ground", "bottom"),
+       ]),
+    _c("led-strip", "LED Light Strip Segment", "actuator",
+       width=190, height=64,
+       match_keywords=["led strip", "led strips", "led-strip", "led light strip",
+                       "light strip", "strip light", "12v led", "5v led strip",
+                       "booth lighting", "led lighting"],
+       pins=[
+           # V+ ties to the switched/raw supply rail; V- goes to a MOSFET DRAIN.
+           _pin("V+", "power", "left"),
+           _pin("V-", "drain", "right"),
+       ]),
+
     # ---------------- Displays (4) ----------------
     _c("ssd1306-oled-i2c", "SSD1306 OLED 128x64 (I2C)", "display",
        width=160, height=100,
@@ -430,7 +485,122 @@ _COMPONENT_LIST = [
            _pin("RXD", "uart_rx", "left"),
        ]),
 
-    # ---------------- Power (3) ----------------
+    # ---------------- Energy harvesting (8) ----------------
+    _c("solar-panel", "Solar PV Panel", "harvester",
+       width=150, height=90,
+       match_keywords=["solar", "solar pv", "pv panel", "solar panel",
+                       "photovoltaic", "solar cell", "pv module", "pv cell"],
+       pins=[
+           _pin("V+", "power", "right"),
+           _pin("V-", "ground", "right"),
+       ]),
+    _c("teg-module", "Thermoelectric Generator (TEG / Seebeck)", "harvester",
+       width=150, height=90,
+       match_keywords=["teg", "thermoelectric generator", "thermoelectric",
+                       "seebeck", "peltier", "tec1-12706", "tec1-12715",
+                       "thermo-electric"],
+       pins=[
+           _pin("TEG+", "power", "right"),
+           _pin("TEG-", "ground", "right"),
+       ]),
+    _c("rf-harvester-p2110", "Powercast P2110 RF Harvester", "harvester",
+       width=150, height=110,
+       match_keywords=["powercast", "p2110", "rf harvester", "rf energy harvester",
+                       "rectenna", "rf energy", "rf-harvest"],
+       pins=[
+           _pin("RF", "signal", "left"),   # antenna input
+           _pin("GND", "ground", "bottom"),
+           _pin("VCAP", "power", "right"),
+           _pin("VOUT", "power", "right"),
+       ]),
+    _c("bq25570", "TI BQ25570 Boost Charger + MPPT", "converter",
+       width=150, height=130,
+       match_keywords=["bq25570", "bq-25570", "nano-power boost", "boost charger",
+                       "mppt charger", "energy harvesting ic", "harvest charger",
+                       "nano power charger"],
+       pins=[
+           _pin("VIN", "power", "left"),    # from harvester
+           _pin("GND", "ground", "left"),
+           _pin("EN", "signal", "left"),
+           _pin("VBAT", "power", "right"),  # to storage
+           _pin("VSTOR", "power", "right"),
+           _pin("VOUT", "power", "right"),  # regulated load rail
+       ]),
+    _c("ltc3108", "ADI LTC3108 Ultra-Low-Vin Step-Up", "converter",
+       width=150, height=120,
+       match_keywords=["ltc3108", "ltc-3108", "ultra-low-vin", "ultra low vin",
+                       "low-vin step-up", "thermoelectric step-up",
+                       "20mv step-up", "harvest step-up"],
+       pins=[
+           _pin("VIN", "power", "left"),    # from TEG
+           _pin("GND", "ground", "left"),
+           _pin("VOUT", "power", "right"),
+           _pin("VSTORE", "power", "right"),
+           _pin("VAUX", "power", "right"),
+       ]),
+    _c("supercap", "Supercapacitor (EDLC)", "storage",
+       width=120, height=90,
+       match_keywords=["supercapacitor", "supercap", "super capacitor",
+                       "ultracapacitor", "edlc", "farad cap", "gold cap"],
+       pins=[
+           _pin("+", "power", "left"),
+           _pin("-", "ground", "left"),
+       ]),
+    _c("lifepo4-cell", "LiFePO4 Cell", "storage",
+       width=130, height=80,
+       match_keywords=["lifepo4", "lifepo", "lfp cell", "lifepo4 cell",
+                       "iron phosphate", "lfp battery"],
+       pins=[
+           _pin("+", "power", "left"),
+           _pin("-", "ground", "left"),
+       ]),
+    _c("ina226", "INA226 Power Monitor (I2C)", "sensor",
+       width=120, height=100,
+       match_keywords=["ina226", "ina-226", "ina219", "power monitor",
+                       "high-side power monitor", "current+voltage", "current sensor",
+                       "energy monitor"],
+       pins=[
+           _pin("VCC", "power", "left"),
+           _pin("GND", "ground", "left"),
+           _pin("SDA", "i2c_sda", "left"),
+           _pin("SCL", "i2c_scl", "left"),
+           _pin("IN+", "power", "right"),   # high-side shunt -> rail
+           _pin("IN-", "power", "right"),
+       ]),
+    _c("schottky-diode", "Schottky Diode (low-Vf, OR-ing)", "passive",
+       width=90, height=44,
+       match_keywords=["schottky", "schottky diode", "bat54", "ss14", "1n5819",
+                       "or-ing diode", "low-vf diode"],
+       pins=[
+           _pin("A", "signal", "left"),
+           _pin("K", "signal", "right"),
+       ]),
+
+    # ---------------- Power (5) ----------------
+    _c("dc-power-supply", "DC Power Supply / Battery Pack", "power",
+       width=160, height=90,
+       match_keywords=["dc power supply", "power supply", "power source",
+                       "battery pack", "battery", "li-ion battery", "li-ion pack",
+                       "18650", "12v supply", "5v supply", "wall adapter",
+                       "psu", "mains adapter", "barrel jack supply"],
+       pins=[
+           # V+ is the raw high-current rail (feeds loads + MCU VIN);
+           # V- is the common ground reference for the whole device.
+           _pin("V+", "power", "right"),
+           _pin("V-", "ground", "right"),
+       ]),
+    _c("tp4056-charger", "TP4056 Li-ion Charger / Protection", "power",
+       width=140, height=110,
+       match_keywords=["tp4056", "tp-4056", "battery charger", "li-ion charger",
+                       "lipo charger", "charging module", "charge controller"],
+       pins=[
+           _pin("IN+", "power", "left"),
+           _pin("IN-", "ground", "left"),
+           _pin("BAT+", "power", "right"),
+           _pin("BAT-", "ground", "right"),
+           _pin("OUT+", "power", "right"),
+           _pin("OUT-", "ground", "right"),
+       ]),
     _c("lipo-1s", "LiPo 1S Battery", "power",
        width=140, height=80,
        match_keywords=["lipo", "lipo 1s", "lithium battery", "1s lipo",
