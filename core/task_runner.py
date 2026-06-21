@@ -407,6 +407,50 @@ def notify_serge(message: str):
 
 
 
+def _parse_artifact_args(block: str, agent_id: str = "agent") -> dict | None:
+    """Tolerantly parse an artifact_save `{...}` block.
+
+    LLM-emitted JSON with a big free-text `content` field is fragile: models put
+    literal newlines (rejected by strict JSON) AND unescaped double-quotes
+    (e.g. a quoted product name) inside it, which breaks json.loads entirely.
+    Strategy: try lenient JSON first; on failure, positionally recover
+    filename/content/project_id so the real deliverable is never lost."""
+    import re as _re
+    try:
+        args = json.loads(block, strict=False)  # strict=False allows literal control chars
+        if isinstance(args, dict):
+            return args
+    except Exception:
+        pass
+
+    def _simple(name):
+        m = _re.search(r'"%s"\s*:\s*"((?:[^"\\]|\\.)*)"' % name, block)
+        return m.group(1) if m else None
+
+    cm = _re.search(r'"content"\s*:\s*"', block)
+    if not cm:
+        return None
+    tail = block[cm.end():]
+    # content ends at the next structural key (",\"project_id\"|\"filename\":")
+    # or, failing that, the final closing "}.
+    term = _re.search(r'"\s*,\s*"(?:project_id|filename)"\s*:', tail)
+    if term:
+        content = tail[:term.start()]
+    else:
+        bm = _re.search(r'"\s*\}\s*$', tail)
+        content = tail[:bm.start()] if bm else tail
+    # Minimal unescape of recovered raw content (backslash first, via sentinel).
+    content = (content.replace('\\\\', '\x00')
+                      .replace('\\"', '"').replace('\\n', '\n')
+                      .replace('\\t', '\t').replace('\\r', '\r')
+                      .replace('\x00', '\\'))
+    return {
+        "filename": _simple("filename") or f"{agent_id}_output.md",
+        "content": content,
+        "project_id": _simple("project_id") or "shared",
+    }
+
+
 def _execute_skill_saves(agent_id: str, output: str) -> int:
     """
     Parse ##SKILL:artifact_save{...}## calls from LLM output and execute them via the dashboard API.
@@ -417,9 +461,10 @@ def _execute_skill_saves(agent_id: str, output: str) -> int:
     saved = 0
     for match in pattern.finditer(output):
         try:
-            # strict=False: LLMs routinely put literal newlines/tabs inside the
-            # "content" string; strict JSON would reject them as control chars.
-            args = json.loads(match.group(1), strict=False)
+            args = _parse_artifact_args(match.group(1), agent_id)
+            if not args:
+                logger.warning("  Skill-save parse error: could not extract artifact args")
+                continue
             sys.path.insert(0, FRAMEWORK_DIR)
             from skills.shared.save_artifact import save_artifact as _api_save
             result = _api_save(
