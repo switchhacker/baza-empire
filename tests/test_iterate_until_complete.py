@@ -87,14 +87,14 @@ def test_iteration_loop_caps_at_max_iterations(monkeypatch):
 
     call_count = {"n": 0}
 
-    def fake_run_with_llm(agent_id, agent_cfg, task, prior_output=""):
+    def fake_run_with_llm(agent_id, agent_cfg, task, prior_output="", ollama_url=None):
         call_count["n"] += 1
         return {"success": True, "output": f"step {call_count['n']}",
                 "completed": False, "in_progress": True, "blocked": False,
                 "block_reason": ""}
 
     monkeypatch.setattr(tr, "run_task_with_llm", fake_run_with_llm)
-    monkeypatch.setattr(tr, "wait_for_ollama", lambda max_wait=0: True)
+    monkeypatch.setattr(tr, "wait_for_ollama", lambda max_wait=0, model=None: True)
     monkeypatch.setattr(tr, "is_llm_actionable", lambda t: True)
     monkeypatch.setattr(tr, "get_my_tasks", lambda agent_id, status: (
         [_fake_task()] if status == "pending" else []))
@@ -122,7 +122,7 @@ def test_iteration_loop_stops_on_completion(monkeypatch):
 
     call_count = {"n": 0}
 
-    def fake_run_with_llm(agent_id, agent_cfg, task, prior_output=""):
+    def fake_run_with_llm(agent_id, agent_cfg, task, prior_output="", ollama_url=None):
         call_count["n"] += 1
         if call_count["n"] >= 2:
             return {"success": True, "output": "done", "completed": True,
@@ -131,7 +131,7 @@ def test_iteration_loop_stops_on_completion(monkeypatch):
                 "in_progress": True, "blocked": False, "block_reason": ""}
 
     monkeypatch.setattr(tr, "run_task_with_llm", fake_run_with_llm)
-    monkeypatch.setattr(tr, "wait_for_ollama", lambda max_wait=0: True)
+    monkeypatch.setattr(tr, "wait_for_ollama", lambda max_wait=0, model=None: True)
     monkeypatch.setattr(tr, "is_llm_actionable", lambda t: True)
     monkeypatch.setattr(tr, "get_my_tasks", lambda agent_id, status: (
         [_fake_task()] if status == "pending" else []))
