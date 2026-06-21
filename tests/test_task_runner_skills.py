@@ -129,6 +129,36 @@ def test_execute_skill_saves_tolerates_literal_newlines(monkeypatch):
     assert "##SKILL" not in captured["content"]
 
 
+def test_execute_skill_saves_recovers_from_unescaped_quotes(monkeypatch):
+    """LLMs emit unescaped double-quotes inside artifact_save content (e.g. a
+    quoted product name). json.loads can't parse that at all, so the saver must
+    fall back to a tolerant extractor and still store the real markdown."""
+    from core import task_runner as tr
+    import skills.shared.save_artifact as sa
+
+    captured = {}
+
+    def fake_save(filename, content, project_id, agent_id, **kw):
+        captured.update(filename=filename, content=content, project_id=project_id)
+        return {"success": True, "path": "x/" + filename}
+
+    monkeypatch.setattr(sa, "save_artifact", fake_save)
+    monkeypatch.setattr(tr, "_task_events", None)
+
+    out = ('##SKILL:artifact_save{"filename":"r.md","content":'
+           '"# Title\n\nGartner has an "Agentic AI Roadmap," per analysts.\nDone.",'
+           '"project_id":"p1"}##')
+    n = tr._execute_skill_saves("claw_batto", out)
+
+    assert n == 1
+    assert "##SKILL" not in captured["content"]
+    assert captured["content"].startswith("# Title")
+    assert "Agentic AI Roadmap" in captured["content"]
+    assert captured["content"].rstrip().endswith("Done.")
+    assert captured["filename"] == "r.md"
+    assert captured["project_id"] == "p1"
+
+
 def test_parse_and_run_excludes_named_skills():
     """Excluded skills are left verbatim for downstream handling, not executed."""
     from core.skills_engine import SkillsEngine
