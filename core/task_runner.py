@@ -417,7 +417,9 @@ def _execute_skill_saves(agent_id: str, output: str) -> int:
     saved = 0
     for match in pattern.finditer(output):
         try:
-            args = json.loads(match.group(1))
+            # strict=False: LLMs routinely put literal newlines/tabs inside the
+            # "content" string; strict JSON would reject them as control chars.
+            args = json.loads(match.group(1), strict=False)
             sys.path.insert(0, FRAMEWORK_DIR)
             from skills.shared.save_artifact import save_artifact as _api_save
             result = _api_save(
