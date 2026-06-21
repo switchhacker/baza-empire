@@ -291,11 +291,22 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
         except Exception:
             return 1
 
-    # 1. Expand BOM -> component instances (qty-aware)
+    # 1. Expand BOM -> component instances (qty-aware).
+    #    Schottky OR-ing diodes are NOT placed as standalone parts here — they
+    #    are minted on demand and inserted INLINE on each source/converter ->
+    #    rail leg during wiring (see mint_diode/merge_to_rail below).
     instances = []
+    diode_def = None
+    diode_label = "Schottky OR-ing diode"
+    diode_budget = [0]
     for b in bom_rows:
         m = match_component(b["name"] or "")
         if not m:
+            continue
+        if m["id"] == "schottky-diode":
+            diode_def = m
+            diode_budget[0] += _qty(b)
+            diode_label = (b["name"] or m["name"])[:38]
             continue
         n = _qty(b) if m.get("category") in EXPAND_CATS else 1
         for k in range(n):
@@ -327,7 +338,8 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
 
     # 2. Classify
     mcu = next((i for i in instances if cat(i) == "mcu"), None)
-    source = next((i for i in instances if cat(i) == "power"), None)
+    sources = [i for i in instances if cat(i) == "power"]
+    source = sources[0] if sources else None     # primary supply (rail fallback)
     switches = [i for i in instances if cat(i) == "switch"]
     loads = [i for i in instances if cat(i) == "actuator"]
     harvesters = [i for i in instances if cat(i) == "harvester"]
@@ -336,7 +348,7 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
     chain = set(id(i) for i in harvesters + converters + storages)
     has_harvest = bool(harvesters or converters or storages)
     others = [i for i in instances
-              if i is not mcu and i is not source
+              if i is not mcu and id(i) not in {id(s) for s in sources}
               and i not in switches and i not in loads
               and id(i) not in chain]
 
@@ -346,19 +358,20 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
         components_out.append({"instance_id": i["instance_id"],
                                "component_id": i["component_id"],
                                "x": x, "y": y, "label": i["label"]})
+    def _column(items, x, y0=40, dy=150):
+        y = y0
+        for it in items:
+            place(it, x, y); y += dy
+        return y
     if has_harvest:
-        # Energy flows left->right: harvesters | converters | storage | MCU | (switch|load)
-        def _column(items, x, y0=40, dy=150):
-            y = y0
-            for it in items:
-                place(it, x, y); y += dy
-            return y
+        # Energy flows left->right:
+        #   harvesters | converters | [diode lane] | storage+sources | MCU | sw/load
         _column(harvesters, 40)
         _column(converters, 270)
-        y_store = _column(storages, 500)
-        if source:
-            place(source, 500, max(y_store, 40))
-        mcu_x = 740
+        diode_lane_x = 510
+        y_store = _column(storages, 690)
+        _column(sources, 690, y0=max(y_store, 40))
+        mcu_x = 930
         if mcu:
             place(mcu, mcu_x, 40)
         row_y = 40
@@ -372,10 +385,11 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
         for j, o in enumerate(others):
             place(o, mcu_x + (j % 2) * 250, oy + (j // 2) * 150)
     else:
-        if source:
-            place(source, 40, 40)
+        y_src = _column(sources, 40)
+        mcu_y = max(y_src, 40) if sources else 40
+        diode_lane_x = 230
         if mcu:
-            place(mcu, 40, 220)
+            place(mcu, 40, mcu_y + 20)
         row_y = 40
         for idx in range(max(len(switches), len(loads))):
             if idx < len(loads):
@@ -383,9 +397,20 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
             if idx < len(switches):
                 place(switches[idx], 370, row_y + 10)
             row_y += 150
-        oy = max(row_y, 360)
+        oy = max(row_y, mcu_y + 200, 360)
         for j, o in enumerate(others):
             place(o, 300 + (j % 3) * 250, oy + (j // 3) * 150)
+    # diode placement cursor (diodes minted on demand during wiring)
+    _diode_n = [0]
+    def mint_diode():
+        if diode_budget[0] <= 0 or diode_def is None:
+            return None
+        diode_budget[0] -= 1
+        k = _diode_n[0]; _diode_n[0] += 1
+        inst = {"instance_id": f"d{k+1}", "component_id": diode_def["id"],
+                "def": diode_def, "label": diode_label}
+        place(inst, diode_lane_x, 40 + k * 70)
+        return inst
 
     # 4. Wiring
     wires = []
@@ -411,9 +436,22 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
     elif mcu:
         gnd_inst, gnd_pin = mcu["instance_id"], find_pin(mcu, {"ground"})
 
+    def merge_to_rail(fi, fp, color="power"):
+        """Tie a source/converter output onto the V+ rail, inserting a Schottky
+        OR-ing diode (anode <- source, cathode -> rail) when one is in budget so
+        multiple supplies cannot back-feed each other."""
+        if not (vpos_inst and fp) or fi == vpos_inst:
+            return
+        d = mint_diode()
+        if d:
+            wire(fi, fp, d["instance_id"], "A", color)
+            wire(d["instance_id"], "K", vpos_inst, vpos_pin, color)
+        else:
+            wire(fi, fp, vpos_inst, vpos_pin, color)
+
     # Harvest chain: harvester out -> converter VIN; converter VBAT/VOUT ->
-    # storage; every chain ground -> common ground rail. (PV/TEG/RF -> charger
-    # -> supercap/LiFePO4 -> rail.)
+    # rail (via OR-ing diode); every chain ground -> common ground rail.
+    # (PV/TEG/RF -> charger -> [diode] -> supercap/LiFePO4 rail.)
     for idx, h in enumerate(harvesters):
         hv = find_pin(h, set(), names={"V+", "TEG+", "VOUT", "VCAP"}) or find_pin(h, {"power"})
         hg = find_pin(h, {"ground"})
@@ -421,21 +459,28 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
         if cv:
             cv_in = find_pin(cv, set(), names={"VIN", "VIN_DC"}) or find_pin(cv, {"power"})
             wire(h["instance_id"], hv, cv["instance_id"], cv_in, "power")
-        elif vpos_inst:
-            wire(h["instance_id"], hv, vpos_inst, vpos_pin, "power")
+        else:
+            merge_to_rail(h["instance_id"], hv)   # no converter -> diode onto rail
         if gnd_inst and hg:
             wire(gnd_inst, gnd_pin, h["instance_id"], hg, "ground")
     for cv in converters:
         cv_out = find_pin(cv, set(), names={"VBAT", "VOUT", "VSTOR", "VSTORE"}) or find_pin(cv, {"power"})
         cv_g = find_pin(cv, {"ground"})
-        if storages:
-            st = storages[0]
-            wire(cv["instance_id"], cv_out, st["instance_id"], find_pin(st, {"power"}), "power")
+        merge_to_rail(cv["instance_id"], cv_out)  # converter output OR'd onto rail
         if gnd_inst and cv_g:
             wire(gnd_inst, gnd_pin, cv["instance_id"], cv_g, "ground")
     for st in storages[1:]:   # extra storage banks in parallel on the rail
         wire(vpos_inst, vpos_pin, st["instance_id"], find_pin(st, {"power"}), "power")
         wire(gnd_inst, gnd_pin, st["instance_id"], find_pin(st, {"ground"}), "ground")
+
+    # Extra supplies (e.g. a microbial fuel cell or a second battery) OR onto
+    # the rail through their own diodes; their grounds join the common rail.
+    for s in sources:
+        sp = find_pin(s, {"power"})
+        sg = find_pin(s, {"ground"})
+        merge_to_rail(s["instance_id"], sp)
+        if gnd_inst and sg and s["instance_id"] != gnd_inst:
+            wire(gnd_inst, gnd_pin, s["instance_id"], sg, "ground")
 
     # Rail -> MCU power input (prefer VIN/5V over the 3V3 pin)
     if mcu and vpos_inst and vpos_inst != mcu["instance_id"]:
@@ -506,8 +551,10 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
              "(GPIO->GATE, load->DRAIN, SOURCE->GND).")
     if has_harvest:
         notes += (" Energy chain (left->right): harvesters (PV/TEG/RF) -> "
-                  "converters (MPPT/boost charger) -> storage (supercap/LiFePO4) "
-                  "-> rail -> MCU + loads. INA226 monitors sit on the rail.")
+                  "converters (MPPT/boost charger) -> Schottky OR-ing diodes -> "
+                  "storage (supercap/LiFePO4) rail -> MCU + loads. Every supply "
+                  "(incl. extra sources like a fuel cell) ORs onto the rail "
+                  "through its own diode; INA226 monitors sit on the rail.")
     notes += (" Drag to rearrange; click two pins to add a wire; right-click a "
               "wire to delete.")
     schematic = {
