@@ -41,6 +41,12 @@ try:
     from core import task_events as _task_events  # visibility pipeline #1
 except Exception:
     _task_events = None
+try:
+    # Skill executor — used to run ##SKILL:## calls the LLM emits during a task.
+    # Safe to import at module load: context_db's connection pool is lazy.
+    from core.skills_engine import SkillsEngine
+except Exception:  # pragma: no cover — defensive; tasks still run, just no skills
+    SkillsEngine = None
 
 
 def _emit(kind: str, task: dict | None = None, agent_id: str | None = None,
@@ -181,6 +187,73 @@ def is_llm_actionable(task: dict) -> bool:
     return any(kw in title for kw in LLM_ACTIONABLE)
 
 
+def _run_skills_and_reformat(agent_id: str, task: dict, output: str,
+                             model: str, system: str, target_url: str) -> str:
+    """Execute ##SKILL:## calls in `output` (except artifact_save) and, if any
+    succeeded, re-prompt the LLM with the real skill data so the final
+    deliverable is grounded in fact rather than simulated.
+
+    Returns the (possibly updated) output. Best-effort: on any error it falls
+    back to the original/spliced text so a task never dies on skill plumbing.
+    `artifact_save` is excluded — it's handled by _execute_skill_saves() to
+    avoid double-saving."""
+    if SkillsEngine is None:
+        return output
+    try:
+        engine = SkillsEngine(agent_id)
+        spliced, skill_results = engine.parse_and_run(
+            output,
+            task_id=task.get("id"),
+            project_id=task.get("project_id"),
+            exclude={"artifact_save"},
+        )
+    except Exception as e:
+        logger.warning(f"  Skill execution unavailable/failed: {e}")
+        return output
+
+    successful = [r for r in skill_results if r.get("success")]
+    if not successful:
+        # No skills ran, or all failed. If markers were present, return the
+        # spliced text (which surfaces [SKILL ERROR: ...] honestly) rather than
+        # the raw markers; otherwise return the original output unchanged.
+        return spliced if skill_results else output
+
+    skill_data = "\n\n".join(
+        f"[{r.get('skill', 'skill')} output]\n{r.get('output', '')}" for r in successful
+    )
+    proj_id = task.get("project_id", "shared")
+    reformat_user = (
+        f"Task: {task['title']}\n"
+        f"Description: {task.get('description', '')}\n\n"
+        f"Here is the REAL live data returned by your skills:\n\n{skill_data}\n\n"
+        "Now produce the final deliverable using ONLY this real data. "
+        "Do NOT invent, estimate, or simulate any values, URLs, or figures.\n"
+        "Save the deliverable with "
+        f'##SKILL:artifact_save{{"filename":"deliverable.md","content":"...","project_id":"{proj_id}"}}## '
+        "then write TASK_COMPLETE on its own line (or TASK_IN_PROGRESS if more work remains)."
+    )
+    payload = {
+        "model": model,
+        "stream": False,
+        "options": {"num_predict": 2000, "temperature": 0.3},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": reformat_user},
+        ],
+    }
+    try:
+        resp = requests.post(f"{target_url}/api/chat", json=payload, timeout=LLM_REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        reformatted = resp.json()["message"]["content"].strip()
+        if reformatted:
+            logger.info(f"  🔎 {len(successful)} skill(s) ran — regrounded deliverable on real data")
+            return reformatted
+    except Exception as e:
+        logger.warning(f"  Skill reformat pass failed: {e} — using spliced output")
+    # Fallback: spliced text already contains the real [SKILL RESULT] data inline.
+    return spliced
+
+
 def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: str = "", ollama_url: str | None = None) -> dict:
     """
     Send a task to Ollama with the agent's persona.
@@ -275,6 +348,14 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: 
     if last_err is not None:
         logger.error(f"LLM error for {agent_id} task {task['id'][:8]}: {last_err}")
         return {"success": False, "output": str(last_err), "completed": False}
+
+    # ── Skills: execute any ##SKILL:## calls the LLM emitted, then re-prompt
+    # with the REAL data so the agent grounds its deliverable instead of
+    # simulating results. `artifact_save` is excluded — it's handled separately
+    # by _execute_skill_saves() so we don't double-save.
+    output = _run_skills_and_reformat(
+        agent_id, task, output, model, system, target_url
+    )
 
     try:
 

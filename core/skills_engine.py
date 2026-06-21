@@ -141,11 +141,14 @@ class SkillsEngine:
                 )
             return {"success": False, "error": str(e), "output": ""}
 
-    def parse_and_run(self, llm_output, chat_id=None, task_id=None, project_id=None):
+    def parse_and_run(self, llm_output, chat_id=None, task_id=None, project_id=None, exclude=None):
         """Find every ##SKILL:name{...}## call, execute it, and splice the result back into the text.
 
         Brace-aware: handles nested JSON objects in skill args (e.g. `{"payload": {"k": "v"}}`).
-        Error-aware: reports malformed JSON to the agent rather than silently dropping args."""
+        Error-aware: reports malformed JSON to the agent rather than silently dropping args.
+        `exclude`: optional iterable of skill names to leave untouched (marker re-emitted
+        verbatim, not executed) so a caller can handle those skills itself."""
+        exclude = set(exclude or ())
         results = []
         pieces = []
         pos = 0
@@ -160,6 +163,11 @@ class SkillsEngine:
                 end += 1
             if text[end:end+2] == '##':
                 end += 2
+            if skill_name in exclude:
+                # Leave the marker verbatim for the caller to handle downstream.
+                pieces.append(text[m.start():end])
+                pos = end
+                continue
             if json_str:
                 try:
                     args = json.loads(json_str)
