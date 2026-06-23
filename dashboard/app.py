@@ -1766,6 +1766,19 @@ def api_empire_pulse():
     verb_clause = " OR ".join(["lower(result) LIKE %s"] * len(COMPLETION_VERBS))
     verb_params = [f"%{v}%" for v in COMPLETION_VERBS]
 
+    # Exclude tool-output / echo rows from the completion-claim count. A
+    # completion verb appearing INSIDE a web-search dump (task_type
+    # 'skill:web_search'), a received message, or an LLM echo is NOT the agent
+    # asserting it finished something — counting those produced phantom "drift"
+    # (e.g. Claw's DuckDuckGo results matched '%complete%'/'%ready%'). Only
+    # rows where the agent itself reports a result should count as a claim.
+    # NOTE: '%%' is a literal '%' wildcard under psycopg param substitution.
+    NOISE_CLAUSE = (
+        "task_type NOT LIKE 'skill:%%' "
+        "AND COALESCE(task_type,'') NOT IN "
+        "('message_received','photo_received','dispatch_received','llm_response')"
+    )
+
     # Talked-about-completion counts from task_journal + daily buckets
     by_agent_talked: dict[str, int] = {}
     by_agent_talked_daily: dict[str, list[int]] = {}
@@ -1777,6 +1790,7 @@ def api_empire_pulse():
         cur.execute(
             f"SELECT agent_id, count(*) FROM task_journal "
             f"WHERE created_at > now() - interval %s AND ({verb_clause}) "
+            f"AND {NOISE_CLAUSE} "
             f"GROUP BY agent_id",
             [f"{hours} hours"] + verb_params,
         )
@@ -1790,6 +1804,7 @@ def api_empire_pulse():
             f"       count(*) "
             f"FROM task_journal "
             f"WHERE created_at > now() - interval %s AND ({verb_clause}) "
+            f"AND {NOISE_CLAUSE} "
             f"GROUP BY agent_id, d",
             [f"{hours} hours"] + verb_params,
         )
@@ -1808,6 +1823,7 @@ def api_empire_pulse():
                 f"SELECT agent_id, count(*) FROM task_journal "
                 f"WHERE created_at > now() - interval %s AND verified = FALSE "
                 f"AND ({verb_clause}) "
+                f"AND {NOISE_CLAUSE} "
                 f"GROUP BY agent_id",
                 [f"{hours} hours"] + verb_params,
             )
