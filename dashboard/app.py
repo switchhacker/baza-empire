@@ -6171,6 +6171,29 @@ def _payment_schedule_block(inv):
         f'<span>AMOUNT DUE NOW</span><span>{m(due)}</span></div></div>')
 
 
+def _invoice_amount_due(inv, paid=0.0):
+    """Self-healing 'amount due now' for the invoice's current milestone.
+    Recomputed from the LIVE total + frozen terms snapshot so the figure never
+    goes stale when line items (and thus the total) change after terms were set
+    — the stored amount_due can be 0 in that case. Falls back to the stored
+    amount_due when there's no milestone context."""
+    try:
+        idx = int(inv.get('milestone_index')) if inv.get('milestone_index') is not None else -1
+    except (TypeError, ValueError):
+        idx = -1
+    raw = (inv.get('terms_snapshot') or '').strip()
+    if idx < 0 or not raw:
+        return float(inv.get('amount_due') or 0)
+    try:
+        ms = json.loads(raw).get('milestones') or []
+    except Exception:
+        return float(inv.get('amount_due') or 0)
+    if not ms:
+        return float(inv.get('amount_due') or 0)
+    contract = float(inv.get('total') or inv.get('subtotal') or 0)
+    return _compute_milestone_amount_due(contract, ms, idx, paid)
+
+
 @app.route('/api/ahb/projects/<pid>/payment-terms', methods=['GET', 'PUT'])
 def api_ahb_project_payment_terms(pid):
     conn = _ahb_db()
@@ -10245,6 +10268,11 @@ def _invoice_html(iid):
     if inv.get('project_id'):
         phases = [dict(r) for r in conn.execute(
             "SELECT * FROM ahb_project_phases WHERE project_id = ? ORDER BY phase_number", (inv['project_id'],)).fetchall()]
+    # Self-heal the milestone amount-due from the live total before rendering:
+    # the stored value can be stale ($0.00) if line items changed after terms
+    # were set. Subtract payments made across the project.
+    _paid = _project_total_paid(conn, inv['project_id']) if inv.get('project_id') else 0.0
+    inv['amount_due'] = _invoice_amount_due(inv, _paid)
     conn.close()
 
     # Parse line items
@@ -15978,6 +16006,127 @@ def api_ahb_package_one(pkg_id):
     return jsonify({'success': True})
 
 
+def _money_fmt(x):
+    """Self-contained money formatter for cover-sheet blocks (unit-testable)."""
+    try:
+        x = float(x or 0)
+    except (TypeError, ValueError):
+        x = 0.0
+    return ("-$" if x < 0 else "$") + f"{abs(x):,.2f}"
+
+
+def _contract_deposit_pct(terms):
+    """Deposit percentage = first payment-terms milestone, default 50%.
+    `terms` is the resolved payment-terms dict ({preset, milestones:[{pct}]})."""
+    try:
+        ms = (terms or {}).get("milestones") or []
+        if ms:
+            pct = float(ms[0].get("pct") or 0)
+            if pct > 0:
+                return pct
+    except Exception:
+        pass
+    return 50.0
+
+
+def _contract_deposit_block(contract_amount, deposit_pct):
+    """Highlighted Payment & Deposit block for a contract cover sheet: contract
+    total, deposit required (pct of total, due on signing), balance on
+    completion. Returns '' when there's no usable contract amount."""
+    try:
+        total = float(contract_amount or 0)
+    except (TypeError, ValueError):
+        total = 0.0
+    try:
+        pct = float(deposit_pct or 0)
+    except (TypeError, ValueError):
+        pct = 0.0
+    if total <= 0 or pct <= 0:
+        return ''
+    deposit = round(total * pct / 100.0, 2)
+    balance = round(total - deposit, 2)
+    return (
+        '<h2>Payment &amp; Deposit</h2>'
+        '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;'
+        'padding:14px 18px;margin-bottom:8px">'
+        '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">'
+        f'<span>Contract Total</span><span style="font-weight:700">{_money_fmt(total)}</span></div>'
+        '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;'
+        'color:#15803d;font-weight:700">'
+        f'<span>Deposit Required ({pct:g}%) — due upon signing</span>'
+        f'<span>{_money_fmt(deposit)}</span></div>'
+        '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0;'
+        'border-top:1px solid #bbf7d0;margin-top:4px;padding-top:6px">'
+        f'<span>Balance — due upon completion</span><span>{_money_fmt(balance)}</span></div>'
+        '</div>'
+    )
+
+
+def _package_signature_block(form, include_client=False):
+    """Signature block for a package cover sheet. Always carries the contractor
+    signature; for contracts (include_client=True) also carries the
+    client/customer signature so both parties execute the agreement."""
+    form = form or {}
+    contractor = form.get('contractor_name') or 'Sergey Tkach'
+    contractor_html = (
+        '<div class="sig-line">'
+        '<div class="label">Contractor Signature:</div>'
+        '<div class="underline"></div>'
+        f'<div style="font-size:11px;color:#666;margin-top:4px">{contractor}</div>'
+        '<div class="label" style="margin-top:12px">Date:</div>'
+        '<div class="underline"></div>'
+        '</div>'
+    )
+    if include_client:
+        client_name = form.get('client_name') or ''
+        second_html = (
+            '<div class="sig-line">'
+            '<div class="label">Client Signature:</div>'
+            '<div class="underline"></div>'
+            f'<div style="font-size:11px;color:#666;margin-top:4px">{client_name}</div>'
+            '<div class="label" style="margin-top:12px">Date:</div>'
+            '<div class="underline"></div>'
+            '</div>'
+        )
+    else:
+        second_html = (
+            '<div class="sig-line">'
+            '<div class="label">Date:</div>'
+            '<div class="underline"></div>'
+            '</div>'
+        )
+    return f'<div class="signature-block">{contractor_html}{second_html}</div>'
+
+
+def _invoice_scope_text(line_items):
+    """Newline-joined scope-of-work descriptions from invoice line items,
+    preserving the invoice's own order, section headers and numbering. Blank
+    rows are dropped. Returns '' when there's nothing usable. This is what makes
+    a contract's scope match the invoice the client actually received."""
+    lines = []
+    for it in (line_items or []):
+        d = (it.get('description') or '').strip()
+        if d:
+            lines.append(d)
+    return "\n".join(lines)
+
+
+def _contract_scope_block(scope_text):
+    """Readable Scope of Work section for a contract cover sheet, sourced from
+    the chosen invoice. Returns '' when there's no scope text."""
+    scope_text = (scope_text or '').strip()
+    if not scope_text:
+        return ''
+    safe = scope_text.replace('<', '&lt;').replace('>', '&gt;')
+    return (
+        '<h2>Scope of Work</h2>'
+        '<div style="background:#f8fafc;border:1px solid #ddd;border-radius:6px;'
+        'padding:12px 16px;font-size:12px;color:#333;line-height:1.55;'
+        'white-space:pre-wrap;margin-bottom:8px">'
+        f'{safe}</div>'
+    )
+
+
 @app.route('/api/ahb/packages/<int:pkg_id>/pdf', methods=['GET'])
 def api_ahb_package_pdf(pkg_id):
     """Render an application package as a printable PDF — cover sheet with prefilled
@@ -15996,6 +16145,40 @@ def api_ahb_package_pdf(pkg_id):
     except Exception: form = {}
     try: doc_ids = json.loads(pkg.get('attached_doc_ids') or '[]')
     except Exception: doc_ids = []
+    # Contract packages get a client signature + a deposit/balance block, and
+    # their scope + amount are sourced from the project's PRIMARY (chosen)
+    # invoice so the contract matches what the client was actually invoiced.
+    # Deposit % comes from the project's payment terms (first milestone), 50% default.
+    is_contract = (pkg.get('package_type') or '').lower() == 'contract'
+    deposit_pct = 50.0
+    contract_scope_text = ''
+    contract_total = None
+    if is_contract and pkg.get('project_id'):
+        try:
+            prow = conn.execute(
+                "SELECT payment_terms FROM ahb_projects WHERE id=?",
+                (pkg['project_id'],)).fetchone()
+            raw = (dict(prow).get('payment_terms') if prow else '') or ''
+            if raw.strip():
+                deposit_pct = _contract_deposit_pct(json.loads(raw))
+        except Exception:
+            pass
+        try:
+            irow = conn.execute(
+                "SELECT line_items, total, subtotal FROM ahb_invoices WHERE project_id=? "
+                "ORDER BY is_primary DESC, created_at ASC LIMIT 1",
+                (pkg['project_id'],)).fetchone()
+            if irow:
+                irow = dict(irow)
+                contract_scope_text = _invoice_scope_text(json.loads(irow.get('line_items') or '[]'))
+                contract_total = irow.get('total') or irow.get('subtotal')
+        except Exception:
+            pass
+    # Fall back to the package's own stored fields when there's no chosen invoice.
+    if is_contract and not contract_scope_text:
+        contract_scope_text = (form.get('project_description') or '').strip()
+    if is_contract and not contract_total:
+        contract_total = form.get('contract_amount') or form.get('project_budget')
     docs = []
     if doc_ids:
         placeholders = ",".join("?" * len(doc_ids))
@@ -16024,6 +16207,12 @@ def api_ahb_package_pdf(pkg_id):
     field_rows = ''
     # Group fields into pairs for two-column layout
     items = list(form.items())
+    if is_contract and contract_scope_text:
+        # The dedicated Scope of Work section (from the chosen invoice) replaces
+        # the free-text project description/scope fields so the contract can't
+        # show a stale description that conflicts with the invoice.
+        items = [(k, v) for (k, v) in items
+                 if k not in ('project_description', 'project_scope')]
     for i in range(0, len(items), 2):
         left  = items[i]
         right = items[i+1] if i+1 < len(items) else None
@@ -16089,21 +16278,15 @@ def api_ahb_package_pdf(pkg_id):
   <h2>Application Details</h2>
   <table>{field_rows}</table>
 
+  {_contract_scope_block(contract_scope_text) if is_contract else ''}
+
   {(f'<h2>Notes</h2><div style="background:#fafafa;border:1px solid #ddd;border-radius:6px;padding:12px;font-size:12px">{pkg.get("notes","")}</div>') if pkg.get('notes') else ''}
+
+  {_contract_deposit_block(contract_total, deposit_pct) if is_contract else ''}
 
   {(f'<h2>Attached Supporting Documents</h2><table><thead><tr><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af">#</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Type</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Entity</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Date</th><th style="padding:8px;background:#1e40af;color:#fff;font-size:11px;border:1px solid #1e40af;text-align:left">Summary</th></tr></thead><tbody>{docs_table_rows}</tbody></table>' if docs else '')}
 
-  <div class="signature-block">
-    <div class="sig-line">
-      <div class="label">Contractor Signature:</div>
-      <div class="underline"></div>
-      <div style="font-size:11px;color:#666;margin-top:4px">{form.get('contractor_name','Sergey Tkach')}</div>
-    </div>
-    <div class="sig-line">
-      <div class="label">Date:</div>
-      <div class="underline"></div>
-    </div>
-  </div>
+  {_package_signature_block(form, include_client=is_contract)}
 </body></html>'''
 
     # Render cover sheet to PDF
