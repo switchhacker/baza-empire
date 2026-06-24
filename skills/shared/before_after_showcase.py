@@ -22,9 +22,10 @@ def _label(img, text, box, brand):
     pad = 16
     font = media_kit._font(brand["fonts"]["headline"], 40)
     tw = draw.textlength(text, font=font)
-    draw.rectangle([x0, y0, x0 + tw + pad * 2, y0 + 60],
+    th = font.getbbox(text)[3]
+    draw.rectangle([x0, y0, x0 + tw + pad * 2, y0 + th + pad * 2],
                    fill=media_kit.hex_to_rgb(brand["colors"]["accent"]))
-    draw.text((x0 + pad, y0 + 8), text, font=font,
+    draw.text((x0 + pad, y0 + pad), text, font=font,
               fill=media_kit.hex_to_rgb(brand["colors"]["dark"]))
 
 
@@ -73,7 +74,10 @@ def main():
     for plat in platforms:
         if plat not in media_kit.PLATFORMS:
             warnings.append(f"unknown platform {plat}"); continue
-        img = _compose(plat, before, after, title, details, brand)
+        try:
+            img = _compose(plat, before, after, title, details, brand)
+        except Exception as e:
+            warnings.append(f"compose failed {plat}: {e}"); continue
         safe = re.sub(r"[^\w\-]+", "_", title or "project")[:30].strip("_") or "project"
         fname = f"showcase_{safe}_{plat}.png"
         saved = media_kit.save_deliverable(

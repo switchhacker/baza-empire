@@ -34,3 +34,18 @@ def test_builds_showcase(tmp_path):
     art = out["artifacts"][0]
     assert Path(art["path"]).exists()
     assert Image.open(art["path"]).size == (1080, 1080)
+
+
+def test_corrupt_photo_does_not_break_contract(tmp_path):
+    b = tmp_path / "b.jpg"; a = tmp_path / "a.jpg"
+    b.write_bytes(b"not an image")          # passes exists() but unreadable
+    Image.new("RGB", (1200, 1600), (200, 180, 160)).save(a)
+    out = run_skill(
+        {"before": str(b), "after": str(a), "title": "Bad Photo",
+         "platforms": ["ig_square"]},
+        env={"BAZA_ARTIFACTS_DIR": str(tmp_path / "art"),
+             "OLLAMA_HOST": "http://127.0.0.1:9"})
+    # contract preserved: valid JSON, no artifacts, a compose-failed warning
+    assert out["skill"] == "before_after_showcase"
+    assert out["artifacts"] == []
+    assert any("compose failed" in w for w in out["warnings"])
