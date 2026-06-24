@@ -282,3 +282,67 @@ def place_logo(img, brand, corner="br", margin=48, max_w=320):
         draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0))
         draw.text((x, y), text, font=font, fill=hex_to_rgb(brand["colors"]["accent"]))
     return img
+
+
+import sqlite3
+from datetime import datetime
+
+ARTIFACTS_DIR  = FRAMEWORK_DIR / "dashboard" / "artifacts"
+DASHBOARD_DB   = FRAMEWORK_DIR / "dashboard" / "baza_projects.db"
+TOOL_SERVER    = os.environ.get("BAZA_TOOL_SERVER", "http://localhost:8000")
+
+
+def gen_background(prompt, width, height, timeout=200):
+    """Generate a decorative background via Sam's SD WebUI tool. None on failure."""
+    try:
+        r = requests.post(f"{TOOL_SERVER}/tools/sam/generate-image",
+                          json={"input": {"prompt": prompt, "width": width,
+                                          "height": height}}, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        if not data.get("success"):
+            return None
+        return data.get("output", {}).get("path")
+    except Exception:
+        return None
+
+
+def save_deliverable(image, file_name, project_id="shared",
+                     agent_id="sam_axe", description="", tags=None):
+    """Save a PIL image as a PNG artifact under dashboard/artifacts/<project_id>/."""
+    try:
+        dest_dir = Path(ARTIFACTS_DIR) / project_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / file_name
+        image.save(dest, "PNG")
+        return {"success": True, "path": str(dest),
+                "url": f"/artifacts/{project_id}/{file_name}",
+                "agent_id": agent_id, "description": description,
+                "tags": tags or []}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _dash_db_path():
+    return os.environ.get("BAZA_DASHBOARD_DB", str(DASHBOARD_DB))
+
+
+def queue_social_post(platform, variant, asset_path, caption,
+                      hashtags=None, first_comment="", project_id=None,
+                      cover_path=None, ai_meta=None):
+    """Insert a draft (awaiting-review) post into Social Studio. Returns row id.
+    status='draft' => human approves in Social Studio before any publish."""
+    con = sqlite3.connect(_dash_db_path(), timeout=8.0)
+    try:
+        cur = con.execute(
+            """INSERT INTO ahb_social_posts
+               (project_id, platform, variant, asset_path, cover_path, caption,
+                hashtags, first_comment, status, ai_meta)
+               VALUES (?,?,?,?,?,?,?,?, 'draft', ?)""",
+            (project_id, platform, variant, asset_path, cover_path, caption,
+             json.dumps(hashtags or []), first_comment,
+             json.dumps(ai_meta or {})))
+        con.commit()
+        return cur.lastrowid
+    finally:
+        con.close()

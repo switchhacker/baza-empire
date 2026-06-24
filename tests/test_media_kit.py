@@ -138,3 +138,56 @@ def test_draw_headline_empty_text_is_noop():
     media_kit.draw_headline(img, None, (60, 700, 1020, 1000),
                             color=(255, 255, 255), font_path=brand["fonts"]["headline"])
     assert list(img.getdata()) == before  # nothing drawn for empty/None
+
+
+import sqlite3
+
+def test_gen_background_returns_path(monkeypatch, tmp_path):
+    out_png = tmp_path / "bg.png"
+    Image.new("RGB", (10, 10), (5, 5, 5)).save(out_png)
+    class R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"success": True, "output": {"path": str(out_png)}}
+    monkeypatch.setattr(media_kit.requests, "post", lambda *a, **k: R())
+    p = media_kit.gen_background("modern kitchen, soft light", 1080, 1080)
+    assert p == str(out_png)
+
+
+def test_gen_background_none_on_failure(monkeypatch):
+    def boom(*a, **k): raise OSError("sd down")
+    monkeypatch.setattr(media_kit.requests, "post", boom)
+    assert media_kit.gen_background("x", 1080, 1080) is None
+
+
+def test_save_deliverable_writes_png(tmp_path, monkeypatch):
+    monkeypatch.setattr(media_kit, "ARTIFACTS_DIR", tmp_path)
+    img = media_kit.new_canvas("ig_square")
+    res = media_kit.save_deliverable(img, "campaign_ig.png",
+                                     project_id="ahb123", agent_id="sam_axe",
+                                     description="test")
+    assert res["success"] is True
+    assert Path(res["path"]).exists()
+    assert Path(res["path"]).suffix == ".png"
+
+
+def test_queue_social_post_inserts_draft(tmp_path, monkeypatch):
+    db = tmp_path / "baza_projects.db"
+    con = sqlite3.connect(db)
+    con.execute("""CREATE TABLE ahb_social_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, preset_id INTEGER, project_id INTEGER,
+        source_media_ids TEXT NOT NULL DEFAULT '[]', platform TEXT NOT NULL,
+        variant TEXT NOT NULL, asset_path TEXT, cover_path TEXT, caption TEXT,
+        hashtags TEXT, first_comment TEXT, status TEXT NOT NULL DEFAULT 'draft',
+        score INTEGER, ai_meta TEXT DEFAULT '{}', render_params TEXT DEFAULT '{}',
+        scheduled_at TEXT, posted_at TEXT, posted_url TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    con.commit(); con.close()
+    monkeypatch.setenv("BAZA_DASHBOARD_DB", str(db))
+    pid = media_kit.queue_social_post(platform="ig_square", variant="feed",
+                                      asset_path="/x/a.png", caption="hi",
+                                      hashtags=["#AHBCO"], project_id=4)
+    con = sqlite3.connect(db)
+    row = con.execute("SELECT platform, status, caption FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    con.close()
+    assert row == ("ig_square", "draft", "hi")
