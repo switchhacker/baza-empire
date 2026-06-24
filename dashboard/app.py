@@ -5473,7 +5473,7 @@ def mobile_sw():
     no offline support; the SW exists only to satisfy the install criteria
     and to speed up cold loads of static assets."""
     sw = """
-const CACHE = 'baza-shell-v5';
+const CACHE = 'baza-shell-v6';
 const SHELL = ['/static/img/ahb_logo.jpeg', '/static/quickrf-editor.js', '/mobile/manifest.json'];
 self.addEventListener('install', e => {
   self.skipWaiting();
