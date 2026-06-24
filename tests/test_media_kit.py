@@ -127,3 +127,14 @@ def test_place_text_logo_fallback_when_no_file(tmp_path):
     brand["logo"] = ""                 # force wordmark fallback
     # should not raise
     media_kit.place_logo(img, brand, corner="br")
+
+
+def test_draw_headline_empty_text_is_noop():
+    img = media_kit.new_canvas("ig_square", bg=(10, 10, 10))
+    before = list(img.getdata())
+    brand = media_kit.load_brand()
+    media_kit.draw_headline(img, "", (60, 700, 1020, 1000),
+                            color=(255, 255, 255), font_path=brand["fonts"]["headline"])
+    media_kit.draw_headline(img, None, (60, 700, 1020, 1000),
+                            color=(255, 255, 255), font_path=brand["fonts"]["headline"])
+    assert list(img.getdata()) == before  # nothing drawn for empty/None

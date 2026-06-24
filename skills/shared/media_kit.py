@@ -219,6 +219,9 @@ def _wrap(draw, text, font, max_width):
 def draw_headline(img, text, box, color, font_path, align="left",
                   max_size=120, shadow=True):
     """Draw auto-fitted, wrapped headline text inside box=(x0,y0,x1,y1)."""
+    text = (text or "").strip()
+    if not text:
+        return img
     draw = ImageDraw.Draw(img)
     x0, y0, x1, y1 = box
     max_w = x1 - x0
@@ -273,8 +276,9 @@ def place_logo(img, brand, corner="br", margin=48, max_w=320):
         font = _font(brand["fonts"]["headline"], 44)
         text = brand["short_name"]
         tw = draw.textlength(text, font=font)
+        th = font.getbbox(text)[3]
         x = margin if "l" in corner else w - tw - margin
-        y = margin if "t" in corner else h - 64 - margin
+        y = margin if "t" in corner else h - th - margin
         draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0))
         draw.text((x, y), text, font=font, fill=hex_to_rgb(brand["colors"]["accent"]))
     return img
