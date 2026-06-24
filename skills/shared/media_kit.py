@@ -173,6 +173,10 @@ def new_canvas(platform, bg=None):
     return Image.new("RGB", (w, h), bg)
 
 
+def new_canvas_size(w, h, bg):
+    return Image.new("RGB", (w, h), bg)
+
+
 def load_photo(path, size, mode="cover"):
     """Open a photo and cover-fit (crop) it to exactly `size`."""
     img = Image.open(path).convert("RGB")
