@@ -149,3 +149,132 @@ def write_copy(brief, brand, kind="caption"):
                 "model": model}
     except Exception:
         return _template_copy(brief, brand)
+
+
+from PIL import Image, ImageDraw, ImageFont
+
+PLATFORMS = {
+    "ig_square":     (1080, 1080),
+    "ig_reel":       (1080, 1920),
+    "ig_feed_square":(1080, 1080),
+    "tiktok":        (1080, 1920),
+    "fb":            (1200, 630),
+    "yt_thumb":      (1280, 720),
+    "flyer_portrait":(1275, 1650),   # 8.5x11 @ 150 dpi
+    "ad_square":     (1080, 1080),
+    "ad_landscape":  (1200, 628),
+}
+
+
+def new_canvas(platform, bg=None):
+    w, h = PLATFORMS[platform]
+    if bg is None:
+        bg = hex_to_rgb(load_brand()["colors"]["dark"])
+    return Image.new("RGB", (w, h), bg)
+
+
+def load_photo(path, size, mode="cover"):
+    """Open a photo and cover-fit (crop) it to exactly `size`."""
+    img = Image.open(path).convert("RGB")
+    tw, th = size
+    sw, sh = img.size
+    scale = max(tw / sw, th / sh)
+    nw, nh = int(sw * scale + 0.5), int(sh * scale + 0.5)
+    img = img.resize((nw, nh), Image.LANCZOS)
+    left = (nw - tw) // 2
+    top = (nh - th) // 2
+    return img.crop((left, top, left + tw, top + th))
+
+
+def _font(font_path, size):
+    try:
+        return ImageFont.truetype(font_path, size)
+    except Exception:
+        return ImageFont.load_default()
+
+
+def fit_font(draw, text, font_path, max_width, max_size, min_size=18):
+    size = max_size
+    while size > min_size:
+        f = _font(font_path, size)
+        if draw.textlength(text, font=f) <= max_width:
+            return f
+        size -= 2
+    return _font(font_path, min_size)
+
+
+def _wrap(draw, text, font, max_width):
+    words, lines, cur = text.split(), [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if draw.textlength(trial, font=font) <= max_width or not cur:
+            cur = trial
+        else:
+            lines.append(cur); cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def draw_headline(img, text, box, color, font_path, align="left",
+                  max_size=120, shadow=True):
+    """Draw auto-fitted, wrapped headline text inside box=(x0,y0,x1,y1)."""
+    draw = ImageDraw.Draw(img)
+    x0, y0, x1, y1 = box
+    max_w = x1 - x0
+    font = fit_font(draw, max(text.split(" "), key=len) if text else text,
+                    font_path, max_w, max_size)
+    lines = _wrap(draw, text, font, max_w)
+    line_h = (font.getbbox("Ag")[3] - font.getbbox("Ag")[1]) + 12
+    y = y0
+    for line in lines:
+        if align == "center":
+            x = x0 + (max_w - draw.textlength(line, font=font)) / 2
+        else:
+            x = x0
+        if shadow:
+            draw.text((x + 3, y + 3), line, font=font, fill=(0, 0, 0))
+        draw.text((x, y), line, font=font, fill=color)
+        y += line_h
+    return img
+
+
+def scrim(img, side="bottom", height_frac=0.4, color=(0, 0, 0), max_alpha=190):
+    """Overlay a vertical gradient for text legibility (bottom or top)."""
+    w, h = img.size
+    band = int(h * height_frac)
+    overlay = Image.new("RGBA", (w, band), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    for i in range(band):
+        a = int(max_alpha * (i / band)) if side == "bottom" else int(max_alpha * (1 - i / band))
+        od.line([(0, i), (w, i)], fill=(color[0], color[1], color[2], a))
+    y = h - band if side == "bottom" else 0
+    base = img.convert("RGBA")
+    base.alpha_composite(overlay, (0, y))
+    img.paste(base.convert("RGB"))
+    return img
+
+
+def place_logo(img, brand, corner="br", margin=48, max_w=320):
+    """Place the logo image; fall back to a text wordmark if no logo file."""
+    w, h = img.size
+    logo_path = brand.get("logo") or ""
+    draw = ImageDraw.Draw(img)
+    if logo_path and Path(logo_path).exists():
+        logo = Image.open(logo_path).convert("RGBA")
+        scale = min(max_w / logo.width, 1.0)
+        logo = logo.resize((int(logo.width * scale), int(logo.height * scale)), Image.LANCZOS)
+        lw, lh = logo.size
+        x = margin if "l" in corner else w - lw - margin
+        y = margin if "t" in corner else h - lh - margin
+        base = img.convert("RGBA"); base.alpha_composite(logo, (x, y))
+        img.paste(base.convert("RGB"))
+    else:
+        font = _font(brand["fonts"]["headline"], 44)
+        text = brand["short_name"]
+        tw = draw.textlength(text, font=font)
+        x = margin if "l" in corner else w - tw - margin
+        y = margin if "t" in corner else h - 64 - margin
+        draw.text((x + 2, y + 2), text, font=font, fill=(0, 0, 0))
+        draw.text((x, y), text, font=font, fill=hex_to_rgb(brand["colors"]["accent"]))
+    return img
