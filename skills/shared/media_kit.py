@@ -67,10 +67,11 @@ def save_brand(brand: dict) -> dict:
     return {"path": str(BRAND_PATH)}
 
 
-import re
 import requests
 
-OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+def _ollama_url():
+    return os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 
 # Substrings that disqualify a model for copywriting.
 _BAD_MODEL = ("cloud", "-vl", "vision", "ocr", "coder", "embed", "minicpm")
@@ -82,7 +83,7 @@ _PREF = ("gemma4:26b", "qwen3.6:27b", "nemotron", "gemma4:12b",
 def pick_copy_model():
     """Pick the strongest installed LOCAL general chat model. None if unreachable."""
     try:
-        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=6)
+        r = requests.get(f"{_ollama_url()}/api/tags", timeout=6)
         if r.status_code != 200:
             return None
         names = [m["name"] for m in r.json().get("models", [])]
@@ -102,7 +103,7 @@ def pick_copy_model():
 
 
 def _ollama_chat(model, prompt, timeout=90):
-    r = requests.post(f"{OLLAMA_URL}/api/chat", json={
+    r = requests.post(f"{_ollama_url()}/api/chat", json={
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
@@ -147,6 +148,4 @@ def write_copy(brief, brand, kind="caption"):
                 "first_comment": str(data.get("first_comment", "")).strip(),
                 "model": model}
     except Exception:
-        out = _template_copy(brief, brand)
-        out["model"] = "template"
-        return out
+        return _template_copy(brief, brand)
