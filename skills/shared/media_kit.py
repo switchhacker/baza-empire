@@ -285,7 +285,6 @@ def place_logo(img, brand, corner="br", margin=48, max_w=320):
 
 
 import sqlite3
-from datetime import datetime
 
 ARTIFACTS_DIR  = FRAMEWORK_DIR / "dashboard" / "artifacts"
 DASHBOARD_DB   = FRAMEWORK_DIR / "dashboard" / "baza_projects.db"
