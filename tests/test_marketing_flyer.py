@@ -23,12 +23,13 @@ def test_flyer_renders_sizes(tmp_path):
     out = run_skill(
         {"headline": "Spring Roofing Special", "subhead": "20% off this month",
          "bullets": ["Licensed & insured", "Free estimates", "10-year warranty"],
-         "cta": "Call (555) 123-4567", "sizes": ["flyer_portrait", "ad_square"]},
+         "cta": "Call (555) 123-4567", "sizes": ["flyer_portrait", "ad_square", "ad_landscape"]},
         env={"BAZA_ARTIFACTS_DIR": str(tmp_path / "art"),
              "OLLAMA_HOST": "http://127.0.0.1:9",
              "BAZA_TOOL_SERVER": "http://127.0.0.1:9"})  # no SD -> brand-color bg
     assert out["skill"] == "marketing_flyer"
-    assert len(out["artifacts"]) == 2
+    assert len(out["artifacts"]) == 3
     sizes = {Path(a["path"]).name: Image.open(a["path"]).size for a in out["artifacts"]}
     assert (1275, 1650) in sizes.values()
     assert (1080, 1080) in sizes.values()
+    assert (1200, 628) in sizes.values()

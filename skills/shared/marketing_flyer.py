@@ -49,13 +49,18 @@ def _compose(size_name, headline, subhead, bullets, cta, photo, brand):
                   fill=media_kit.hex_to_rgb(brand["colors"]["accent"]))
         y += int(h * 0.07)
     bf = media_kit._font(brand["fonts"]["body"], int(h * 0.028))
+    cta_top = int(h * 0.86)
+    col_w = w - mx * 2
     for b in (bullets or [])[:6]:
-        draw.text((mx, y), f"✓  {b}", font=bf, fill=(255, 255, 255))
-        y += int(h * 0.045)
+        for line in media_kit._wrap(draw, f"✓  {b}", bf, col_w):
+            if y >= cta_top - int(h * 0.05):
+                break
+            draw.text((mx, y), line, font=bf, fill=(255, 255, 255))
+            y += int(h * 0.045)
     if cta:
         cf = media_kit._font(brand["fonts"]["headline"], int(h * 0.038))
         ctw = draw.textlength(cta, font=cf)
-        bx0, by0 = mx, int(h * 0.88)
+        bx0, by0 = mx, min(int(h * 0.88), h - int(h * 0.17))
         draw.rectangle([bx0, by0, bx0 + ctw + 60, by0 + int(h * 0.06)],
                        fill=media_kit.hex_to_rgb(brand["colors"]["accent"]))
         draw.text((bx0 + 30, by0 + int(h * 0.013)), cta, font=cf,
