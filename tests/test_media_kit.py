@@ -30,3 +30,10 @@ def test_load_brand_merges_partial_file(tmp_path, monkeypatch):
     assert brand["colors"]["primary"] == "#112233"   # override kept
     assert brand["colors"]["accent"].startswith("#")  # default filled in
     assert brand["short_name"] == "AHBCO"             # default filled in
+
+
+def test_load_brand_is_isolated_between_calls():
+    b1 = media_kit.load_brand()
+    b2 = media_kit.load_brand()
+    b1["colors"]["primary"] = "#DEADBE"
+    assert b2["colors"]["primary"] != "#DEADBE"

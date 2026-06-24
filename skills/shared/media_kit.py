@@ -55,13 +55,13 @@ def _deep_merge(base: dict, over: dict) -> dict:
 def load_brand() -> dict:
     """Return brand.json merged over DEFAULT_BRAND (defaults fill any gaps)."""
     try:
-        data = json.loads(Path(BRAND_PATH).read_text())
+        data = json.loads(BRAND_PATH.read_text())
     except Exception:
         data = {}
     return _deep_merge(DEFAULT_BRAND, data)
 
 
 def save_brand(brand: dict) -> dict:
-    BRAND_DIR.mkdir(parents=True, exist_ok=True)
-    Path(BRAND_PATH).write_text(json.dumps(brand, indent=2))
+    BRAND_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BRAND_PATH.write_text(json.dumps(brand, indent=2))
     return {"path": str(BRAND_PATH)}
