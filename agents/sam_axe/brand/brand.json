@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "name": "All Home Building Co",
+  "short_name": "AHBCO",
+  "tagline": "Drown the competition.",
+  "site": "https://ahb123.com",
+  "colors": {
+    "primary": "#0A3D62",
+    "secondary": "#1E90FF",
+    "accent": "#F39C12",
+    "light": "#F5F7FA",
+    "dark": "#13202E"
+  },
+  "fonts": {
+    "headline": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "body": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+  },
+  "logo": "",
+  "voice": "confident, local, trustworthy, no jargon"
+}
