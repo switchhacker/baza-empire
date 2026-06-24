@@ -1,4 +1,4 @@
-import importlib.util, json, os, sys, subprocess, sqlite3
+import json, os, sys, subprocess, sqlite3
 from pathlib import Path
 from PIL import Image
 
@@ -66,3 +66,22 @@ def test_campaign_no_queue_skips_db(tmp_path):
     con.close()
     assert n == 0
     assert out["queued"] == []
+
+
+def test_campaign_topic_with_slash_is_safe(tmp_path):
+    art = tmp_path / "artifacts"
+    photo = tmp_path / "job.jpg"
+    Image.new("RGB", (1600, 1200), (120, 90, 60)).save(photo)
+    out = run_skill(
+        {"topic": "kitchen/bath & remodel", "photo": str(photo),
+         "platforms": ["ig_square"], "queue": False},
+        env={"BAZA_DASHBOARD_DB": str(tmp_path / "x.db"),
+             "BAZA_ARTIFACTS_DIR": str(art),
+             "OLLAMA_HOST": "http://127.0.0.1:9",
+             "BAZA_TOOL_SERVER": "http://127.0.0.1:9"})
+    assert len(out["artifacts"]) == 1
+    p = Path(out["artifacts"][0]["path"])
+    assert p.exists()
+    assert "/" not in p.name and "&" not in p.name
+    # artifact lives directly under the shared project dir, no stray subdirs from the topic
+    assert p.parent.name == "shared"

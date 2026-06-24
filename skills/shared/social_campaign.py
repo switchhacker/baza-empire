@@ -6,7 +6,7 @@ Generates copy (local Ollama), composes a branded image per platform
 (optionally) queues each as a DRAFT in Social Studio (never auto-publishes).
 Usage: ##SKILL:social_campaign{"topic":"kitchen remodel","platforms":["ig_square","fb"],"queue":true}##
 """
-import os, sys, json
+import os, sys, json, re
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -61,7 +61,8 @@ def main():
         if plat not in media_kit.PLATFORMS:
             warnings.append(f"unknown platform {plat}"); continue
         img = _compose(plat, photo, copy, brand)
-        fname = f"campaign_{(topic or 'project').replace(' ', '_')[:30]}_{plat}.png"
+        safe = re.sub(r"[^\w\-]+", "_", topic or "project")[:30].strip("_") or "project"
+        fname = f"campaign_{safe}_{plat}.png"
         saved = media_kit.save_deliverable(
             img, fname, project_id=str(project_id or "shared"),
             description=f"Social campaign ({plat}): {topic}",
@@ -70,13 +71,16 @@ def main():
             warnings.append(f"save failed {plat}: {saved.get('error')}"); continue
         artifacts.append(saved)
         if do_queue:
-            pid = media_kit.queue_social_post(
-                platform=plat, variant="feed", asset_path=saved["path"],
-                caption=copy["caption"], hashtags=copy["hashtags"],
-                first_comment=copy.get("first_comment", ""),
-                project_id=project_id,
-                ai_meta={"copy_model": copy["model"], "topic": topic})
-            queued.append({"platform": plat, "post_id": pid})
+            try:
+                pid = media_kit.queue_social_post(
+                    platform=plat, variant="feed", asset_path=saved["path"],
+                    caption=copy["caption"], hashtags=copy["hashtags"],
+                    first_comment=copy.get("first_comment", ""),
+                    project_id=project_id,
+                    ai_meta={"copy_model": copy["model"], "topic": topic})
+                queued.append({"platform": plat, "post_id": pid})
+            except Exception as e:
+                warnings.append(f"queue failed {plat}: {e}")
 
     print(json.dumps({"skill": "social_campaign", "copy": copy,
                       "artifacts": artifacts, "queued": queued,
