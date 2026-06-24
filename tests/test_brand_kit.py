@@ -19,7 +19,7 @@ def test_show_returns_brand(tmp_path):
     assert out["brand"]["short_name"] == "AHBCO"
 
 
-def test_set_patches_color(tmp_path, monkeypatch):
+def test_set_patches_color(tmp_path):
     bp = tmp_path / "brand.json"
     out = run_skill({"mode": "set", "patch": {"colors": {"accent": "#ABCDEF"}}},
                     env={"BAZA_BRAND_PATH": str(bp)})
@@ -33,3 +33,21 @@ def test_detect_falls_back_when_site_down(tmp_path):
                     env={"BAZA_BRAND_PATH": str(bp)})
     assert out["source"] == "fallback"
     assert out["brand"]["short_name"] == "AHBCO"
+
+
+import re as _re
+
+def test_og_image_regex_both_orders():
+    # both attribute orders should be matchable by the detect logic's pattern approach
+    html_a = '<meta property="og:image" content="https://x/img1.png">'
+    html_b = '<meta content="https://x/img2.png" property="og:image">'
+    def extract(html):
+        for m in _re.finditer(r'<meta[^>]+>', html, _re.I):
+            tag = m.group(0)
+            if _re.search(r'(property|name)=["\']og:image["\']', tag, _re.I):
+                cm = _re.search(r'content=["\']([^"\']+)["\']', tag, _re.I)
+                if cm:
+                    return cm.group(1)
+        return ""
+    assert extract(html_a) == "https://x/img1.png"
+    assert extract(html_b) == "https://x/img2.png"

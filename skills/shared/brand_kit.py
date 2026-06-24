@@ -30,9 +30,14 @@ def _detect(site):
         return None  # signal fallback
     # find a logo candidate
     logo_url = ""
-    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', html, re.I)
-    if m:
-        logo_url = m.group(1)
+    # match og:image meta tag in EITHER attribute order (Squarespace emits content-first)
+    for m in re.finditer(r'<meta[^>]+>', html, re.I):
+        tag = m.group(0)
+        if re.search(r'(property|name)=["\']og:image["\']', tag, re.I):
+            cm = re.search(r'content=["\']([^"\']+)["\']', tag, re.I)
+            if cm:
+                logo_url = cm.group(1)
+                break
     if not logo_url:
         m = re.search(r'<img[^>]+(?:logo|brand)[^>]*src=["\']([^"\']+)', html, re.I)
         if m:
@@ -43,9 +48,13 @@ def _detect(site):
         elif logo_url.startswith("/"):
             logo_url = site.rstrip("/") + logo_url
         try:
+            import io
+            from PIL import Image as _PILImage
+            raw = requests.get(logo_url, timeout=10).content
+            img = _PILImage.open(io.BytesIO(raw)).convert("RGBA")  # raises if not a decodable raster
             media_kit.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
             dest = media_kit.ASSETS_DIR / "logo.png"
-            dest.write_bytes(requests.get(logo_url, timeout=10).content)
+            img.save(dest, "PNG")
             brand["logo"] = str(dest)
             # extract colors from the logo via Sam's color-palette tool
             try:
