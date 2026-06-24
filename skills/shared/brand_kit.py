@@ -51,6 +51,8 @@ def _detect(site):
             import io
             from PIL import Image as _PILImage
             raw = requests.get(logo_url, timeout=10).content
+            if len(raw) > 10 * 1024 * 1024:
+                raise ValueError("logo too large")
             img = _PILImage.open(io.BytesIO(raw)).convert("RGBA")  # raises if not a decodable raster
             media_kit.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
             dest = media_kit.ASSETS_DIR / "logo.png"

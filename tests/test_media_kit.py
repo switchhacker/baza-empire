@@ -88,6 +88,27 @@ def test_write_copy_uses_model(monkeypatch):
     assert out["model"] == "gemma4:26b-a4b-it-qat"
 
 
+def test_clean_hashtags_normalizes():
+    out = media_kit._clean_hashtags(["#KitchenRemodel", "A_H_B_C_O", "$KitchLink", " #goals", "x"])
+    assert all(t.startswith("#") for t in out)
+    assert "#KitchenRemodel" in out
+    assert all(" " not in t and "_" not in t and "$" not in t for t in out)
+
+
+def test_write_copy_supplements_short_hashtags(monkeypatch):
+    import json as _json
+    monkeypatch.setattr(media_kit, "pick_copy_model", lambda: "gemma4:12b-it-qat")
+    payload = {"caption": "Fresh kitchen.", "hashtags": ["#one"], "first_comment": "x"}
+    class R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"message": {"content": _json.dumps(payload)}}
+    monkeypatch.setattr(media_kit.requests, "post", lambda *a, **k: R())
+    out = media_kit.write_copy("kitchen", media_kit.load_brand())
+    assert len(out["hashtags"]) >= 3          # supplemented from template
+    assert out["model"] == "gemma4:12b-it-qat"
+
+
 from PIL import Image
 
 def test_platforms_have_expected_sizes():

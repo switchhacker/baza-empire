@@ -5,7 +5,7 @@ Brand source of truth, Pillow compositing, local-Ollama copywriting,
 SD-WebUI backgrounds, binary artifact save, and Social Studio queueing.
 All marketing skills import this module. Local-first, photo-first.
 """
-import os, json, copy
+import os, json, copy, re
 from pathlib import Path
 
 FRAMEWORK_DIR = Path(__file__).resolve().parent.parent.parent
@@ -76,7 +76,7 @@ def _ollama_url():
 # Substrings that disqualify a model for copywriting.
 _BAD_MODEL = ("cloud", "-vl", "vision", "ocr", "coder", "embed", "minicpm")
 # Preference order: first substring match wins a higher rank.
-_PREF = ("gemma4:26b", "qwen3.6:27b", "nemotron", "gemma4:12b",
+_PREF = ("gemma4:12b", "gemma4:26b", "qwen3.6:27b", "nemotron-3-super",
          "ministral", "gemma4:e4b", "lfm2", "gemma4")
 
 
@@ -102,12 +102,12 @@ def pick_copy_model():
     return cands[0]
 
 
-def _ollama_chat(model, prompt, timeout=90):
+def _ollama_chat(model, prompt, timeout=120, schema=None):
     r = requests.post(f"{_ollama_url()}/api/chat", json={
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
-        "format": "json",
+        "format": schema if schema else "json",
     }, timeout=timeout)
     r.raise_for_status()
     return r.json().get("message", {}).get("content", "")
@@ -120,6 +120,21 @@ def _template_copy(brief, brand):
     return {"caption": cap, "hashtags": tags,
             "first_comment": f"Get a free quote from {short} today.",
             "model": "template"}
+
+
+def _clean_hashtags(raw):
+    """Normalize model hashtag output: keep alnum tags, force leading #, drop junk."""
+    out = []
+    for t in raw or []:
+        s = re.sub(r"[^0-9A-Za-z]", "", str(t))
+        if len(s) >= 2:
+            out.append("#" + s)
+    # de-dupe preserving order
+    seen, uniq = set(), []
+    for t in out:
+        if t.lower() not in seen:
+            seen.add(t.lower()); uniq.append(t)
+    return uniq[:8]
 
 
 def write_copy(brief, brand, kind="caption"):
@@ -137,13 +152,20 @@ def write_copy(brief, brand, kind="caption"):
         f"hashtags (array of 4-8 strings each starting with #), "
         f"first_comment (string)."
     )
+    schema = {"type": "object",
+              "properties": {"caption": {"type": "string"},
+                             "hashtags": {"type": "array", "items": {"type": "string"}},
+                             "first_comment": {"type": "string"}},
+              "required": ["caption", "hashtags", "first_comment"]}
     try:
-        raw = _ollama_chat(model, prompt)
+        raw = _ollama_chat(model, prompt, schema=schema)
         data = json.loads(raw)
         caption = str(data.get("caption", "")).strip()
-        tags = [str(t) for t in data.get("hashtags", []) if str(t).strip()]
-        if not caption or not tags:
-            raise ValueError("empty fields")
+        tags = _clean_hashtags(data.get("hashtags", []))
+        if not caption:
+            raise ValueError("empty caption")
+        if len(tags) < 3:
+            tags = (tags + _template_copy(brief, brand)["hashtags"])[:6]
         return {"caption": caption, "hashtags": tags,
                 "first_comment": str(data.get("first_comment", "")).strip(),
                 "model": model}
@@ -314,12 +336,13 @@ def save_deliverable(image, file_name, project_id="shared",
                      agent_id="sam_axe", description="", tags=None):
     """Save a PIL image as a PNG artifact under dashboard/artifacts/<project_id>/."""
     try:
-        dest_dir = Path(ARTIFACTS_DIR) / project_id
+        safe_proj = re.sub(r"[^\w\-]+", "_", str(project_id or "shared"))[:40].strip("_") or "shared"
+        dest_dir = Path(ARTIFACTS_DIR) / safe_proj
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / file_name
         image.save(dest, "PNG")
         return {"success": True, "path": str(dest),
-                "url": f"/artifacts/{project_id}/{file_name}",
+                "url": f"/artifacts/{safe_proj}/{file_name}",
                 "agent_id": agent_id, "description": description,
                 "tags": tags or []}
     except Exception as e:
