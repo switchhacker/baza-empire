@@ -216,6 +216,27 @@ def get(name: str, json_path: str = DEFAULT_JSON) -> dict | None:
     return None
 
 
+def tool_descriptors(tools: dict) -> list[dict]:
+    """Convert a tool-server registry dict {agent: [tool,...]} into manifest
+    descriptors of type 'tool'. These are invoked from an agent via the
+    call_tool bridge skill."""
+    out = []
+    for agent, tool_list in (tools or {}).items():
+        for tool in tool_list:
+            name = f"{agent}/{tool}"
+            out.append({
+                "name": name,
+                "type": "tool",
+                "scope": "tool-server",
+                "category": infer_category(f"{agent} {tool}"),
+                "summary": f"Tool-server endpoint {name}.",
+                "when_to_use": f"Invoke via call_tool with agent={agent}, tool={tool}.",
+                "args": {"agent": agent, "tool": tool, "input": "dict of tool inputs"},
+                "source_path": "tool-server",
+            })
+    return out
+
+
 if __name__ == "__main__":
     import sys
     if "--build" in sys.argv:
