@@ -17,6 +17,7 @@ def run_loop(llm_call, engine, system: str, user: str, *,
              parse_kwargs: dict | None = None) -> dict:
     parse_kwargs = dict(parse_kwargs or {})
     if exclude is not None:
+        # An explicit parse_kwargs["exclude"] takes precedence over the shorthand.
         parse_kwargs.setdefault("exclude", exclude)
     observe_intro = observe_intro or (
         "Here is the REAL data your skills returned. Use ONLY this data — do not "

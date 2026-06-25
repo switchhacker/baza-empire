@@ -40,3 +40,36 @@ def test_loop_respects_max_steps():
     res = agent_loop.run_loop(llm, eng, system="sys", user="go", max_steps=3)
     assert res["steps"] == 3
     assert res["truncated"] is True
+
+class RecordingEngine:
+    """Records the kwargs passed to parse_and_run; reports one successful skill."""
+    def __init__(self): self.kwargs = None
+    def parse_and_run(self, text, **kw):
+        self.kwargs = kw
+        return text, [{"success": True, "skill": "x", "output": "ok"}]
+
+def test_loop_forwards_exclude_to_engine():
+    seen = {}
+    def llm(messages, system):
+        return 'FINAL: done ##SKILL:x{}##'   # finish marker so it stops after one parse
+    eng = RecordingEngine()
+    agent_loop.run_loop(llm, eng, system="s", user="u", max_steps=4,
+                        exclude={"artifact_save"})
+    assert eng.kwargs.get("exclude") == {"artifact_save"}
+
+def test_loop_handles_none_response():
+    def llm(messages, system):
+        return None
+    res = agent_loop.run_loop(llm, FakeEngine({}), system="s", user="u", max_steps=4)
+    assert res["steps"] == 1
+    assert res["final"] == ""
+    assert res["truncated"] is False
+
+def test_finish_marker_and_skill_in_same_response():
+    def llm(messages, system):
+        return 'FINAL: total ##SKILL:invoice_calculator{}##'
+    eng = FakeEngine({"invoice_calculator": "total=100"})
+    res = agent_loop.run_loop(llm, eng, system="s", user="u", max_steps=4,
+                              finish_markers=("FINAL:",))
+    assert res["steps"] == 1            # stops same step
+    assert "SKILL RESULT: invoice_calculator" in res["final"]   # skill still ran (spliced)
