@@ -4883,6 +4883,14 @@
               <option value="custom">Custom…</option>
             </select>
           </label>
+          <span id="pd-terms-mode-wrap" style="display:none;margin-left:8px;">
+            <label style="color:#94a3b8;">as
+              <select id="pd-terms-mode" onchange="pdOnTermsMode()" style="margin-left:4px;">
+                <option value="percent">Percent %</option>
+                <option value="amount">Dollar $</option>
+              </select>
+            </label>
+          </span>
           <div id="pd-terms-custom" style="display:none;margin-top:6px;">
             <div id="pd-terms-rows"></div>
             <button type="button" class="btn btn-sm btn-secondary" onclick="pdAddTermRow()">+ milestone</button>
@@ -15939,43 +15947,76 @@ async function pdGenerateNextInvoice(){
     editInvoice(d.id);
   }catch(e){showToast('Error: '+e.message,'error');}
 }
+function pdTermsMode(){
+  const el=document.getElementById('pd-terms-mode');
+  return el ? el.value : 'percent';
+}
 function pdOnTermsPreset(){
   const v=document.getElementById('pd-terms-preset').value;
-  document.getElementById('pd-terms-custom').style.display=(v==='custom')?'block':'none';
-  if(v==='custom' && !document.querySelectorAll('#pd-terms-rows .pd-term-row').length){
-    pdAddTermRow('Deposit',50); pdAddTermRow('Completion',50);
+  const isCustom=(v==='custom');
+  document.getElementById('pd-terms-custom').style.display=isCustom?'block':'none';
+  document.getElementById('pd-terms-mode-wrap').style.display=isCustom?'inline':'none';
+  if(!isCustom){ document.getElementById('pd-terms-mode').value='percent'; }
+  if(isCustom && !document.querySelectorAll('#pd-terms-rows .pd-term-row').length){
+    if(pdTermsMode()==='amount'){ pdAddTermRow('Deposit',0); pdAddTermRow('Balance upon completion',0); }
+    else { pdAddTermRow('Deposit',50); pdAddTermRow('Completion',50); }
   }
   pdRecalcTermSum();
 }
-function pdAddTermRow(label,pct){
+function pdOnTermsMode(){
+  const rows=[...document.querySelectorAll('#pd-terms-rows .pd-term-row')]
+    .map(r=>r.querySelector('.pd-term-label').value);
+  document.getElementById('pd-terms-rows').innerHTML='';
+  if(!rows.length){
+    if(pdTermsMode()==='amount'){ pdAddTermRow('Deposit',0); pdAddTermRow('Balance upon completion',0); }
+    else { pdAddTermRow('Deposit',50); pdAddTermRow('Completion',50); }
+  } else {
+    rows.forEach(lbl=>pdAddTermRow(lbl,0));
+  }
+  pdRecalcTermSum();
+}
+function pdAddTermRow(label,val){
+  const amount=(pdTermsMode()==='amount');
   const row=document.createElement('div');
   row.className='pd-term-row'; row.style.margin='3px 0';
-  row.innerHTML='<input class="pd-term-label" placeholder="Stage" value="'+(label||'')+'" style="width:120px;">'
-    +' <input class="pd-term-pct" type="number" min="0" max="100" value="'+(pct||0)+'" style="width:60px;" oninput="pdRecalcTermSum()">%'
+  const field = amount
+    ? '$ <input class="pd-term-val pd-term-amount" type="number" min="0" step="0.01" value="'+(val||0)+'" style="width:90px;" oninput="pdRecalcTermSum()">'
+    : '<input class="pd-term-val pd-term-pct" type="number" min="0" max="100" value="'+(val||0)+'" style="width:60px;" oninput="pdRecalcTermSum()">%';
+  row.innerHTML='<input class="pd-term-label" placeholder="Stage" value="'+(label||'')+'" style="width:160px;"> '
+    +field
     +' <button type="button" class="btn btn-sm btn-secondary" onclick="this.parentNode.remove();pdRecalcTermSum()">✕</button>';
   document.getElementById('pd-terms-rows').appendChild(row);
   pdRecalcTermSum();
 }
 function pdRecalcTermSum(){
-  let s=0;
-  document.querySelectorAll('#pd-terms-rows .pd-term-pct').forEach(i=>s+=parseFloat(i.value||0));
   const el=document.getElementById('pd-terms-sum');
-  const ok=Math.abs(s-100)<0.01;
-  el.textContent='sum = '+s+'%'+(ok?' ✓':' ✗'); el.style.color=ok?'#22c55e':'#ef4444';
   const isCustom=document.getElementById('pd-terms-preset').value==='custom';
-  document.getElementById('pd-terms-save').disabled=isCustom && !ok;
+  let s=0;
+  document.querySelectorAll('#pd-terms-rows .pd-term-val').forEach(i=>s+=parseFloat(i.value||0));
+  if(pdTermsMode()==='amount'){
+    el.textContent='Σ = $'+s.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    el.style.color='#94a3b8';
+    document.getElementById('pd-terms-save').disabled=false;
+  } else {
+    const ok=Math.abs(s-100)<0.01;
+    el.textContent='sum = '+s+'%'+(ok?' ✓':' ✗'); el.style.color=ok?'#22c55e':'#ef4444';
+    document.getElementById('pd-terms-save').disabled=isCustom && !ok;
+  }
 }
 function pdCollectMilestones(){
-  return [...document.querySelectorAll('#pd-terms-rows .pd-term-row')].map(r=>({
-    label:r.querySelector('.pd-term-label').value.trim(),
-    pct:parseFloat(r.querySelector('.pd-term-pct').value||0),
-  }));
+  const amount=(pdTermsMode()==='amount');
+  return [...document.querySelectorAll('#pd-terms-rows .pd-term-row')].map(r=>{
+    const o={label:r.querySelector('.pd-term-label').value.trim()};
+    if(amount) o.amount=parseFloat(r.querySelector('.pd-term-amount').value||0);
+    else o.pct=parseFloat(r.querySelector('.pd-term-pct').value||0);
+    return o;
+  });
 }
 async function pdSaveTerms(){
   const pid=document.getElementById('pd-id').value;
   const preset=document.getElementById('pd-terms-preset').value;
   const payload={preset};
-  if(preset==='custom')payload.milestones=pdCollectMilestones();
+  if(preset==='custom'){ payload.mode=pdTermsMode(); payload.milestones=pdCollectMilestones(); }
   const r=await fetch('/api/ahb/projects/'+pid+'/payment-terms',
     {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const j=await r.json();
@@ -15988,17 +16029,27 @@ function pdRenderCurrentTerms(terms){
   const el=document.getElementById('pd-terms-current');
   if(!el)return;
   if(!terms||!terms.milestones||!terms.milestones.length){el.textContent='';return;}
-  el.textContent=terms.milestones.map(m=>m.pct+'% '+m.label).join(' · ');
+  if(terms.mode==='amount'){
+    el.textContent=terms.milestones.map(m=>'$'+(m.amount||0).toLocaleString()+' '+m.label).join(' · ');
+  } else {
+    el.textContent=terms.milestones.map(m=>m.pct+'% '+m.label).join(' · ');
+  }
 }
 async function pdLoadTerms(pid){
   try{
     const j=await fetch('/api/ahb/projects/'+pid+'/payment-terms').then(r=>r.json());
     if(j.success && j.terms){
       const sel=document.getElementById('pd-terms-preset');
+      const modeSel=document.getElementById('pd-terms-mode');
+      if(modeSel) modeSel.value=j.terms.mode||'percent';
       if(sel){ sel.value=j.terms.preset||''; pdOnTermsPreset(); }
       if(j.terms.preset==='custom'){
+        if(modeSel) modeSel.value=j.terms.mode||'percent';
+        document.getElementById('pd-terms-mode-wrap').style.display='inline';
         document.getElementById('pd-terms-rows').innerHTML='';
-        (j.terms.milestones||[]).forEach(m=>pdAddTermRow(m.label,m.pct));
+        (j.terms.milestones||[]).forEach(m=>pdAddTermRow(m.label,
+          (j.terms.mode==='amount')?(m.amount||0):(m.pct||0)));
+        pdRecalcTermSum();
       }
       pdRenderCurrentTerms(j.terms);
     }
