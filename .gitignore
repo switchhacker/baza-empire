@@ -38,3 +38,7 @@ dashboard/*.db-wal
 dashboard/*.db-shm
 *.db.bak*
 dashboard/.backups/
+
+# Generated skill manifest (rebuilt by core.skill_registry --build)
+dashboard/skills_manifest.json
+dashboard/skills_manifest.db

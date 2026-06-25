@@ -59,7 +59,8 @@ WATCHED_SERVICES = [
 
 SKIP_PATH_RX = re.compile(
     r"/(venv|__pycache__|\.git|node_modules|artifacts|logs|"
-    r"\.private-inbound|backups)(/|$)|\.(db|log|pyc|pyo|sqlite|sqlite-journal)$"
+    r"\.private-inbound|backups)(/|$)|skills_manifest\.json$|"
+    r"\.(db|log|pyc|pyo|sqlite|sqlite-journal)$"
 )
 
 # Global rate limit for LLM calls (other ticks share this with the fs watcher's

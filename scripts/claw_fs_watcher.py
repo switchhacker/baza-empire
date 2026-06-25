@@ -49,7 +49,7 @@ SKIP_DIRS = {
 }
 SKIP_FILES_RX = re.compile(
     r"(\.db|\.log|\.pyc|\.pyo|\.sqlite|\.sqlite-journal|\.swp|"
-    r"_snapshot\.json|claw_reviews\.db)$"
+    r"_snapshot\.json|skills_manifest\.json|claw_reviews\.db)$"
 )
 
 DEBOUNCE_S      = 8.0
