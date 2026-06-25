@@ -41,6 +41,7 @@ try:
     from core import task_events as _task_events  # visibility pipeline #1
 except Exception:
     _task_events = None
+from core import scaffold_config
 try:
     # Skill executor — used to run ##SKILL:## calls the LLM emits during a task.
     # Safe to import at module load: context_db's connection pool is lazy.
@@ -254,6 +255,36 @@ def _run_skills_and_reformat(agent_id: str, task: dict, output: str,
     return spliced
 
 
+def _run_scaffold_loop(agent_id: str, task: dict, system: str, user_msg: str,
+                       model: str, target_url: str) -> str:
+    """Scaffold path: select relevant skills, then run the bounded
+    plan→act→observe→finish loop against Ollama. Generalizes the single-call +
+    _run_skills_and_reformat two-pass to N steps. Returns the final output text.
+    Raises on hard failure so the caller can fall back to the legacy path."""
+    from core import agent_loop, skill_selector
+    engine = SkillsEngine(agent_id)
+    sel = skill_selector.select(
+        f"{task['title']} {task.get('description', '')}", agent_id=agent_id,
+        pinned=scaffold_config.pinned_core(), role_pins=[],
+        top_k=scaffold_config.retrieval_top_k())
+    system_with_skills = system + "\n\n" + skill_selector.render_block(sel)
+
+    def _llm(messages, system_prompt):
+        payload = {"model": model, "stream": False,
+                   "options": {"num_predict": 2000, "temperature": 0.3},
+                   "messages": [{"role": "system", "content": system_prompt}] + messages}
+        r = requests.post(f"{target_url}/api/chat", json=payload, timeout=LLM_REQUEST_TIMEOUT)
+        r.raise_for_status()
+        return r.json()["message"]["content"].strip()
+
+    res = agent_loop.run_loop(
+        _llm, engine, system=system_with_skills, user=user_msg,
+        max_steps=scaffold_config.max_steps(),
+        parse_kwargs={"task_id": task.get("id"), "project_id": task.get("project_id"),
+                      "exclude": {"artifact_save"}})
+    return res["final"]
+
+
 def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: str = "", ollama_url: str | None = None) -> dict:
     """
     Send a task to Ollama with the agent's persona.
@@ -316,46 +347,58 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: 
         ],
     }
 
-    attempts = 2 if LLM_RETRY_ON_TIMEOUT else 1
-    last_err: Exception | None = None
-    output = ""
     target_url = ollama_url or OLLAMA_URL
-    for attempt in range(1, attempts + 1):
+    output = ""
+
+    use_legacy = True
+    if scaffold_config.is_enabled(agent_id) and SkillsEngine is not None:
         try:
-            resp = requests.post(
-                f"{target_url}/api/chat",
-                json=payload,
-                timeout=LLM_REQUEST_TIMEOUT,
-            )
-            resp.raise_for_status()
-            output = resp.json()["message"]["content"].strip()
-            last_err = None
-            break
-        except requests.exceptions.ReadTimeout as e:
-            last_err = e
-            logger.warning(
-                f"Ollama read-timeout for {agent_id} task {task['id'][:8]} "
-                f"after {LLM_REQUEST_TIMEOUT}s (attempt {attempt}/{attempts})"
-            )
-            # On first timeout, give cold-loaded model a moment before retry
-            if attempt < attempts:
-                time.sleep(5)
-                continue
+            output = _run_scaffold_loop(agent_id, task, system, user_msg, model, target_url)
+            use_legacy = False
         except Exception as e:
-            last_err = e
-            break  # non-timeout errors don't benefit from retry
+            logger.warning(
+                f"[scaffold] loop failed for {agent_id} task {task['id'][:8]}: {e} — using legacy")
+            use_legacy = True
 
-    if last_err is not None:
-        logger.error(f"LLM error for {agent_id} task {task['id'][:8]}: {last_err}")
-        return {"success": False, "output": str(last_err), "completed": False}
+    if use_legacy:
+        attempts = 2 if LLM_RETRY_ON_TIMEOUT else 1
+        last_err: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                resp = requests.post(
+                    f"{target_url}/api/chat",
+                    json=payload,
+                    timeout=LLM_REQUEST_TIMEOUT,
+                )
+                resp.raise_for_status()
+                output = resp.json()["message"]["content"].strip()
+                last_err = None
+                break
+            except requests.exceptions.ReadTimeout as e:
+                last_err = e
+                logger.warning(
+                    f"Ollama read-timeout for {agent_id} task {task['id'][:8]} "
+                    f"after {LLM_REQUEST_TIMEOUT}s (attempt {attempt}/{attempts})"
+                )
+                # On first timeout, give cold-loaded model a moment before retry
+                if attempt < attempts:
+                    time.sleep(5)
+                    continue
+            except Exception as e:
+                last_err = e
+                break  # non-timeout errors don't benefit from retry
 
-    # ── Skills: execute any ##SKILL:## calls the LLM emitted, then re-prompt
-    # with the REAL data so the agent grounds its deliverable instead of
-    # simulating results. `artifact_save` is excluded — it's handled separately
-    # by _execute_skill_saves() so we don't double-save.
-    output = _run_skills_and_reformat(
-        agent_id, task, output, model, system, target_url
-    )
+        if last_err is not None:
+            logger.error(f"LLM error for {agent_id} task {task['id'][:8]}: {last_err}")
+            return {"success": False, "output": str(last_err), "completed": False}
+
+        # ── Skills: execute any ##SKILL:## calls the LLM emitted, then re-prompt
+        # with the REAL data so the agent grounds its deliverable instead of
+        # simulating results. `artifact_save` is excluded — it's handled separately
+        # by _execute_skill_saves() so we don't double-save.
+        output = _run_skills_and_reformat(
+            agent_id, task, output, model, system, target_url
+        )
 
     try:
 
