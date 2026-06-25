@@ -350,6 +350,10 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: 
     target_url = ollama_url or OLLAMA_URL
     output = ""
 
+    # Scaffold path subsumes the legacy single-call + _run_skills_and_reformat
+    # two-pass: agent_loop runs skills inline across steps (artifact_save still
+    # excluded). On ANY failure (incl. a cold-model ReadTimeout on the first
+    # step) we fall back to the legacy path below, which keeps its own retry.
     use_legacy = True
     if scaffold_config.is_enabled(agent_id) and SkillsEngine is not None:
         try:
