@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""baza DDNS — keep a Google Cloud DNS A record pointed at this box's WAN IP.
+"""baza DDNS — keep nova.ahb123.com's A record at this box's WAN IP, via deSEC.
 
-Why this exists: nova.ahb123.com is self-hosted on baza behind Caddy, but the
-WAN IP is a residential dynamic address that rotates (it drifted 71.175.76.97 →
-96.227.96.20 and silently broke nova on 2026-06-06). This watcher detects the
-current WAN IP and, only when it changed, updates the A record via the Cloud DNS
-API. See memory: project_nova_caddy_dynamic_ip.
+Why: nova.ahb123.com is self-hosted on baza behind Caddy, but the residential
+WAN IP rotates (drifted 71.175.76.97 -> 96.227.96.20 and silently broke nova on
+2026-06-06). The domain's registrar (Squarespace) has no DNS API / no DDNS, so
+authority for *just* nova.ahb123.com is delegated (NS records at Squarespace) to
+deSEC.io, which has a clean API. This watcher updates the deSEC A record only
+when the WAN IP actually changed. See memory: project_nova_caddy_dynamic_ip.
 
-Config (env file, root-only): /etc/baza-ddns/ddns.env
-  GCP_PROJECT=<gcp project id hosting the Cloud DNS zone>
-  GCP_ZONE=<managed-zone NAME (the GCP resource name, not the domain)>
-  RECORD=nova.ahb123.com.          # FQDN with trailing dot
-  TTL=300
-  SA_KEY=/etc/baza-ddns/sa-key.json
-  # optional: IP_SERVICES=comma,separated,https urls returning a bare IP
+Config (root-only env file): /etc/baza-ddns/ddns.env
+  DESEC_DOMAIN=nova.ahb123.com     # the zone created in deSEC (delegated subdomain)
+  DESEC_TOKEN=<deSEC API token>
+  SUBNAME=                         # '' = apex of DESEC_DOMAIN (i.e. nova.ahb123.com itself)
+  TTL=60
+  # optional: IP_SERVICES=comma,separated,https urls returning a bare IPv4
 
 Run:  baza-ddns.service (oneshot) on baza-ddns.timer (every 5 min).
 Exit: 0 = no change or updated OK; non-zero = error (timer retries next tick).
-Safety: only ever touches the single configured RECORD/type=A. Requires >=2
-WAN-IP sources to agree before writing, so a flaky echo service can't poison DNS.
+Safety: needs >=2 WAN-IP sources to agree before writing; only ever touches the
+single configured SUBNAME/type=A rrset in the delegated deSEC zone.
 """
 from __future__ import annotations
 import json
@@ -29,8 +29,7 @@ import urllib.request
 import urllib.error
 
 CONF = "/etc/baza-ddns/ddns.env"
-DNS_API = "https://dns.googleapis.com/dns/v1"
-SCOPE = "https://www.googleapis.com/auth/ndev.clouddns.readwrite"
+DESEC_API = "https://desec.io/api/v1"
 DEFAULT_IP_SERVICES = [
     "https://api.ipify.org",
     "https://ifconfig.me/ip",
@@ -59,12 +58,11 @@ def load_conf(path: str) -> dict:
                 continue
             k, v = line.split("=", 1)
             conf[k.strip()] = v.strip().strip('"').strip("'")
-    for req in ("GCP_PROJECT", "GCP_ZONE", "RECORD", "SA_KEY"):
+    for req in ("DESEC_DOMAIN", "DESEC_TOKEN"):
         if not conf.get(req):
             die(f"config missing required key: {req}")
-    conf.setdefault("TTL", "300")
-    if not conf["RECORD"].endswith("."):
-        conf["RECORD"] += "."
+    conf.setdefault("SUBNAME", "")
+    conf.setdefault("TTL", "60")
     return conf
 
 
@@ -80,7 +78,7 @@ def detect_wan_ip(services: list[str]) -> str:
     for url in services:
         try:
             ip = http_get(url).strip()
-            ipaddress.IPv4Address(ip)  # validates + raises on garbage/IPv6
+            ipaddress.IPv4Address(ip)  # validates; raises on garbage/IPv6
             if not ipaddress.ip_address(ip).is_global:
                 log(f"  {url} -> {ip} (non-public, ignored)")
                 continue
@@ -96,79 +94,60 @@ def detect_wan_ip(services: list[str]) -> str:
     return ip
 
 
-def get_token(sa_key_path: str) -> str:
-    if not os.path.exists(sa_key_path):
-        die(f"service-account key {sa_key_path} not found")
-    try:
-        from google.oauth2 import service_account
-        import google.auth.transport.requests as gar
-    except Exception:
-        die("google-auth not importable — is /opt/baza-ddns/venv set up?")
-    creds = service_account.Credentials.from_service_account_file(
-        sa_key_path, scopes=[SCOPE]
-    )
-    creds.refresh(gar.Request())
-    return creds.token
-
-
-def api(method: str, path: str, token: str, body: dict | None = None) -> dict:
-    url = f"{DNS_API}/{path}"
+def desec(method: str, path: str, token: str, body=None) -> tuple[int, object]:
+    url = f"{DESEC_API}/{path}"
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            return json.loads(r.read().decode() or "{}")
+            raw = r.read().decode()
+            return r.status, (json.loads(raw) if raw else None)
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")
-        die(f"Cloud DNS API {method} {path} -> HTTP {e.code}: {detail}")
+        die(f"deSEC API {method} {path} -> HTTP {e.code}: {detail}")
 
 
-def current_a_record(conf: dict, token: str) -> dict | None:
-    res = api(
+def current_a(conf: dict) -> list[str] | None:
+    sub = conf["SUBNAME"] or "@"  # deSEC addresses the apex rrset as subname '@' in the URL
+    status, body = desec(
         "GET",
-        f"projects/{conf['GCP_PROJECT']}/managedZones/{conf['GCP_ZONE']}"
-        f"/rrsets?name={conf['RECORD']}&type=A",
-        token,
+        f"domains/{conf['DESEC_DOMAIN']}/rrsets/{sub}/A/",
+        conf["DESEC_TOKEN"],
     )
-    sets = res.get("rrsets", [])
-    return sets[0] if sets else None
+    if status == 404 or body is None:
+        return None
+    return body.get("records")
 
 
-def update_record(conf: dict, token: str, new_ip: str, existing: dict | None):
-    new_rrset = {
-        "name": conf["RECORD"],
-        "type": "A",
-        "ttl": int(conf["TTL"]),
-        "rrdatas": [new_ip],
-    }
-    change = {"additions": [new_rrset]}
-    if existing:
-        change["deletions"] = [existing]  # must match exactly to delete
-    api(
-        "POST",
-        f"projects/{conf['GCP_PROJECT']}/managedZones/{conf['GCP_ZONE']}/changes",
-        token,
-        change,
-    )
+def set_a(conf: dict, ip: str, exists: bool):
+    sub = conf["SUBNAME"] or "@"
+    payload = {"subname": conf["SUBNAME"], "type": "A", "ttl": int(conf["TTL"]),
+               "records": [ip]}
+    if exists:
+        desec("PATCH", f"domains/{conf['DESEC_DOMAIN']}/rrsets/{sub}/A/",
+              conf["DESEC_TOKEN"], payload)
+    else:
+        desec("POST", f"domains/{conf['DESEC_DOMAIN']}/rrsets/",
+              conf["DESEC_TOKEN"], payload)
 
 
 def main() -> int:
     conf = load_conf(CONF)
     services = [s.strip() for s in conf.get("IP_SERVICES", "").split(",") if s.strip()]
     services = services or DEFAULT_IP_SERVICES
+    fqdn = (conf["SUBNAME"] + "." if conf["SUBNAME"] else "") + conf["DESEC_DOMAIN"]
 
     wan_ip = detect_wan_ip(services)
-    token = get_token(conf["SA_KEY"])
-    existing = current_a_record(conf, token)
-    cur = existing["rrdatas"][0] if (existing and existing.get("rrdatas")) else None
+    existing = current_a(conf)
+    cur = existing[0] if existing else None
 
     if cur == wan_ip:
-        log(f"no change — {conf['RECORD']} already {wan_ip}")
+        log(f"no change — {fqdn} already {wan_ip}")
         return 0
 
-    log(f"updating {conf['RECORD']}: {cur or '(none)'} -> {wan_ip} (ttl {conf['TTL']})")
-    update_record(conf, token, wan_ip, existing)
+    log(f"updating {fqdn}: {cur or '(none)'} -> {wan_ip} (ttl {conf['TTL']})")
+    set_a(conf, wan_ip, exists=existing is not None)
     log("update submitted OK")
     return 0
 
