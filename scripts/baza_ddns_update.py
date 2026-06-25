@@ -104,6 +104,8 @@ def desec(method: str, path: str, token: str, body=None) -> tuple[int, object]:
             raw = r.read().decode()
             return r.status, (json.loads(raw) if raw else None)
     except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return 404, None  # let callers treat "absent rrset" as a normal state
         detail = e.read().decode(errors="replace")
         die(f"deSEC API {method} {path} -> HTTP {e.code}: {detail}")
 
