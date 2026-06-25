@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-23 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 3 warn, 8 info)
-- 2026-06-23 Claw hourly digest — 15 new (0 bug, 0 regression, 0 security, 0 warn, 15 info)
-- 2026-06-23 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 3 warn, 4 info)
-- 2026-06-23 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 0 warn, 9 info)
-- 2026-06-23 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 2 warn, 4 info)
-- 2026-06-23 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
-- 2026-06-23 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
-- 2026-06-23 Claw hourly digest — 1 new (0 bug, 0 regression, 0 security, 0 warn, 1 info)
-- 2026-06-23 Installed Handy (offline voice-to-text) for Claude CLI
-- 2026-06-23 Handy autostart on login
-- 2026-06-23 nginx resolved — redundant with Tailscale Serve, disabled
-- 2026-06-23 Claw "drift" in Empire Pulse = metric false positive (fixed)
-- 2026-06-23 Claw hourly digest — 15 new (0 bug, 0 regression, 0 security, 3 warn, 12 info)
-- 2026-06-23 Caddy down since 6/6 — stacked dynamic-IP drift (LAN fixed, WAN/DNS needs Serge)
-- 2026-06-23 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-06-24 Claw hourly digest — 14 new (0 bug, 0 regression, 0 security, 1 warn, 13 info)
+- 2026-06-24 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 2 warn, 1 info)
+- 2026-06-24 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 2 warn, 5 info)
+- 2026-06-24 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 2 warn, 2 info)
+- 2026-06-24 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 1 warn, 1 info)
+- 2026-06-24 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
+- 2026-06-24 Claw hourly digest — 1 new (0 bug, 0 regression, 0 security, 0 warn, 1 info)
+- 2026-06-24 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 0 warn, 10 info)
+- 2026-06-24 Dashboard "stuck loading" — diagnosed healthy, bumped SW cache v5→v6
+- 2026-06-24 git push BLOCKED — origin PAT invalid/expired
+- 2026-06-24 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 3 warn, 5 info)
+- 2026-06-24 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 2 warn, 11 info)
+- 2026-06-24 Claw hourly digest — 15 new (0 bug, 0 regression, 0 security, 2 warn, 13 info)
+- 2026-06-24 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-06-24 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 0 warn, 6 info)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
