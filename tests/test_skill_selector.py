@@ -5,7 +5,7 @@ def _seed(tmp_path):
     shared = tmp_path / "shared"; shared.mkdir()
     (shared / "invoice_calculator.py").write_text(
         'SKILL_META={"category":"financial","summary":"Total an invoice.",'
-        '"when_to_use":"total an invoice","args":{}}\n')
+        '"when_to_use":"total an invoice","args":{"items":"list of line items"}}\n')
     (shared / "drywall_calculator.py").write_text('"""Estimate drywall sheets."""\n')
     (shared / "artifact_save.py").write_text('"""Save an artifact file."""\n')
     json_path = tmp_path / "m.json"; db_path = tmp_path / "m.db"
@@ -40,3 +40,14 @@ def test_render_block_is_compact_text(tmp_path):
     assert "RELEVANT SKILLS" in block
     assert "invoice_calculator" in block
     assert "skill_search" in block                 # nudge to self-discover
+
+def test_retrieved_skill_renders_arg_hint(tmp_path):
+    # invoice_calculator is found via FTS (not pinned); its args must survive
+    # into the rendered call block (FTS rows omit args; selector enriches them).
+    json_path, db_path = _seed(tmp_path)
+    res = skill_selector.select("total this invoice", agent_id="phil_hass",
+                                pinned=[], role_pins=[], top_k=5,
+                                json_path=json_path, db_path=db_path)
+    inv = next(s for s in res["skills"] if s["name"] == "invoice_calculator")
+    assert inv["args"] == {"items": "list of line items"}
+    assert "items" in skill_selector.render_block(res)

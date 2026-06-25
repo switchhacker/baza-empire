@@ -25,7 +25,11 @@ def select(message: str, agent_id: str | None = None,
         _add(n)
     if message.strip():
         for hit in reg.search(message, db_path=db_path, top_k=top_k):
-            chosen.setdefault(hit["name"], hit)
+            if hit["name"] in chosen:
+                continue
+            # FTS rows omit `args`; enrich from the manifest so the rendered
+            # call block can show arg hints for retrieved skills.
+            chosen[hit["name"]] = reg.get(hit["name"], json_path=json_path) or hit
 
     return {
         "skills": list(chosen.values()),
