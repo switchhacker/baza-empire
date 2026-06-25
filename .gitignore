@@ -30,3 +30,11 @@ dashboard/static/social/piper-voices/*.onnx
 dashboard/static/social/piper-voices/*.onnx.json
 dashboard/artifacts/social/voiceover/
 dashboard/uploads/
+*.db.bak-*
+*.bak-*
+*.db-wal
+*.db-shm
+dashboard/*.db-wal
+dashboard/*.db-shm
+*.db.bak*
+dashboard/.backups/
