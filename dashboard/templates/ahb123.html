@@ -2814,6 +2814,17 @@
     <div class="stat-card stat-progress"><div class="stat-val" id="us-avg-invoice">$0</div><div class="stat-lbl">Avg Invoice Size</div></div>
   </div>
 
+  <!-- ── Section 1A: Per-invoice Paid/Unpaid switchboard for the selected year ─── -->
+  <div style="margin:14px 0 4px;background:#070712;border:1px solid #14233a;border-radius:10px">
+    <div onclick="usToggleInvoiceSwitchboard()" style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;user-select:none">
+      <span id="us-sw-caret" style="color:#00d084;font-size:12px">▸</span>
+      <span style="color:#00d084;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:1px">✔ Paid switchboard · <span id="us-sw-year" style="color:#fff">2026</span></span>
+      <span style="color:#666;font-size:11px">— flip any invoice paid / unpaid; only Paid counts toward Uncle Sam</span>
+      <span id="us-sw-count" style="margin-left:auto;color:#888;font-size:11px;font-family:monospace"></span>
+    </div>
+    <div id="us-sw-body" style="display:none;padding:4px 10px 12px"></div>
+  </div>
+
   <!-- ── Section 1B: Projections (in progress + planning) ─────────── -->
   <div style="font-size:13px;font-weight:800;color:#4da6ff;margin:24px 0 10px;text-transform:uppercase;letter-spacing:1.5px">📊 Projected Revenue · <span id="us-year-label-2" style="color:#fff">2026</span> · Active &amp; Planned</div>
   <div class="stats-row">
@@ -13998,6 +14009,64 @@ function renderInvoiceRollup(){
         `Add receipts in QuickRF and payroll in Payrolling — they will auto-categorize into Schedule C lines.`;
     }
   }
+  renderUsInvoiceSwitchboard();
+}
+
+/* ── Uncle Sam Paid/Unpaid switchboard ──────────────────────────────────────
+   Lists every invoice attributed to the selected year and lets the user flip
+   any one paid <-> unpaid. Works for ALL years (past & future). Only invoices
+   marked Paid count toward gross revenue, so this is the one knob that drives
+   Uncle Sam's totals (2026-06-25). */
+let _usSwOpen=false;
+function usToggleInvoiceSwitchboard(){
+  _usSwOpen=!_usSwOpen;
+  const body=document.getElementById('us-sw-body');
+  const caret=document.getElementById('us-sw-caret');
+  if(body) body.style.display=_usSwOpen?'block':'none';
+  if(caret) caret.textContent=_usSwOpen?'▾':'▸';
+  if(_usSwOpen) renderUsInvoiceSwitchboard();
+}
+function renderUsInvoiceSwitchboard(){
+  const year=document.getElementById('us-year')?.value||String(new Date().getFullYear());
+  const yEl=document.getElementById('us-sw-year'); if(yEl) yEl.textContent=year;
+  const list=(allInvoices||[]).filter(i=> !i.is_change_order && _invoiceYear(i)===year);
+  list.sort((a,b)=>{
+    const pa=(a.status||'').toLowerCase()==='paid'?0:1, pb=(b.status||'').toLowerCase()==='paid'?0:1;
+    if(pa!==pb) return pa-pb;
+    return (b.total||0)-(a.total||0);
+  });
+  const paidList=list.filter(i=>(i.status||'').toLowerCase()==='paid');
+  const paidSum=paidList.reduce((a,i)=>a+(i.total||0),0);
+  const cEl=document.getElementById('us-sw-count');
+  if(cEl) cEl.textContent=`${paidList.length} paid / ${list.length} · ${fmtCurrency(paidSum)} counted`;
+  const body=document.getElementById('us-sw-body');
+  if(!body) return;
+  if(!list.length){ body.innerHTML='<div style="color:#444;font-size:11px;padding:14px;text-align:center">No invoices attributed to '+year+'.</div>'; return; }
+  body.innerHTML=list.map(i=>{
+    const paid=(i.status||'').toLowerCase()==='paid';
+    const num=escHtml(String(i.invoice_number||i.id));
+    const proj=escHtml(String(i.project_name||i.client_name||''));
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid #0e0e1e;flex-wrap:wrap">
+      <span style="font-family:monospace;color:#fff;font-weight:700;min-width:120px">#${num}</span>
+      <span style="font-weight:800;color:${paid?'#00d084':'#666'};min-width:90px;font-family:monospace">${fmtCurrency(i.total)}</span>
+      <span style="flex:1;min-width:120px;color:#888;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${proj}</span>
+      <span class="badge badge-${paid?'paid':'sent'}" style="font-size:10px">${paid?'PAID':escHtml(i.status||'unpaid')}</span>
+      <button onclick="usFlipInvoicePaid('${i.id}',${paid?'false':'true'})"
+        style="background:${paid?'#f59e0b22':'#00d08422'};color:${paid?'#f59e0b':'#00d084'};border:1px solid ${paid?'#f59e0b':'#00d084'};border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;min-width:104px">
+        ${paid?'↩ Mark Unpaid':'✔ Mark Paid'}</button>
+    </div>`;
+  }).join('');
+}
+async function usFlipInvoicePaid(id, makePaid){
+  try{
+    const payload = makePaid ? {status:'Paid'} : {status:'Sent',paid_date:''};
+    const r=await fetch('/api/ahb/invoices/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(!d.success){ showToast(d.error||'Failed','error'); return; }
+    showToast(makePaid?'Marked Paid — counts toward Uncle Sam':'Marked Unpaid — removed from Uncle Sam');
+    try{ const ri=await fetch('/api/ahb/invoices'); allInvoices=await ri.json(); }catch(e){}
+    renderInvoiceRollup();
+  }catch(e){ showToast('Error','error'); }
 }
 
 async function loadBusinessProfile(){
@@ -15312,68 +15381,29 @@ async function setProjectStatus(status){
     else showToast(data.error||'Failed','error');
   }catch(e){showToast('Error','error');}
 }
-/* "Completed" workflow: total is due upon completion, so if no balance has
-   been logged we prompt the user. Yes -> record the remaining balance as a
-   payment (which auto-flips the invoice to Paid via the backend). Not yet ->
-   project goes Completed but stays flagged with the red BALANCE DUE badge. */
-/* Record the remaining balance as a single payment — the backend payments
-   handler auto-flips the invoice status to Paid once paid >= total. */
+/* Status is INFORMATIONAL ONLY — completing a project never touches money.
+   "Paid" revenue (what Uncle Sam counts) is set solely by the per-invoice
+   Paid toggle. No completion prompt, no auto-payment (2026-06-25). */
+async function markProjectCompleted(){
+  if(!document.getElementById('pd-id').value) return;
+  await setProjectStatus('Completed');
+}
+/* "Mark Balance Paid" on the balance-due banner marks the project's primary
+   invoice Paid through the SAME single source of truth as the per-invoice
+   toggle (invoice.status='Paid'). It does NOT create a separate payment row,
+   so it can never double-count. */
 async function pdMarkBalancePaid(){
   const pid=document.getElementById('pd-id').value;
   const pay=(currentProjectDetail||{})._payment||null;
   if(!pay || !pay.invoice_id){ showToast('No invoice linked','error'); return; }
-  if(!(pay.owed>0)){ showToast('Balance is already paid','info'); return; }
-  if(!confirm(`Record ${fmtCurrency(pay.owed)} as the final balance payment?`)) return;
+  if(pay.fully_paid){ showToast('Already paid','info'); return; }
+  if(!confirm(`Mark invoice #${pay.invoice_number||''} as Paid (${fmtCurrency(pay.total)})?`)) return;
   try{
-    await fetch('/api/ahb/payments',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        invoice_id: pay.invoice_id,
-        amount: pay.owed,
-        payment_method: 'Balance on completion',
-        payment_date: new Date().toISOString().slice(0,10),
-        notes: 'Final balance recorded at project completion',
-      })
-    });
-    showToast('Balance recorded — invoice marked Paid');
+    await fetch('/api/ahb/invoices/'+pay.invoice_id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'Paid'})});
+    showToast('Invoice marked Paid');
     openProjectDetail(pid);
     loadProjects();
   }catch(e){ showToast('Failed: '+e.message,'error'); }
-}
-async function markProjectCompleted(){
-  const pid=document.getElementById('pd-id').value;
-  if(!pid) return;
-  // Pull current payment state from the project-detail context loaded into the modal.
-  const pay = (currentProjectDetail && currentProjectDetail._payment) || null;
-  const owed = pay ? (pay.owed||0) : 0;
-  const invId = pay ? pay.invoice_id : null;
-  if(pay && pay.total>0 && !pay.fully_paid && invId){
-    const yes = confirm(
-      `Project total: ${fmtCurrency(pay.total)}\n`+
-      `Paid so far: ${fmtCurrency(pay.paid)}\n`+
-      `Remaining balance: ${fmtCurrency(owed)}\n\n`+
-      `Has the balance been paid in full?\n\n`+
-      `OK = Yes, record full remaining balance as paid\n`+
-      `Cancel = Not yet (mark Completed with BALANCE DUE flag)`
-    );
-    if(yes){
-      try{
-        await fetch('/api/ahb/payments',{
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-            invoice_id: invId,
-            amount: owed,
-            payment_method: 'Balance on completion',
-            payment_date: new Date().toISOString().slice(0,10),
-            notes: 'Final balance recorded at project completion',
-          })
-        });
-      }catch(e){
-        showToast('Failed to record balance — marking completed anyway','error');
-      }
-    }
-  }
-  await setProjectStatus('Completed');
 }
 async function syncInvoiceFromPhases(){
   const pid=document.getElementById('pd-id').value;

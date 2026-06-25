@@ -6438,8 +6438,32 @@ def api_ahb_quote_pdf(qid):
 
 @app.route('/api/ahb/projects/<pid>', methods=['DELETE'])
 def api_ahb_projects_delete(pid):
+    """Erase a project and everything attached to it. Deleting a project makes
+    it irrelevant everywhere: its invoices and their payments are purged so it
+    disappears from Uncle Sam / Treasury and every revenue total. Independent
+    expense records (receipts, payroll) are intentionally left untouched
+    (2026-06-25)."""
     try:
         conn = _ahb_db()
+        # Payments hang off invoices (no project_id) — clear them via the
+        # project's invoice ids first so no orphan paid rows survive.
+        inv_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM ahb_invoices WHERE project_id = ?", (pid,)).fetchall()]
+        if inv_ids:
+            qmarks = ','.join('?' * len(inv_ids))
+            conn.execute(f"DELETE FROM ahb_payments WHERE invoice_id IN ({qmarks})", inv_ids)
+        # Purge every project-owned table. Receipts/payroll (expenses) are
+        # deliberately excluded — they are independent tax records.
+        for tbl in ('ahb_invoices', 'ahb_estimates', 'ahb_events', 'ahb_notes',
+                    'ahb_files', 'ahb_project_phases', 'ahb_phase_tasks',
+                    'ahb_documents', 'ahb_quotes', 'ahb_blueprints',
+                    'ahb_media_attachments', 'ahb_social_posts', 'ahb_app_packages',
+                    'project_bom', 'project_scaffold_nodes', 'project_scaffold_edges',
+                    'project_scaffold_events', 'tasks', 'task_events'):
+            try:
+                conn.execute(f"DELETE FROM {tbl} WHERE project_id = ?", (pid,))
+            except Exception:
+                pass  # table may not exist in older DBs — skip
         conn.execute("DELETE FROM ahb_projects WHERE id = ?", (pid,))
         conn.commit()
         conn.close()
@@ -6482,32 +6506,41 @@ def _ahb_canon_project_status(s):
 
 
 def _ahb_project_payment_summary(conn, project_id):
-    """Compute payment state for a project from its linked invoice.
+    """Payment state for a project, derived from its invoices' Paid status.
 
-    Returns a dict the frontend uses to decide if a Completed project still
-    owes money (red badge), if a project has any deposit recorded
-    (auto-flip Planning -> In Progress), etc.
+    Single source of truth for "paid" = invoice.status == 'Paid' (the same
+    signal Uncle Sam's cash-basis gross counts). The ahb_payments ledger is
+    NOT consulted: status is decoupled from money, so recording a ledger
+    payment never marks a project paid, and moving the status bar never marks
+    an invoice paid. Paid is driven solely by the per-invoice Paid toggle
+    (2026-06-25).
+
+    Returns a dict the frontend uses for the project-detail "balance due"
+    badge / banner.
     """
-    row = conn.execute(
-        "SELECT id, invoice_number, total FROM ahb_invoices "
-        "WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
+    rows = [dict(r) for r in conn.execute(
+        "SELECT id, invoice_number, total, status FROM ahb_invoices "
+        "WHERE project_id = ? AND is_change_order = 0 "
+        "ORDER BY is_primary DESC, created_at ASC",
         (project_id,)
-    ).fetchone()
-    if not row:
+    ).fetchall()]
+    if not rows:
         return {'invoice_id': None, 'invoice_number': None,
                 'total': 0.0, 'paid': 0.0, 'owed': 0.0,
                 'has_payments': False, 'fully_paid': False}
-    total = float(row['total'] or 0)
-    pay_row = conn.execute(
-        "SELECT COALESCE(sum(amount),0) as paid FROM ahb_payments WHERE invoice_id = ?",
-        (row['id'],)
-    ).fetchone()
-    paid = float(pay_row['paid'] or 0) if pay_row else 0.0
+    primary = rows[0]
+    total = float(primary['total'] or 0)
+    # Paid = sum of this project's explicitly-Paid invoices, capped at the
+    # contract total so a deposit+balance split can never overshoot the badge.
+    paid = sum(float(r['total'] or 0) for r in rows
+               if str(r['status'] or '').strip().lower() == 'paid')
+    if total > 0:
+        paid = min(paid, total)
     # Floating-point tolerance — anything within a penny counts as paid in full.
     fully_paid = total > 0 and paid + 0.01 >= total
     return {
-        'invoice_id': row['id'],
-        'invoice_number': row['invoice_number'],
+        'invoice_id': primary['id'],
+        'invoice_number': primary['invoice_number'],
         'total': total,
         'paid': paid,
         'owed': max(0.0, total - paid),
@@ -6517,10 +6550,13 @@ def _ahb_project_payment_summary(conn, project_id):
 
 
 def _ahb_apply_status_sync(conn, project_id, new_status):
-    """Set project.status and align the linked invoice's status to match.
+    """Set project.status. Status is INFORMATIONAL ONLY and fully decoupled
+    from money: it never marks an invoice Paid, never stamps/clears paid_date,
+    and never touches invoice status. Whether revenue is collected is driven
+    solely by the per-invoice Paid toggle (2026-06-25).
 
-    Returns (canonical_status, invoice_after_update_or_None).
-    Does NOT commit — caller owns the transaction.
+    Returns (canonical_status, linked_invoice_unchanged_or_None) for the
+    response shape. Does NOT commit — caller owns the transaction.
     """
     canon = _ahb_canon_project_status(new_status)
     now = datetime.datetime.now().isoformat()
@@ -6532,25 +6568,7 @@ def _ahb_apply_status_sync(conn, project_id, new_status):
         "SELECT * FROM ahb_invoices WHERE project_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
         (project_id,)
     ).fetchone()
-    if not inv:
-        return canon, None
-    inv = dict(inv)
-    summary = _ahb_project_payment_summary(conn, project_id)
-    if canon == 'Planning':
-        target = 'Sent'
-    elif canon == 'In Progress':
-        target = 'Approved'
-    else:  # Completed
-        target = 'Paid' if summary['fully_paid'] else 'Approved'
-    update_fields = {'status': target, 'updated_at': now}
-    if canon == 'Completed' and not summary['fully_paid']:
-        update_fields['notes'] = f"Final bill due. Remaining balance: ${summary['owed']:.2f}"
-    if target == 'Paid' and not inv.get('paid_date'):
-        update_fields['paid_date'] = now[:10]
-    set_clause = ', '.join(f"{k} = ?" for k in update_fields)
-    vals = list(update_fields.values()) + [inv['id']]
-    conn.execute(f"UPDATE ahb_invoices SET {set_clause} WHERE id = ?", vals)
-    return canon, {**inv, **update_fields}
+    return canon, (dict(inv) if inv else None)
 
 
 @app.route('/api/ahb/projects/<pid>/status', methods=['POST'])
@@ -10783,11 +10801,11 @@ def api_ahb_payments_list():
 
 @app.route('/api/ahb/payments', methods=['POST'])
 def api_ahb_payments_create():
-    """Record a payment and auto-progress the linked project status.
+    """Record a payment as a pure ledger entry.
 
-    Deposit recorded on a Planning project -> project flips to In Progress.
-    Final payment that closes the balance on a Completed project -> invoice
-    flips to Paid (project stays Completed).
+    Payments do NOT change project status and do NOT mark invoices Paid —
+    status and money are decoupled. Whether revenue is collected (and counted
+    by Uncle Sam) is driven solely by the per-invoice Paid toggle (2026-06-25).
     """
     try:
         data = request.json or {}
@@ -10799,34 +10817,14 @@ def api_ahb_payments_create():
                VALUES (?, ?, ?, ?, ?, ?)""",
             (pmt_id, invoice_id, data.get('amount', 0), data.get('payment_method', ''),
              data.get('payment_date', ''), data.get('notes', '')))
-
-        # Auto-advance project status from the deposit / balance signal.
         project_id = None
-        project_status_after = None
         if invoice_id:
             inv_row = conn.execute(
                 "SELECT project_id FROM ahb_invoices WHERE id = ?", (invoice_id,)
             ).fetchone()
             project_id = inv_row['project_id'] if inv_row else None
-            if project_id:
-                proj_row = conn.execute(
-                    "SELECT status FROM ahb_projects WHERE id = ?", (project_id,)
-                ).fetchone()
-                cur_status = _ahb_canon_project_status(proj_row['status'] if proj_row else '')
-                summary = _ahb_project_payment_summary(conn, project_id)
-                # Deposit-or-better recorded on a Planning project → In Progress.
-                if cur_status == 'Planning' and summary['has_payments']:
-                    _ahb_apply_status_sync(conn, project_id, 'In Progress')
-                    project_status_after = 'In Progress'
-                # Re-align invoice status whenever balance closes on a Completed
-                # project (so the Approved badge auto-flips to Paid).
-                elif cur_status == 'Completed' and summary['fully_paid']:
-                    _ahb_apply_status_sync(conn, project_id, 'Completed')
-                    project_status_after = 'Completed'
         conn.commit(); conn.close()
-        return jsonify({'success': True, 'id': pmt_id,
-                        'project_id': project_id,
-                        'project_status': project_status_after})
+        return jsonify({'success': True, 'id': pmt_id, 'project_id': project_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -10838,8 +10836,10 @@ def api_ahb_billing_summary():
     try:
         year = (request.args.get('year') or '').strip()
         unpaid_only = (request.args.get('unpaid_only', 'true').lower() != 'false')
-        # Year filter: prefer `year` column; fall back to date/created_at prefix for rows where year is blank.
-        year_expr = "COALESCE(NULLIF(year,''), substr(COALESCE(date, created_at, ''),1,4))"
+        # Year filter: prefer `year` column; then paid_date (cash-basis: revenue
+        # is recognized when collected), then date/created_at. Matches the Uncle
+        # Sam tab's _invoiceYear() so both surfaces agree (2026-06-25).
+        year_expr = "COALESCE(NULLIF(year,''), substr(COALESCE(NULLIF(paid_date,''), date, created_at, ''),1,4))"
         year_clause = f" AND {year_expr} = ?" if year else ""
         year_params = (year,) if year else ()
 
