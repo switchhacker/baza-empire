@@ -13,6 +13,9 @@ def test_tool_descriptors_from_registry_dict():
     assert sam["args"]["agent"] == "sam_axe"
     assert sam["args"]["tool"] == "generate-image"
 
+def test_tool_descriptors_none_input():
+    assert reg.tool_descriptors(None) == []
+
 def test_build_includes_tools(tmp_path):
     shared = tmp_path / "shared"; shared.mkdir()
     (shared / "noop.py").write_text('"""noop."""\n')

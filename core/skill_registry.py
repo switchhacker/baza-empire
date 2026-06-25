@@ -157,8 +157,8 @@ def build(shared_dir: str = SHARED_DIR, agents_dir: str = AGENTS_DIR,
     Returns the number of descriptors written."""
     descriptors = [describe_skill(path, scope) for path, scope in
                    _iter_skill_files(shared_dir, agents_dir)]
-    if tools and "tool_descriptors" in globals():
-        descriptors.extend(tool_descriptors(tools))   # defined in the tool-ingestion task
+    if tools:
+        descriptors.extend(tool_descriptors(tools))
     with open(out_json, "w") as f:
         json.dump({"skills": descriptors}, f, indent=2)
     _write_fts(out_db, descriptors)
