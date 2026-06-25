@@ -15982,7 +15982,7 @@ function pdAddTermRow(label,val){
   const field = amount
     ? '$ <input class="pd-term-val pd-term-amount" type="number" min="0" step="0.01" value="'+(val||0)+'" style="width:90px;" oninput="pdRecalcTermSum()">'
     : '<input class="pd-term-val pd-term-pct" type="number" min="0" max="100" value="'+(val||0)+'" style="width:60px;" oninput="pdRecalcTermSum()">%';
-  row.innerHTML='<input class="pd-term-label" placeholder="Stage" value="'+(label||'')+'" style="width:160px;"> '
+  row.innerHTML='<input class="pd-term-label" placeholder="Stage" value="'+escHtml(label||'')+'" style="width:160px;"> '
     +field
     +' <button type="button" class="btn btn-sm btn-secondary" onclick="this.parentNode.remove();pdRecalcTermSum()">✕</button>';
   document.getElementById('pd-terms-rows').appendChild(row);
