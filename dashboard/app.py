@@ -9973,29 +9973,51 @@ def api_ahb_dashboard():
         stats = {}
         year = request.args.get('year', '')
 
-        # Year filter helpers
+        # Year filter helpers. Project year = year column -> start_date ->
+        # created_at, matching the rest of the app (2026-06-25).
         def yf_proj(col='start_date'):
             fallback = 'created_at' if '.' not in col else col.split('.')[0] + '.created_at'
-            return f" AND substr(COALESCE({col}, {fallback}), 1, 4) = '{year}'" if year else ''
+            ycol = 'year' if '.' not in col else col.split('.')[0] + '.year'
+            return f" AND substr(COALESCE(NULLIF({ycol},''), {col}, {fallback}), 1, 4) = '{year}'" if year else ''
         def yf(col='created_at'):
             return f" AND substr({col}, 1, 4) = '{year}'" if year else ''
 
-        # Projects
+        # Projects — canonical status labels (merge any case variants) so the
+        # frontend's exact-match lookups (e.g. 'In Progress') always resolve.
         rows = conn.execute(f"SELECT status, count(*) as cnt FROM ahb_projects WHERE 1=1{yf_proj()} GROUP BY status").fetchall()
-        stats['projects'] = {r['status']: r['cnt'] for r in rows}
-        stats['projects_total'] = sum(r['cnt'] for r in rows)
+        proj_buckets = {}
+        for r in rows:
+            label = _ahb_canon_project_status(r['status'])
+            proj_buckets[label] = proj_buckets.get(label, 0) + r['cnt']
+        stats['projects'] = proj_buckets
+        stats['projects_total'] = sum(proj_buckets.values())
 
-        # Invoices — join with project to get real year from project start_date
+        # Invoices — same canonical year attribution as the Uncle Sam tab /
+        # billing summary (year -> paid_date [cash-basis] -> date -> created_at),
+        # case-insensitive status buckets, change orders excluded. Keeps the
+        # overview consistent with every other revenue surface (2026-06-25).
+        # NULLIF every column: `date` is often '' (empty string, not NULL), and
+        # COALESCE does not skip '' — without NULLIF those rows attribute to year
+        # '' and vanish from every year. Mirrors the frontend's `||` chain.
+        inv_year = ("COALESCE(NULLIF(year,''), substr(COALESCE(NULLIF(paid_date,''), "
+                    "NULLIF(date,''), created_at, ''),1,4))")
         if year:
-            inv_sql = """SELECT i.status, count(*) as cnt, COALESCE(sum(i.total),0) as total
-                FROM ahb_invoices i LEFT JOIN ahb_projects p ON i.project_id = p.id
-                WHERE substr(COALESCE(i.due_date, i.paid_date, p.start_date, i.created_at), 1, 4) = ?
-                GROUP BY i.status"""
-            rows = conn.execute(inv_sql, (year,)).fetchall()
+            rows = conn.execute(
+                f"SELECT LOWER(status) st, count(*) as cnt, COALESCE(sum(total),0) as total "
+                f"FROM ahb_invoices WHERE is_change_order = 0 AND {inv_year} = ? "
+                f"GROUP BY LOWER(status)", (year,)).fetchall()
         else:
-            rows = conn.execute("SELECT status, count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_invoices GROUP BY status").fetchall()
-        stats['invoices'] = {r['status']: {'count': r['cnt'], 'total': r['total']} for r in rows}
-        stats['invoices_total'] = sum(r['total'] for r in rows)
+            rows = conn.execute(
+                "SELECT LOWER(status) st, count(*) as cnt, COALESCE(sum(total),0) as total "
+                "FROM ahb_invoices WHERE is_change_order = 0 GROUP BY LOWER(status)").fetchall()
+        inv_buckets = {}
+        for r in rows:
+            label = (r['st'] or 'unknown').title()
+            b = inv_buckets.setdefault(label, {'count': 0, 'total': 0.0})
+            b['count'] += r['cnt']
+            b['total'] += r['total']
+        stats['invoices'] = inv_buckets
+        stats['invoices_total'] = sum(b['total'] for b in inv_buckets.values())
 
         # Receipts
         rows = conn.execute(f"SELECT category, count(*) as cnt, COALESCE(sum(total),0) as total FROM ahb_receipts WHERE 1=1{yf('receipt_date')} GROUP BY category").fetchall()
@@ -10839,7 +10861,7 @@ def api_ahb_billing_summary():
         # Year filter: prefer `year` column; then paid_date (cash-basis: revenue
         # is recognized when collected), then date/created_at. Matches the Uncle
         # Sam tab's _invoiceYear() so both surfaces agree (2026-06-25).
-        year_expr = "COALESCE(NULLIF(year,''), substr(COALESCE(NULLIF(paid_date,''), date, created_at, ''),1,4))"
+        year_expr = "COALESCE(NULLIF(year,''), substr(COALESCE(NULLIF(paid_date,''), NULLIF(date,''), created_at, ''),1,4))"
         year_clause = f" AND {year_expr} = ?" if year else ""
         year_params = (year,) if year else ()
 
