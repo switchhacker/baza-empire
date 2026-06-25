@@ -73,3 +73,16 @@ def test_finish_marker_and_skill_in_same_response():
                               finish_markers=("FINAL:",))
     assert res["steps"] == 1            # stops same step
     assert "SKILL RESULT: invoice_calculator" in res["final"]   # skill still ran (spliced)
+
+def test_loop_prepends_history():
+    seen = {}
+    def llm(messages, system):
+        seen["messages"] = messages
+        return "done, no skills"
+    agent_loop.run_loop(llm, FakeEngine({}), system="s", user="now",
+                        history=[{"role": "user", "content": "earlier"},
+                                 {"role": "assistant", "content": "ok"}])
+    roles = [m["role"] for m in seen["messages"]]
+    contents = [m["content"] for m in seen["messages"]]
+    assert contents == ["earlier", "ok", "now"]
+    assert roles == ["user", "assistant", "user"]

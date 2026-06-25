@@ -14,7 +14,8 @@ def run_loop(llm_call, engine, system: str, user: str, *,
              max_steps: int = 6, exclude=None,
              finish_markers=("FINAL:", "TASK_COMPLETE"),
              observe_intro: str | None = None,
-             parse_kwargs: dict | None = None) -> dict:
+             parse_kwargs: dict | None = None,
+             history: list | None = None) -> dict:
     parse_kwargs = dict(parse_kwargs or {})
     if exclude is not None:
         # An explicit parse_kwargs["exclude"] takes precedence over the shorthand.
@@ -23,7 +24,9 @@ def run_loop(llm_call, engine, system: str, user: str, *,
         "Here is the REAL data your skills returned. Use ONLY this data — do not "
         "invent values. If the task is done, reply with FINAL: followed by the "
         "answer. Otherwise call more skills.")
-    messages = [{"role": "user", "content": user}]
+    # Prior conversation turns (if any) precede this request so the loop keeps
+    # multi-turn context. `history` is a list of {"role","content"} dicts.
+    messages = list(history or []) + [{"role": "user", "content": user}]
     final_text = ""
     truncated = False
     steps = 0

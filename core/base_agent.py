@@ -1625,7 +1625,8 @@ class BaseAgent(ContextMixin):
                 None, lambda: agent_loop.run_loop(
                     _llm, self.skills, system=system, user=text,
                     max_steps=scaffold_config.max_steps(),
-                    parse_kwargs={"chat_id": chat_id}))
+                    parse_kwargs={"chat_id": chat_id},
+                    history=messages))  # prior turns preserve multi-turn context
             response = res["final"] or "_(no response)_"
             skill_results = []  # the loop handled and grounded skills internally
         else:
