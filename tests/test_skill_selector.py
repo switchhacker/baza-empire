@@ -51,3 +51,15 @@ def test_retrieved_skill_renders_arg_hint(tmp_path):
     inv = next(s for s in res["skills"] if s["name"] == "invoice_calculator")
     assert inv["args"] == {"items": "list of line items"}
     assert "items" in skill_selector.render_block(res)
+
+def test_render_block_tool_entry_uses_call_tool():
+    # A type=="tool" descriptor renders a valid call_tool form with JSON args.
+    selection = {"skills": [{"name": "sam_axe/generate-image", "type": "tool",
+                             "summary": "Generate an image.",
+                             "args": {"agent": "sam_axe", "tool": "generate-image",
+                                      "input": "dict"}}],
+                 "categories": {}}
+    block = skill_selector.render_block(selection)
+    assert "call_tool" in block
+    assert '"agent": "sam_axe"' in block
+    assert '"tool": "generate-image"' in block
