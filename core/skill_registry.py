@@ -165,6 +165,30 @@ def build(shared_dir: str = SHARED_DIR, agents_dir: str = AGENTS_DIR,
     return len(descriptors)
 
 
+def _newest_skill_mtime(shared_dir: str, agents_dir: str) -> float:
+    newest = 0.0
+    for path, _scope in _iter_skill_files(shared_dir, agents_dir):
+        try:
+            newest = max(newest, os.path.getmtime(path))
+        except OSError:
+            pass
+    return newest
+
+
+def build_if_stale(shared_dir: str = SHARED_DIR, agents_dir: str = AGENTS_DIR,
+                   out_json: str = DEFAULT_JSON, out_db: str = DEFAULT_DB,
+                   tools=None) -> bool:
+    """Rebuild the manifest only if a skill file is newer than the manifest (or
+    the manifest is missing). Cheap mtime check — safe to call on a 30s timer.
+    Returns True if a rebuild happened."""
+    src_mtime = _newest_skill_mtime(shared_dir, agents_dir)
+    man_mtime = os.path.getmtime(out_json) if os.path.exists(out_json) else 0.0
+    if src_mtime > man_mtime or not os.path.exists(out_db):
+        build(shared_dir, agents_dir, out_json, out_db, tools=tools)
+        return True
+    return False
+
+
 _FTS_SAFE = re.compile(r"[^a-zA-Z0-9_]+")
 
 

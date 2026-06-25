@@ -122,6 +122,12 @@ def main():
                         help="single tick then exit (systemd default)")
     parser.add_argument("--project", help="only run this project")
     args = parser.parse_args()
+    # Keep the skill manifest fresh — cheap mtime check, rebuilds only on change.
+    try:
+        from core import skill_registry
+        skill_registry.build_if_stale()
+    except Exception as e:
+        print(f"[scaffold-runner] manifest refresh skipped: {e}", file=sys.stderr)
     if args.project:
         result = tick_project(args.project)
     else:
