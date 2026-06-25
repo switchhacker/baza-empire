@@ -1,0 +1,14 @@
+# Agent skill scaffold — master switch + knobs. Flag-off = legacy behavior.
+scaffold:
+  enabled: false            # global master switch
+  max_steps: 6              # agent_loop hard cap on plan→act→observe iterations
+  retrieval_top_k: 8        # how many FTS-retrieved skills to inject
+  pinned_core:              # always-on skills (injected every request when enabled)
+    - artifact_save
+    - web_search
+    - ahb123_query
+    - skill_search
+    - call_tool
+  per_agent:                # optional per-agent overrides of `enabled`
+    claw_batto:
+      enabled: false
