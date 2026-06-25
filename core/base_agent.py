@@ -43,6 +43,7 @@ from core.memory import (
 from core.task_updater import AgentTaskManager
 from skills.shared.save_artifact import save_artifact as _save_artifact_fn, save_binary_artifact as _save_binary_artifact_fn
 from dashboard.private_inbound import inbound_dir, write_attachment_meta
+from core import scaffold_config
 
 logger = logging.getLogger(__name__)
 
@@ -1598,51 +1599,75 @@ class BaseAgent(ContextMixin):
                 content = content[:497] + "..."
             messages.append({"role": h["role"], "content": content})
 
-        # Build full system prompt with live context
-        system = self.build_system_prompt()
-
         # ── Graft 5: route to a task-specialized model if MODEL_ROUTING is set ──
         routed_model = self._route_model(text)
         if routed_model != self.MODEL:
             logger.info(f"[{self.AGENT_ID}] routing to {routed_model} (text: {text[:60]!r})")
 
-        # ── Pass 1: LLM decides what to do (may emit ##SKILL:## calls) ────────
         loop = asyncio.get_event_loop()
         t0 = time.time()
-        response = await loop.run_in_executor(
-            None, lambda: self.llm_chat(messages, system, model_override=routed_model)
-        )
-        duration_ms = int((time.time() - t0) * 1000)
 
-        if not response:
-            response = "_(no response)_"
+        if scaffold_config.is_enabled(self.AGENT_ID):
+            # ── Scaffold path: select relevant skills, then run the bounded
+            # plan→act→observe→finish loop. Static skill blocks from
+            # build_system_prompt remain as the pinned fallback baseline. ──
+            from core import skill_selector, agent_loop
+            sel = skill_selector.select(text, agent_id=self.AGENT_ID,
+                                        pinned=scaffold_config.pinned_core(),
+                                        role_pins=[],
+                                        top_k=scaffold_config.retrieval_top_k())
+            system = self.build_system_prompt(extra=skill_selector.render_block(sel))
 
-        # ── Skills: parse and execute any ##SKILL:## calls ─────────────────
-        response, skill_results = self.skills.parse_and_run(response, chat_id=chat_id)
+            def _llm(msgs, sysp):
+                return self.llm_chat(msgs, sysp, model_override=routed_model)
 
-        # ── Pass 2: if skills ran successfully, reformat with real data ────
-        successful_skills = [r for r in skill_results if r.get("success")]
-        if successful_skills:
-            skill_data = "\n\n".join(
-                f"[{r['skill']} output]\n{r['output']}" for r in successful_skills
-            )
-            reformat_messages = [
-                {
-                    "role": "user",
-                    "content": (
-                        f"Original request from Serge: {text}\n\n"
-                        f"Here is the REAL live data from your skills:\n\n{skill_data}\n\n"
-                        f"Now format this into your standard response style. "
-                        f"Use the real data above — do NOT invent or estimate any values."
-                    )
-                }
-            ]
+            res = await loop.run_in_executor(
+                None, lambda: agent_loop.run_loop(
+                    _llm, self.skills, system=system, user=text,
+                    max_steps=scaffold_config.max_steps(),
+                    parse_kwargs={"chat_id": chat_id}))
+            response = res["final"] or "_(no response)_"
+            skill_results = []  # the loop handled and grounded skills internally
+        else:
+            # ── Legacy path (unchanged): single shot + two-pass reground ──
+            system = self.build_system_prompt()
+
+            # ── Pass 1: LLM decides what to do (may emit ##SKILL:## calls) ────────
             response = await loop.run_in_executor(
-                None, self.llm_chat, reformat_messages, system
+                None, lambda: self.llm_chat(messages, system, model_override=routed_model)
             )
+
             if not response:
-                # Fallback: just return the raw skill output if reformat fails
-                response = skill_data
+                response = "_(no response)_"
+
+            # ── Skills: parse and execute any ##SKILL:## calls ─────────────────
+            response, skill_results = self.skills.parse_and_run(response, chat_id=chat_id)
+
+            # ── Pass 2: if skills ran successfully, reformat with real data ────
+            successful_skills = [r for r in skill_results if r.get("success")]
+            if successful_skills:
+                skill_data = "\n\n".join(
+                    f"[{r['skill']} output]\n{r['output']}" for r in successful_skills
+                )
+                reformat_messages = [
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Original request from Serge: {text}\n\n"
+                            f"Here is the REAL live data from your skills:\n\n{skill_data}\n\n"
+                            f"Now format this into your standard response style. "
+                            f"Use the real data above — do NOT invent or estimate any values."
+                        )
+                    }
+                ]
+                response = await loop.run_in_executor(
+                    None, self.llm_chat, reformat_messages, system
+                )
+                if not response:
+                    # Fallback: just return the raw skill output if reformat fails
+                    response = skill_data
+
+        duration_ms = int((time.time() - t0) * 1000)
 
         # Report any failed skills
         failed_skills = [r for r in skill_results if not r.get("success")]
