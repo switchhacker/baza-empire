@@ -6055,11 +6055,34 @@ _PAYMENT_TERM_PRESETS = {
 }
 
 
-def _resolve_payment_terms(preset, milestones):
+def _resolve_payment_terms(preset, milestones, mode=None):
     """Normalize a preset name or a custom milestone list into a validated
-    terms dict: {preset, net_days, milestones:[{label,pct}]}. Raises
-    ValueError if a custom list lacks labels or its pct does not sum to 100."""
+    terms dict: {preset, mode, net_days, milestones}. mode is "percent"
+    (default) or "amount". Percent milestones are {label,pct} and must sum to
+    100; amount milestones are {label,amount} (numeric >= 0, no sum check).
+    Raises ValueError on a missing label, bad number, or percent sum != 100."""
+    mode = (mode or "percent").strip().lower()
+    if mode not in ("percent", "amount"):
+        mode = "percent"
     preset = (preset or "").strip()
+
+    if mode == "amount":
+        ms = []
+        for m in (milestones or []):
+            label = (m.get("label") or "").strip()
+            if not label:
+                raise ValueError("each milestone needs a label")
+            try:
+                amount = float(m.get("amount") or 0)
+            except (TypeError, ValueError):
+                raise ValueError("milestone amount must be a number")
+            if amount < 0:
+                raise ValueError("milestone amount cannot be negative")
+            ms.append({"label": label, "amount": amount})
+        if not ms:
+            raise ValueError("at least one milestone is required")
+        return {"preset": "custom", "mode": "amount", "net_days": 0, "milestones": ms}
+
     net_days = 30 if preset == "net_30" else 0
     if preset in _PAYMENT_TERM_PRESETS:
         ms = [dict(m) for m in _PAYMENT_TERM_PRESETS[preset]]
@@ -6080,7 +6103,7 @@ def _resolve_payment_terms(preset, milestones):
     total = round(sum(float(m["pct"]) for m in ms), 2)
     if abs(total - 100.0) > 0.01:
         raise ValueError(f"milestone percentages must sum to 100 (got {total})")
-    return {"preset": preset, "net_days": net_days, "milestones": ms}
+    return {"preset": preset, "mode": "percent", "net_days": net_days, "milestones": ms}
 
 
 def _project_total_paid(conn, pid):
