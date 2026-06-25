@@ -6055,55 +6055,71 @@ _PAYMENT_TERM_PRESETS = {
 }
 
 
+def _milestone_unit(mil):
+    """The unit of a milestone: explicit 'unit' field, else inferred from shape
+    (an 'amount' key without a 'pct' key => dollar, otherwise percent). Keeps
+    older snapshots ({label,pct} or {label,amount}) readable."""
+    unit = (mil.get("unit") or "").strip().lower()
+    if unit in ("percent", "amount"):
+        return unit
+    return "amount" if ("amount" in mil and "pct" not in mil) else "percent"
+
+
+def _milestone_target(contract, mil):
+    """The dollar target a milestone is aiming at, given the contract total:
+    a dollar milestone's typed amount, or a percent milestone's pct of contract.
+    Clamped to >= 0. This is the per-milestone building block the cumulative
+    self-healing amount-due math sums over."""
+    try:
+        if _milestone_unit(mil) == "amount":
+            return round(max(0.0, float(mil.get("amount") or 0)), 2)
+        return round(max(0.0, float(contract or 0) * float(mil.get("pct") or 0) / 100.0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _resolve_payment_terms(preset, milestones, mode=None):
     """Normalize a preset name or a custom milestone list into a validated
-    terms dict: {preset, mode, net_days, milestones}. mode is "percent"
-    (default) or "amount". Percent milestones are {label,pct} and must sum to
-    100; amount milestones are {label,amount} (numeric >= 0, no sum check).
-    Raises ValueError on a missing label, bad number, or percent sum != 100."""
-    mode = (mode or "percent").strip().lower()
-    if mode not in ("percent", "amount"):
-        mode = "percent"
+    terms dict: {preset, mode, net_days, milestones}. Each milestone carries a
+    per-row unit: "percent" ({label,unit,pct}) or "amount" ({label,unit,amount}).
+    The two can be mixed freely in one schedule; the final milestone is always
+    the auto-remainder (contract less everything above it), so a schedule always
+    reconciles to 100% of the contract and no sum-to-100 check is needed.
+    `mode` is legacy/informational only (kept in the dict for back-compat).
+    Raises ValueError on a missing label or a non-numeric/negative value."""
     preset = (preset or "").strip()
 
-    if mode == "amount":
-        ms = []
-        for m in (milestones or []):
-            label = (m.get("label") or "").strip()
-            if not label:
-                raise ValueError("each milestone needs a label")
+    if preset in _PAYMENT_TERM_PRESETS:
+        ms = [{"label": m["label"], "unit": "percent", "pct": m["pct"]}
+              for m in _PAYMENT_TERM_PRESETS[preset]]
+        net_days = 30 if preset == "net_30" else 0
+        return {"preset": preset, "mode": "percent", "net_days": net_days, "milestones": ms}
+
+    ms = []
+    for m in (milestones or []):
+        label = (m.get("label") or "").strip()
+        if not label:
+            raise ValueError("each milestone needs a label")
+        unit = _milestone_unit(m)
+        if unit == "amount":
             try:
                 amount = float(m.get("amount") or 0)
             except (TypeError, ValueError):
                 raise ValueError("milestone amount must be a number")
             if amount < 0:
                 raise ValueError("milestone amount cannot be negative")
-            ms.append({"label": label, "amount": amount})
-        if not ms:
-            raise ValueError("at least one milestone is required")
-        return {"preset": "custom", "mode": "amount", "net_days": 0, "milestones": ms}
-
-    net_days = 30 if preset == "net_30" else 0
-    if preset in _PAYMENT_TERM_PRESETS:
-        ms = [dict(m) for m in _PAYMENT_TERM_PRESETS[preset]]
-    else:
-        preset = "custom"
-        ms = []
-        for m in (milestones or []):
-            label = (m.get("label") or "").strip()
-            if not label:
-                raise ValueError("each milestone needs a label")
+            ms.append({"label": label, "unit": "amount", "amount": amount})
+        else:
             try:
                 pct = float(m.get("pct") or 0)
             except (TypeError, ValueError):
                 raise ValueError("milestone pct must be a number")
-            ms.append({"label": label, "pct": pct})
+            if pct < 0:
+                raise ValueError("milestone pct cannot be negative")
+            ms.append({"label": label, "unit": "percent", "pct": pct})
     if not ms:
         raise ValueError("at least one milestone is required")
-    total = round(sum(float(m["pct"]) for m in ms), 2)
-    if abs(total - 100.0) > 0.01:
-        raise ValueError(f"milestone percentages must sum to 100 (got {total})")
-    return {"preset": preset, "mode": "percent", "net_days": net_days, "milestones": ms}
+    return {"preset": "custom", "mode": "mixed", "net_days": 0, "milestones": ms}
 
 
 def _project_total_paid(conn, pid):
@@ -6115,22 +6131,20 @@ def _project_total_paid(conn, pid):
     return float(row["paid"] or 0) if row else 0.0
 
 
-def _compute_milestone_amount_due(contract, milestones, k, paid, mode="percent"):
-    """Amount due for milestone index k (0-based). In "amount" mode the typed
-    dollar amount is billed verbatim (clamped to >= 0). In "percent" mode the
-    figure self-heals: cumulative-% target through k minus total paid, with the
-    final milestone clearing to the true remaining balance. Negatives clamp to 0."""
-    if (mode or "percent") == "amount":
-        try:
-            return round(max(0.0, float(milestones[k].get("amount") or 0)), 2)
-        except (IndexError, TypeError, ValueError):
-            return 0.0
+def _compute_milestone_amount_due(contract, milestones, k, paid, mode=None):
+    """Self-healing amount due for milestone index k (0-based). Each milestone
+    has a dollar target (its typed amount, or its pct of the contract); the due
+    figure is the cumulative target through k minus total paid. The FINAL
+    milestone always clears to the true remaining balance (contract - paid), so
+    the schedule reconciles to 100% of the contract regardless of the mix of
+    percent/dollar rows above it. Negatives clamp to 0. `mode` is unused (kept
+    for call-site back-compat)."""
     contract = float(contract or 0); paid = float(paid or 0)
-    if k >= len(milestones) - 1:                 # final milestone
+    if k >= len(milestones) - 1:                 # final milestone = remainder
         due = contract - paid
     else:
-        cum_pct = sum(float(m.get("pct") or 0) for m in milestones[:k + 1]) / 100.0
-        due = round(contract * cum_pct, 2) - paid
+        cum = sum(_milestone_target(contract, m) for m in milestones[:k + 1])
+        due = round(cum, 2) - paid
     return round(max(0.0, due), 2)
 
 
@@ -6159,8 +6173,9 @@ def _stamp_primary_as_deposit(conn, pid, terms):
 def _payment_schedule_block(inv):
     """HTML block for a term-driven invoice's payment schedule, or '' for a
     plain invoice. Self-contained (own money formatter) so it is unit-testable
-    and reusable in both the PDF and any HTML view. Renders dollar rows when the
-    frozen snapshot's mode is "amount", percent rows otherwise (back-compat)."""
+    and reusable in both the PDF and any HTML view. Each row shows its dollar
+    target (a percent row also shows its %); the final row is the auto-remainder
+    so the schedule totals the contract."""
     try:
         idx = int(inv.get("milestone_index") if inv.get("milestone_index") is not None else -1)
     except (TypeError, ValueError):
@@ -6175,7 +6190,6 @@ def _payment_schedule_block(inv):
     ms = terms.get("milestones") or []
     if not ms:
         return ""
-    mode = terms.get("mode", "percent")
     contract = float(inv.get("total") or 0)
     due = float(inv.get("amount_due") or 0)
 
@@ -6183,22 +6197,24 @@ def _payment_schedule_block(inv):
         return ("-$" if x < 0 else "$") + f"{abs(x):,.2f}"
 
     rows = ""
+    running = 0.0
+    last = len(ms) - 1
     for k, mil in enumerate(ms):
         marker = " &larr; this invoice" if k == idx else ""
         weight = "700" if k == idx else "400"
-        if mode == "amount":
-            amt = float(mil.get("amount") or 0)
-            desc = f'{mil.get("label","")}{marker}'
+        if k == last:                              # final row = remainder to contract
+            amt = round(contract - running, 2)
         else:
-            amt = round(contract * float(mil.get("pct") or 0) / 100.0, 2)
+            amt = _milestone_target(contract, mil)
+            running += amt
+        if _milestone_unit(mil) == "percent" and k != last:
             desc = f'{mil.get("label","")} ({mil.get("pct",0)}%){marker}'
+        else:
+            desc = f'{mil.get("label","")}{marker}'
         rows += (f'<div style="display:flex;justify-content:space-between;font-weight:{weight};">'
                  f'<span>{desc}</span>'
                  f'<span>{m(amt)}</span></div>')
-    if mode == "amount":
-        header = "$"
-    else:
-        header = (terms.get("preset") or "").replace("_", " / ")
+    header = (terms.get("preset") or "").replace("_", " / ") or "custom"
     status = (inv.get("status") or "draft").upper()
     return (
         '<div style="margin-top:18px;border-top:1px dashed #94a3b8;padding-top:10px;width:320px;font-size:12px;">'

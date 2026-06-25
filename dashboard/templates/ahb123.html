@@ -4883,18 +4883,12 @@
               <option value="custom">Custom…</option>
             </select>
           </label>
-          <span id="pd-terms-mode-wrap" style="display:none;margin-left:8px;">
-            <label style="color:#94a3b8;">as
-              <select id="pd-terms-mode" onchange="pdOnTermsMode()" style="margin-left:4px;">
-                <option value="percent">Percent %</option>
-                <option value="amount">Dollar $</option>
-              </select>
-            </label>
-          </span>
           <div id="pd-terms-custom" style="display:none;margin-top:6px;">
+            <div style="color:#64748b;font-size:11px;margin-bottom:3px;">Each milestone can be a % of the contract or a $ amount. The balance auto-fills the remainder to 100%.</div>
             <div id="pd-terms-rows"></div>
             <button type="button" class="btn btn-sm btn-secondary" onclick="pdAddTermRow()">+ milestone</button>
-            <span id="pd-terms-sum" style="margin-left:8px;"></span>
+            <div id="pd-terms-balance" style="margin-top:5px;"></div>
+            <div id="pd-terms-sum" style="margin-top:4px;color:#94a3b8;"></div>
           </div>
           <button type="button" id="pd-terms-save" class="btn btn-sm btn-primary" style="margin-top:6px;" onclick="pdSaveTerms()">Save terms</button>
           <span id="pd-terms-current" style="margin-left:8px;color:#22c55e;"></span>
@@ -15808,6 +15802,11 @@ function pdRenderInvoices(p){
   const listEl=document.getElementById('pd-invoice-info');
   if(!sumEl || !listEl) return;
   const invs=(p.invoices||[]);
+  // Capture the contract total (primary invoice) so the payment-terms editor can
+  // preview percent rows and the auto-balance in dollars.
+  const _prim=invs.find(i=>i.is_primary)||invs[0];
+  window._pdContractTotal=_prim?(parseFloat(_prim.subtotal||_prim.total||0)||0):0;
+  try{ if(document.getElementById('pd-terms-sum')) pdRecalcTermSum(); }catch(e){}
   const pay=p._payment||{paid:0,total:0,owed:0};
   const anyOverdue=invs.some(i=>(i.status||'').toLowerCase()==='overdue');
   const allPaid=invs.length>0 && invs.every(i=>(i.status||'').toLowerCase()==='paid');
@@ -15947,76 +15946,91 @@ async function pdGenerateNextInvoice(){
     editInvoice(d.id);
   }catch(e){showToast('Error: '+e.message,'error');}
 }
-function pdTermsMode(){
-  const el=document.getElementById('pd-terms-mode');
-  return el ? el.value : 'percent';
+function pdContractTotal(){
+  // Contract = the primary invoice's total/subtotal, captured by pdRenderInvoices.
+  return parseFloat(window._pdContractTotal||0)||0;
+}
+function pdTermUnit(mil){
+  return (mil && mil.unit) ? mil.unit : ((mil && mil.amount!=null && mil.pct==null) ? 'amount' : 'percent');
 }
 function pdOnTermsPreset(){
   const v=document.getElementById('pd-terms-preset').value;
   const isCustom=(v==='custom');
   document.getElementById('pd-terms-custom').style.display=isCustom?'block':'none';
-  document.getElementById('pd-terms-mode-wrap').style.display=isCustom?'inline':'none';
-  if(!isCustom){ document.getElementById('pd-terms-mode').value='percent'; }
   if(isCustom && !document.querySelectorAll('#pd-terms-rows .pd-term-row').length){
-    if(pdTermsMode()==='amount'){ pdAddTermRow('Deposit',0); pdAddTermRow('Balance upon completion',0); }
-    else { pdAddTermRow('Deposit',50); pdAddTermRow('Completion',50); }
+    pdAddTermRow('Deposit',50,'percent');
+  }
+  if(isCustom && !document.querySelector('#pd-terms-balance .pd-balance-label')){
+    pdRenderBalanceRow('Balance upon completion');
   }
   pdRecalcTermSum();
 }
-function pdOnTermsMode(){
-  const rows=[...document.querySelectorAll('#pd-terms-rows .pd-term-row')]
-    .map(r=>r.querySelector('.pd-term-label').value);
-  document.getElementById('pd-terms-rows').innerHTML='';
-  if(!rows.length){
-    if(pdTermsMode()==='amount'){ pdAddTermRow('Deposit',0); pdAddTermRow('Balance upon completion',0); }
-    else { pdAddTermRow('Deposit',50); pdAddTermRow('Completion',50); }
-  } else {
-    rows.forEach(lbl=>pdAddTermRow(lbl,0));
-  }
-  pdRecalcTermSum();
+function pdRenderBalanceRow(label){
+  const box=document.getElementById('pd-terms-balance');
+  if(!box) return;
+  box.innerHTML='<input class="pd-balance-label" value="'+escHtml(label||'Balance upon completion')+'" style="width:160px;"> '
+    +'<span style="color:#64748b;">auto — remainder to 100% </span>'
+    +'<span class="pd-balance-amt" style="color:#22c55e;font-weight:600;"></span>';
 }
-function pdAddTermRow(label,val){
-  const amount=(pdTermsMode()==='amount');
+function pdAddTermRow(label,val,unit){
+  unit=(unit==='amount')?'amount':'percent';
   const row=document.createElement('div');
   row.className='pd-term-row'; row.style.margin='3px 0';
-  const field = amount
-    ? '$ <input class="pd-term-val pd-term-amount" type="number" min="0" step="0.01" value="'+(val||0)+'" style="width:90px;" oninput="pdRecalcTermSum()">'
-    : '<input class="pd-term-val pd-term-pct" type="number" min="0" max="100" value="'+(val||0)+'" style="width:60px;" oninput="pdRecalcTermSum()">%';
   row.innerHTML='<input class="pd-term-label" placeholder="Stage" value="'+escHtml(label||'')+'" style="width:160px;"> '
-    +field
+    +'<input class="pd-term-val" type="number" min="0" step="0.01" value="'+(val||0)+'" style="width:80px;" oninput="pdRecalcTermSum()"> '
+    +'<select class="pd-term-unit" onchange="pdRecalcTermSum()" style="width:46px;">'
+    +'<option value="percent"'+(unit==='percent'?' selected':'')+'>%</option>'
+    +'<option value="amount"'+(unit==='amount'?' selected':'')+'>$</option>'
+    +'</select>'
     +' <button type="button" class="btn btn-sm btn-secondary" onclick="this.parentNode.remove();pdRecalcTermSum()">✕</button>';
   document.getElementById('pd-terms-rows').appendChild(row);
   pdRecalcTermSum();
 }
+function pdRowTarget(row, contract){
+  const val=parseFloat(row.querySelector('.pd-term-val').value||0)||0;
+  const unit=row.querySelector('.pd-term-unit').value;
+  return (unit==='amount') ? Math.max(0,val) : Math.max(0, contract*val/100);
+}
 function pdRecalcTermSum(){
   const el=document.getElementById('pd-terms-sum');
-  const isCustom=document.getElementById('pd-terms-preset').value==='custom';
-  let s=0;
-  document.querySelectorAll('#pd-terms-rows .pd-term-val').forEach(i=>s+=parseFloat(i.value||0));
-  if(pdTermsMode()==='amount'){
-    el.textContent='Σ = $'+s.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-    el.style.color='#94a3b8';
-    document.getElementById('pd-terms-save').disabled=false;
+  if(!el) return;
+  const contract=pdContractTotal();
+  let entered=0;
+  document.querySelectorAll('#pd-terms-rows .pd-term-row').forEach(r=>{ entered+=pdRowTarget(r,contract); });
+  const balAmtEl=document.querySelector('#pd-terms-balance .pd-balance-amt');
+  const money=x=>'$'+(x<0?0:x).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(contract>0){
+    const bal=Math.round((contract-entered)*100)/100;
+    if(balAmtEl) balAmtEl.textContent='≈ '+money(bal);
+    if(entered>contract+0.01){ el.style.color='#ef4444';
+      el.textContent='entered ≈ '+money(entered)+' of '+money(contract)+' ⚠ over 100% — balance will be $0'; }
+    else { el.style.color='#94a3b8';
+      el.textContent='entered ≈ '+money(entered)+' of '+money(contract)+' · balance auto-fills the rest'; }
   } else {
-    const ok=Math.abs(s-100)<0.01;
-    el.textContent='sum = '+s+'%'+(ok?' ✓':' ✗'); el.style.color=ok?'#22c55e':'#ef4444';
-    document.getElementById('pd-terms-save').disabled=isCustom && !ok;
+    if(balAmtEl) balAmtEl.textContent='';
+    el.style.color='#94a3b8';
+    el.textContent='balance auto-fills the rest to 100% of the contract';
   }
+  document.getElementById('pd-terms-save').disabled=false;
 }
 function pdCollectMilestones(){
-  const amount=(pdTermsMode()==='amount');
-  return [...document.querySelectorAll('#pd-terms-rows .pd-term-row')].map(r=>{
-    const o={label:r.querySelector('.pd-term-label').value.trim()};
-    if(amount) o.amount=parseFloat(r.querySelector('.pd-term-amount').value||0);
-    else o.pct=parseFloat(r.querySelector('.pd-term-pct').value||0);
+  const ms=[...document.querySelectorAll('#pd-terms-rows .pd-term-row')].map(r=>{
+    const unit=r.querySelector('.pd-term-unit').value;
+    const val=parseFloat(r.querySelector('.pd-term-val').value||0)||0;
+    const o={label:r.querySelector('.pd-term-label').value.trim(), unit};
+    if(unit==='amount') o.amount=val; else o.pct=val;
     return o;
   });
+  const balEl=document.querySelector('#pd-terms-balance .pd-balance-label');
+  const balLbl=((balEl&&balEl.value)||'Balance upon completion').trim()||'Balance upon completion';
+  ms.push({label:balLbl, unit:'percent', pct:0});   // final = auto-remainder (value ignored by backend)
+  return ms;
 }
 async function pdSaveTerms(){
   const pid=document.getElementById('pd-id').value;
   const preset=document.getElementById('pd-terms-preset').value;
   const payload={preset};
-  if(preset==='custom'){ payload.mode=pdTermsMode(); payload.milestones=pdCollectMilestones(); }
+  if(preset==='custom') payload.milestones=pdCollectMilestones();
   const r=await fetch('/api/ahb/projects/'+pid+'/payment-terms',
     {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const j=await r.json();
@@ -16029,26 +16043,29 @@ function pdRenderCurrentTerms(terms){
   const el=document.getElementById('pd-terms-current');
   if(!el)return;
   if(!terms||!terms.milestones||!terms.milestones.length){el.textContent='';return;}
-  if(terms.mode==='amount'){
-    el.textContent=terms.milestones.map(m=>'$'+(m.amount||0).toLocaleString()+' '+m.label).join(' · ');
-  } else {
-    el.textContent=terms.milestones.map(m=>m.pct+'% '+m.label).join(' · ');
-  }
+  el.textContent=terms.milestones.map(m=>{
+    return (pdTermUnit(m)==='amount') ? ('$'+(m.amount||0).toLocaleString()+' '+m.label)
+                                      : ((m.pct||0)+'% '+m.label);
+  }).join(' · ');
 }
 async function pdLoadTerms(pid){
   try{
     const j=await fetch('/api/ahb/projects/'+pid+'/payment-terms').then(r=>r.json());
     if(j.success && j.terms){
       const sel=document.getElementById('pd-terms-preset');
-      const modeSel=document.getElementById('pd-terms-mode');
-      if(modeSel) modeSel.value=j.terms.mode||'percent';
       if(sel){ sel.value=j.terms.preset||''; pdOnTermsPreset(); }
       if(j.terms.preset==='custom'){
-        if(modeSel) modeSel.value=j.terms.mode||'percent';
-        document.getElementById('pd-terms-mode-wrap').style.display='inline';
+        const ms=j.terms.milestones||[];
         document.getElementById('pd-terms-rows').innerHTML='';
-        (j.terms.milestones||[]).forEach(m=>pdAddTermRow(m.label,
-          (j.terms.mode==='amount')?(m.amount||0):(m.pct||0)));
+        // The last milestone is the auto-balance; render the rest as editable rows.
+        const editable = ms.length ? ms.slice(0,-1) : [];
+        const balance  = ms.length ? ms[ms.length-1] : null;
+        editable.forEach(m=>{
+          const u=pdTermUnit(m);
+          pdAddTermRow(m.label, (u==='amount')?(m.amount||0):(m.pct||0), u);
+        });
+        if(!editable.length && !balance) pdAddTermRow('Deposit',50,'percent');
+        pdRenderBalanceRow(balance?balance.label:'Balance upon completion');
         pdRecalcTermSum();
       }
       pdRenderCurrentTerms(j.terms);
