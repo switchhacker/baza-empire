@@ -145,3 +145,27 @@ def test_billing_summary_counts_only_paid(app_module):
     j = client.get("/api/ahb/billing/summary?year=2026").get_json()
     assert j["paid"]["total"] == 1000
     assert j["paid"]["count"] == 1
+
+
+# 7 — Dashboard overview merges status case, uses canonical year, excludes change orders.
+def test_dashboard_overview_consistent(app_module):
+    conn = app_module._ahb_db()
+    conn.execute("INSERT INTO ahb_projects (id,title,status,year) VALUES ('p1','x','In Progress','2026')")
+    conn.execute(
+        "INSERT INTO ahb_invoices (id,project_id,invoice_number,subtotal,total,status,line_items,year) "
+        "VALUES ('i1','p1','A',1000,1000,'Paid','[]','2026')")
+    conn.execute(  # lowercase variant must merge into 'Paid'
+        "INSERT INTO ahb_invoices (id,project_id,invoice_number,subtotal,total,status,line_items,year) "
+        "VALUES ('i2','p1','B',500,500,'paid','[]','2026')")
+    conn.execute(  # 2025 must NOT count in 2026
+        "INSERT INTO ahb_invoices (id,project_id,invoice_number,subtotal,total,status,line_items,year) "
+        "VALUES ('i3','p1','C',9999,9999,'Paid','[]','2025')")
+    conn.execute(  # change order excluded
+        "INSERT INTO ahb_invoices (id,project_id,invoice_number,subtotal,total,status,line_items,year,is_change_order) "
+        "VALUES ('i4','p1','D',7777,7777,'Paid','[]','2026',1)")
+    conn.commit()
+    conn.close()
+    s = app_module.app.test_client().get("/api/ahb/dashboard?year=2026").get_json()
+    assert s["invoices"].get("Paid") == {"count": 2, "total": 1500}
+    assert "paid" not in s["invoices"]
+    assert s["projects"].get("In Progress") == 1
