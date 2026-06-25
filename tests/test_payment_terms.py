@@ -97,3 +97,45 @@ def test_put_custom_bad_sum_rejected(client):
                                         {"label": "B", "pct": 50}]})
     assert r.status_code == 400
     assert "100" in r.get_json()["error"]
+
+
+# ---- Dollar mode: _resolve_payment_terms ----
+
+def test_amount_mode_resolves_and_keeps_amounts(app_module):
+    t = app_module._resolve_payment_terms(
+        "custom",
+        [{"label": "Deposit", "amount": 5000},
+         {"label": "Draw", "amount": 3000},
+         {"label": "Balance upon completion", "amount": 4000}],
+        "amount")
+    assert t["mode"] == "amount"
+    assert t["preset"] == "custom"
+    assert [m["amount"] for m in t["milestones"]] == [5000, 3000, 4000]
+    assert [m["label"] for m in t["milestones"]] == ["Deposit", "Draw", "Balance upon completion"]
+
+
+def test_amount_mode_skips_sum_check(app_module):
+    t = app_module._resolve_payment_terms(
+        "custom", [{"label": "A", "amount": 9999}], "amount")
+    assert t["milestones"][0]["amount"] == 9999
+
+
+def test_amount_mode_requires_label(app_module):
+    with pytest.raises(ValueError):
+        app_module._resolve_payment_terms("custom", [{"label": "", "amount": 100}], "amount")
+
+
+def test_amount_mode_rejects_negative(app_module):
+    with pytest.raises(ValueError):
+        app_module._resolve_payment_terms("custom", [{"label": "A", "amount": -5}], "amount")
+
+
+def test_amount_mode_rejects_non_numeric(app_module):
+    with pytest.raises(ValueError):
+        app_module._resolve_payment_terms("custom", [{"label": "A", "amount": "x"}], "amount")
+
+
+def test_percent_mode_default_when_mode_absent(app_module):
+    t = app_module._resolve_payment_terms("50_50", None)
+    assert t["mode"] == "percent"
+    assert [m["pct"] for m in t["milestones"]] == [50, 50]
