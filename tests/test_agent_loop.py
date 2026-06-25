@@ -77,7 +77,7 @@ def test_finish_marker_and_skill_in_same_response():
 def test_loop_prepends_history():
     seen = {}
     def llm(messages, system):
-        seen["messages"] = messages
+        seen["messages"] = list(messages)   # copy: run_loop mutates the list after this call
         return "done, no skills"
     agent_loop.run_loop(llm, FakeEngine({}), system="s", user="now",
                         history=[{"role": "user", "content": "earlier"},
