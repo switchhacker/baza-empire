@@ -19,3 +19,12 @@ def test_skill_search_outputs_matches(tmp_path, monkeypatch):
                          capture_output=True, text=True, env=env, timeout=30)
     assert out.returncode == 0
     assert "invoice_calculator" in out.stdout
+
+def test_skill_search_malformed_args_clean_error():
+    env = dict(os.environ)
+    env["SKILL_ARGS"] = "{not valid json"
+    out = subprocess.run([sys.executable, os.path.join(FRAMEWORK, "skills", "shared", "skill_search.py")],
+                         capture_output=True, text=True, env=env, timeout=30)
+    assert out.returncode == 1
+    assert "invalid SKILL_ARGS" in out.stdout
+    assert "Traceback" not in out.stderr
