@@ -6148,7 +6148,7 @@ def _stamp_primary_as_deposit(conn, pid, terms):
     primary = dict(primary)
     contract = float(primary.get("subtotal") or primary.get("total") or 0)
     paid = _project_total_paid(conn, pid)
-    due = _compute_milestone_amount_due(contract, ms, 0, paid)
+    due = _compute_milestone_amount_due(contract, ms, 0, paid, (terms or {}).get("mode", "percent"))
     conn.execute(
         "UPDATE ahb_invoices SET milestone_label=?, milestone_index=0, amount_due=?, "
         "terms_snapshot=? WHERE id=?",
@@ -6214,13 +6214,14 @@ def _invoice_amount_due(inv, paid=0.0):
     if idx < 0 or not raw:
         return float(inv.get('amount_due') or 0)
     try:
-        ms = json.loads(raw).get('milestones') or []
+        snap = json.loads(raw)
+        ms = snap.get('milestones') or []
     except Exception:
         return float(inv.get('amount_due') or 0)
     if not ms:
         return float(inv.get('amount_due') or 0)
     contract = float(inv.get('total') or inv.get('subtotal') or 0)
-    return _compute_milestone_amount_due(contract, ms, idx, paid)
+    return _compute_milestone_amount_due(contract, ms, idx, paid, snap.get('mode', 'percent'))
 
 
 @app.route('/api/ahb/projects/<pid>/payment-terms', methods=['GET', 'PUT'])
@@ -6236,7 +6237,7 @@ def api_ahb_project_payment_terms(pid):
             return jsonify({'success': True, 'terms': terms})
         d = request.get_json() or {}
         try:
-            terms = _resolve_payment_terms(d.get('preset'), d.get('milestones'))
+            terms = _resolve_payment_terms(d.get('preset'), d.get('milestones'), d.get('mode'))
         except ValueError as e:
             return jsonify({'success': False, 'error': str(e)}), 400
         conn.execute("UPDATE ahb_projects SET payment_terms=?, updated_at=? WHERE id=?",
@@ -7038,6 +7039,7 @@ def api_ahb_project_next_invoice(pid):
             conn.close()
             return jsonify({'success': False, 'error': 'set payment terms first'}), 400
         terms = json.loads(raw)
+        mode = terms.get('mode', 'percent')
         milestones = terms.get('milestones') or []
         primary = conn.execute(
             "SELECT * FROM ahb_invoices WHERE project_id=? ORDER BY is_primary DESC, created_at ASC LIMIT 1",
@@ -7060,7 +7062,7 @@ def api_ahb_project_next_invoice(pid):
 
         contract = float(primary.get('subtotal') or primary.get('total') or 0)
         paid = _project_total_paid(conn, pid)
-        due = _compute_milestone_amount_due(contract, milestones, next_k, paid)
+        due = _compute_milestone_amount_due(contract, milestones, next_k, paid, mode)
         line_items = _parse_line_items(primary.get('line_items')) or []
 
         iid = uuid.uuid4().hex[:24]

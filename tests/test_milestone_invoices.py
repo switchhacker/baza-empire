@@ -134,3 +134,54 @@ def test_percent_mode_default_unchanged(app_module):
     ms = [{"label": "Deposit", "pct": 30}, {"label": "Progress", "pct": 30}, {"label": "Final", "pct": 40}]
     f = app_module._compute_milestone_amount_due
     assert f(20000, ms, 2, 12000) == 8000
+
+
+# ---- Dollar mode: primary stamped + PUT round-trip + next invoice ----
+
+@pytest.fixture
+def amount_client(app_module):
+    conn = app_module._ahb_db()
+    conn.execute("INSERT INTO ahb_projects (id,title,status) VALUES ('pa','Jones','Planning')")
+    conn.execute("INSERT INTO ahb_invoices (id,project_id,invoice_number,subtotal,total,is_primary,line_items) "
+                 "VALUES ('ia','pa','AHB-A',20000,20000,1,'[]')")
+    conn.commit(); conn.close()
+    return app_module.app.test_client()
+
+
+def _set_amount_terms(client):
+    return client.put("/api/ahb/projects/pa/payment-terms", json={
+        "preset": "custom", "mode": "amount",
+        "milestones": [{"label": "Deposit", "amount": 5000},
+                       {"label": "Draw", "amount": 3000},
+                       {"label": "Balance upon completion", "amount": 4000}]})
+
+
+def test_amount_put_round_trip(amount_client):
+    r = _set_amount_terms(amount_client)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["success"] is True
+    assert body["terms"]["mode"] == "amount"
+    g = amount_client.get("/api/ahb/projects/pa/payment-terms").get_json()
+    assert g["terms"]["mode"] == "amount"
+    assert [m["amount"] for m in g["terms"]["milestones"]] == [5000, 3000, 4000]
+
+
+def test_amount_primary_stamped_with_typed_deposit(amount_client, app_module):
+    _set_amount_terms(amount_client)
+    conn = app_module._ahb_db()
+    inv = dict(conn.execute("SELECT * FROM ahb_invoices WHERE id='ia'").fetchone())
+    conn.close()
+    assert inv["milestone_index"] == 0
+    assert inv["milestone_label"] == "Deposit"
+    assert inv["amount_due"] == 5000   # typed amount, not 20000-based
+
+
+def test_amount_next_invoice_bills_typed_amount(amount_client):
+    _set_amount_terms(amount_client)
+    r = amount_client.post("/api/ahb/projects/pa/next-invoice")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["milestone_index"] == 1
+    assert body["milestone_label"] == "Draw"
+    assert body["amount_due"] == 3000   # typed, ignores payments
