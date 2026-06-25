@@ -10,6 +10,7 @@ SKILL_META = {
 }
 import json
 import os
+import re
 import sys
 
 try:
@@ -23,6 +24,14 @@ tool_input = args.get("input") or {}
 
 if not agent or not tool:
     print(json.dumps({"success": False, "error": "call_tool requires non-empty 'agent' and 'tool'"}))
+    sys.exit(1)
+
+# Defense-in-depth: agent/tool become URL path segments — reject anything that
+# isn't a plain identifier (no slashes/dots/traversal).
+_SEG_RX = re.compile(r"^[\w\-]+$")
+if not _SEG_RX.match(agent) or not _SEG_RX.match(tool):
+    print(json.dumps({"success": False,
+                      "error": f"invalid agent/tool name: {agent!r}/{tool!r}"}))
     sys.exit(1)
 
 base = os.environ.get("TOOL_SERVER_URL", "http://localhost:8000")

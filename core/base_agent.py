@@ -1628,7 +1628,9 @@ class BaseAgent(ContextMixin):
                     parse_kwargs={"chat_id": chat_id},
                     history=messages))  # prior turns preserve multi-turn context
             response = res["final"] or "_(no response)_"
-            skill_results = []  # the loop handled and grounded skills internally
+            # Surface skill results so the failed-skill warning and the
+            # _auto_save_artifact dedupe guard work the same as the legacy path.
+            skill_results = res.get("results", [])
         else:
             # ── Legacy path (unchanged): single shot + two-pass reground ──
             system = self.build_system_prompt()

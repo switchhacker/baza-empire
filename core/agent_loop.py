@@ -30,6 +30,7 @@ def run_loop(llm_call, engine, system: str, user: str, *,
     final_text = ""
     truncated = False
     steps = 0
+    all_results = []  # every skill result across all steps (for the caller)
 
     for steps in range(1, max_steps + 1):
         response = llm_call(messages, system) or ""
@@ -41,13 +42,10 @@ def run_loop(llm_call, engine, system: str, user: str, *,
             break
 
         spliced, results = engine.parse_and_run(response, **parse_kwargs)
+        all_results.extend(results)
         successful = [r for r in results if r.get("success")]
 
         if any(m in response for m in finish_markers):
-            final_text = spliced
-            break
-
-        if not successful:
             final_text = spliced
             break
 
@@ -56,9 +54,20 @@ def run_loop(llm_call, engine, system: str, user: str, *,
             truncated = True
             break
 
-        skill_data = "\n\n".join(f"[{r.get('skill','skill')} output]\n{r.get('output','')}"
-                                 for r in successful)
-        messages.append({"role": "user", "content": f"{observe_intro}\n\n{skill_data}"})
+        if successful:
+            skill_data = "\n\n".join(f"[{r.get('skill','skill')} output]\n{r.get('output','')}"
+                                     for r in successful)
+            messages.append({"role": "user", "content": f"{observe_intro}\n\n{skill_data}"})
+        else:
+            # Every skill this step failed. Feed the errors back so the LLM can
+            # recover (try another approach) rather than dying on a transient
+            # failure. Still bounded by max_steps.
+            err_data = "\n\n".join(
+                f"[{r.get('skill','skill')} ERROR] {r.get('error') or r.get('output','')}"
+                for r in results)
+            messages.append({"role": "user", "content": (
+                f"Your skill call(s) failed:\n\n{err_data}\n\n"
+                "Try a different approach, or reply with FINAL: and your best answer.")})
 
     return {"final": final_text, "steps": steps, "truncated": truncated,
-            "transcript": messages}
+            "results": all_results, "transcript": messages}

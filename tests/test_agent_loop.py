@@ -86,3 +86,33 @@ def test_loop_prepends_history():
     contents = [m["content"] for m in seen["messages"]]
     assert contents == ["earlier", "ok", "now"]
     assert roles == ["user", "assistant", "user"]
+
+class FailingThenFakeEngine:
+    """Fails the named skill on the first call; reports no markers otherwise."""
+    def __init__(self): self.calls = 0
+    def parse_and_run(self, text, **kw):
+        self.calls += 1
+        if "##SKILL:flaky" in text:
+            return text, [{"success": False, "skill": "flaky", "error": "temporary"}]
+        return text, []
+
+def test_loop_feeds_errors_back_and_continues():
+    _calls = []
+    seq = ['##SKILL:flaky{}##', 'FINAL: recovered']
+    def llm(messages, system):
+        i = min(len(_calls), len(seq) - 1)
+        _calls.append(1)
+        return seq[i]
+    eng = FailingThenFakeEngine()
+    res = agent_loop.run_loop(llm, eng, system="s", user="go", max_steps=5,
+                              finish_markers=("FINAL:",))
+    assert res["steps"] == 2                       # did NOT die on the failed skill
+    assert "recovered" in res["final"]
+    assert any(not r["success"] for r in res["results"])   # failure recorded
+
+def test_loop_returns_aggregated_results():
+    def llm(messages, system):
+        return 'FINAL: done ##SKILL:invoice_calculator{}##'
+    res = agent_loop.run_loop(llm, FakeEngine({"invoice_calculator": "x"}),
+                              system="s", user="u", max_steps=3, finish_markers=("FINAL:",))
+    assert any(r["skill"] == "invoice_calculator" and r["success"] for r in res["results"])

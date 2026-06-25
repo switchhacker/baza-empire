@@ -32,3 +32,10 @@ def test_unreachable_server_reports_error():
     payload = json.loads(out.stdout)
     assert payload["success"] is False
     assert "error" in payload
+
+def test_path_traversal_tool_rejected():
+    out = _run({"agent": "claw_batto", "tool": "../../etc/passwd", "input": {}})
+    assert out.returncode == 1
+    payload = json.loads(out.stdout)
+    assert payload["success"] is False
+    assert "invalid" in payload["error"].lower()
