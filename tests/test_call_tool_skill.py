@@ -15,6 +15,16 @@ def test_missing_agent_or_tool_errors():
     out = _run({"agent": "", "tool": ""})
     assert out.returncode != 0 or "error" in out.stdout.lower()
 
+def test_malformed_args_clean_error():
+    env = dict(os.environ)
+    env["SKILL_ARGS"] = "{bad json"
+    out = subprocess.run([sys.executable, SKILL], capture_output=True, text=True,
+                         env=env, timeout=30)
+    assert out.returncode == 1
+    payload = json.loads(out.stdout)
+    assert payload["success"] is False
+    assert "Traceback" not in out.stderr
+
 def test_unreachable_server_reports_error():
     out = _run({"agent": "sam_axe", "tool": "generate-image", "input": {"prompt": "x"}},
                env_extra={"TOOL_SERVER_URL": "http://localhost:9"})

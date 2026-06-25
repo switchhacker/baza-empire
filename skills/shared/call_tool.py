@@ -10,15 +10,20 @@ SKILL_META = {
 }
 import json
 import os
+import sys
 
-args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
+try:
+    args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
+except json.JSONDecodeError as e:
+    print(json.dumps({"success": False, "error": f"invalid SKILL_ARGS JSON: {e}"}))
+    sys.exit(1)
 agent = (args.get("agent") or "").strip()
 tool = (args.get("tool") or "").strip()
 tool_input = args.get("input") or {}
 
 if not agent or not tool:
     print(json.dumps({"success": False, "error": "call_tool requires non-empty 'agent' and 'tool'"}))
-    raise SystemExit(1)
+    sys.exit(1)
 
 base = os.environ.get("TOOL_SERVER_URL", "http://localhost:8000")
 slug_map = {"simon_bately": "simon", "claw_batto": "claw", "phil_hass": "phil", "sam_axe": "sam"}
