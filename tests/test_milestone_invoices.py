@@ -112,25 +112,39 @@ def test_balance_invoice_still_works_without_terms(client):
     assert r.get_json()["balance"] == 15000
 
 
-# ---- Dollar mode: _compute_milestone_amount_due ----
+# ---- Mixed percent/dollar milestones ----
 
-def test_amount_mode_returns_typed_amount(app_module):
-    ms = [{"label": "Deposit", "amount": 5000},
-          {"label": "Draw", "amount": 3000},
-          {"label": "Balance", "amount": 4000}]
+def test_milestone_target_percent_and_dollar(app_module):
+    t = app_module._milestone_target
+    assert t(20000, {"unit": "amount", "amount": 5000}) == 5000
+    assert t(20000, {"unit": "percent", "pct": 50}) == 10000
+    assert t(20000, {"unit": "percent", "pct": 0}) == 0
+    # negative typed amount clamps to 0
+    assert t(20000, {"unit": "amount", "amount": -10}) == 0
+
+
+def test_dollar_milestones_cumulative_with_remainder_final(app_module):
+    ms = [{"label": "Deposit", "unit": "amount", "amount": 5000},
+          {"label": "Draw", "unit": "amount", "amount": 3000},
+          {"label": "Balance", "unit": "amount", "amount": 4000}]
     f = app_module._compute_milestone_amount_due
-    assert f(99999, ms, 0, 0, "amount") == 5000
-    assert f(99999, ms, 1, 5000, "amount") == 3000
-    assert f(99999, ms, 2, 8000, "amount") == 4000   # final is NOT a remainder
+    assert f(12000, ms, 0, 0) == 5000
+    assert f(12000, ms, 1, 5000) == 3000
+    assert f(12000, ms, 2, 8000) == 4000   # final = remainder = 12000 - 8000
 
 
-def test_amount_mode_clamps_negative_typed_amount(app_module):
-    ms = [{"label": "Deposit", "amount": -10}]
+def test_mixed_dollar_and_percent_self_heal(app_module):
+    # $5k deposit + 25% progress (of 20k = $5k) + auto balance; contract 20000
+    ms = [{"label": "Deposit", "unit": "amount", "amount": 5000},
+          {"label": "Progress", "unit": "percent", "pct": 25},
+          {"label": "Balance", "unit": "percent", "pct": 0}]
     f = app_module._compute_milestone_amount_due
-    assert f(99999, ms, 0, 0, "amount") == 0
+    assert f(20000, ms, 0, 0) == 5000                 # deposit dollar
+    assert f(20000, ms, 1, 5000) == 5000              # cum 10000 - 5000 paid
+    assert f(20000, ms, 2, 10000) == 10000            # final remainder = 20000 - 10000
 
 
-def test_percent_mode_default_unchanged(app_module):
+def test_percent_path_unchanged(app_module):
     ms = [{"label": "Deposit", "pct": 30}, {"label": "Progress", "pct": 30}, {"label": "Final", "pct": 40}]
     f = app_module._compute_milestone_amount_due
     assert f(20000, ms, 2, 12000) == 8000
@@ -161,9 +175,8 @@ def test_amount_put_round_trip(amount_client):
     assert r.status_code == 200
     body = r.get_json()
     assert body["success"] is True
-    assert body["terms"]["mode"] == "amount"
     g = amount_client.get("/api/ahb/projects/pa/payment-terms").get_json()
-    assert g["terms"]["mode"] == "amount"
+    assert [m["unit"] for m in g["terms"]["milestones"]] == ["amount", "amount", "amount"]
     assert [m["amount"] for m in g["terms"]["milestones"]] == [5000, 3000, 4000]
 
 
@@ -177,11 +190,13 @@ def test_amount_primary_stamped_with_typed_deposit(amount_client, app_module):
     assert inv["amount_due"] == 5000   # typed amount, not 20000-based
 
 
-def test_amount_next_invoice_bills_typed_amount(amount_client):
+def test_amount_next_invoice_bills_cumulative(amount_client):
     _set_amount_terms(amount_client)
+    # pay the $5,000 deposit, then the Draw milestone bills cum 8000 - 5000 = 3000
+    amount_client.post("/api/ahb/payments", json={"invoice_id": "ia", "amount": 5000})
     r = amount_client.post("/api/ahb/projects/pa/next-invoice")
     assert r.status_code == 200
     body = r.get_json()
     assert body["milestone_index"] == 1
     assert body["milestone_label"] == "Draw"
-    assert body["amount_due"] == 3000   # typed, ignores payments
+    assert body["amount_due"] == 3000

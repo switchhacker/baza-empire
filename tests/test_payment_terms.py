@@ -49,10 +49,14 @@ def test_net_30_sets_net_days(app_module):
     assert t["milestones"][0]["pct"] == 100
 
 
-def test_custom_must_sum_to_100(app_module):
-    with pytest.raises(ValueError):
-        app_module._resolve_payment_terms(
-            "custom", [{"label": "A", "pct": 40}, {"label": "B", "pct": 40}])
+def test_custom_no_longer_requires_sum_100(app_module):
+    # The auto-remainder final milestone makes the old sum-to-100 rule obsolete:
+    # an "uneven" percent schedule now resolves fine and reconciles at billing time.
+    t = app_module._resolve_payment_terms(
+        "custom", [{"label": "A", "unit": "percent", "pct": 40},
+                   {"label": "B", "unit": "percent", "pct": 40}])
+    assert len(t["milestones"]) == 2
+    assert [m["unit"] for m in t["milestones"]] == ["percent", "percent"]
 
 
 def test_custom_requires_labels(app_module):
@@ -90,34 +94,44 @@ def test_put_and_get_terms(client):
     assert g.get_json()["terms"]["preset"] == "30_30_40"
 
 
-def test_put_custom_bad_sum_rejected(client):
+def test_put_custom_uneven_sum_accepted(client):
+    # uneven percents are accepted now (auto-remainder reconciles); no 400
     r = client.put("/api/ahb/projects/p1/payment-terms",
                    json={"preset": "custom",
-                         "milestones": [{"label": "A", "pct": 60},
-                                        {"label": "B", "pct": 50}]})
-    assert r.status_code == 400
-    assert "100" in r.get_json()["error"]
+                         "milestones": [{"label": "A", "unit": "percent", "pct": 60},
+                                        {"label": "B", "unit": "percent", "pct": 50}]})
+    assert r.status_code == 200
+    assert r.get_json()["success"] is True
 
 
-# ---- Dollar mode: _resolve_payment_terms ----
+# ---- Mixed percent/dollar milestones: _resolve_payment_terms ----
 
-def test_amount_mode_resolves_and_keeps_amounts(app_module):
+def test_mixed_units_resolve_and_keep_their_unit(app_module):
     t = app_module._resolve_payment_terms(
         "custom",
-        [{"label": "Deposit", "amount": 5000},
-         {"label": "Draw", "amount": 3000},
-         {"label": "Balance upon completion", "amount": 4000}],
-        "amount")
-    assert t["mode"] == "amount"
+        [{"label": "Deposit", "unit": "amount", "amount": 5000},
+         {"label": "Progress", "unit": "percent", "pct": 25},
+         {"label": "Balance upon completion", "unit": "percent", "pct": 0}])
     assert t["preset"] == "custom"
-    assert [m["amount"] for m in t["milestones"]] == [5000, 3000, 4000]
-    assert [m["label"] for m in t["milestones"]] == ["Deposit", "Draw", "Balance upon completion"]
+    assert [m["unit"] for m in t["milestones"]] == ["amount", "percent", "percent"]
+    assert t["milestones"][0]["amount"] == 5000
+    assert t["milestones"][1]["pct"] == 25
 
 
-def test_amount_mode_skips_sum_check(app_module):
+def test_unit_inferred_from_shape_for_legacy_rows(app_module):
+    # a row with an amount but no unit/pct is read as a dollar row (back-compat)
     t = app_module._resolve_payment_terms(
-        "custom", [{"label": "A", "amount": 9999}], "amount")
-    assert t["milestones"][0]["amount"] == 9999
+        "custom", [{"label": "Deposit", "amount": 5000},
+                   {"label": "Balance", "pct": 0}])
+    assert t["milestones"][0]["unit"] == "amount"
+    assert t["milestones"][0]["amount"] == 5000
+    assert t["milestones"][1]["unit"] == "percent"
+
+
+def test_amount_milestone_rejects_negative(app_module):
+    with pytest.raises(ValueError):
+        app_module._resolve_payment_terms(
+            "custom", [{"label": "A", "unit": "amount", "amount": -5}])
 
 
 def test_amount_mode_requires_label(app_module):

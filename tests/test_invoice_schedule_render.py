@@ -29,18 +29,20 @@ def test_term_invoice_renders_schedule(app_module):
     assert "10,000" in html
 
 
-def test_amount_mode_renders_dollar_schedule(app_module):
-    terms = {"preset": "custom", "mode": "amount",
-             "milestones": [{"label": "Deposit", "amount": 5000},
-                            {"label": "Draw", "amount": 3000},
-                            {"label": "Balance upon completion", "amount": 4000}]}
-    inv = {"milestone_index": 1, "amount_due": 3000, "total": 20000, "status": "draft",
+def test_mixed_schedule_renders_dollar_amounts(app_module):
+    # $5k deposit + 25% progress (of 20k = $5k) + auto balance (= 20k - 10k = $10k)
+    terms = {"preset": "custom", "mode": "mixed",
+             "milestones": [{"label": "Deposit", "unit": "amount", "amount": 5000},
+                            {"label": "Progress", "unit": "percent", "pct": 25},
+                            {"label": "Balance upon completion", "unit": "percent", "pct": 0}]}
+    inv = {"milestone_index": 1, "amount_due": 5000, "total": 20000, "status": "draft",
            "terms_snapshot": json.dumps(terms)}
     html = app_module._payment_schedule_block(inv)
     assert "PAYMENT SCHEDULE" in html
-    assert "Deposit" in html and "Draw" in html and "Balance upon completion" in html
-    assert "5,000" in html and "3,000" in html and "4,000" in html
-    assert "%" not in html            # no percent markers in dollar mode
+    assert "Deposit" in html and "Progress" in html and "Balance upon completion" in html
+    assert "5,000" in html            # deposit dollar target
+    assert "(25%)" in html            # percent row keeps its % annotation
+    assert "10,000" in html           # auto-remainder balance
     assert "AMOUNT DUE NOW" in html
 
 
