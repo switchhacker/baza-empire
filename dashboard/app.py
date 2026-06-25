@@ -6115,10 +6115,16 @@ def _project_total_paid(conn, pid):
     return float(row["paid"] or 0) if row else 0.0
 
 
-def _compute_milestone_amount_due(contract, milestones, k, paid):
-    """Self-healing amount due for milestone index k (0-based):
-    cumulative-% target through k minus total paid; the final milestone
-    clears to the true remaining balance. Negatives clamp to 0."""
+def _compute_milestone_amount_due(contract, milestones, k, paid, mode="percent"):
+    """Amount due for milestone index k (0-based). In "amount" mode the typed
+    dollar amount is billed verbatim (clamped to >= 0). In "percent" mode the
+    figure self-heals: cumulative-% target through k minus total paid, with the
+    final milestone clearing to the true remaining balance. Negatives clamp to 0."""
+    if (mode or "percent") == "amount":
+        try:
+            return round(max(0.0, float(milestones[k].get("amount") or 0)), 2)
+        except (IndexError, TypeError, ValueError):
+            return 0.0
     contract = float(contract or 0); paid = float(paid or 0)
     if k >= len(milestones) - 1:                 # final milestone
         due = contract - paid

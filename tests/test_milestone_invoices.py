@@ -110,3 +110,27 @@ def test_balance_invoice_still_works_without_terms(client):
     r = client.post("/api/ahb/projects/p1/balance-invoice")
     assert r.status_code == 200
     assert r.get_json()["balance"] == 15000
+
+
+# ---- Dollar mode: _compute_milestone_amount_due ----
+
+def test_amount_mode_returns_typed_amount(app_module):
+    ms = [{"label": "Deposit", "amount": 5000},
+          {"label": "Draw", "amount": 3000},
+          {"label": "Balance", "amount": 4000}]
+    f = app_module._compute_milestone_amount_due
+    assert f(99999, ms, 0, 0, "amount") == 5000
+    assert f(99999, ms, 1, 5000, "amount") == 3000
+    assert f(99999, ms, 2, 8000, "amount") == 4000   # final is NOT a remainder
+
+
+def test_amount_mode_clamps_negative_typed_amount(app_module):
+    ms = [{"label": "Deposit", "amount": -10}]
+    f = app_module._compute_milestone_amount_due
+    assert f(99999, ms, 0, 0, "amount") == 0
+
+
+def test_percent_mode_default_unchanged(app_module):
+    ms = [{"label": "Deposit", "pct": 30}, {"label": "Progress", "pct": 30}, {"label": "Final", "pct": 40}]
+    f = app_module._compute_milestone_amount_due
+    assert f(20000, ms, 2, 12000) == 8000
