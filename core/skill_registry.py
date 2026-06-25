@@ -157,8 +157,8 @@ def build(shared_dir: str = SHARED_DIR, agents_dir: str = AGENTS_DIR,
     Returns the number of descriptors written."""
     descriptors = [describe_skill(path, scope) for path, scope in
                    _iter_skill_files(shared_dir, agents_dir)]
-    if tools:
-        descriptors.extend(tool_descriptors(tools))   # defined in a later task
+    if tools and "tool_descriptors" in globals():
+        descriptors.extend(tool_descriptors(tools))   # defined in the tool-ingestion task
     with open(out_json, "w") as f:
         json.dump({"skills": descriptors}, f, indent=2)
     _write_fts(out_db, descriptors)
@@ -169,7 +169,9 @@ _FTS_SAFE = re.compile(r"[^a-zA-Z0-9_]+")
 
 
 def _fts_query(raw: str) -> str:
-    terms = [t for t in _FTS_SAFE.sub(" ", raw).split() if t]
+    # Quote each term so FTS5 reserved words (AND/OR/NOT) are treated as literals,
+    # not operators. _FTS_SAFE already stripped quotes, so terms are safe to wrap.
+    terms = [f'"{t}"' for t in _FTS_SAFE.sub(" ", raw).split() if t]
     return " OR ".join(terms) if terms else '""'
 
 

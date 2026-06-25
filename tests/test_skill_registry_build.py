@@ -30,6 +30,8 @@ def test_search_sanitizes_query(tmp_path):
               out_json=str(tmp_path / "m.json"), out_db=str(db_path), tools=None)
     hits = reg.search('cpu health!! "AND"', db_path=str(db_path), top_k=5)
     assert isinstance(hits, list)
+    # Reserved word AND is quoted to a literal, so the real terms still match.
+    assert any(h["name"] == "system_health" for h in hits)
 
 def test_get_returns_descriptor(tmp_path):
     shared = tmp_path / "shared"; shared.mkdir()
