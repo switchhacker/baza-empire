@@ -6159,7 +6159,8 @@ def _stamp_primary_as_deposit(conn, pid, terms):
 def _payment_schedule_block(inv):
     """HTML block for a term-driven invoice's payment schedule, or '' for a
     plain invoice. Self-contained (own money formatter) so it is unit-testable
-    and reusable in both the PDF and any HTML view."""
+    and reusable in both the PDF and any HTML view. Renders dollar rows when the
+    frozen snapshot's mode is "amount", percent rows otherwise (back-compat)."""
     try:
         idx = int(inv.get("milestone_index") if inv.get("milestone_index") is not None else -1)
     except (TypeError, ValueError):
@@ -6174,26 +6175,35 @@ def _payment_schedule_block(inv):
     ms = terms.get("milestones") or []
     if not ms:
         return ""
+    mode = terms.get("mode", "percent")
     contract = float(inv.get("total") or 0)
     due = float(inv.get("amount_due") or 0)
 
     def m(x):
         return ("-$" if x < 0 else "$") + f"{abs(x):,.2f}"
 
-    label = (terms.get("preset") or "").replace("_", " / ")
     rows = ""
     for k, mil in enumerate(ms):
-        amt = round(contract * float(mil.get("pct") or 0) / 100.0, 2)
         marker = " &larr; this invoice" if k == idx else ""
         weight = "700" if k == idx else "400"
+        if mode == "amount":
+            amt = float(mil.get("amount") or 0)
+            desc = f'{mil.get("label","")}{marker}'
+        else:
+            amt = round(contract * float(mil.get("pct") or 0) / 100.0, 2)
+            desc = f'{mil.get("label","")} ({mil.get("pct",0)}%){marker}'
         rows += (f'<div style="display:flex;justify-content:space-between;font-weight:{weight};">'
-                 f'<span>{mil.get("label","")} ({mil.get("pct",0)}%){marker}</span>'
+                 f'<span>{desc}</span>'
                  f'<span>{m(amt)}</span></div>')
+    if mode == "amount":
+        header = "$"
+    else:
+        header = (terms.get("preset") or "").replace("_", " / ")
     status = (inv.get("status") or "draft").upper()
     return (
         '<div style="margin-top:18px;border-top:1px dashed #94a3b8;padding-top:10px;width:320px;font-size:12px;">'
         f'<div style="display:flex;justify-content:space-between;font-weight:700;color:#334155;">'
-        f'<span>PAYMENT SCHEDULE ({label})</span><span>Status: {status}</span></div>'
+        f'<span>PAYMENT SCHEDULE ({header})</span><span>Status: {status}</span></div>'
         f'{rows}'
         '<div style="display:flex;justify-content:space-between;border-top:1px solid #333;'
         f'margin-top:6px;padding-top:6px;font-weight:700;color:#2563eb;">'
