@@ -38,7 +38,7 @@ def reload():
 def is_enabled(agent_id: str | None = None) -> bool:
     cfg = _load()
     if agent_id:
-        override = (cfg.get("per_agent") or {}).get(agent_id, {})
+        override = (cfg.get("per_agent") or {}).get(agent_id) or {}
         if "enabled" in override:
             return bool(override["enabled"])
     return bool(cfg.get("enabled", False))
