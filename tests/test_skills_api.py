@@ -48,3 +48,32 @@ def test_list_includes_per_agent_scope(client, tmp_path):
     row = next(x for x in rows if x["name"] == "ping")
     assert row["scope"] == "simon_bately"
     assert row["category"]  # inferred, non-empty
+
+
+def test_read_shared_returns_metadata_fields(client, tmp_path):
+    _write(tmp_path, "skills/shared/make_quote.py",
+           '"""Create a PDF quote"""\n'
+           "SKILL_META = {'category': 'financial', 'summary': 'Create a PDF quote', 'when_to_use': 'on request', 'args': {'amount': 'total'}}\n"
+           "print('x')\n")
+    r = client.get("/api/skills/read/shared/make_quote")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["name"] == "make_quote"
+    assert data["scope"] == "shared"
+    assert data["category"] == "financial"
+    assert data["summary"] == "Create a PDF quote"
+    assert data["when_to_use"] == "on request"
+    assert data["args"] == {"amount": "total"}
+    assert "SKILL_META" in data["code"]
+
+
+def test_read_per_agent(client, tmp_path):
+    _write(tmp_path, "agents/simon_bately/skills/ping.py", '"""Ping"""\nprint("pong")\n')
+    data = client.get("/api/skills/read/simon_bately/ping").get_json()
+    assert data["scope"] == "simon_bately"
+    assert "pong" in data["code"]
+
+
+def test_read_rejects_path_traversal_scope(client, tmp_path):
+    r = client.get("/api/skills/read/..%2f..%2fetc/passwd")
+    assert r.status_code in (400, 404)

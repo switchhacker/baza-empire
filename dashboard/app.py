@@ -4918,6 +4918,28 @@ def api_intents_dispatch():
 def skills_page():
     return render_template('skills.html')
 
+import re as _skill_re
+
+def _resolve_skill_path(scope, name, for_create=False):
+    """Map (scope, name) -> absolute .py path. Returns (path, error_json,
+    status). scope is 'shared' or an existing agent id. Guards traversal."""
+    name = (name or "").strip()
+    scope = (scope or "shared").strip()
+    if not _skill_re.match(r'^[a-z][a-z0-9_]{1,49}$', name):
+        return None, {'error': 'invalid name'}, 400
+    if scope == 'shared':
+        base = os.path.join(FRAMEWORK_DIR, "skills", "shared")
+    else:
+        if not _skill_re.match(r'^[a-z][a-z0-9_]{1,40}$', scope):
+            return None, {'error': 'invalid scope'}, 400
+        agent_dir = os.path.join(FRAMEWORK_DIR, "agents", scope)
+        if not os.path.isdir(agent_dir):
+            return None, {'error': f'unknown agent scope: {scope}'}, 400
+        base = os.path.join(agent_dir, "skills")
+        if for_create:
+            os.makedirs(base, exist_ok=True)
+    return os.path.join(base, f"{name}.py"), None, 200
+
 @app.route('/api/skills/list')
 def api_skills_list():
     from core import skill_registry
@@ -5009,13 +5031,23 @@ def api_knowledge_rebuild():
         return jsonify({'ok': False, 'error': str(e)}), 500
 
 
-@app.route('/api/skills/read/<skill_name>')
-def api_skill_read(skill_name):
-    shared_dir = os.path.join(FRAMEWORK_DIR, "skills", "shared")
-    path = os.path.join(shared_dir, f"{skill_name}.py")
+@app.route('/api/skills/read/<scope>/<skill_name>')
+def api_skill_read(scope, skill_name):
+    from core import skill_registry
+    path, err, status = _resolve_skill_path(scope, skill_name)
+    if err:
+        return jsonify(err), status
     if not os.path.exists(path):
         return jsonify({'error': 'not found'}), 404
-    return jsonify({'name': skill_name, 'code': open(path).read(), 'path': path})
+    d = skill_registry.describe_skill(path, 'shared' if scope == 'shared' else f'agent:{scope}')
+    return jsonify({
+        'name': skill_name, 'scope': scope, 'path': path,
+        'category': d.get('category', 'general'),
+        'summary': d.get('summary', ''),
+        'when_to_use': d.get('when_to_use', ''),
+        'args': d.get('args', {}),
+        'code': open(path).read(),
+    })
 
 @app.route('/api/skills/save', methods=['POST'])
 def api_skill_save():
