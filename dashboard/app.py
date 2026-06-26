@@ -4940,6 +4940,24 @@ def _resolve_skill_path(scope, name, for_create=False):
             os.makedirs(base, exist_ok=True)
     return os.path.join(base, f"{name}.py"), None, 200
 
+
+def _rebuild_skill_manifest():
+    """Best-effort rebuild of the skill manifest so agents see new metadata.
+    Never raises to the caller."""
+    try:
+        from core import skill_registry
+        skill_registry.build(
+            shared_dir=os.path.join(FRAMEWORK_DIR, "skills", "shared"),
+            agents_dir=os.path.join(FRAMEWORK_DIR, "agents"),
+            out_json=os.path.join(FRAMEWORK_DIR, "dashboard", "skills_manifest.json"),
+            out_db=os.path.join(FRAMEWORK_DIR, "dashboard", "skills_manifest.db"),
+        )
+        return True
+    except Exception as e:
+        app.logger.warning("skill manifest rebuild failed: %s", e)
+        return False
+
+
 @app.route('/api/skills/list')
 def api_skills_list():
     from core import skill_registry
@@ -5051,20 +5069,32 @@ def api_skill_read(scope, skill_name):
 
 @app.route('/api/skills/save', methods=['POST'])
 def api_skill_save():
-    import re as _re
-    data = request.json or {}
-    name = data.get('name', '').strip()
-    code = data.get('code', '').strip()
-    if not name or not code:
-        return jsonify({'error': 'name and code required'}), 400
-    if not _re.match(r'^[a-z][a-z0-9_]{1,49}$', name):
-        return jsonify({'error': 'invalid name'}), 400
-    path = os.path.join(FRAMEWORK_DIR, "skills", "shared", f"{name}.py")
     import stat as _stat
+    from dashboard.skill_io import compose_skill_source
+    data = request.json or {}
+    scope = (data.get('scope') or 'shared').strip()
+    name = (data.get('name') or '').strip()
+    code = data.get('code') or ''
+    if not name or not code.strip():
+        return jsonify({'error': 'name and code required'}), 400
+    path, err, status = _resolve_skill_path(scope, name, for_create=True)
+    if err:
+        return jsonify(err), status
+    source = compose_skill_source(
+        summary=(data.get('summary') or '').strip(),
+        when_to_use=(data.get('when_to_use') or '').strip(),
+        category=(data.get('category') or 'general').strip(),
+        args=data.get('args') or {},
+        body_source=code,
+    )
     with open(path, 'w') as f:
-        f.write(code)
+        f.write(source)
     os.chmod(path, os.stat(path).st_mode | _stat.S_IXUSR)
-    return jsonify({'success': True, 'path': path})
+    try:
+        _rebuild_skill_manifest()
+    except Exception as e:
+        app.logger.warning("manifest rebuild raised: %s", e)
+    return jsonify({'success': True, 'path': path, 'scope': scope, 'name': name})
 
 @app.route('/api/skills/run', methods=['POST'])
 def api_skill_run():

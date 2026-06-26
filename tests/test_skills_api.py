@@ -77,3 +77,59 @@ def test_read_per_agent(client, tmp_path):
 def test_read_rejects_path_traversal_scope(client, tmp_path):
     r = client.get("/api/skills/read/..%2f..%2fetc/passwd")
     assert r.status_code in (400, 404)
+
+
+from core import skill_registry
+
+
+def test_save_shared_writes_parseable_meta(client, tmp_path):
+    r = client.post("/api/skills/save", json={
+        "scope": "shared", "name": "make_quote",
+        "summary": "Create a PDF quote", "when_to_use": "on request",
+        "category": "financial", "args": {"amount": "dollar total"},
+        "code": "import os, json\nargs = json.loads(os.environ.get('SKILL_ARGS','{}'))\nprint('hi')\n",
+    })
+    assert r.status_code == 200, r.get_json()
+    path = tmp_path / "skills" / "shared" / "make_quote.py"
+    assert path.exists()
+    meta = skill_registry.extract_meta(str(path))
+    assert meta["category"] == "financial"
+    assert meta["summary"] == "Create a PDF quote"
+    assert meta["args"] == {"amount": "dollar total"}
+    assert "print('hi')" in path.read_text()
+
+
+def test_save_per_agent_lands_in_agent_dir(client, tmp_path):
+    r = client.post("/api/skills/save", json={
+        "scope": "simon_bately", "name": "ping",
+        "summary": "Ping", "when_to_use": "", "category": "general",
+        "args": {}, "code": "print('pong')\n",
+    })
+    assert r.status_code == 200, r.get_json()
+    assert (tmp_path / "agents" / "simon_bately" / "skills" / "ping.py").exists()
+
+
+def test_save_rejects_unknown_agent_scope(client):
+    r = client.post("/api/skills/save", json={
+        "scope": "nope_agent", "name": "x", "summary": "s",
+        "when_to_use": "", "category": "general", "args": {}, "code": "print(1)\n",
+    })
+    assert r.status_code == 400
+
+
+def test_save_rebuilds_manifest(client, tmp_path):
+    client.post("/api/skills/save", json={
+        "scope": "shared", "name": "make_quote", "summary": "q",
+        "when_to_use": "", "category": "financial", "args": {}, "code": "print(1)\n",
+    })
+    assert (tmp_path / "dashboard" / "skills_manifest.json").exists()
+
+
+def test_save_survives_manifest_failure(client, tmp_path, monkeypatch):
+    import dashboard.app as appmod
+    monkeypatch.setattr(appmod, "_rebuild_skill_manifest", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    r = client.post("/api/skills/save", json={
+        "scope": "shared", "name": "make_quote", "summary": "q",
+        "when_to_use": "", "category": "financial", "args": {}, "code": "print(1)\n",
+    })
+    assert r.status_code == 200
