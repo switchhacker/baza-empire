@@ -6190,7 +6190,9 @@ def _payment_schedule_block(inv):
     ms = terms.get("milestones") or []
     if not ms:
         return ""
-    contract = float(inv.get("total") or 0)
+    # Use the same contract basis as the amount-due math (subtotal-first) so the
+    # displayed remainder and the billed balance agree when tax is present.
+    contract = float(inv.get("subtotal") or inv.get("total") or 0)
     due = float(inv.get("amount_due") or 0)
 
     def m(x):
@@ -6264,7 +6266,7 @@ def api_ahb_project_payment_terms(pid):
         d = request.get_json() or {}
         try:
             terms = _resolve_payment_terms(d.get('preset'), d.get('milestones'), d.get('mode'))
-        except ValueError as e:
+        except (ValueError, TypeError, AttributeError) as e:
             return jsonify({'success': False, 'error': str(e)}), 400
         conn.execute("UPDATE ahb_projects SET payment_terms=?, updated_at=? WHERE id=?",
                      (json.dumps(terms), datetime.datetime.now().isoformat(), pid))
@@ -16094,15 +16096,25 @@ def _money_fmt(x):
     return ("-$" if x < 0 else "$") + f"{abs(x):,.2f}"
 
 
-def _contract_deposit_pct(terms):
-    """Deposit percentage = first payment-terms milestone, default 50%.
-    `terms` is the resolved payment-terms dict ({preset, milestones:[{pct}]})."""
+def _contract_deposit_pct(terms, contract=None):
+    """Deposit percentage = the FIRST payment-terms milestone expressed as a
+    percent of the contract, default 50%. A percent milestone returns its pct
+    directly; a dollar milestone is converted via the contract total (so a
+    $5,000 deposit on a $20,000 contract reports 25%). Falls back to 50% when
+    the first milestone is a dollar amount and no contract total is available."""
     try:
         ms = (terms or {}).get("milestones") or []
         if ms:
-            pct = float(ms[0].get("pct") or 0)
-            if pct > 0:
-                return pct
+            first = ms[0]
+            if _milestone_unit(first) == "amount":
+                amt = float(first.get("amount") or 0)
+                c = float(contract or 0)
+                if amt > 0 and c > 0:
+                    return round(amt / c * 100.0, 2)
+            else:
+                pct = float(first.get("pct") or 0)
+                if pct > 0:
+                    return pct
     except Exception:
         pass
     return 50.0
@@ -16234,15 +16246,6 @@ def api_ahb_package_pdf(pkg_id):
     contract_total = None
     if is_contract and pkg.get('project_id'):
         try:
-            prow = conn.execute(
-                "SELECT payment_terms FROM ahb_projects WHERE id=?",
-                (pkg['project_id'],)).fetchone()
-            raw = (dict(prow).get('payment_terms') if prow else '') or ''
-            if raw.strip():
-                deposit_pct = _contract_deposit_pct(json.loads(raw))
-        except Exception:
-            pass
-        try:
             irow = conn.execute(
                 "SELECT line_items, total, subtotal FROM ahb_invoices WHERE project_id=? "
                 "ORDER BY is_primary DESC, created_at ASC LIMIT 1",
@@ -16251,6 +16254,16 @@ def api_ahb_package_pdf(pkg_id):
                 irow = dict(irow)
                 contract_scope_text = _invoice_scope_text(json.loads(irow.get('line_items') or '[]'))
                 contract_total = irow.get('total') or irow.get('subtotal')
+        except Exception:
+            pass
+        try:
+            prow = conn.execute(
+                "SELECT payment_terms FROM ahb_projects WHERE id=?",
+                (pkg['project_id'],)).fetchone()
+            raw = (dict(prow).get('payment_terms') if prow else '') or ''
+            if raw.strip():
+                # contract_total (fetched above) lets a dollar deposit report its true %
+                deposit_pct = _contract_deposit_pct(json.loads(raw), contract_total)
         except Exception:
             pass
     # Fall back to the package's own stored fields when there's no chosen invoice.

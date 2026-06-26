@@ -94,6 +94,28 @@ def test_put_and_get_terms(client):
     assert g.get_json()["terms"]["preset"] == "30_30_40"
 
 
+def test_deposit_pct_dollar_first_uses_contract(app_module):
+    # a $5,000 deposit on a $20,000 contract must report 25%, not the 50% default
+    terms = {"milestones": [{"label": "Deposit", "unit": "amount", "amount": 5000},
+                            {"label": "Balance", "unit": "percent", "pct": 0}]}
+    assert app_module._contract_deposit_pct(terms, 20000) == 25.0
+    assert app_module._contract_deposit_pct(terms, None) == 50.0   # no contract -> default
+
+
+def test_deposit_pct_percent_first_and_legacy(app_module):
+    pct_terms = {"milestones": [{"label": "Deposit", "unit": "percent", "pct": 30}]}
+    assert app_module._contract_deposit_pct(pct_terms, 20000) == 30
+    # legacy {label,pct} row (no unit) still resolves to its pct
+    assert app_module._contract_deposit_pct({"milestones": [{"label": "D", "pct": 40}]}, 20000) == 40
+
+
+def test_put_malformed_milestones_returns_400(client):
+    for bad in ["notalist", 123, {"x": 1}, ["foo"]]:
+        r = client.put("/api/ahb/projects/p1/payment-terms",
+                       json={"preset": "custom", "milestones": bad})
+        assert r.status_code == 400, bad
+
+
 def test_put_custom_uneven_sum_accepted(client):
     # uneven percents are accepted now (auto-remainder reconciles); no 400
     r = client.put("/api/ahb/projects/p1/payment-terms",
