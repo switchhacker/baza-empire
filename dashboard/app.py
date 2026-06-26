@@ -4965,7 +4965,7 @@ def api_skills_list():
     shared_dir = os.path.join(FRAMEWORK_DIR, "skills", "shared")
     if os.path.isdir(shared_dir):
         for f in sorted(Path(shared_dir).glob("*.py")):
-            if f.stem in ("__init__", "skill_registry"):
+            if f.stem in ("__init__", "skill_registry") or not _skill_re.match(r'^[a-z][a-z0-9_]{1,49}$', f.stem):
                 continue
             stat = os.stat(f)
             d = skill_registry.describe_skill(str(f), "shared")
@@ -4984,7 +4984,7 @@ def api_skills_list():
             skill_dir = agent_dir / "skills"
             if skill_dir.is_dir():
                 for f in sorted(skill_dir.glob("*.py")):
-                    if f.stem in ("__init__", "skill_registry"):
+                    if f.stem in ("__init__", "skill_registry") or not _skill_re.match(r'^[a-z][a-z0-9_]{1,49}$', f.stem):
                         continue
                     stat = os.stat(f)
                     d = skill_registry.describe_skill(str(f), f"agent:{agent_dir.name}")
@@ -5058,13 +5058,17 @@ def api_skill_read(scope, skill_name):
     if not os.path.exists(path):
         return jsonify({'error': 'not found'}), 404
     d = skill_registry.describe_skill(path, 'shared' if scope == 'shared' else f'agent:{scope}')
+    try:
+        code = open(path).read()
+    except OSError as e:
+        return jsonify({'error': f'could not read skill file: {e}'}), 500
     return jsonify({
         'name': skill_name, 'scope': scope, 'path': path,
         'category': d.get('category', 'general'),
         'summary': d.get('summary', ''),
         'when_to_use': d.get('when_to_use', ''),
         'args': d.get('args', {}),
-        'code': open(path).read(),
+        'code': code,
     })
 
 @app.route('/api/skills/save', methods=['POST'])
