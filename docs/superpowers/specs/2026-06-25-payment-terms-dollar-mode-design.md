@@ -4,6 +4,27 @@
 **Area:** AHB123 dashboard — project modal payment terms
 **Files:** `dashboard/templates/ahb123.html`, `dashboard/app.py`, tests
 
+> **REVISION (2026-06-25, same day):** The whole-schedule toggle below was shipped,
+> then superseded the same session by a **per-milestone unit + auto-remainder** model
+> (Serge needed a *custom dollar deposit mixed with percent progress milestones*).
+> The current behavior is:
+> - Each milestone independently carries `unit: "percent"` ({label,unit,pct}) or
+>   `unit: "amount"` ({label,unit,amount}); the two mix freely in one schedule.
+> - A percent milestone = that pct of the **full contract total**; a dollar milestone
+>   = that fixed amount.
+> - The **final milestone is always the auto-remainder** (contract − everything above),
+>   self-healing against payments, so a schedule always reconciles to 100%. Its typed
+>   value is ignored. There is **no sum-to-100 validation** anymore.
+> - UI: per-row `%`/`$` `<select>`, a dedicated auto-balance row (label editable, amount
+>   shown as the computed remainder), info-only Σ previewing entered-vs-contract.
+> - Back-compat: legacy `{label,pct}` rows infer unit "percent"; the short-lived
+>   `mode:"amount"` rows infer "amount". The schedule-level `mode` field is retained but
+>   informational only.
+> - `_contract_deposit_pct` is unit-aware (a $ deposit reports its true % of contract).
+>
+> The sections below describe the original (now-superseded) whole-schedule design and are
+> kept for history.
+
 ## Problem
 
 Today, project payment terms are **percent-only**. Each milestone is `{label, pct}` and milestones must sum to 100%. The custom editor already supports per-milestone labels and a `+ milestone` button.
