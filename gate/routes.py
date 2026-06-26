@@ -64,7 +64,7 @@ def enroll(body: EnrollBody):
 @router.post("/capture")
 def capture(body: CaptureBody):
     raw = base64.b64decode(body.image)
-    _save_dir = os.environ.get("GATE_CAPTURE_SAVE_DIR")  # debug/enroll: save raw frame
+    _save_dir = os.environ.get("GATE_CAPTURE_SAVE_DIR")  # aiming/enroll: save raw frame
     if _save_dir:
         try:
             os.makedirs(_save_dir, exist_ok=True)
