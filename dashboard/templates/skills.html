@@ -262,11 +262,11 @@ function renderList(skills){
           <span class="skill-item-name">${esc(s.name)}</span>
           <span class="skill-scope ${s.scope==='shared'?'scope-shared':'scope-agent'}">${s.scope==='shared'?'shared':esc(s.scope)}</span>
         </div>
-        ${s.summary?`<div class="skill-item-summary">${esc(s.summary).substring(0,60)}${s.summary.length>60?'…':''}</div>`:''}
+        ${s.summary?`<div class="skill-item-summary">${esc(s.summary.substring(0,60))}${s.summary.length>60?'…':''}</div>`:''}
       </div>`;
     }).join('');
     return `<div class="cat-group ${isC?'collapsed':''}">
-      <div class="cat-head" onclick="toggleCat('${cat}')"><span class="chev">▾</span>${cat} <span class="cat-count">(${groups[cat].length})</span></div>
+      <div class="cat-head" onclick="toggleCat('${esc(cat)}')"><span class="chev">▾</span>${esc(cat)} <span class="cat-count">(${groups[cat].length})</span></div>
       <div class="cat-body ${isC?'collapsed':''}">${rows}</div>
     </div>`;
   }).join('');
@@ -283,6 +283,15 @@ function currentFilter(){
 function filterSkills(q){ _filterQ=q; renderList(currentFilter()); }
 
 function showEditor(){ document.getElementById('editor-empty').style.display='none'; document.getElementById('editor-body').style.display='flex'; }
+
+function resetRunPanel(){
+  runOpen=false;
+  document.getElementById('run-body').classList.remove('open');
+  document.getElementById('run-chev').textContent='▾';
+  const out=document.getElementById('run-output'); out.className='run-output'; out.textContent='';
+  document.getElementById('run-status').textContent='';
+  document.getElementById('run-args').value='';
+}
 
 function setArgs(args){
   const t=document.getElementById('args-table'); t.innerHTML='';
@@ -320,6 +329,8 @@ async function openSkill(scope,name){
     setArgs(data.args);
     document.getElementById('f-code').value=data.code||'';
     document.getElementById('del-btn').style.display='inline-block';
+    document.getElementById('code-section').classList.add('collapsed');
+    resetRunPanel();
     renderList(currentFilter());
   }catch(e){ alert('Error loading skill: '+e.message); }
 }
@@ -372,10 +383,13 @@ async function saveSkill(){
     const data=await res.json();
     if(!res.ok) throw new Error(data.error||'Save failed');
     current={scope,name};
-    document.getElementById('f-name').readOnly=true;
-    document.getElementById('f-scope').disabled=true;
-    document.getElementById('del-btn').style.display='inline-block';
     await loadSkills();
+    // loadSkills() rebuilds the scope/category <select> options, which resets
+    // their selected value — restore the saved values and re-lock the fields.
+    const sc=document.getElementById('f-scope'); sc.value=scope; sc.disabled=true;
+    document.getElementById('f-category').value=payload.category;
+    document.getElementById('f-name').readOnly=true;
+    document.getElementById('del-btn').style.display='inline-block';
     toast('Saved: '+name);
   }catch(e){ alert('Error: '+e.message); }
 }
