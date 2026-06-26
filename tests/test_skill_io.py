@@ -70,3 +70,26 @@ def test_compose_survives_syntax_error_body():
     src = compose_skill_source("s", "w", "general", {}, "def broken(:\n  pass\n")
     assert "SKILL_META =" in src
     assert "def broken(:" in src
+
+
+def test_compose_summary_with_trailing_quote_is_valid(tmp_path):
+    src = compose_skill_source('Use the "generate" button', "w", "general", {},
+                               "print('x')\n")
+    ast.parse(src)  # must not raise
+    p = tmp_path / "s.py"
+    p.write_text(src)
+    assert skill_registry.extract_meta(str(p))["summary"] == 'Use the "generate" button'
+
+
+def test_compose_strips_annotated_meta(tmp_path):
+    existing = (
+        '"""old"""\n'
+        "SKILL_META: dict = {'category': 'general', 'summary': 'old', 'when_to_use': '', 'args': {}}\n"
+        "print('keep')\n"
+    )
+    src = compose_skill_source("new", "w", "data", {}, existing)
+    assert src.count("SKILL_META") == 1
+    assert "print('keep')" in src
+    p = tmp_path / "s.py"
+    p.write_text(src)
+    assert skill_registry.extract_meta(str(p))["summary"] == "new"

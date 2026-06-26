@@ -43,8 +43,13 @@ def _strip_header(source):
         for i in range(d.lineno - 1, d.end_lineno):
             remove.add(i)
     for node in tree.body:
-        if isinstance(node, ast.Assign) and any(
-                isinstance(t, ast.Name) and t.id == "SKILL_META" for t in node.targets):
+        is_meta = (
+            (isinstance(node, ast.Assign)
+             and any(isinstance(t, ast.Name) and t.id == "SKILL_META" for t in node.targets))
+            or (isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name) and node.target.id == "SKILL_META")
+        )
+        if is_meta:
             for i in range(node.lineno - 1, node.end_lineno):
                 remove.add(i)
             break
@@ -56,7 +61,7 @@ def compose_skill_source(summary, when_to_use, category, args, body_source):
     """Build a full skill .py source: shebang + docstring(summary) + SKILL_META
     + the preserved code body extracted from body_source."""
     body = _strip_header(body_source or "")
-    doc = (summary or "").replace('"""', "'''")
+    doc = (summary or "").replace("\\", "\\\\").replace('"', '\\"')
     header = "#!/usr/bin/env python3\n"
     header += f'"""{doc}"""\n\n'
     header += _meta_repr(category or "general", summary or "", when_to_use or "", args or {}) + "\n\n"
