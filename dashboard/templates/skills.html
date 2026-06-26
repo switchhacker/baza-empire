@@ -9,105 +9,102 @@
     body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
     a{color:inherit;text-decoration:none}
     .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:200;flex-wrap:nowrap;overflow:visible}
-    .nav::-webkit-scrollbar{height:0;display:none}
-    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
-    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
-    .nav-brand span{font-size:22px}
-    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;transition:color .2s,border-color .2s;white-space:nowrap;flex-shrink:0}
-    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
-    .nav-dropdown{position:relative;flex-shrink:0}
-    .nav-dropdown>.nav-link{display:flex;align-items:center;gap:4px}
-    .nav-dropdown>.nav-link::after{content:"\25be";font-size:9px;color:#555}
-    .nav-submenu{display:none;position:absolute;top:100%;left:0;background:#0d0d1e;border:1px solid #1a1a3a;border-radius:0 0 8px 8px;min-width:160px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.6);padding:4px 0}
-    .nav-dropdown:hover>.nav-submenu{display:block}
-    .nav-submenu a{display:block;padding:10px 18px;font-size:12px;font-weight:600;color:#888;transition:all .15s;white-space:nowrap}
-    .nav-submenu a:hover{color:#e0e0e0;background:#1a1a2e}
-    .nav-submenu a.active{color:#e94560;font-weight:700}
-    .nav-right{margin-left:auto;display:flex;align-items:center;gap:12px}
-    .nav-status{font-size:12px;color:#444;padding:6px 12px;background:#111;border-radius:6px;border:1px solid #1e1e1e}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .nav-dropdown{position:relative}
+    .nav-submenu{display:none;position:absolute;top:100%;left:0;background:#0d0d1e;border:1px solid #1a1a3a;border-radius:0 0 8px 8px;min-width:160px;z-index:200;padding:4px 0}
+    .nav-dropdown:hover>.nav-submenu,.nav-dropdown.open>.nav-submenu{display:block}
     .container{max-width:1400px;margin:0 auto;padding:28px 32px}
-
-    /* Layout */
-    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
     .page-title{font-size:22px;font-weight:800;color:#fff}
     .page-sub{font-size:12px;color:#444;margin-top:3px}
-    .skills-layout{display:grid;grid-template-columns:300px 1fr;gap:0;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden;min-height:600px}
+    .skills-stats{display:flex;gap:16px}
+    .skill-stat{font-size:12px;color:#444}
+    .skill-stat span{color:#aaa;font-weight:700;margin-left:4px}
+    .skills-layout{display:grid;grid-template-columns:320px 1fr;border:1px solid #1a1a2e;border-radius:12px;overflow:hidden;min-height:640px}
 
     /* Sidebar */
     .skills-sidebar{background:#0a0a18;border-right:1px solid #1a1a2e;display:flex;flex-direction:column}
-    .sidebar-header{padding:14px 16px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between}
+    .sidebar-header{padding:14px 16px;border-bottom:1px solid #1a1a2e}
     .sidebar-search{width:100%;background:#111;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;color:#e0e0e0;font-size:12px;outline:none}
     .sidebar-search:focus{border-color:#7c3aed}
     .skill-list{flex:1;overflow-y:auto;padding:8px}
-    .skill-item{padding:10px 12px;border-radius:7px;cursor:pointer;transition:background .15s;border:1px solid transparent;margin-bottom:2px}
+    .cat-group{margin-bottom:6px}
+    .cat-head{display:flex;align-items:center;gap:6px;padding:8px 10px;cursor:pointer;color:#6a6a8a;font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;user-select:none}
+    .cat-head:hover{color:#c4b5fd}
+    .cat-head .chev{font-size:9px;transition:transform .15s}
+    .cat-group.collapsed .chev{transform:rotate(-90deg)}
+    .cat-count{color:#3a3a5a;font-weight:700}
+    .cat-body.collapsed{display:none}
+    .skill-item{padding:9px 12px;border-radius:7px;cursor:pointer;border:1px solid transparent;margin:0 0 2px 6px}
     .skill-item:hover{background:#111;border-color:#1a1a2e}
     .skill-item.active{background:#1a0a3a;border-color:#7c3aed}
+    .skill-item-row{display:flex;align-items:center;justify-content:space-between;gap:6px}
     .skill-item-name{font-size:13px;font-weight:600;color:#ccc;font-family:monospace}
     .skill-item.active .skill-item-name{color:#c4b5fd}
-    .skill-item-meta{font-size:10px;color:#333;margin-top:2px}
-    .skill-item.active .skill-item-meta{color:#666}
-    .skill-scope{font-size:9px;padding:1px 6px;border-radius:8px;display:inline-block;margin-right:4px}
+    .skill-item-summary{font-size:10px;color:#555;margin-top:2px;line-height:1.3}
+    .skill-scope{font-size:9px;padding:1px 6px;border-radius:8px;white-space:nowrap}
     .scope-shared{background:#0a2a1a;color:#00d084;border:1px solid #00d084}
     .scope-agent{background:#1a0a3a;color:#c4b5fd;border:1px solid #7c3aed}
-    .sidebar-new-btn{margin:8px;padding:10px;background:#1a0a3a;border:1px dashed #7c3aed;border-radius:7px;color:#c4b5fd;font-size:12px;font-weight:600;cursor:pointer;text-align:center;transition:background .2s}
+    .sidebar-new-btn{margin:8px;padding:11px;background:#1a0a3a;border:1px dashed #7c3aed;border-radius:7px;color:#c4b5fd;font-size:12px;font-weight:700;cursor:pointer;text-align:center}
     .sidebar-new-btn:hover{background:#250e50}
 
-    /* Editor area */
-    .skills-editor{display:flex;flex-direction:column;background:#0e0e1e}
-    .editor-toolbar{padding:12px 16px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#0a0a18}
-    .skill-name-input{background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:7px 12px;color:#e0e0e0;font-size:13px;font-family:monospace;outline:none;width:220px;transition:border-color .2s}
-    .skill-name-input:focus{border-color:#7c3aed}
-    .skill-desc-input{background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:7px 12px;color:#e0e0e0;font-size:13px;outline:none;flex:1;min-width:200px;transition:border-color .2s}
-    .skill-desc-input:focus{border-color:#7c3aed}
+    /* Editor */
+    .skills-editor{display:flex;flex-direction:column;background:#0e0e1e;min-width:0}
+    .editor-head{padding:14px 18px;border-bottom:1px solid #1a1a2e;background:#0a0a18;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .editor-head .title{font-size:15px;font-weight:800;color:#fff;font-family:monospace}
+    .editor-head .spacer{flex:1}
+    .meta-form{padding:18px;display:flex;flex-direction:column;gap:14px;overflow-y:auto}
+    .field{display:flex;flex-direction:column;gap:5px}
+    .field label{font-size:11px;font-weight:700;color:#6a6a8a;text-transform:uppercase;letter-spacing:.5px}
+    .field .hint{font-size:10px;color:#3a3a5a;font-weight:500;text-transform:none;letter-spacing:0}
+    .fin{background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#e0e0e0;font-size:13px;outline:none;width:100%}
+    .fin:focus{border-color:#7c3aed}
+    .fin:read-only{opacity:.6;cursor:not-allowed}
+    .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    select.fin{cursor:pointer}
+    .args-table{display:flex;flex-direction:column;gap:6px}
+    .arg-row{display:grid;grid-template-columns:160px 1fr 32px;gap:8px;align-items:center}
+    .arg-row .rm{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a;border-radius:6px;cursor:pointer;padding:8px;font-size:12px}
+    .add-arg{align-self:flex-start;background:#111;color:#aaa;border:1px solid #2a2a4a;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer}
+    .add-arg:hover{border-color:#7c3aed;color:#c4b5fd}
 
-    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:opacity .2s,transform .1s}
-    .btn:hover{opacity:.85;transform:translateY(-1px)}
+    .code-section{border-top:1px solid #1a1a2e;margin-top:4px}
+    .code-head{padding:10px 18px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;color:#6a6a8a;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px}
+    .code-head:hover{color:#c4b5fd}
+    .code-head .chev{font-size:9px;transition:transform .15s}
+    .code-section.collapsed .chev{transform:rotate(-90deg)}
+    .code-section.collapsed .code-editor,.code-section.collapsed .gen-skel{display:none}
+    .code-editor{width:100%;background:#050510;border:none;border-top:1px solid #1a1a2e;color:#c9d1d9;font-family:'Cascadia Code','Fira Code','Courier New',monospace;font-size:13px;padding:18px;outline:none;resize:vertical;line-height:1.6;min-height:280px;tab-size:4}
+    .gen-skel{margin:10px 18px}
+
+    .btn{padding:9px 16px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:none}
+    .btn:hover{opacity:.88}
     .btn-primary{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff}
     .btn-secondary{background:#111;color:#aaa;border:1px solid #2a2a4a}
     .btn-secondary:hover{border-color:#7c3aed;color:#c4b5fd}
     .btn-success{background:#0d2a0d;color:#66cc66;border:1px solid #1a5a1a}
-    .btn-success:hover{background:#112a11}
     .btn-danger{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
-    .btn-sm{padding:6px 12px;font-size:11px;border-radius:5px}
+    .btn-sm{padding:7px 13px;font-size:11px}
 
-    .code-area{flex:1;display:flex;flex-direction:column;min-height:0}
-    .code-editor{flex:1;background:#050510;border:none;color:#c9d1d9;font-family:'Cascadia Code','Fira Code','Courier New',monospace;font-size:13px;padding:20px;outline:none;resize:none;line-height:1.6;min-height:300px;tab-size:4}
-    .code-editor::placeholder{color:#333}
-
-    /* Run Panel */
     .run-panel{border-top:1px solid #1a1a2e;background:#080814}
-    .run-panel-header{padding:10px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1a1a2e;cursor:pointer;user-select:none}
-    .run-panel-header:hover{background:#0a0a18}
-    .run-panel-title{font-size:12px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;flex:1}
-    .run-panel-body{padding:14px 16px;display:none}
-    .run-panel-body.open{display:block}
-    .run-args-input{width:100%;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#e0e0e0;font-size:12px;font-family:monospace;outline:none;transition:border-color .2s}
-    .run-args-input:focus{border-color:#7c3aed}
-    .run-output{margin-top:10px;background:#050510;border:1px solid #1a1a2e;border-radius:7px;padding:14px;font-family:monospace;font-size:12px;color:#8b949e;max-height:200px;overflow-y:auto;white-space:pre-wrap;line-height:1.5;display:none}
+    .run-head{padding:10px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+    .run-title{font-size:11px;font-weight:800;color:#444;text-transform:uppercase;letter-spacing:1px;flex:1}
+    .run-body{padding:14px 18px;display:none}
+    .run-body.open{display:block}
+    .run-args{width:100%;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:9px 12px;color:#e0e0e0;font-size:12px;font-family:monospace;outline:none}
+    .run-output{margin-top:10px;background:#050510;border:1px solid #1a1a2e;border-radius:7px;padding:14px;font-family:monospace;font-size:12px;color:#8b949e;max-height:220px;overflow-y:auto;white-space:pre-wrap;display:none}
     .run-output.visible{display:block}
-    .run-output.success{color:#00d084;border-color:#00400028}
-    .run-output.error{color:#ff6666;border-color:#44000028}
+    .run-output.success{color:#00d084}
+    .run-output.error{color:#ff6666}
     .run-status{font-size:11px;color:#444;margin-top:6px}
 
-    /* Empty state */
-    .empty-editor{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#333;gap:12px;padding:60px}
+    .empty-editor{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:#333;gap:12px;padding:60px}
     .empty-editor .icon{font-size:48px;opacity:.2}
     .empty-editor h3{font-size:16px;color:#444}
     .empty-editor p{font-size:12px;text-align:center;line-height:1.6}
-
-    /* Stats bar */
-    .skills-stats{display:flex;gap:16px;margin-bottom:20px}
-    .skill-stat{font-size:12px;color:#444}
-    .skill-stat span{color:#aaa;font-weight:700;margin-left:4px}
-
     .footer{text-align:center;padding:28px;color:#222;font-size:12px;margin-top:40px}
-  
-    /* Touch-friendly nav dropdowns + mobile nav (injected) */
-    .nav-dropdown.open > .nav-submenu{display:block}
-    @media(max-width:768px){
-      .nav-submenu{position:fixed;top:52px;left:0;right:0;min-width:0;max-height:72vh;overflow-y:auto;border-radius:0;box-shadow:0 12px 28px rgba(0,0,0,.7)}
-      .nav-submenu a{padding:14px 18px;font-size:14px}
-    }
+    @media(max-width:768px){.skills-layout{grid-template-columns:1fr}.row2{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -119,11 +116,11 @@
   <div class="page-header">
     <div>
       <div class="page-title">⚙ Skills Lab</div>
-      <div class="page-sub">Create, edit, and run agent skills from the browser</div>
+      <div class="page-sub">Browse what each skill does, customize it, or build a new one — for shared use or a specific agent.</div>
     </div>
     <div class="skills-stats">
       <div class="skill-stat">Shared:<span id="count-shared">—</span></div>
-      <div class="skill-stat">Agent-specific:<span id="count-agent">—</span></div>
+      <div class="skill-stat">Agent:<span id="count-agent">—</span></div>
       <div class="skill-stat">Total:<span id="count-total">—</span></div>
     </div>
   </div>
@@ -134,49 +131,78 @@
       <div class="sidebar-header">
         <input class="sidebar-search" type="text" placeholder="🔍 Search skills..." oninput="filterSkills(this.value)" id="skills-search">
       </div>
-      <div class="skill-list" id="skills-list">
-        <div style="text-align:center;padding:30px;color:#333;font-size:12px">Loading...</div>
-      </div>
+      <div class="skill-list" id="skills-list"><div style="text-align:center;padding:30px;color:#333;font-size:12px">Loading…</div></div>
       <div class="sidebar-new-btn" onclick="newSkill()">+ New Skill</div>
     </div>
 
     <!-- Editor -->
     <div class="skills-editor" id="editor-area">
-      <div class="editor-toolbar" id="editor-toolbar" style="display:none">
-        <input class="skill-name-input" type="text" id="current-skill-name" placeholder="skill_name" readonly>
-        <input class="skill-desc-input" type="text" id="current-skill-desc" placeholder="What this skill does...">
-        <button class="btn btn-success btn-sm" onclick="saveSkill()">💾 Save</button>
-        <button class="btn btn-primary btn-sm" onclick="toggleRunPanel()">▶ Run</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteSkill()">✕</button>
+      <div class="empty-editor" id="editor-empty">
+        <div class="icon">⚙</div>
+        <h3>Skills Lab</h3>
+        <p>Pick a skill to see what it does and customize it.<br>Or click <b>+ New Skill</b> to build one with a guided form.</p>
       </div>
 
-      <div class="code-area">
-        <div class="empty-editor" id="editor-empty">
-          <div class="icon">⚙</div>
-          <h3>Skills Lab</h3>
-          <p>Select a skill from the list to view and edit its code.<br>Or create a new skill from scratch.</p>
+      <div id="editor-body" style="display:none;flex-direction:column;min-height:0">
+        <div class="editor-head">
+          <span class="title" id="ed-title">new_skill</span>
+          <span class="spacer"></span>
+          <button class="btn btn-success btn-sm" onclick="saveSkill()">💾 Save</button>
+          <button class="btn btn-primary btn-sm" onclick="toggleRun()">▶ Run</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSkill()" id="del-btn">✕ Delete</button>
         </div>
-        <textarea class="code-editor" id="code-editor" placeholder="#!/usr/bin/env python3
-import os, json
-args = json.loads(os.environ.get('SKILL_ARGS', '{}'))
 
-# Your skill code here
-print('result')" style="display:none"></textarea>
-      </div>
-
-      <!-- Run Panel -->
-      <div class="run-panel" id="run-panel" style="display:none">
-        <div class="run-panel-header" onclick="toggleRunPanel()">
-          <div class="run-panel-title">▶ Run Panel</div>
-          <span id="run-chevron" style="color:#444;font-size:14px">▲</span>
-        </div>
-        <div class="run-panel-body open" id="run-panel-body">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <input class="run-args-input" type="text" id="run-args" placeholder='JSON args: {"key": "value"} — leave empty for {}'>
-            <button class="btn btn-success btn-sm" onclick="runSkill()" id="run-btn">▶ Run Now</button>
+        <div class="meta-form">
+          <div class="row2">
+            <div class="field">
+              <label>Skill name <span class="hint">— snake_case, locked after creation</span></label>
+              <input class="fin" id="f-name" placeholder="generate_quote">
+            </div>
+            <div class="field">
+              <label>Owner / scope <span class="hint">— who can use it</span></label>
+              <select class="fin" id="f-scope"></select>
+            </div>
           </div>
-          <pre class="run-output" id="run-output"></pre>
-          <div class="run-status" id="run-status"></div>
+          <div class="field">
+            <label>What it does <span class="hint">— one line; shown in the list</span></label>
+            <input class="fin" id="f-summary" placeholder="Create a PDF quote for a project">
+          </div>
+          <div class="field">
+            <label>When to use it <span class="hint">— helps the agent pick this skill</span></label>
+            <input class="fin" id="f-when" placeholder="When a client asks for a price">
+          </div>
+          <div class="field">
+            <label>Category</label>
+            <select class="fin" id="f-category"></select>
+          </div>
+          <div class="field">
+            <label>Arguments <span class="hint">— name + what it means</span></label>
+            <div class="args-table" id="args-table"></div>
+            <button class="add-arg" onclick="addArgRow()">+ add argument</button>
+          </div>
+        </div>
+
+        <div class="code-section collapsed" id="code-section">
+          <div class="code-head" onclick="toggleCode()">
+            <span class="chev">▾</span> Advanced — Python code
+          </div>
+          <button class="btn btn-secondary btn-sm gen-skel" onclick="generateSkeleton()">⤵ Generate skeleton from fields above</button>
+          <textarea class="code-editor" id="f-code" spellcheck="false"></textarea>
+        </div>
+
+        <div class="run-panel">
+          <div class="run-head" onclick="toggleRun()">
+            <span class="run-title">▶ Run panel</span>
+            <span id="run-chev" style="color:#444">▾</span>
+          </div>
+          <div class="run-body" id="run-body">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input class="run-args" id="run-args" placeholder='JSON args: {"key":"value"} — empty = {}'>
+              <button class="btn btn-success btn-sm" onclick="runSkill()" id="run-btn">▶ Run Now</button>
+            </div>
+            <pre class="run-output" id="run-output"></pre>
+            <div class="run-status" id="run-status"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -186,229 +212,215 @@ print('result')" style="display:none"></textarea>
 <div class="footer">Baza Empire Agent Framework v3 — All Home Building Co LLC</div>
 
 <script>
-
-/* Mobile tap-to-toggle for nav dropdowns (injected) */
-(function(){
-  function wire(){
-    document.querySelectorAll('.nav-dropdown > .nav-link').forEach(function(link){
-      if (link.__ddWired) return; link.__ddWired = true;
-      link.addEventListener('click', function(e){
-        if (window.innerWidth <= 768){
-          e.preventDefault();
-          var dd = link.parentElement;
-          document.querySelectorAll('.nav-dropdown.open').forEach(function(d){ if(d!==dd) d.classList.remove('open'); });
-          dd.classList.toggle('open');
-        }
-      });
-    });
-    document.querySelectorAll('.nav-submenu a').forEach(function(a){
-      if (a.__subWired) return; a.__subWired = true;
-      a.addEventListener('click', function(){ document.querySelectorAll('.nav-dropdown.open').forEach(function(d){ d.classList.remove('open'); }); });
-    });
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
-  else wire();
-  document.addEventListener('click', function(e){
-    if (!e.target.closest('.nav-dropdown')) document.querySelectorAll('.nav-dropdown.open').forEach(function(d){ d.classList.remove('open'); });
-  });
-})();
-
+const CATEGORIES = ["financial","materials","project","client","marketing","infrastructure","data","code","ai","web","document","general"];
 let allSkills = [];
-let currentSkillName = null;
-let runPanelOpen = true;
+let current = null;           // {scope, name} of the open skill, or null for new
+let runOpen = false;
+const collapsed = {};          // category -> bool
 
-function updateClock(){
-  document.getElementById('nav-clock').textContent = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
-}
+function updateClock(){ const c=document.getElementById('nav-clock'); if(c) c.textContent=new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
 setInterval(updateClock,1000); updateClock();
+
+function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 async function loadSkills(){
   try{
-    const res = await fetch('/api/skills/list');
-    allSkills = await res.json();
+    allSkills = await (await fetch('/api/skills/list')).json();
     document.getElementById('count-shared').textContent = allSkills.filter(s=>s.scope==='shared').length;
     document.getElementById('count-agent').textContent = allSkills.filter(s=>s.scope!=='shared').length;
     document.getElementById('count-total').textContent = allSkills.length;
-    renderSkillsList(allSkills);
+    populateScopeOptions();
+    renderList(allSkills);
   }catch(e){
-    document.getElementById('skills-list').innerHTML = '<div style="color:#ff5555;font-size:12px;padding:16px">Error loading: '+e.message+'</div>';
+    document.getElementById('skills-list').innerHTML = '<div style="color:#ff5555;font-size:12px;padding:16px">Error: '+esc(e.message)+'</div>';
   }
 }
 
-function renderSkillsList(skills){
+function agentScopes(){
+  return [...new Set(allSkills.filter(s=>s.scope!=='shared').map(s=>s.scope))].sort();
+}
+
+function populateScopeOptions(){
+  const sel = document.getElementById('f-scope');
+  const opts = ['shared', ...agentScopes()];
+  sel.innerHTML = opts.map(o=>`<option value="${esc(o)}">${o==='shared'?'Shared (all agents)':esc(o)}</option>`).join('');
+  document.getElementById('f-category').innerHTML = CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+
+function renderList(skills){
   const el = document.getElementById('skills-list');
-  if(!skills.length){
-    el.innerHTML = '<div style="color:#333;font-size:12px;padding:16px;text-align:center">No skills found</div>';
-    return;
-  }
-  el.innerHTML = skills.map(s=>`
-    <div class="skill-item ${s.name===currentSkillName?'active':''}" onclick="openSkill('${s.name}')">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="skill-item-name">${s.name}</div>
-        <span class="skill-scope scope-${s.scope==='shared'?'shared':'agent'}">${s.scope==='shared'?'shared':s.scope||'?'}</span>
-      </div>
-      ${s.description?`<div class="skill-item-meta">${s.description.substring(0,50)}${s.description.length>50?'...':''}</div>`:''}
-    </div>
-  `).join('');
+  if(!skills.length){ el.innerHTML='<div style="color:#333;font-size:12px;padding:16px;text-align:center">No skills found</div>'; return; }
+  const groups = {};
+  skills.forEach(s=>{ (groups[s.category||'general'] ||= []).push(s); });
+  const cats = Object.keys(groups).sort((a,b)=>CATEGORIES.indexOf(a)-CATEGORIES.indexOf(b));
+  el.innerHTML = cats.map(cat=>{
+    const isC = !!collapsed[cat];
+    const rows = groups[cat].map(s=>{
+      const active = current && current.scope===s.scope && current.name===s.name;
+      return `<div class="skill-item ${active?'active':''}" onclick="openSkill('${esc(s.scope)}','${esc(s.name)}')">
+        <div class="skill-item-row">
+          <span class="skill-item-name">${esc(s.name)}</span>
+          <span class="skill-scope ${s.scope==='shared'?'scope-shared':'scope-agent'}">${s.scope==='shared'?'shared':esc(s.scope)}</span>
+        </div>
+        ${s.summary?`<div class="skill-item-summary">${esc(s.summary).substring(0,60)}${s.summary.length>60?'…':''}</div>`:''}
+      </div>`;
+    }).join('');
+    return `<div class="cat-group ${isC?'collapsed':''}">
+      <div class="cat-head" onclick="toggleCat('${cat}')"><span class="chev">▾</span>${cat} <span class="cat-count">(${groups[cat].length})</span></div>
+      <div class="cat-body ${isC?'collapsed':''}">${rows}</div>
+    </div>`;
+  }).join('');
 }
 
-function filterSkills(q){
-  const filtered = allSkills.filter(s=>
-    s.name.toLowerCase().includes(q.toLowerCase()) ||
-    (s.description||'').toLowerCase().includes(q.toLowerCase())
-  );
-  renderSkillsList(filtered);
+function toggleCat(cat){ collapsed[cat]=!collapsed[cat]; renderList(currentFilter()); }
+
+let _filterQ = '';
+function currentFilter(){
+  const q=_filterQ.toLowerCase();
+  if(!q) return allSkills;
+  return allSkills.filter(s=> s.name.toLowerCase().includes(q) || (s.summary||'').toLowerCase().includes(q) || (s.category||'').toLowerCase().includes(q));
+}
+function filterSkills(q){ _filterQ=q; renderList(currentFilter()); }
+
+function showEditor(){ document.getElementById('editor-empty').style.display='none'; document.getElementById('editor-body').style.display='flex'; }
+
+function setArgs(args){
+  const t=document.getElementById('args-table'); t.innerHTML='';
+  Object.entries(args||{}).forEach(([k,v])=>addArgRow(k,v));
+}
+function addArgRow(k='',v=''){
+  const t=document.getElementById('args-table');
+  const row=document.createElement('div'); row.className='arg-row';
+  row.innerHTML=`<input class="fin arg-k" placeholder="arg_name" value="${esc(k)}">
+    <input class="fin arg-v" placeholder="what it means" value="${esc(v)}">
+    <button class="rm" onclick="this.parentElement.remove()">✕</button>`;
+  t.appendChild(row);
+}
+function collectArgs(){
+  const out={};
+  document.querySelectorAll('#args-table .arg-row').forEach(r=>{
+    const k=r.querySelector('.arg-k').value.trim(); const v=r.querySelector('.arg-v').value.trim();
+    if(k) out[k]=v;
+  });
+  return out;
 }
 
-async function openSkill(name){
-  currentSkillName = name;
+async function openSkill(scope,name){
+  current={scope,name};
   try{
-    const res = await fetch(`/api/skills/read/${encodeURIComponent(name)}`);
-    const data = await res.json();
+    const data = await (await fetch(`/api/skills/read/${encodeURIComponent(scope)}/${encodeURIComponent(name)}`)).json();
+    if(data.error) throw new Error(data.error);
     showEditor();
-    const nameInput = document.getElementById('current-skill-name');
-    nameInput.value = data.name;
-    nameInput.readOnly = true;
-    document.getElementById('current-skill-desc').value = data.description||'';
-    document.getElementById('code-editor').value = data.code||'';
-    renderSkillsList(allSkills); // refresh active state
-  }catch(e){
-    alert('Error loading skill: '+e.message);
-  }
+    document.getElementById('ed-title').textContent=name;
+    const ni=document.getElementById('f-name'); ni.value=data.name; ni.readOnly=true;
+    const sc=document.getElementById('f-scope'); sc.value=data.scope; sc.disabled=true;
+    document.getElementById('f-summary').value=data.summary||'';
+    document.getElementById('f-when').value=data.when_to_use||'';
+    document.getElementById('f-category').value=data.category||'general';
+    setArgs(data.args);
+    document.getElementById('f-code').value=data.code||'';
+    document.getElementById('del-btn').style.display='inline-block';
+    renderList(currentFilter());
+  }catch(e){ alert('Error loading skill: '+e.message); }
 }
 
 function newSkill(){
-  currentSkillName = null;
+  current=null;
   showEditor();
-  const nameInput = document.getElementById('current-skill-name');
-  nameInput.value = '';
-  nameInput.readOnly = false;
-  document.getElementById('current-skill-desc').value = '';
-  document.getElementById('code-editor').value = `#!/usr/bin/env python3
-import os, json
-
-args = json.loads(os.environ.get('SKILL_ARGS', '{}'))
-
-# Your skill code here
-result = "hello"
-print(result)
-`;
-  renderSkillsList(allSkills);
+  document.getElementById('ed-title').textContent='new skill';
+  const ni=document.getElementById('f-name'); ni.value=''; ni.readOnly=false;
+  const sc=document.getElementById('f-scope'); sc.disabled=false; sc.value='shared';
+  document.getElementById('f-summary').value='';
+  document.getElementById('f-when').value='';
+  document.getElementById('f-category').value='general';
+  setArgs({});
+  document.getElementById('f-code').value='';
+  document.getElementById('del-btn').style.display='none';
+  document.getElementById('code-section').classList.remove('collapsed');
+  renderList(currentFilter());
 }
 
-function showEditor(){
-  document.getElementById('editor-empty').style.display = 'none';
-  document.getElementById('code-editor').style.display = 'block';
-  document.getElementById('editor-toolbar').style.display = 'flex';
-  document.getElementById('run-panel').style.display = 'block';
+function generateSkeleton(){
+  const args=collectArgs();
+  const argHints=Object.keys(args).map(k=>`# args[${JSON.stringify(k)}] — ${args[k]}`).join('\n');
+  document.getElementById('f-code').value =
+`import os, json
+
+args = json.loads(os.environ.get('SKILL_ARGS', '{}'))
+${argHints?argHints+'\n':''}
+# Your skill logic here
+result = "ok"
+print(result)
+`;
+  document.getElementById('code-section').classList.remove('collapsed');
 }
 
 async function saveSkill(){
-  const name = document.getElementById('current-skill-name').value.trim();
-  const desc = document.getElementById('current-skill-desc').value.trim();
-  const code = document.getElementById('code-editor').value;
+  const name=document.getElementById('f-name').value.trim();
+  const scope=document.getElementById('f-scope').value;
   if(!name){ alert('Skill name is required'); return; }
-  if(!/^[a-z][a-z0-9_]{1,49}$/.test(name)){ alert('Name must be snake_case (a-z, 0-9, underscore), 2-50 chars'); return; }
+  if(!/^[a-z][a-z0-9_]{1,49}$/.test(name)){ alert('Name must be snake_case (a-z, 0-9, underscore), 2–50 chars'); return; }
+  let code=document.getElementById('f-code').value;
+  if(!code.trim()){ generateSkeleton(); code=document.getElementById('f-code').value; }
+  const payload={ scope, name,
+    summary:document.getElementById('f-summary').value.trim(),
+    when_to_use:document.getElementById('f-when').value.trim(),
+    category:document.getElementById('f-category').value,
+    args:collectArgs(), code };
   try{
-    const res = await fetch('/api/skills/save',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,description:desc,code})
-    });
-    const data = await res.json();
+    const res=await fetch('/api/skills/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await res.json();
     if(!res.ok) throw new Error(data.error||'Save failed');
-    currentSkillName = name;
-    document.getElementById('current-skill-name').readOnly = true;
-    loadSkills();
-    showToast('Skill saved: '+name);
-  }catch(e){
-    alert('Error: '+e.message);
-  }
+    current={scope,name};
+    document.getElementById('f-name').readOnly=true;
+    document.getElementById('f-scope').disabled=true;
+    document.getElementById('del-btn').style.display='inline-block';
+    await loadSkills();
+    toast('Saved: '+name);
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 async function runSkill(){
-  const name = document.getElementById('current-skill-name').value.trim();
-  const argsRaw = document.getElementById('run-args').value.trim()||'{}';
-  let args;
-  try{ args = JSON.parse(argsRaw); }
+  if(!current){ alert('Save the skill before running it.'); return; }
+  let args; try{ args=JSON.parse(document.getElementById('run-args').value.trim()||'{}'); }
   catch(e){ alert('Invalid JSON args: '+e.message); return; }
-  const btn = document.getElementById('run-btn');
-  const out = document.getElementById('run-output');
-  const status = document.getElementById('run-status');
-  btn.textContent = '⏳ Running...';
-  btn.disabled = true;
-  out.className = 'run-output visible';
-  out.textContent = '...';
-  status.textContent = '';
+  const btn=document.getElementById('run-btn'), out=document.getElementById('run-output'), st=document.getElementById('run-status');
+  btn.textContent='⏳ Running…'; btn.disabled=true; out.className='run-output visible'; out.textContent='…'; st.textContent='';
   try{
-    const start = Date.now();
-    const res = await fetch('/api/skills/run',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,args})
-    });
-    const data = await res.json();
-    const elapsed = Date.now()-start;
-    if(data.success){
-      out.textContent = data.output||'(no output)';
-      out.className = 'run-output visible success';
-      status.textContent = `✓ Completed in ${data.duration_ms||elapsed}ms`;
-    }else{
-      out.textContent = data.error||'Unknown error';
-      out.className = 'run-output visible error';
-      status.textContent = `✗ Failed after ${elapsed}ms`;
-    }
-  }catch(e){
-    out.textContent = e.message;
-    out.className = 'run-output visible error';
-  }finally{
-    btn.textContent = '▶ Run Now';
-    btn.disabled = false;
-  }
+    const t0=Date.now();
+    const data=await (await fetch('/api/skills/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:current.scope,name:current.name,args})})).json();
+    const ms=Date.now()-t0;
+    if(data.success){ out.textContent=data.output||'(no output)'; out.className='run-output visible success'; st.textContent=`✓ ${data.duration_ms||ms}ms`; }
+    else{ out.textContent=data.error||'Unknown error'; out.className='run-output visible error'; st.textContent=`✗ failed after ${ms}ms`; }
+  }catch(e){ out.textContent=e.message; out.className='run-output visible error'; }
+  finally{ btn.textContent='▶ Run Now'; btn.disabled=false; }
 }
 
 async function deleteSkill(){
-  const name = currentSkillName||document.getElementById('current-skill-name').value.trim();
-  if(!name) return;
-  if(!confirm(`Delete skill "${name}"? This cannot be undone.`)) return;
+  if(!current){ return; }
+  if(!confirm(`Delete skill "${current.name}"? This cannot be undone.`)) return;
   try{
-    const res = await fetch('/api/skills/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
-    const data = await res.json();
+    const res=await fetch('/api/skills/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:current.scope,name:current.name})});
+    const data=await res.json();
     if(!res.ok) throw new Error(data.error);
-    currentSkillName = null;
-    document.getElementById('editor-empty').style.display = 'flex';
-    document.getElementById('code-editor').style.display = 'none';
-    document.getElementById('editor-toolbar').style.display = 'none';
-    document.getElementById('run-panel').style.display = 'none';
-    loadSkills();
-    showToast('Skill deleted: '+name);
-  }catch(e){
-    alert('Error: '+e.message);
-  }
+    const n=current.name; current=null;
+    document.getElementById('editor-body').style.display='none';
+    document.getElementById('editor-empty').style.display='flex';
+    await loadSkills();
+    toast('Deleted: '+n);
+  }catch(e){ alert('Error: '+e.message); }
 }
 
-function toggleRunPanel(){
-  const body = document.getElementById('run-panel-body');
-  const chevron = document.getElementById('run-chevron');
-  runPanelOpen = !runPanelOpen;
-  body.classList.toggle('open', runPanelOpen);
-  chevron.textContent = runPanelOpen ? '▲' : '▼';
-}
+function toggleCode(){ document.getElementById('code-section').classList.toggle('collapsed'); }
+function toggleRun(){ runOpen=!runOpen; document.getElementById('run-body').classList.toggle('open',runOpen); document.getElementById('run-chev').textContent=runOpen?'▴':'▾'; }
 
-function showToast(msg){
-  const t = document.createElement('div');
-  t.textContent = msg;
-  Object.assign(t.style,{
-    position:'fixed',bottom:'24px',right:'24px',background:'#1a0a3a',border:'1px solid #7c3aed',
-    color:'#c4b5fd',padding:'12px 20px',borderRadius:'8px',fontSize:'13px',
-    fontWeight:'600',zIndex:'9999',transition:'opacity .4s'
-  });
-  document.body.appendChild(t);
-  setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400)},2500);
+function toast(msg){
+  const t=document.createElement('div'); t.textContent=msg;
+  Object.assign(t.style,{position:'fixed',bottom:'24px',right:'24px',background:'#1a0a3a',border:'1px solid #7c3aed',color:'#c4b5fd',padding:'12px 20px',borderRadius:'8px',fontSize:'13px',fontWeight:'600',zIndex:'9999',transition:'opacity .4s'});
+  document.body.appendChild(t); setTimeout(()=>{t.style.opacity='0';setTimeout(()=>t.remove(),400)},2500);
 }
 
 loadSkills();
 </script>
-
 </body>
 </html>
