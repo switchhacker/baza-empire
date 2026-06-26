@@ -4920,38 +4920,43 @@ def skills_page():
 
 @app.route('/api/skills/list')
 def api_skills_list():
+    from core import skill_registry
     skills = []
     shared_dir = os.path.join(FRAMEWORK_DIR, "skills", "shared")
     if os.path.isdir(shared_dir):
         for f in sorted(Path(shared_dir).glob("*.py")):
+            if f.stem in ("__init__", "skill_registry"):
+                continue
             stat = os.stat(f)
-            # Read first docstring line
-            desc = ""
-            try:
-                for line in open(f).readlines()[:12]:
-                    line = line.strip()
-                    if line.startswith('"""') or line.startswith("'''"):
-                        desc = line.strip('"\' ')
-                        if len(desc) < 5:
-                            continue
-                        break
-                    if line and not line.startswith('#') and not line.startswith('import') and not line.startswith('def'):
-                        continue
-            except Exception:
-                pass
-            skills.append({'name': f.stem, 'path': str(f), 'scope': 'shared',
-                           'size': stat.st_size, 'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                           'description': desc})
-    # Per-agent skills
+            d = skill_registry.describe_skill(str(f), "shared")
+            skills.append({
+                'name': f.stem, 'path': str(f), 'scope': 'shared',
+                'category': d.get('category', 'general'),
+                'summary': d.get('summary', ''),
+                'when_to_use': d.get('when_to_use', ''),
+                'description': d.get('summary', ''),
+                'size': stat.st_size,
+                'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            })
     agents_dir = os.path.join(FRAMEWORK_DIR, "agents")
-    for agent_dir in sorted(Path(agents_dir).iterdir()):
-        skill_dir = agent_dir / "skills"
-        if skill_dir.is_dir():
-            for f in sorted(skill_dir.glob("*.py")):
-                stat = os.stat(f)
-                skills.append({'name': f.stem, 'path': str(f), 'scope': agent_dir.name,
-                               'size': stat.st_size, 'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                               'description': ''})
+    if os.path.isdir(agents_dir):
+        for agent_dir in sorted(Path(agents_dir).iterdir()):
+            skill_dir = agent_dir / "skills"
+            if skill_dir.is_dir():
+                for f in sorted(skill_dir.glob("*.py")):
+                    if f.stem in ("__init__", "skill_registry"):
+                        continue
+                    stat = os.stat(f)
+                    d = skill_registry.describe_skill(str(f), f"agent:{agent_dir.name}")
+                    skills.append({
+                        'name': f.stem, 'path': str(f), 'scope': agent_dir.name,
+                        'category': d.get('category', 'general'),
+                        'summary': d.get('summary', ''),
+                        'when_to_use': d.get('when_to_use', ''),
+                        'description': d.get('summary', ''),
+                        'size': stat.st_size,
+                        'modified': datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    })
     return jsonify(skills)
 
 @app.route('/api/skills/catalog')
