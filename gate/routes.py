@@ -64,6 +64,14 @@ def enroll(body: EnrollBody):
 @router.post("/capture")
 def capture(body: CaptureBody):
     raw = base64.b64decode(body.image)
+    _save_dir = os.environ.get("GATE_CAPTURE_SAVE_DIR")  # debug/enroll: save raw frame
+    if _save_dir:
+        try:
+            os.makedirs(_save_dir, exist_ok=True)
+            with open(os.path.join(_save_dir, f"cap_{body.nonce[:12]}.jpg"), "wb") as f:
+                f.write(raw)
+        except Exception as e:  # noqa: BLE001 - never block capture on a save error
+            log.warning("capture save failed: %s", e)
     try:
         probes = face_recognizer.embed(raw)
     except Exception as e:  # fail-closed
