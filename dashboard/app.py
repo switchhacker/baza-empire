@@ -5099,18 +5099,18 @@ def api_skill_save():
 @app.route('/api/skills/run', methods=['POST'])
 def api_skill_run():
     data = request.json or {}
-    name = data.get('name', '').strip()
+    scope = (data.get('scope') or 'shared').strip()
+    name = (data.get('name') or '').strip()
     args = data.get('args', {})
-    if not name:
-        return jsonify({'error': 'name required'}), 400
-    shared_dir = os.path.join(FRAMEWORK_DIR, "skills", "shared")
-    path = os.path.join(shared_dir, f"{name}.py")
+    path, err, status = _resolve_skill_path(scope, name)
+    if err:
+        return jsonify(err), status
     if not os.path.exists(path):
         return jsonify({'error': f'skill not found: {name}'}), 404
     import time as _time
     env = os.environ.copy()
     env['SKILL_ARGS'] = json.dumps(args)
-    env['AGENT_ID'] = 'dashboard'
+    env['AGENT_ID'] = scope if scope != 'shared' else 'dashboard'
     t0 = _time.time()
     try:
         result = subprocess.run([VENV_PYTHON, path], capture_output=True, text=True, timeout=30, env=env)
@@ -5120,7 +5120,7 @@ def api_skill_run():
             'output': result.stdout[:8000],
             'error': result.stderr[:2000] if result.returncode != 0 else '',
             'duration_ms': elapsed,
-            'exit_code': result.returncode
+            'exit_code': result.returncode,
         })
     except subprocess.TimeoutExpired:
         return jsonify({'success': False, 'error': 'timeout (30s)', 'output': ''})
@@ -5129,16 +5129,22 @@ def api_skill_run():
 
 @app.route('/api/skills/delete', methods=['POST'])
 def api_skill_delete():
-    import re as _re
     data = request.json or {}
-    name = data.get('name', '').strip()
+    scope = (data.get('scope') or 'shared').strip()
+    name = (data.get('name') or '').strip()
     protected = {'create_skill', 'save_artifact', 'artifact_save', 'update_task'}
     if not name or name in protected:
         return jsonify({'error': 'cannot delete protected skill'}), 400
-    path = os.path.join(FRAMEWORK_DIR, "skills", "shared", f"{name}.py")
+    path, err, status = _resolve_skill_path(scope, name)
+    if err:
+        return jsonify(err), status
     if not os.path.exists(path):
         return jsonify({'error': 'not found'}), 404
     os.remove(path)
+    try:
+        _rebuild_skill_manifest()
+    except Exception as e:
+        app.logger.warning("manifest rebuild raised: %s", e)
     return jsonify({'success': True})
 
 

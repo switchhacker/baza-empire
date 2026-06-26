@@ -133,3 +133,25 @@ def test_save_survives_manifest_failure(client, tmp_path, monkeypatch):
         "when_to_use": "", "category": "financial", "args": {}, "code": "print(1)\n",
     })
     assert r.status_code == 200
+
+
+def test_run_per_agent_skill(client, tmp_path):
+    _write(tmp_path, "agents/simon_bately/skills/echo.py",
+           "import os, json\nargs = json.loads(os.environ.get('SKILL_ARGS','{}'))\nprint(args.get('msg',''))\n")
+    r = client.post("/api/skills/run", json={"scope": "simon_bately", "name": "echo", "args": {"msg": "hello"}})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["success"] is True
+    assert "hello" in data["output"]
+
+
+def test_delete_blocks_protected(client):
+    r = client.post("/api/skills/delete", json={"scope": "shared", "name": "create_skill"})
+    assert r.status_code == 400
+
+
+def test_delete_per_agent(client, tmp_path):
+    p = _write(tmp_path, "agents/simon_bately/skills/tmpskill.py", 'print("x")\n')
+    r = client.post("/api/skills/delete", json={"scope": "simon_bately", "name": "tmpskill"})
+    assert r.status_code == 200
+    assert not p.exists()
