@@ -15829,6 +15829,17 @@ def _ensure_scaffold_tables(con):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_bom_pid ON project_bom(project_id)")
 
+    # ALTER project_bom to add ordered/delivered procurement tracking.
+    for _ddl in (
+        "ALTER TABLE project_bom ADD COLUMN ordered INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE project_bom ADD COLUMN ordered_at TEXT",
+    ):
+        try:
+            cur.execute(_ddl)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS baza_inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

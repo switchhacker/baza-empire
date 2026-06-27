@@ -252,7 +252,24 @@ def bom_list(pid):
         ).fetchall()
     finally:
         con.close()
-    return jsonify({"items": [dict(r) for r in rows]})
+    items = [dict(r) for r in rows]
+
+    def _line(b):
+        try:
+            unit = float(b["unit_price"]) if b["unit_price"] is not None else 0.0
+            return unit * max(1, int(b["qty"] or 1))
+        except (TypeError, ValueError):
+            return 0.0
+
+    summary = {
+        "count": len(items),
+        "est_total": round(sum(_line(b) for b in items), 2),
+        "ordered_total": round(sum(_line(b) for b in items if b.get("ordered")), 2),
+        "delivered_total": round(sum(_line(b) for b in items if b.get("in_hand")), 2),
+        "ordered_count": sum(1 for b in items if b.get("ordered")),
+        "delivered_count": sum(1 for b in items if b.get("in_hand")),
+    }
+    return jsonify({"items": items, "summary": summary})
 
 
 def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
@@ -273,7 +290,7 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
     """
     import json as _json
     import sqlite3 as _sq
-    from core.baza_components_library import match_component
+    from core.baza_components_library import match_component, get_component
 
     cur = _sq.connect(_db_path()); cur.row_factory = _sq.Row
     try:
@@ -302,7 +319,13 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
     for b in bom_rows:
         m = match_component(b["name"] or "")
         if not m:
-            continue
+            # No specific match -> draw it as a generic block so the rebuild
+            # never silently drops a BOM part. Generic blocks are classified as
+            # "module" (category) and wired like any other peripheral: 3V3 + GND
+            # + one data line off a free MCU GPIO.
+            m = get_component("generic-module")
+            if not m:
+                continue
         if m["id"] == "schottky-diode":
             diode_def = m
             diode_budget[0] += _qty(b)
@@ -546,9 +569,11 @@ def _build_rich_schematic_from_bom(eng, pid, schematic_node_id):
         if in_plus and vpos_inst:
             wire(vpos_inst, vpos_pin, o["instance_id"], in_plus, "power")
 
-    notes = ("Full-device auto-route. Red = supply (V+) rail, black = common "
+    notes = ("Full-device auto-route. Red = supply (V+) rail, green = common "
              "ground. LED loads are switched low-side by N-MOSFETs "
-             "(GPIO->GATE, load->DRAIN, SOURCE->GND).")
+             "(GPIO->GATE, load->DRAIN, SOURCE->GND). Parts without a specific "
+             "library symbol are drawn as generic blocks (V+/GND/IO) so no BOM "
+             "row is dropped.")
     if has_harvest:
         notes += (" Energy chain (left->right): harvesters (PV/TEG/RF) -> "
                   "converters (MPPT/boost charger) -> Schottky OR-ing diodes -> "
@@ -815,6 +840,7 @@ def bom_toggle_hand(pid, bid):
         if new_val:
             con.execute(
                 "UPDATE project_bom SET in_hand=?, in_hand_at=CURRENT_TIMESTAMP, "
+                "ordered=1, ordered_at=COALESCE(ordered_at, CURRENT_TIMESTAMP), "
                 "status=CASE WHEN status NOT IN ('cancelled') THEN 'received' ELSE status END "
                 "WHERE id=?",
                 (new_val, bid)
@@ -836,6 +862,41 @@ def bom_toggle_hand(pid, bid):
                    actor="user",
                    payload={"bom_id": bid, "in_hand": bool(new_val)})
     return jsonify({"ok": True, "in_hand": bool(new_val)})
+
+
+@scaffold_bp.route("/api/baza/projects/<pid>/bom/<int:bid>/toggle-ordered",
+                   methods=["POST"])
+def bom_toggle_ordered(pid, bid):
+    eng = _engine()
+    con = sqlite3.connect(_db_path())
+    con.row_factory = sqlite3.Row
+    try:
+        row = con.execute("SELECT * FROM project_bom WHERE id=? AND project_id=?",
+                          (bid, pid)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        new_val = 0 if row["ordered"] else 1
+        if new_val:
+            con.execute(
+                "UPDATE project_bom SET ordered=?, ordered_at=CURRENT_TIMESTAMP, "
+                "status=CASE WHEN COALESCE(status,'') IN ('researched','sourced','') "
+                "THEN 'ordered' ELSE status END WHERE id=?",
+                (new_val, bid)
+            )
+        else:
+            con.execute(
+                "UPDATE project_bom SET ordered=?, ordered_at=NULL, "
+                "status=CASE WHEN status='ordered' THEN 'researched' ELSE status END "
+                "WHERE id=?",
+                (new_val, bid)
+            )
+        con.commit()
+    finally:
+        con.close()
+    eng.emit_event(pid, node_id=row["node_id"], event_type="bom_ordered",
+                   actor="user",
+                   payload={"bom_id": bid, "ordered": bool(new_val)})
+    return jsonify({"ok": True, "ordered": bool(new_val)})
 
 
 @scaffold_bp.route("/api/baza/projects/<pid>/bom/<int:bid>/promote-inventory", methods=["POST"])
