@@ -21,16 +21,34 @@ def main():
 
     con = sqlite3.connect(db_path)
     try:
-        cur = con.execute("""
-            INSERT INTO project_bom
-              (project_id, node_id, name, part_number, vendor, url, qty,
-               unit_price, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (project_id, args.get("node_id"), name,
-              args.get("part_number"), args.get("vendor"), args.get("url"),
-              int(args.get("qty") or 1), args.get("unit_price"),
-              args.get("status", "researched"), args.get("notes")))
-        bid = cur.lastrowid
+        # Enrich an existing row with the same name (case-insensitive) rather
+        # than creating a duplicate — lets an agent backfill vendor/url/price
+        # onto a pre-seeded BOM row. Only fields the agent provides overwrite.
+        existing = con.execute(
+            "SELECT id FROM project_bom WHERE project_id=? AND lower(name)=lower(?) "
+            "ORDER BY id LIMIT 1", (project_id, name)).fetchone()
+        if existing:
+            bid = existing[0]
+            sets, vals = [], []
+            for col in ("part_number", "vendor", "url", "unit_price", "notes",
+                        "node_id", "qty", "status"):
+                if args.get(col) is not None:
+                    v = int(args["qty"] or 1) if col == "qty" else args.get(col)
+                    sets.append(f"{col}=?"); vals.append(v)
+            if sets:
+                sets.append("updated_at=CURRENT_TIMESTAMP"); vals.append(bid)
+                con.execute(f"UPDATE project_bom SET {', '.join(sets)} WHERE id=?", vals)
+        else:
+            cur = con.execute("""
+                INSERT INTO project_bom
+                  (project_id, node_id, name, part_number, vendor, url, qty,
+                   unit_price, status, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (project_id, args.get("node_id"), name,
+                  args.get("part_number"), args.get("vendor"), args.get("url"),
+                  int(args.get("qty") or 1), args.get("unit_price"),
+                  args.get("status", "researched"), args.get("notes")))
+            bid = cur.lastrowid
         con.commit()
     finally:
         con.close()
