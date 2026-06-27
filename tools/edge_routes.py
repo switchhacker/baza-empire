@@ -34,7 +34,7 @@ from typing import Optional
 import httpx
 import redis
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("baza.edge")
@@ -52,6 +52,14 @@ r = redis.from_url(REDIS_URL, decode_responses=True)
 # Dashboard (Flask :8888) — receipt photos are forwarded into its QuickRF
 # bulk intake so they land in ahb_receipt_queue and the OCR worker drains them.
 DASHBOARD_URL = os.environ.get("BAZA_DASHBOARD_URL", "http://127.0.0.1:8888")
+
+# Pull-based OTA for edge nodes (the new baza_edge standard): drop a per-node
+# firmware binary + target-version marker here and the node downloads it on its
+# next heartbeat. Queue with scripts/edge_ota_queue.sh.
+OTA_DIR = Path(os.environ.get("BAZA_EDGE_OTA_DIR", "/home/switchhacker/baza_edge/.ota"))
+OTA_DIR.mkdir(parents=True, exist_ok=True)
+OTA_BASE_URL = os.environ.get("BAZA_EDGE_OTA_BASE", "http://192.168.1.68:8000")
+_SAFE_NODE = __import__("re").compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 router = APIRouter(prefix="/edge", tags=["edge"])
 
@@ -131,6 +139,31 @@ def _prune_frames(node_dir: Path) -> None:
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
+
+@router.get("/ota/pending")
+def ota_pending(node: str, fw: str = ""):
+    """Return a firmware URL if a newer image is queued for this node, else 204."""
+    if not _SAFE_NODE.match(node):
+        raise HTTPException(400, "bad node id")
+    binp = OTA_DIR / f"{node}.bin"
+    verp = OTA_DIR / f"{node}.ver"
+    if not binp.exists() or not verp.exists():
+        return Response(status_code=204)
+    target = verp.read_text().strip()
+    if not target or target == fw:        # node already runs the target build
+        return Response(status_code=204)
+    return PlainTextResponse(f"{OTA_BASE_URL}/edge/ota/firmware/{node}")
+
+
+@router.get("/ota/firmware/{node}")
+def ota_firmware(node: str):
+    if not _SAFE_NODE.match(node):
+        raise HTTPException(400, "bad node id")
+    binp = OTA_DIR / f"{node}.bin"
+    if not binp.exists():
+        raise HTTPException(404, "no firmware queued")
+    return FileResponse(str(binp), media_type="application/octet-stream", filename=f"{node}.bin")
+
 
 @router.post("/heartbeat")
 async def heartbeat(hb: Heartbeat):
