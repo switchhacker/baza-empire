@@ -659,6 +659,20 @@ _COMPONENT_LIST = [
            _pin("OUT", "signal", "bottom"),
            _pin("GND", "ground", "bottom"),
        ]),
+    # Generic fallback block — used by the BOM->schematic rebuild for any part
+    # that doesn't match a specific component, so NO BOM row is ever dropped.
+    # Empty match_keywords => match_component() never returns it implicitly; it
+    # is only ever placed explicitly via get_component("generic-module").
+    _c("generic-module", "Module", "module",
+       width=140, height=90,
+       match_keywords=[],
+       pins=[
+           _pin("V+", "power", "left"),
+           _pin("GND", "ground", "left"),
+           _pin("IO1", "gpio", "right"),
+           _pin("IO2", "gpio", "right"),
+           _pin("IO3", "gpio", "right"),
+       ]),
 ]
 
 
