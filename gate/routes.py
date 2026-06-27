@@ -3,7 +3,8 @@ import base64
 import logging
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from gate import face_recognizer, gate_db, session_unlock, unlock_token
@@ -13,6 +14,20 @@ router = APIRouter(prefix="/edge/gate", tags=["gate"])
 
 # Roles that authorize the physical/login unlock path.
 UNLOCK_ROLES = ("door", "login_unlock")
+
+# Latest captured frame (overwritten each capture) — powers the dashboard Edge
+# live view for aiming the camera. Single file, not a growing log.
+GATE_LATEST = os.environ.get("GATE_LATEST_PATH", "/home/switchhacker/baza_edge/baza_gate/.gate_latest.jpg")
+
+
+def _save_latest(raw: bytes) -> None:
+    try:
+        tmp = GATE_LATEST + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, GATE_LATEST)   # atomic; never serve a half-written frame
+    except OSError as e:
+        log.warning("save latest frame failed: %s", e)
 # gate_event kinds logged by this router: "grant" | "deny" | "security" (fail-closed errors).
 
 
@@ -61,17 +76,19 @@ def enroll(body: EnrollBody):
     return {"ok": True, "person": body.person, "n_embeddings": n}
 
 
+@router.get("/latest.jpg")
+def latest_frame():
+    """Most recent camera frame (for the dashboard Edge live view / aiming)."""
+    if not os.path.exists(GATE_LATEST):
+        raise HTTPException(404, "no frame yet")
+    return FileResponse(GATE_LATEST, media_type="image/jpeg",
+                        headers={"Cache-Control": "no-store"})
+
+
 @router.post("/capture")
 def capture(body: CaptureBody):
     raw = base64.b64decode(body.image)
-    _save_dir = os.environ.get("GATE_CAPTURE_SAVE_DIR")  # aiming/enroll: save raw frame
-    if _save_dir:
-        try:
-            os.makedirs(_save_dir, exist_ok=True)
-            with open(os.path.join(_save_dir, f"cap_{body.nonce[:12]}.jpg"), "wb") as f:
-                f.write(raw)
-        except Exception as e:  # noqa: BLE001 - never block capture on a save error
-            log.warning("capture save failed: %s", e)
+    _save_latest(raw)   # feed the dashboard Edge live view
     try:
         probes = face_recognizer.embed(raw)
     except Exception as e:  # fail-closed
