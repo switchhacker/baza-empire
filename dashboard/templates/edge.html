@@ -101,6 +101,15 @@
     <div style="color:#444;font-size:13px;padding:18px">No edge nodes reporting yet. Flash a node and wait ~30s.</div>
   </div>
 
+  <div class="section-head"><span>Baza Gate — Live Camera</span>
+    <span style="font-size:11px;color:#666;font-weight:400;text-transform:none;letter-spacing:0">latest frame (~3s cadence) · aim the lens at your seated face</span>
+  </div>
+  <div class="booth-card" style="max-width:540px">
+    <img id="gateLive" class="edge-thumb" style="aspect-ratio:4/3;max-width:500px"
+         src="/api/edge/gate/latest.jpg" alt="waiting for a frame…"/>
+    <div style="font-size:11px;color:#666;font-family:monospace;margin-top:8px" id="gateLiveMeta">refreshing…</div>
+  </div>
+
   <div class="section-head"><span>Receipt Photo Booth</span></div>
   <div class="booth-row">
     <div class="booth-card">
@@ -254,6 +263,21 @@ function loadEdge() {
 }
 loadEdge();
 setInterval(loadEdge, 5000);
+
+// Baza gate live camera — refresh the latest frame for aiming
+function refreshGateLive(){
+  const img = document.getElementById('gateLive');
+  if (!img) return;
+  const meta = document.getElementById('gateLiveMeta');
+  const probe = new Image();
+  probe.onload = () => { img.src = probe.src; img.style.opacity = 1;
+    if (meta) meta.textContent = 'live · ' + probe.naturalWidth + '×' + probe.naturalHeight + ' · ' + new Date().toLocaleTimeString(); };
+  probe.onerror = () => { img.style.opacity = .25;
+    if (meta) meta.textContent = 'no frame yet — is the camera awake? (press ESP RST after an OTA)'; };
+  probe.src = '/api/edge/gate/latest.jpg?t=' + Date.now();
+}
+refreshGateLive();
+setInterval(refreshGateLive, 2000);
 </script>
 </body>
 </html>

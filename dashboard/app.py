@@ -4019,6 +4019,21 @@ def api_edge_frame(node_id):
     except Exception as e:
         return (f"upstream: {e}", 503)
 
+@app.route('/api/edge/gate/latest.jpg')
+def api_edge_gate_latest():
+    """Live view of the baza gate camera (latest capture frame) — for aiming."""
+    import requests as _rq
+    try:
+        r = _rq.get(f"{EDGE_TOOL_SERVER}/edge/gate/latest.jpg", timeout=4)
+        if r.status_code != 200:
+            return ("no frame", 404)
+        resp = make_response(r.content)
+        resp.headers["Content-Type"]  = "image/jpeg"
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    except Exception as e:
+        return (f"upstream: {e}", 503)
+
 @app.route('/email')
 def email_page():
     embed = request.args.get('embed') in ('1', 'true', 'yes')
