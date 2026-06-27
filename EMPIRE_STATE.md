@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-25 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 5 warn, 7 info)
-- 2026-06-25 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 1 warn, 9 info)
-- 2026-06-25 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 2 warn, 7 info)
-- 2026-06-25 Claw hourly digest — 1 new (0 bug, 0 regression, 0 security, 0 warn, 1 info)
-- 2026-06-25 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
-- 2026-06-25 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
-- 2026-06-25 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
-- 2026-06-25 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 1 warn, 5 info)
-- 2026-06-25 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
-- 2026-06-25 DDNS pivot — ahb123.com DNS is Squarespace-managed, no API/DDNS
-- 2026-06-25 AHB123 double-count diagnosed — status bar writes "paid" revenue independent of invoice Paid click…
-- 2026-06-25 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 0 warn, 2 info)
-- 2026-06-25 AHB123 finance audit — 3 root causes confirmed in live data
-- 2026-06-25 baza gate Phase 2 (prototype) — spec + plan written
-- 2026-06-25 AHB123 finance: status↔money decoupled, data cleaned, switchboard shipped — DONE
+- 2026-06-26 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
+- 2026-06-26 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 0 warn, 11 info)
+- 2026-06-26 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
+- 2026-06-26 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 1 warn, 5 info)
+- 2026-06-26 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 5 warn, 3 info)
+- 2026-06-26 baza gate — ESP32-CAM FLASHED via R3 bridge (RESET-button hold)
+- 2026-06-26 baza gate — flash OK, but NO LAN path to /edge/gate (server-side gap)
+- 2026-06-26 baza gate — PHASE 2 LIVE ON HARDWARE (ESP heartbeat confirmed)
+- 2026-06-26 baza gate — user: sonar on camera adapter (doc conflict); shield was off during bench
+- 2026-06-26 baza gate — SONAR CONFIRMED on R3 pin 10 (battery was the missing 5V)
+- 2026-06-26 baza gate — FULL END-TO-END LOOP LIVE (sonar->R3->ESP->baza->verdict)
+- 2026-06-26 baza gate — capture-save debug: camera AIM is the blocker (no face in frame)
+- 2026-06-26 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 2 warn, 10 info)
+- 2026-06-26 baza gate — GRANT works end-to-end; added polkit rule for screen-unlock
+- 2026-06-26 Skills page rebuild — design approved, spec written
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
