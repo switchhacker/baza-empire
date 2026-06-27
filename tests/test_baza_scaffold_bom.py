@@ -85,6 +85,69 @@ def test_bom_not_found(client):
     assert r.status_code == 404
 
 
+def test_bom_summary_totals(client):
+    client.post("/api/baza/projects/p1/bom",
+                json={"name": "A", "qty": 2, "unit_price": 10.0})
+    client.post("/api/baza/projects/p1/bom",
+                json={"name": "B", "qty": 3, "unit_price": 5.0})
+    j = client.get("/api/baza/projects/p1/bom").get_json()
+    assert "summary" in j
+    s = j["summary"]
+    assert s["count"] == 2
+    assert s["est_total"] == pytest.approx(35.0)   # 2*10 + 3*5
+
+
+def test_bom_toggle_ordered(client):
+    bid = client.post("/api/baza/projects/p1/bom",
+                      json={"name": "A", "qty": 1, "unit_price": 2.0}).get_json()["id"]
+    r = client.post(f"/api/baza/projects/p1/bom/{bid}/toggle-ordered")
+    assert r.status_code == 200
+    assert r.get_json()["ordered"] is True
+    row = [i for i in client.get("/api/baza/projects/p1/bom").get_json()["items"]
+           if i["id"] == bid][0]
+    assert row["ordered"] == 1
+    assert row["status"] == "ordered"
+    r2 = client.post(f"/api/baza/projects/p1/bom/{bid}/toggle-ordered")
+    assert r2.get_json()["ordered"] is False
+
+
+def test_bom_summary_ordered_and_delivered(client):
+    bid = client.post("/api/baza/projects/p1/bom",
+                      json={"name": "A", "qty": 2, "unit_price": 10.0}).get_json()["id"]
+    client.post(f"/api/baza/projects/p1/bom/{bid}/toggle-ordered")
+    s = client.get("/api/baza/projects/p1/bom").get_json()["summary"]
+    assert s["ordered_total"] == pytest.approx(20.0)
+    assert s["delivered_total"] == pytest.approx(0.0)
+    # Marking delivered implies ordered.
+    client.post(f"/api/baza/projects/p1/bom/{bid}/toggle-hand")
+    j = client.get("/api/baza/projects/p1/bom").get_json()
+    row = [i for i in j["items"] if i["id"] == bid][0]
+    assert row["in_hand"] == 1
+    assert row["ordered"] == 1
+    assert j["summary"]["delivered_total"] == pytest.approx(20.0)
+
+
+def test_rebuild_includes_unmatched_parts_as_generic(client):
+    # A schematic node + a BOM with one library-matched part (Arduino Uno) and
+    # two parts the component library does NOT recognize.
+    nid = client.post("/api/baza/projects/p1/scaffold/node",
+                      json={"node_type": "schematic",
+                            "title": "Wiring"}).get_json()["id"]
+    client.post("/api/baza/projects/p1/bom", json={"name": "Arduino Uno"})
+    client.post("/api/baza/projects/p1/bom",
+                json={"name": "Quectel EG25-G LTE modem"})
+    client.post("/api/baza/projects/p1/bom",
+                json={"name": "RAM windshield mount"})
+    r = client.post(f"/api/baza/projects/p1/scaffold/schematic/{nid}/rebuild")
+    assert r.status_code == 200
+    schem = r.get_json()["schematic"]
+    # All three BOM rows must be drawn — none dropped.
+    assert len(schem["components"]) == 3
+    cids = [c["component_id"] for c in schem["components"]]
+    assert "arduino-uno" in cids
+    assert cids.count("generic-module") == 2   # the two unmatched parts
+
+
 def test_inventory_crud(client):
     r = client.post("/api/baza/inventory",
                     json={"name": "Arduino Uno", "category": "MCU",
