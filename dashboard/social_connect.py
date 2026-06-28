@@ -38,9 +38,9 @@ CREDS_DIR = os.path.join(SOCIAL_PIPELINE_DIR, "credentials")
 # YouTube Data API + scope are enabled on the consent screen).
 EMAIL_CREDENTIALS_PATH = os.path.join(FRAMEWORK_DIR, "email-pipeline", "credentials.json")
 
-PLATFORMS = ("youtube", "instagram", "facebook", "tiktok")
+PLATFORMS = ("youtube", "instagram", "facebook", "tiktok", "linkedin")
 # Phase 1: only YouTube has a live OAuth + publish + feed path.
-OAUTH_PLATFORMS = ("youtube",)
+OAUTH_PLATFORMS = ("youtube", "linkedin")
 
 YT_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
@@ -66,6 +66,24 @@ TOKEN_PLATFORMS = ("instagram", "facebook")
 # Instagram/Facebook pull media from a PUBLIC url — set this to the https origin
 # that fronts baza (e.g. https://ahb123.com) so the Graph API can fetch assets.
 SOCIAL_PUBLIC_BASE_URL = os.environ.get("SOCIAL_PUBLIC_BASE_URL", "")
+
+# LinkedIn — OAuth 2.0 authorization-code (paste-back, like YouTube). Member
+# (personal profile) posting via w_member_social works self-serve; Company Page
+# posting/org-feed need the Community Management API products (LinkedIn approval).
+# Media is PUSHED to LinkedIn (register → PUT bytes), so no public URL is needed.
+LINKEDIN_OAUTH_BASE = os.environ.get(
+    "LINKEDIN_OAUTH_BASE", "https://www.linkedin.com/oauth/v2")
+LINKEDIN_API_BASE = os.environ.get(
+    "LINKEDIN_API_BASE", "https://api.linkedin.com")
+# LinkedIn versions its REST API monthly (YYYYMM). Pin against current docs.
+LINKEDIN_VERSION = os.environ.get("LINKEDIN_VERSION", "202506")
+LI_SCOPES = [
+    "openid", "profile", "email", "w_member_social",
+    "w_organization_social", "r_organization_admin", "r_organization_social",
+]
+# Short-lived post-auth sessions (token + discovered member/orgs held server-side
+# until the user picks a target). Mirrors _meta_sessions.
+_linkedin_sessions: dict = {}
 
 # In-memory OAuth flow registry (mirrors email_studio).
 _oauth_flows: dict = {}
@@ -219,6 +237,186 @@ def _tt_video_list(access_token, limit) -> list:
                     "thumbnail": it.get("cover_image_url", ""),
                     "url": it.get("share_url", "")})
     return out
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn boundary — monkeypatched in tests
+# ---------------------------------------------------------------------------
+def _li_client_creds() -> dict:
+    """Read Serge's LinkedIn app client_id/client_secret JSON."""
+    p = _platform_creds_path("linkedin")
+    if not os.path.exists(p):
+        raise RuntimeError(
+            "No LinkedIn OAuth client configured. Add it in Connections "
+            '(paste {"client_id":"…","client_secret":"…"}).')
+    with open(p) as f:
+        return json.load(f) or {}
+
+
+def _li_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}",
+            "LinkedIn-Version": LINKEDIN_VERSION,
+            "X-Restli-Protocol-Version": "2.0.0"}
+
+
+def _li_build_authorize_url(state: str) -> str:
+    from urllib.parse import urlencode
+    creds = _li_client_creds()
+    params = {
+        "response_type": "code",
+        "client_id": creds.get("client_id", ""),
+        "redirect_uri": OAUTH_REDIRECT_URI,
+        "state": state,
+        "scope": " ".join(LI_SCOPES),
+    }
+    return f"{LINKEDIN_OAUTH_BASE}/authorization?{urlencode(params)}"
+
+
+def _li_exchange_token(code: str) -> dict:
+    import requests
+    creds = _li_client_creds()
+    r = requests.post(
+        f"{LINKEDIN_OAUTH_BASE}/accessToken",
+        data={"grant_type": "authorization_code", "code": code,
+              "redirect_uri": OAUTH_REDIRECT_URI,
+              "client_id": creds.get("client_id", ""),
+              "client_secret": creds.get("client_secret", "")},
+        headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=30)
+    r.raise_for_status()
+    return r.json() or {}
+
+
+def _li_userinfo(token: str) -> dict:
+    import requests
+    r = requests.get(f"{LINKEDIN_API_BASE}/v2/userinfo",
+                     headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    r.raise_for_status()
+    d = r.json() or {}
+    sub = d.get("sub", "")
+    return {"person_urn": f"urn:li:person:{sub}" if sub else "",
+            "name": d.get("name") or "LinkedIn account",
+            "email": d.get("email", "")}
+
+
+def _li_list_orgs(token: str) -> list:
+    """Company Pages the member administers. Empty if Community Mgmt not approved."""
+    import requests
+    hdr = _li_headers(token)
+    try:
+        r = requests.get(f"{LINKEDIN_API_BASE}/rest/organizationAcls",
+                         params={"q": "roleAssignee", "role": "ADMINISTRATOR",
+                                 "state": "APPROVED"}, headers=hdr, timeout=30)
+        r.raise_for_status()
+    except Exception:
+        return []
+    out = []
+    for el in (r.json() or {}).get("elements", []):
+        org_urn = el.get("organization", "")
+        if not org_urn:
+            continue
+        name = org_urn
+        try:
+            oid = org_urn.rsplit(":", 1)[-1]
+            o = requests.get(f"{LINKEDIN_API_BASE}/rest/organizations/{oid}",
+                             headers=hdr, timeout=30)
+            if o.ok:
+                name = (o.json() or {}).get("localizedName") or org_urn
+        except Exception:
+            pass
+        out.append({"org_urn": org_urn, "name": name})
+    return out
+
+
+def _li_register_image(token: str, owner_urn: str) -> dict:
+    import requests
+    r = requests.post(f"{LINKEDIN_API_BASE}/rest/images?action=initializeUpload",
+                      json={"initializeUploadRequest": {"owner": owner_urn}},
+                      headers=_li_headers(token), timeout=30)
+    r.raise_for_status()
+    v = (r.json() or {}).get("value", {})
+    return {"upload_url": v.get("uploadUrl", ""), "asset_urn": v.get("image", "")}
+
+
+def _li_register_video(token: str, owner_urn: str, file_size: int) -> dict:
+    import requests
+    r = requests.post(f"{LINKEDIN_API_BASE}/rest/videos?action=initializeUpload",
+                      json={"initializeUploadRequest": {
+                          "owner": owner_urn, "fileSizeBytes": file_size,
+                          "uploadCaptions": False, "uploadThumbnail": False}},
+                      headers=_li_headers(token), timeout=30)
+    r.raise_for_status()
+    v = (r.json() or {}).get("value", {})
+    instr = (v.get("uploadInstructions") or [{}])
+    return {"upload_url": instr[0].get("uploadUrl", ""),
+            "asset_urn": v.get("video", "")}
+
+
+def _li_put_bytes(upload_url: str, path: str) -> str:
+    """PUT asset bytes to LinkedIn's upload URL. Returns the response ETag."""
+    import requests
+    with open(path, "rb") as f:
+        r = requests.put(upload_url, data=f.read(), timeout=300)
+    r.raise_for_status()
+    return r.headers.get("ETag", "")
+
+
+def _li_finalize_video(token: str, asset_urn: str, etags: list) -> None:
+    import requests
+    r = requests.post(f"{LINKEDIN_API_BASE}/rest/videos?action=finalizeUpload",
+                      json={"finalizeUploadRequest": {
+                          "video": asset_urn, "uploadToken": "",
+                          "uploadedPartIds": [e for e in etags if e]}},
+                      headers=_li_headers(token), timeout=60)
+    r.raise_for_status()
+
+
+def _li_create_post(token: str, author_urn: str, commentary: str,
+                    media_urn: str, is_video: bool) -> dict:
+    import requests
+    body = {
+        "author": author_urn,
+        "commentary": commentary,
+        "visibility": "PUBLIC",
+        "distribution": {"feedDistribution": "MAIN_FEED",
+                         "targetEntities": [],
+                         "thirdPartyDistributionChannels": []},
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+    }
+    # image and video reference the asset identically via content.media.id;
+    # is_video is kept for caller clarity / test assertions.
+    if media_urn:
+        body["content"] = {"media": {"id": media_urn}}
+    r = requests.post(f"{LINKEDIN_API_BASE}/rest/posts", json=body,
+                      headers=_li_headers(token), timeout=60)
+    r.raise_for_status()
+    post_id = r.headers.get("x-restli-id") or r.headers.get("x-linkedin-id") or ""
+    url = f"https://www.linkedin.com/feed/update/{post_id}" if post_id else ""
+    return {"id": post_id, "url": url}
+
+
+def _li_org_feed(token: str, org_urn: str, limit: int) -> list:
+    import requests
+    r = requests.get(f"{LINKEDIN_API_BASE}/rest/posts",
+                     params={"q": "author", "author": org_urn, "count": min(limit, 50)},
+                     headers=_li_headers(token), timeout=30)
+    r.raise_for_status()
+    out = []
+    for el in (r.json() or {}).get("elements", []):
+        pid = el.get("id", "")
+        out.append({"id": pid, "title": (el.get("commentary") or "")[:80],
+                    "published_at": str((el.get("createdAt") or "")),
+                    "thumbnail": "",
+                    "url": f"https://www.linkedin.com/feed/update/{pid}" if pid else ""})
+    return out
+
+
+def _li_token(account_ref: str) -> str:
+    p = _token_path("linkedin", account_ref)
+    if not os.path.exists(p):
+        raise RuntimeError("token missing — reconnect the account")
+    with open(p) as f:
+        return (json.load(f) or {}).get("access_token", "")
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +675,24 @@ def register(bp):
                 "error": f"{platform} OAuth is not available yet (Phase 2/3). "
                          f"Use Manual export for now.",
             }), 400
+        if platform == "linkedin":
+            state = _flow_id()
+            try:
+                auth_url = _li_build_authorize_url(state)
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 400
+            flow_id = _flow_id()
+            cutoff = time.time() - 3600
+            for fid in [f for f, v in _oauth_flows.items()
+                        if v.get("created", 0) < cutoff]:
+                _oauth_flows.pop(fid, None)
+            _oauth_flows[flow_id] = {
+                "status": "pending", "platform": "linkedin",
+                "state": state, "created": time.time(),
+            }
+            return jsonify({"ok": True, "flow_id": flow_id,
+                            "auth_url": auth_url,
+                            "redirect_uri": OAUTH_REDIRECT_URI})
         try:
             flow = _yt_build_flow()
         except Exception as e:
@@ -515,6 +731,24 @@ def register(bp):
         if not code:
             return jsonify({"ok": False,
                             "error": "no authorization code found"}), 400
+        entry = _oauth_flows.get(flow_id) or {}
+        if entry.get("platform") == "linkedin":
+            try:
+                tok = (_li_exchange_token(code) or {}).get("access_token", "")
+                member = _li_userinfo(tok)
+                orgs = _li_list_orgs(tok)
+            except Exception as e:
+                return jsonify({"ok": False, "error": str(e)}), 502
+            ref = _flow_id()
+            cutoff = time.time() - 3600
+            for k in [k for k, v in _linkedin_sessions.items()
+                      if v.get("created", 0) < cutoff]:
+                _linkedin_sessions.pop(k, None)
+            _linkedin_sessions[ref] = {"token": tok, "member": member,
+                                       "orgs": orgs, "created": time.time()}
+            _oauth_flows.pop(flow_id, None)
+            return jsonify({"ok": True, "ref": ref, "member": member,
+                            "orgs": orgs})
         result = _finish_oauth(flow_id, code)
         if result["status"] == "done":
             return jsonify({"ok": True, **result})
@@ -543,6 +777,10 @@ def register(bp):
             return _page("⚠ Sign-in failed", error)
         if not code:
             return _page("⚠ Missing authorization code", "Try again.")
+        if _oauth_flows.get(flow_id, {}).get("platform") == "linkedin":
+            return _page("✅ Signed in to LinkedIn",
+                         "Copy this page's full URL and paste it back in the "
+                         "Social tab to finish choosing your account.")
         result = _finish_oauth(flow_id, code)
         if result["status"] == "done":
             return _page("✅ Account connected",
@@ -601,6 +839,14 @@ def register(bp):
                 token = _meta_token("instagram", r["account_ref"] or "")
                 items = _meta_ig_media(meta.get("ig_user_id") or r["account_ref"],
                                        token, limit)
+            elif platform == "linkedin":
+                if meta.get("org_urn"):
+                    items = _li_org_feed(_li_token(r["account_ref"] or ""),
+                                         meta["org_urn"], limit)
+                else:
+                    return jsonify({"error": "Personal-profile feed is not "
+                                    "available via LinkedIn's API. Browse works "
+                                    "for connected Company Pages."}), 502
             else:  # tiktok
                 items = _tt_video_list(_tt_token(r["account_ref"] or ""), limit)
         except Exception as e:
@@ -635,6 +881,9 @@ def register(bp):
             return jsonify(body), code
         if platform == "tiktok":
             body, code = _publish_tiktok(r, post, pid, data)
+            return jsonify(body), code
+        if platform == "linkedin":
+            body, code = _publish_linkedin(r, post, pid)
             return jsonify(body), code
         if platform != "youtube":
             return jsonify({
@@ -779,6 +1028,38 @@ def register(bp):
         return jsonify({"ok": True, "connection_id": cid,
                         "account_label": nickname,
                         "privacy_options": privacy_opts})
+
+    # ---- LinkedIn connect: pick member profile or an admined Company Page ----
+    @bp.route("/api/ahb/social/connections/linkedin/add", methods=["POST"])
+    def social_linkedin_add():
+        data = request.get_json(silent=True) or {}
+        ref = (data.get("ref") or "").strip()
+        target = (data.get("target") or "").strip()  # "member" or an org URN
+        sess = _linkedin_sessions.get(ref)
+        if not sess:
+            return jsonify({"error": "session expired — sign in again"}), 400
+        token = sess.get("token") or ""
+        if target == "member":
+            m = sess.get("member") or {}
+            urn = m.get("person_urn") or ""
+            if not urn:
+                return jsonify({"error": "no member profile on this session"}), 400
+            label = m.get("name") or "LinkedIn profile"
+            meta = {"person_urn": urn}
+        else:
+            org = next((o for o in (sess.get("orgs") or [])
+                        if o.get("org_urn") == target), None)
+            if not org:
+                return jsonify({"error": "organization not in session"}), 404
+            urn = target
+            label = org.get("name") or target
+            meta = {"org_urn": urn, "org_name": label}
+        _secure_write(_token_path("linkedin", urn),
+                      json.dumps({"access_token": token}))
+        cid = _upsert_connection("linkedin", label, urn, " ".join(LI_SCOPES))
+        _set_conn_meta(cid, meta)
+        _linkedin_sessions.pop(ref, None)
+        return jsonify({"ok": True, "connection_id": cid, "account_label": label})
 
 
 def _finish_oauth(flow_id: str, code: str) -> dict:
@@ -953,3 +1234,62 @@ def _publish_tiktok(conn_row, post: dict, pid: int, data: dict) -> tuple:
     _mark_posted(pid, "")
     return {"ok": True, "publish_id": res.get("publish_id", ""),
             "platform": "tiktok", "privacy_level": privacy, "note": note}, 200
+
+
+def _publish_linkedin(conn_row, post: dict, pid: int) -> tuple:
+    """Publish a post to LinkedIn (member or org). Returns (body_dict, code).
+
+    Media is pushed to LinkedIn (register → PUT bytes → create post) so no
+    public origin is required.
+    """
+    meta = _get_conn_meta(conn_row)
+    author_urn = meta.get("org_urn") or meta.get("person_urn") \
+        or (conn_row["account_ref"] or "")
+    is_org = author_urn.startswith("urn:li:organization")
+    if not author_urn:
+        return {"error": "connection is missing its LinkedIn author URN — "
+                         "reconnect the account."}, 400
+    asset = post.get("asset_path")
+    cover = post.get("cover_path")
+    is_video = bool(asset and os.path.exists(asset)
+                    and os.path.splitext(asset)[1].lower() in _VIDEO_EXTS)
+    image_path = None
+    if not is_video:
+        if cover and os.path.exists(cover):
+            image_path = cover
+        elif asset and os.path.exists(asset) \
+                and os.path.splitext(asset)[1].lower() in _IMAGE_EXTS:
+            image_path = asset
+    if not is_video and not image_path:
+        return {"error": "post has no rendered image or video asset — "
+                         "render it first."}, 400
+    caption = post.get("caption") or ""
+    hashtags = post.get("hashtags") or ""
+    commentary = (caption + ("\n\n" + hashtags if hashtags else "")).strip()
+    try:
+        token = _li_token(conn_row["account_ref"] or "")
+        if is_video:
+            reg = _li_register_video(token, author_urn, os.path.getsize(asset))
+            if not reg.get("upload_url") or not reg.get("asset_urn"):
+                return {"error": "LinkedIn video upload registration failed"}, 502
+            etag = _li_put_bytes(reg["upload_url"], asset)
+            _li_finalize_video(token, reg["asset_urn"], [etag])
+            media_urn = reg["asset_urn"]
+        else:
+            reg = _li_register_image(token, author_urn)
+            if not reg.get("upload_url") or not reg.get("asset_urn"):
+                return {"error": "LinkedIn image upload registration failed"}, 502
+            _li_put_bytes(reg["upload_url"], image_path)
+            media_urn = reg["asset_urn"]
+        res = _li_create_post(token, author_urn, commentary, media_urn, is_video)
+    except Exception as e:
+        resp = getattr(e, "response", None)
+        if is_org and resp is not None and getattr(resp, "status_code", 0) == 403:
+            return {"error": "Company Page posting is pending LinkedIn Community "
+                             "Management API approval — post to your personal "
+                             "profile, or use Manual export.",
+                    "manual_export": f"/api/ahb/social/posts/{pid}/manual-export"}, 403
+        return {"error": str(e)}, 502
+    url = res.get("url", "")
+    _mark_posted(pid, url)
+    return {"ok": True, "url": url, "platform": "linkedin"}, 200

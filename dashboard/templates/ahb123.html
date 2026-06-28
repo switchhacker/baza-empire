@@ -21193,6 +21193,8 @@ SocialStudio.modules.connect = (function(){
       note:'Photos & videos to a Page via the Meta Graph API. Connect with a Meta access token.' },
     { id:'tiktok',    name:'TikTok', icon:'🎵', connect:'tiktok', feed:true,
       note:'Video posts via the TikTok Content Posting API. Connect with an access token. Unaudited apps post privately (draft) — review in the TikTok app to go public.' },
+    { id:'linkedin', name:'LinkedIn', icon:'💼', connect:'oauth', feed:true,
+      note:'Posts to your profile now; the AHB123 Company Page activates once LinkedIn approves the Community Management API. Reuses LinkedIn sign-in.' },
   ];
   let conns = [], creds = {};
 
@@ -21231,7 +21233,7 @@ SocialStudio.modules.connect = (function(){
         statusColor = configured ? '#10b981' : '#f59e0b';
         action = configured
           ? `<button class="btn-primary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.connectOAuth('${p.id}')">＋ Connect account</button>`
-          : `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.setAppCreds('${p.id}')">⚙ Add Google OAuth client</button>`;
+          : `<button class="btn-secondary" style="width:100%;margin-top:8px" onclick="SocialStudio.modules.connect.setAppCreds('${p.id}')">⚙ Add ${p.name} OAuth client</button>`;
       } else if (p.connect === 'meta') {
         statusTxt = 'Meta Graph API';
         statusColor = '#10b981';
@@ -21278,13 +21280,20 @@ SocialStudio.modules.connect = (function(){
   }
 
   function setAppCreds(platform){
+    const isLinkedIn = platform === 'linkedin';
+    const credsHelp = isLinkedIn
+      ? `Paste your LinkedIn app's <strong>client credentials</strong> as <code>{"client_id":"…","client_secret":"…"}</code> from the <a href="https://developer.linkedin.com/" target="_blank" style="color:#60a5fa">LinkedIn Developer Portal</a> (your app → Auth tab). Add the redirect URL <code>http://localhost:8888/api/ahb/social/connections/oauth/callback</code>, and the products <em>Sign In with LinkedIn (OpenID)</em> + <em>Share on LinkedIn</em> (request <em>Community Management API</em> to post as a Company Page).`
+      : `Paste the OAuth <strong>client secret JSON</strong> downloaded from Google Cloud Console (Desktop or Web app type). Add redirect URI <code>http://localhost:8888/api/ahb/social/connections/oauth/callback</code>.`;
+    const credsPlaceholder = isLinkedIn
+      ? '{"client_id":"…","client_secret":"…"}'
+      : '{"installed":{"client_id":"…","client_secret":"…"}}';
     const { m, close } = _modal(`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:16px;font-weight:800">⚙ ${platform} OAuth client</div>
         <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
       </div>
-      <div style="font-size:12px;color:#888;margin-bottom:8px">Paste the OAuth <strong>client secret JSON</strong> downloaded from Google Cloud Console (Desktop or Web app type). Add redirect URI <code>http://localhost:8888/api/ahb/social/connections/oauth/callback</code>.</div>
-      <textarea id="sc-creds-json" placeholder='{"installed":{"client_id":"…","client_secret":"…"}}' style="width:100%;height:160px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-family:monospace;font-size:11px"></textarea>
+      <div style="font-size:12px;color:#888;margin-bottom:8px">${credsHelp}</div>
+      <textarea id="sc-creds-json" placeholder='${credsPlaceholder}' style="width:100%;height:160px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-family:monospace;font-size:11px"></textarea>
       <button class="btn-primary" id="sc-creds-save" style="width:100%;margin-top:10px">Save client</button>
     `);
     m.querySelector('#sc-creds-save').addEventListener('click', async () => {
@@ -21307,7 +21316,7 @@ SocialStudio.modules.connect = (function(){
     });
     const j = await r.json();
     if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Could not start'); return; }
-    S.modules.toast.resolve(tid, 'info', 'Opening Google…');
+    S.modules.toast.resolve(tid, 'info', 'Opening sign-in…');
     window.open(j.auth_url, '_blank');
     const { m, close } = _modal(`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -21315,7 +21324,7 @@ SocialStudio.modules.connect = (function(){
         <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
       </div>
       <div style="font-size:12px;color:#aaa;line-height:1.5;margin-bottom:8px">
-        1. A Google sign-in tab opened. Approve access.<br>
+        1. A sign-in tab opened. Approve access.<br>
         2. If the page shows a "can't reach localhost" error or a code, copy the <strong>full address-bar URL</strong> (or the code) and paste it below.
       </div>
       <a href="${_esc(j.auth_url)}" target="_blank" style="font-size:11px;color:#60a5fa">Re-open sign-in link</a>
@@ -21332,6 +21341,12 @@ SocialStudio.modules.connect = (function(){
       });
       const fj = await fr.json();
       if (!fr.ok){ S.modules.toast.resolve(t2, 'error', fj.error || 'Failed'); return; }
+      if (platform === 'linkedin') {
+        S.modules.toast.resolve(t2, 'success', 'Signed in — pick an account');
+        close();
+        connectLinkedIn(fj);
+        return;
+      }
       S.modules.toast.resolve(t2, 'success', 'Connected ' + (fj.account_label||''));
       close(); render();
     });
@@ -21415,6 +21430,48 @@ SocialStudio.modules.connect = (function(){
       if (!r.ok){ S.modules.toast.resolve(tid, 'error', j.error || 'Failed'); return; }
       S.modules.toast.resolve(tid, 'success', 'Connected ' + (j.account_label||''));
       close(); render();
+    });
+  }
+
+  function connectLinkedIn(choices){
+    const orgs = (choices && choices.orgs) || [];
+    const member = (choices && choices.member) || {};
+    const ref = choices && choices.ref;
+    const { m, close } = _modal(`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800">Choose what to connect</div>
+        <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+      </div>
+      <div style="font-size:12px;color:#aaa;margin-bottom:8px">Connect your personal profile, a Company Page you administer, or both (connect each separately).</div>
+      <div id="sc-li-list"></div>
+    `, true);
+    const rows = [];
+    if (member.person_urn){
+      rows.push({ target:'member', label:(member.name||'My profile')+' · personal' });
+    }
+    orgs.forEach(o => rows.push({ target:o.org_urn, label:(o.name||o.org_urn)+' · Company Page' }));
+    if (!rows.length){
+      rows.push({ target:'member', label:'My LinkedIn profile' });
+    }
+    const box = m.querySelector('#sc-li-list');
+    box.innerHTML = rows.map((r,i) => `
+      <div style="display:flex;align-items:center;gap:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:8px;margin-bottom:6px">
+        <div style="flex:1;font-size:12px;color:#ddd">${_esc(r.label)}</div>
+        <button class="btn-secondary sc-li-pick" data-i="${i}" style="font-size:11px;padding:4px 10px">Connect</button>
+      </div>`).join('');
+    box.querySelectorAll('.sc-li-pick').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const r = rows[parseInt(btn.dataset.i,10)];
+        const tid = S.modules.toast.progress('Connecting…');
+        const ar = await fetch('/api/ahb/social/connections/linkedin/add', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ ref, target: r.target }),
+        });
+        const aj = await ar.json();
+        if (!ar.ok){ S.modules.toast.resolve(tid, 'error', aj.error || 'Failed'); return; }
+        S.modules.toast.resolve(tid, 'success', 'Connected ' + (aj.account_label||''));
+        close(); render();
+      });
     });
   }
 
@@ -21511,7 +21568,7 @@ SocialStudio.modules.connect = (function(){
     });
   }
 
-  return { render, setAppCreds, connectOAuth, connectMeta, connectTikTok, disconnect, browseFeed, publishPicker, manualExport };
+  return { render, setAppCreds, connectOAuth, connectMeta, connectTikTok, connectLinkedIn, disconnect, browseFeed, publishPicker, manualExport };
 })();
 
 SocialStudio.modules.library = (function(){
