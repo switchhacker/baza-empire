@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-26 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
-- 2026-06-26 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 0 warn, 11 info)
-- 2026-06-26 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
-- 2026-06-26 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 1 warn, 5 info)
-- 2026-06-26 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 5 warn, 3 info)
-- 2026-06-26 baza gate — ESP32-CAM FLASHED via R3 bridge (RESET-button hold)
-- 2026-06-26 baza gate — flash OK, but NO LAN path to /edge/gate (server-side gap)
-- 2026-06-26 baza gate — PHASE 2 LIVE ON HARDWARE (ESP heartbeat confirmed)
-- 2026-06-26 baza gate — user: sonar on camera adapter (doc conflict); shield was off during bench
-- 2026-06-26 baza gate — SONAR CONFIRMED on R3 pin 10 (battery was the missing 5V)
-- 2026-06-26 baza gate — FULL END-TO-END LOOP LIVE (sonar->R3->ESP->baza->verdict)
-- 2026-06-26 baza gate — capture-save debug: camera AIM is the blocker (no face in frame)
-- 2026-06-26 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 2 warn, 10 info)
-- 2026-06-26 baza gate — GRANT works end-to-end; added polkit rule for screen-unlock
-- 2026-06-26 Skills page rebuild — design approved, spec written
+- 2026-06-27 Claw hourly digest — 6 new (0 bug, 0 regression, 1 security, 1 warn, 4 info)
+- 2026-06-27 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
+- 2026-06-27 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 0 warn, 11 info)
+- 2026-06-27 Claw hourly digest — 10 new (1 bug, 0 regression, 0 security, 2 warn, 7 info)
+- 2026-06-27 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 1 warn, 1 info)
+- 2026-06-27 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-06-27 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 0 warn, 3 info)
+- 2026-06-27 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
+- 2026-06-27 Claw hourly digest — 14 new (0 bug, 0 regression, 0 security, 0 warn, 14 info)
+- 2026-06-27 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
+- 2026-06-27 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 2 warn, 5 info)
+- 2026-06-27 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 0 warn, 4 info)
+- 2026-06-27 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 0 warn, 8 info)
+- 2026-06-27 baza gate — 0.2.0 OTA debugging: stable OTA, camera soft-reboot issue
+- 2026-06-27 baza gate — fw 0.3.0: PULL-based OTA (root-cause fix for capture failures)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
