@@ -71,7 +71,8 @@ def test_connections_list_empty(env):
     j = r.get_json()
     assert j["items"] == []
     assert "youtube" in j["platforms"]
-    assert j["oauth_platforms"] == ["youtube"]
+    assert "youtube" in j["oauth_platforms"]
+    assert "linkedin" in j["oauth_platforms"]
 
 
 def test_appcreds_status_and_set(env):
