@@ -15908,6 +15908,13 @@ _ensure_social_tables()
 app.register_blueprint(_social_bp)
 
 try:
+    from dashboard.lead_intake import lead_bp as _lead_bp, _ensure_tables as _ensure_lead_tables
+except ImportError:
+    from lead_intake import lead_bp as _lead_bp, _ensure_tables as _ensure_lead_tables
+_ensure_lead_tables()
+app.register_blueprint(_lead_bp)
+
+try:
     from dashboard.email_studio import _ensure_email_schema, email_bp as _email_bp
 except ImportError:
     from email_studio import _ensure_email_schema, email_bp as _email_bp

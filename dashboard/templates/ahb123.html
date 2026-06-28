@@ -857,6 +857,7 @@
   <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">🎥</span> Media</div>
   <div class="sub-tab" data-tab="social" onclick="switchTab('social')"><span class="sub-tab-icon">📣</span> Social</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
+  <div class="sub-tab" data-tab="leads" onclick="switchTab('leads')"><span class="sub-tab-icon">🎯</span> Leads</div>
 </div>
 <!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
 <div class="leaf-nav" id="leaf-nav" style="display:none"></div>
@@ -3685,6 +3686,20 @@
   </div>
 </div>
 
+<div class="tab-pane" id="tab-leads">
+  <div class="page-header">
+    <div>
+      <div class="page-title">Leads</div>
+      <div class="page-sub">Thumbtack &amp; Angi prospects — parsed from your inbox</div>
+    </div>
+    <button class="btn-primary" onclick="AhbLeads.sync()">⟳ Sync now</button>
+  </div>
+  <div id="leads-filter" style="display:flex;gap:6px;margin:10px 0;flex-wrap:wrap"></div>
+  <div id="leads-list" style="display:flex;flex-direction:column;gap:10px">
+    <div style="text-align:center;padding:20px;color:#333;font-size:12px">Loading leads…</div>
+  </div>
+</div>
+
 <div class="tab-pane" id="tab-reviews">
   <div class="page-header">
     <div>
@@ -5251,7 +5266,8 @@ function switchTab(tabName){
     },
     photos: loadPhotos,
     docprep: loadDocPrep,
-    reviews: loadReviews
+    reviews: loadReviews,
+    leads: () => AhbLeads.render()
   };
   if(loaders[tabName]) loaders[tabName]();
 }
@@ -18375,6 +18391,69 @@ function copyEmbedSnippet(){
 let allReviewsCache = [];
 let reviewModFilter = 'all';   // all | pending | published
 
+const AhbLeads = (function(){
+  const STATUSES = ['all','new','contacted','quoted','won','lost'];
+  let filter = 'all';
+  function _esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  async function sync(){
+    const btn = event && event.target; if (btn) btn.disabled = true;
+    try {
+      const r = await fetch('/api/ahb/leads/sync', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
+      const j = await r.json();
+      alert(`Synced: ${j.leads_new||0} new lead(s), ${j.reviews_new||0} new review(s)` + ((j.errors&&j.errors.length)?`\n${j.errors.length} skipped`:''));
+    } catch(e){ alert('Sync failed: '+e.message); }
+    if (btn) btn.disabled = false;
+    render();
+  }
+  async function render(){
+    const root = document.getElementById('leads-list'); if (!root) return;
+    document.getElementById('leads-filter').innerHTML = STATUSES.map(s =>
+      `<button class="btn-secondary" style="font-size:11px;padding:4px 10px;${s===filter?'background:#2a2a4a':''}" onclick="AhbLeads.setFilter('${s}')">${s}</button>`).join('');
+    root.innerHTML = '<div style="color:#666;padding:16px">Loading…</div>';
+    let items = [];
+    try { items = (await (await fetch('/api/ahb/leads?status='+filter)).json()).items || []; }
+    catch(e){ root.innerHTML = '<div style="color:#a55">Could not load leads.</div>'; return; }
+    if (!items.length){ root.innerHTML = '<div style="color:#555;padding:16px;font-size:12px">No leads yet. Click "Sync now".</div>'; return; }
+    root.innerHTML = items.map(l => `
+      <div style="background:#0b0b16;border:1px solid #1a1a2e;border-radius:8px;padding:12px">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <div style="font-weight:700;color:#eee">${_esc(l.customer_name||'Unknown')} <span style="font-size:10px;color:#888">· ${_esc(l.platform)}</span></div>
+          <span style="font-size:10px;color:#9af">${_esc(l.status)}</span>
+        </div>
+        <div style="font-size:12px;color:#bbb;margin-top:4px">${_esc(l.service_type||'')} ${l.location?('· '+_esc(l.location)):''} ${l.budget?('· '+_esc(l.budget)):''}</div>
+        <div style="font-size:11px;color:#888;margin-top:4px">${_esc((l.details||'').slice(0,160))}</div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="AhbLeads.draft(${l.id})">✍ Draft reply</button>
+          <button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="AhbLeads.convert(${l.id})">➕ Convert</button>
+          <select onchange="AhbLeads.setStatus(${l.id}, this.value)" style="font-size:11px;background:#070712;color:#ccc;border:1px solid #2a2a4a;border-radius:5px">
+            ${['new','contacted','quoted','won','lost'].map(s=>`<option ${s===l.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        ${l.draft_reply?`<div style="margin-top:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:8px;font-size:11px;color:#cdd;white-space:pre-wrap">${_esc(l.draft_reply)}</div>`:''}
+      </div>`).join('');
+  }
+  function setFilter(s){ filter = s; render(); }
+  async function setStatus(id, status){
+    await fetch('/api/ahb/leads/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status})});
+    render();
+  }
+  async function draft(id){
+    const r = await fetch('/api/ahb/leads/'+id+'/draft', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const j = await r.json();
+    if (!r.ok){ alert(j.error||'Draft failed'); return; }
+    render();
+  }
+  async function convert(id){
+    if (!confirm('Convert this lead into a client + project?')) return;
+    const r = await fetch('/api/ahb/leads/'+id+'/convert', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({create_project:true})});
+    const j = await r.json();
+    if (!r.ok){ alert(j.error||'Convert failed'); return; }
+    alert('Converted ✓'); render();
+  }
+  return { render, sync, setFilter, setStatus, draft, convert };
+})();
+window.AhbLeads = AhbLeads;
+
 async function loadReviews(){
   initReviewQR();
   try{
@@ -18384,6 +18463,19 @@ async function loadReviews(){
     allReviewsCache=reviews;
     renderReviewsModerationPanel();
     renderReviewsList();
+    try {
+      const ext = (await (await fetch('/api/ahb/reviews/external')).json()).items || [];
+      if (ext.length){
+        const host = document.getElementById('reviews-list');
+        const block = document.createElement('div');
+        block.innerHTML = '<div style="margin:14px 0 6px;font-size:12px;color:#888;font-weight:700">External platform reviews</div>' +
+          ext.map(rv => `<div style="background:#0b0b16;border:1px solid #1a1a2e;border-radius:8px;padding:10px;margin-bottom:8px${rv.flagged_low?';border-color:#a55':''}">
+            <div style="display:flex;justify-content:space-between"><span style="font-weight:700;color:#eee">${(rv.reviewer_name||'Anonymous').replace(/</g,'&lt;')}</span>
+            <span style="font-size:11px;color:#fb3">${'★'.repeat(Math.round(rv.rating||0))} <span style="color:#789">· ${(rv.platform||'').replace(/</g,'&lt;')}</span></span></div>
+            <div style="font-size:12px;color:#bbb;margin-top:4px">${(rv.review_text||'').replace(/</g,'&lt;')}</div></div>`).join('');
+        host.appendChild(block);
+      }
+    } catch(e){ /* external reviews are best-effort */ }
   }catch(e){
     document.getElementById('reviews-list').innerHTML='<div style="text-align:center;padding:20px;color:#555;font-size:12px">Could not load reviews: '+e.message+'</div>';
   }
