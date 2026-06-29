@@ -18,7 +18,7 @@
     "baza-route-watchdog.service": "dead",
     "baza-scaffold-runner.service": "dead",
     "baza-sd-webui.service": "running",
-    "baza-task-runner.service": "failed",
+    "baza-task-runner.service": "start",
     "baza-terminal-bot.service": "running",
     "baza-tool-server.service": "running",
     "baza-vision-indexer.service": "dead",
