@@ -246,6 +246,16 @@ document.getElementById('submit').addEventListener('click', async () => {
     btn.disabled = false; btn.textContent = 'Submit Review';
   }
 });
+(async function(){
+  try {
+    const items = (await (await fetch('/api/ahb/profile-links/public')).json()).items || [];
+    if (!items.length) return;
+    const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    document.getElementById('find-us-links').innerHTML = items.map(l =>
+      `<a href="${esc(l.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #e2e2e2;border-radius:8px;padding:8px 12px;text-decoration:none;color:#333;font-size:13px;font-weight:600">${esc(l.icon||'🔗')} ${esc(l.label||l.platform)}</a>`).join('');
+    document.getElementById('find-us-on').style.display = '';
+  } catch(e){ /* best-effort; never blocks the review form */ }
+})();
 </script>
 </body>
 </html>
