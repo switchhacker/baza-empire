@@ -315,6 +315,18 @@ def _gmail_search(account_email: str, senders: list, since_epoch: Optional[int])
     return out
 
 
+def _send_email(account_email: str, to: str, subject: str, body: str) -> dict:
+    """Send a plain-text email from account_email via Gmail. Boundary (monkeypatched in tests)."""
+    import base64
+    from email.mime.text import MIMEText
+    svc = _gmail_service(account_email)
+    msg = MIMEText(body or "", "plain", _charset="utf-8")
+    msg["To"] = to
+    msg["Subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    return svc.users().messages().send(userId="me", body={"raw": raw}).execute()
+
+
 def _parse_email(platform: str, msg: dict) -> dict:
     """Local-LLM classify + extract. Raises ValueError on unusable output."""
     system = (
@@ -489,6 +501,46 @@ def lead_draft(lid):
     finally:
         con.close()
     return jsonify({"ok": True, "draft": draft})
+
+
+# --- Task 9: Gated send-draft-reply ---
+
+@lead_bp.route("/api/ahb/leads/<int:lid>/send-reply", methods=["POST"])
+def lead_send_reply(lid):
+    data = request.get_json(silent=True) or {}
+    if not data.get("confirm"):
+        return jsonify({"error": "confirm required — sending email is outward-facing"}), 400
+    con = _db()
+    try:
+        r = con.execute("SELECT * FROM ahb_leads WHERE id=?", (lid,)).fetchone()
+    finally:
+        con.close()
+    if not r:
+        return jsonify({"error": "not found"}), 404
+    to = (r["contact_email"] or "").strip()
+    if not to:
+        return jsonify({"error": "lead has no contact email — cannot send"}), 400
+    if "@" not in to or " " in to:
+        return jsonify({"error": "lead contact email looks malformed — fix it first"}), 400
+    body = (data.get("body") or r["draft_reply"] or "").strip()
+    if not body:
+        return jsonify({"error": "no draft to send — draft a reply first"}), 400
+    subject = (data.get("subject") or
+               f"Re: your {r['service_type'] or 'project'} request — All Home Building Co LLC")
+    try:
+        _send_email(r["account_email"] or "", to, subject, body)
+    except Exception as e:
+        print(f"[lead_intake] send-reply failed for lead {lid}: {e}", flush=True)
+        return jsonify({"error": "send failed — check the account's Gmail "
+                                 "connection and try again"}), 502
+    con = _db()
+    try:
+        con.execute("UPDATE ahb_leads SET status='contacted', updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=?", (lid,))
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True, "to": to})
 
 
 # --- Task 6: Convert lead → client (+ optional project) ---
