@@ -15915,6 +15915,13 @@ _ensure_lead_tables()
 app.register_blueprint(_lead_bp)
 
 try:
+    from dashboard.profile_links import profile_bp as _profile_bp, _ensure_tables as _ensure_profile_tables
+except ImportError:
+    from profile_links import profile_bp as _profile_bp, _ensure_tables as _ensure_profile_tables
+_ensure_profile_tables()
+app.register_blueprint(_profile_bp)
+
+try:
     from dashboard.email_studio import _ensure_email_schema, email_bp as _email_bp
 except ImportError:
     from email_studio import _ensure_email_schema, email_bp as _email_bp

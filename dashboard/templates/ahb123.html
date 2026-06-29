@@ -3459,6 +3459,7 @@
       <button class="btn-secondary ss-subnav" data-sub="inspo">💡 Inspo</button>
       <button class="btn-secondary ss-subnav" data-sub="stats">📊 Stats</button>
       <button class="btn-secondary ss-subnav" data-sub="connect">🔗 Connect</button>
+      <button class="btn-secondary ss-subnav" data-sub="links">🌐 Links</button>
       <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
     </div>
   </div>
@@ -3470,6 +3471,7 @@
   <div id="ss-sub-inspo" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-stats" class="ss-sub" style="display:none"></div>
   <div id="ss-sub-connect" class="ss-sub" style="display:none"></div>
+  <div id="ss-sub-links" class="ss-sub" style="display:none"></div>
 </div>
 
 <!-- ============================ EMAIL ============================ -->
@@ -21661,6 +21663,70 @@ SocialStudio.modules.connect = (function(){
   }
 
   return { render, setAppCreds, connectOAuth, connectMeta, connectTikTok, connectLinkedIn, disconnect, browseFeed, publishPicker, manualExport };
+})();
+
+SocialStudio.modules.links = (function(){
+  const S = SocialStudio;
+  const PRESETS = [
+    {platform:'linkedin', label:'LinkedIn', icon:'💼'},
+    {platform:'youtube', label:'YouTube', icon:'▶️'},
+    {platform:'instagram', label:'Instagram', icon:'📸'},
+    {platform:'facebook', label:'Facebook', icon:'👥'},
+    {platform:'tiktok', label:'TikTok', icon:'🎵'},
+    {platform:'thumbtack', label:'Thumbtack', icon:'🛠️'},
+    {platform:'homeadvisor', label:'HomeAdvisor / Angi', icon:'🏠'},
+    {platform:'google', label:'Google Business', icon:'⭐'},
+    {platform:'website', label:'Website', icon:'🌐'},
+  ];
+  function _esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  async function render(){
+    const root = document.getElementById('ss-sub-links'); if (!root) return;
+    root.innerHTML = '<div style="color:#666;padding:16px">Loading…</div>';
+    let items = [];
+    try { items = (await (await fetch('/api/ahb/profile-links')).json()).items || []; }
+    catch(e){ root.innerHTML = '<div style="color:#a55;padding:16px">Could not load links.</div>'; return; }
+    const presetOpts = PRESETS.map(p => `<option value="${p.platform}" data-icon="${p.icon}" data-label="${_esc(p.label)}">${p.icon} ${_esc(p.label)}</option>`).join('');
+    root.innerHTML = `
+      <div style="font-size:13px;color:#888;margin-bottom:10px">Public profile links — shown on your <a href="/review" target="_blank" style="color:#60a5fa">customer review page</a> and usable on ahb123.com.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${
+        items.length ? items.map(l => `
+        <div style="display:flex;align-items:center;gap:8px;background:#070712;border:1px solid #1a1a2e;border-radius:6px;padding:8px">
+          <span style="font-size:16px">${_esc(l.icon||'🔗')}</span>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;color:#ddd">${_esc(l.label||l.platform)}</div>
+            <div style="font-size:10px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(l.url)}</div></div>
+          <label style="font-size:10px;color:#999"><input type="checkbox" ${l.visible?'checked':''} onchange="SocialStudio.modules.links.toggle(${l.id}, this.checked)"> shown</label>
+          <a href="${_esc(l.url)}" target="_blank" rel="noopener" class="btn-secondary" style="font-size:10px;padding:3px 8px">Open</a>
+          <button class="btn-secondary" style="font-size:10px;padding:3px 8px;color:#f87171" onclick="SocialStudio.modules.links.remove(${l.id})">Remove</button>
+        </div>`).join('') : '<div style="color:#555;font-size:12px">No links yet.</div>'
+      }</div>
+      <div style="margin-top:14px;background:#0b0b16;border:1px solid #1a1a2e;border-radius:8px;padding:10px">
+        <div style="font-size:12px;font-weight:700;color:#ccc;margin-bottom:6px">Add a link</div>
+        <select id="pl-preset" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#ddd;font-size:12px;margin-bottom:6px">${presetOpts}</select>
+        <input id="pl-url" placeholder="https://… profile URL" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff;font-size:12px;margin-bottom:6px">
+        <button class="btn-primary" style="width:100%" onclick="SocialStudio.modules.links.add()">＋ Add link</button>
+      </div>`;
+  }
+  async function add(){
+    const sel = document.getElementById('pl-preset');
+    const opt = sel.options[sel.selectedIndex];
+    const url = document.getElementById('pl-url').value.trim();
+    if (!url){ S.modules.toast.error('Enter a URL'); return; }
+    const r = await fetch('/api/ahb/profile-links', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({platform: sel.value, label: opt.dataset.label, icon: opt.dataset.icon, url})});
+    const j = await r.json();
+    if (!r.ok){ S.modules.toast.error(j.error||'Add failed'); return; }
+    S.modules.toast.success('Link added'); render();
+  }
+  async function toggle(id, visible){
+    await fetch('/api/ahb/profile-links/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({visible})});
+    render();
+  }
+  async function remove(id){
+    if (!confirm('Remove this link?')) return;
+    await fetch('/api/ahb/profile-links/'+id, {method:'DELETE'});
+    render();
+  }
+  return { render, add, toggle, remove };
 })();
 
 SocialStudio.modules.library = (function(){
