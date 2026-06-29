@@ -332,3 +332,87 @@ def test_app_registers_lead_bp():
     rules = {r.rule for r in app_mod.app.url_map.iter_rules()}
     assert "/api/ahb/leads" in rules
     assert "/api/ahb/leads/sync" in rules
+
+
+# --- Task 9: Gated send-draft-reply ---
+
+def test_send_reply_requires_confirm(env):
+    c, li, db = env
+    lid = _seed_lead(li, email="cust@x.com")
+    r = c.post(f"/api/ahb/leads/{lid}/send-reply", json={})
+    assert r.status_code == 400
+    assert "confirm" in r.get_json()["error"]
+
+
+def test_send_reply_404_missing_lead(env):
+    c, li, db = env
+    r = c.post("/api/ahb/leads/9999/send-reply", json={"confirm": True})
+    assert r.status_code == 404
+
+
+def test_send_reply_requires_contact_email(env, monkeypatch):
+    c, li, db = env
+    msg = {"gmail_id": "g-noemail", "account_email": "contactahbco@gmail.com",
+           "received_at": "t"}
+    lid = li._upsert_lead("thumbtack", msg, {"kind": "lead", "customer_name": "NoEmail",
+                          "service_type": "x", "contact_email": None})
+    monkeypatch.setattr(li, "_send_email", lambda *a, **k: {"id": "m"})
+    r = c.post(f"/api/ahb/leads/{lid}/send-reply", json={"confirm": True, "body": "hi"})
+    assert r.status_code == 400
+    assert "contact email" in r.get_json()["error"].lower()
+
+
+def test_send_reply_no_draft_no_body(env, monkeypatch):
+    c, li, db = env
+    lid = _seed_lead(li, email="cust@x.com")
+    monkeypatch.setattr(li, "_send_email", lambda *a, **k: {"id": "m"})
+    r = c.post(f"/api/ahb/leads/{lid}/send-reply", json={"confirm": True})
+    assert r.status_code == 400
+    assert "draft" in r.get_json()["error"].lower()
+
+
+def test_send_reply_sends_and_marks_contacted(env, monkeypatch):
+    c, li, db = env
+    lid = _seed_lead(li, email="cust@x.com")
+    monkeypatch.setattr(li, "_ollama_chat", lambda *a, **k: "Hello from AHB")
+    c.post(f"/api/ahb/leads/{lid}/draft", json={})  # populates draft_reply
+    sent = {}
+    monkeypatch.setattr(li, "_send_email",
+                        lambda account, to, subject, body:
+                        sent.update(account=account, to=to, subject=subject, body=body)
+                        or {"id": "m1"})
+    r = c.post(f"/api/ahb/leads/{lid}/send-reply", json={"confirm": True})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert sent["to"] == "cust@x.com" and "AHB" in sent["body"]
+    assert sent["account"] == "contactahbco@gmail.com"
+    con = sqlite3.connect(db)
+    st = con.execute("SELECT status FROM ahb_leads WHERE id=?", (lid,)).fetchone()[0]
+    con.close()
+    assert st == "contacted"
+
+
+def test_send_reply_uses_explicit_body_over_draft(env, monkeypatch):
+    c, li, db = env
+    lid = _seed_lead(li, email="cust@x.com")
+    sent = {}
+    monkeypatch.setattr(li, "_send_email",
+                        lambda account, to, subject, body: sent.update(body=body) or {"id": "m"})
+    r = c.post(f"/api/ahb/leads/{lid}/send-reply",
+               json={"confirm": True, "body": "Custom message"})
+    assert r.status_code == 200
+    assert sent["body"] == "Custom message"
+
+
+def test_send_reply_rejects_malformed_email(env, monkeypatch):
+    c, li, db = env
+    msg = {"gmail_id": "g-bad", "account_email": "contactahbco@gmail.com",
+           "received_at": "t"}
+    lid = li._upsert_lead("thumbtack", msg, {"kind": "lead", "customer_name": "Bad",
+                          "service_type": "x", "contact_email": "not-an-email"})
+    sent = {}
+    monkeypatch.setattr(li, "_send_email",
+                        lambda *a, **k: sent.update(called=True) or {"id": "m"})
+    r = c.post(f"/api/ahb/leads/{lid}/send-reply", json={"confirm": True, "body": "hi"})
+    assert r.status_code == 400
+    assert "malformed" in r.get_json()["error"].lower()
+    assert not sent  # never reached the send boundary
