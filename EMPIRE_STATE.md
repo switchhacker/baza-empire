@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-06-28 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 1 warn, 10 info)
-- 2026-06-28 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 0 warn, 3 info)
-- 2026-06-28 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 2 warn, 8 info)
-- 2026-06-28 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
-- 2026-06-28 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 0 warn, 6 info)
-- 2026-06-28 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 0 warn, 5 info)
-- 2026-06-28 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 2 warn, 2 info)
-- 2026-06-28 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 1 warn, 5 info)
-- 2026-06-28 LinkedIn (Track A) — spec approved + implementation plan written
-- 2026-06-28 LinkedIn social connect backend (Tasks 1-7) implemented
-- 2026-06-28 LinkedIn social connect (Track A) — SHIPPED
-- 2026-06-28 LinkedIn Track A — capstone review fix (creds-entry UX)
-- 2026-06-28 Claw hourly digest — 52 new (3 bug, 0 regression, 0 security, 13 warn, 36 info)
-- 2026-06-28 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
-- 2026-06-28 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 3 warn, 6 info)
+- 2026-06-29 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 1 warn, 11 info)
+- 2026-06-29 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
+- 2026-06-29 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 0 warn, 10 info)
+- 2026-06-29 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 0 warn, 5 info)
+- 2026-06-29 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 6 warn, 7 info)
+- 2026-06-29 Claw hourly digest — 30 new (0 bug, 0 regression, 0 security, 21 warn, 9 info)
+- 2026-06-29 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 2 warn, 7 info)
+- 2026-06-29 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 1 warn, 5 info)
+- 2026-06-29 Track C (Profile Link Directory) — spec written
+- 2026-06-29 Track C plan written — executing subagent-driven
+- 2026-06-29 Profile Link Directory (Track C) — SHIPPED; A/B/C all complete
+- 2026-06-29 Partner-API application checklists prepped (Track B Phase 2)
+- 2026-06-29 Claw hourly digest — 50 new (2 bug, 0 regression, 0 security, 2 warn, 46 info)
+- 2026-06-29 Claw hourly digest — 17 new (0 bug, 0 regression, 0 security, 2 warn, 15 info)
+- 2026-06-29 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
