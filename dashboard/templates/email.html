@@ -54,6 +54,19 @@
     .acc-menu-add:hover{background:#1a0a3a;color:#a78bfa}
     .compose-btn{background:linear-gradient(135deg,#e94560,#c33049);color:#fff;border:none;padding:11px 14px;border-radius:9px;font-size:13px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:8px;justify-content:center;box-shadow:0 4px 14px rgba(233,69,96,.3);transition:transform .15s,box-shadow .15s}
     .compose-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(233,69,96,.45)}
+    .cmp-attach-bar{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0 0;align-items:center}
+    .cmp-attach-chip{display:inline-flex;align-items:center;gap:6px;background:#13132a;border:1px solid #22224a;border-radius:7px;padding:5px 9px;font-size:12px;color:#cdd}
+    .cmp-attach-chip button{background:none;border:none;color:#e94560;cursor:pointer;font-size:14px;line-height:1;padding:0}
+    .cmp-attach-add{background:#0d0d1e;border:1px dashed #33335a;border-radius:7px;padding:5px 10px;font-size:12px;color:#8ab;cursor:pointer}
+    .att-prev-bg{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;z-index:9000}
+    .att-prev-bg.open{display:flex}
+    .att-prev-card{background:#0b0b1c;border:1px solid #22224a;border-radius:12px;max-width:90vw;max-height:90vh;width:860px;display:flex;flex-direction:column;overflow:hidden}
+    .att-prev-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #1a1a3a;font-size:13px;color:#cdd}
+    .att-prev-body{padding:14px;overflow:auto;background:#020208}
+    .att-prev-body img{max-width:100%;max-height:70vh;display:block;margin:0 auto}
+    .att-prev-body iframe{width:100%;height:70vh;border:none;background:#fff}
+    .att-prev-body pre{font-family:'Courier New',monospace;color:#a0f0a0;white-space:pre-wrap;margin:0}
+    .att-prev-dl{background:#e94560;color:#fff;border:none;border-radius:7px;padding:7px 12px;font-size:12px;cursor:pointer;text-decoration:none}
     .sync-btn{background:#13132a;border:1px solid #22224a;color:#9aa0c8;padding:8px 12px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;justify-content:center}
     .sync-btn:hover{border-color:#3a3a6a;color:#cfd2e8}
     .sync-btn:disabled{opacity:.5;cursor:wait}
@@ -520,6 +533,9 @@
       <div class="modal-body-area">
         <textarea id="cmpBody" placeholder="Write your message — or click an AI tone below to draft from scratch."></textarea>
       </div>
+      <div class="cmp-attach-bar" id="cmpAttachBar">
+        <label class="cmp-attach-add">📎 Attach<input type="file" id="cmpFileInput" multiple style="display:none"></label>
+      </div>
     </div>
     <div class="modal-foot">
       <div class="modal-foot-left">
@@ -532,6 +548,20 @@
         <button class="send-btn" id="cmpSendBtn" onclick="sendCompose()">📤 Send</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Attachment preview modal — BODY LEVEL -->
+<div class="att-prev-bg" id="attPrevBg" onclick="if(event.target===this)closeAttachmentPreview()">
+  <div class="att-prev-card">
+    <div class="att-prev-head">
+      <span id="attPrevName">Attachment</span>
+      <span style="display:flex;gap:10px;align-items:center">
+        <a class="att-prev-dl" id="attPrevDl" href="#">⬇ Download</a>
+        <button class="modal-close" onclick="closeAttachmentPreview()">×</button>
+      </span>
+    </div>
+    <div class="att-prev-body" id="attPrevBody"></div>
   </div>
 </div>
 
@@ -577,6 +607,7 @@ const state = {
 
 // ── Utils ────────────────────────────────────────────────────────────────
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+function escAttr(s){ return esc(String(s==null?'':s)).replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function toast(msg, isErr){
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = 'toast' + (isErr?' error':''); t.style.display = 'block';
@@ -784,14 +815,40 @@ function renderAttachments(m){
   if(!atts.length) return '';
   const acc = state.activeAccount ? '&account=' + encodeURIComponent(state.activeAccount.id) : '';
   return '<div class="msg-attachments">' + atts.map(a => {
-    const url = '/api/email2/attachment/' + encodeURIComponent(m.gmail_id) + '/' +
+    const base = '/api/email2/attachment/' + encodeURIComponent(m.gmail_id) + '/' +
                 encodeURIComponent(a.attachment_id) +
                 '?name=' + encodeURIComponent(a.filename) +
                 '&mime=' + encodeURIComponent(a.mime || '') + acc;
-    return `<a class="att-chip" href="${url}" title="${esc(a.filename)}">📎 ${esc(a.filename)}
+    return `<a class="att-chip att-preview-link" href="#" title="${escAttr(a.filename)}"
+              data-base="${escAttr(base)}" data-name="${escAttr(a.filename)}" data-mime="${escAttr(a.mime||'')}">📎 ${esc(a.filename)}
             <span class="att-size">${fmtSize(a.size)}</span></a>`;
   }).join('') + '</div>';
 }
+
+function openAttachmentPreview(base, name, mime){
+  const inlineUrl = base + '&inline=1';
+  const body = document.getElementById('attPrevBody');
+  document.getElementById('attPrevName').textContent = name;
+  document.getElementById('attPrevDl').href = base;
+  body.innerHTML = '';
+  const ext = (name.split('.').pop()||'').toLowerCase();
+  const isImg = mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','bmp','svg'].includes(ext);
+  const isPdf = mime === 'application/pdf' || ext === 'pdf';
+  const isVid = mime.startsWith('video/') || ['mp4','webm','mov','m4v'].includes(ext);
+  const isAud = mime.startsWith('audio/') || ['mp3','wav','ogg','flac','m4a'].includes(ext);
+  const isTxt = mime.startsWith('text/') || ['txt','md','csv','log','json','yaml','yml','py','js','html','css'].includes(ext);
+  document.getElementById('attPrevBg').classList.add('open');
+  if(isImg){ const el=document.createElement('img'); el.src=inlineUrl; el.alt=name; body.appendChild(el); }
+  else if(isPdf){ const el=document.createElement('iframe'); el.src=inlineUrl; body.appendChild(el); }
+  else if(isVid){ const el=document.createElement('video'); el.controls=true; el.style.cssText='max-width:100%;max-height:70vh'; const s=document.createElement('source'); s.src=inlineUrl; el.appendChild(s); body.appendChild(el); }
+  else if(isAud){ const el=document.createElement('audio'); el.controls=true; el.style.width='100%'; const s=document.createElement('source'); s.src=inlineUrl; el.appendChild(s); body.appendChild(el); }
+  else if(isTxt){
+    const pre=document.createElement('pre'); pre.textContent='Loading…'; body.appendChild(pre);
+    fetch(inlineUrl).then(r=>r.text()).then(t=>{ pre.textContent = t.slice(0,500000); }).catch(()=>{ pre.textContent='Cannot preview — use Download.'; });
+  }
+  else { const d=document.createElement('div'); d.style.cssText='color:#778;padding:30px;text-align:center'; d.textContent='No preview for this file type. Use Download.'; body.appendChild(d); }
+}
+function closeAttachmentPreview(){ document.getElementById('attPrevBg').classList.remove('open'); document.getElementById('attPrevBody').innerHTML=''; }
 
 // ── Modify actions ────────────────────────────────────────────────────────
 async function modifyAction(action){
@@ -942,6 +999,7 @@ async function sendReply(){
 
 // ── Compose modal ────────────────────────────────────────────────────────
 let _composePrefill = {};
+let _cmpAttachments = [];  // [{token, filename, size}]
 function openCompose(pref){
   _composePrefill = pref || {};
   document.getElementById('cmpTo').value = pref?.to || '';
@@ -950,11 +1008,26 @@ function openCompose(pref){
   document.getElementById('cmpSubject').value = pref?.subject || '';
   document.getElementById('cmpBody').value = pref?.body || '';
   document.getElementById('composeTitle').textContent = pref?.mode === 'forward' ? '→ Forward' : '✉️ New Message';
+  _cmpAttachments = [];
+  renderCmpAttachments();
   document.getElementById('composeModal').classList.add('open');
   setTimeout(()=>document.getElementById('cmpTo').focus(), 50);
 }
 function closeCompose(){
   document.getElementById('composeModal').classList.remove('open');
+  _cmpAttachments = [];
+  renderCmpAttachments();
+}
+function renderCmpAttachments(){
+  const bar = document.getElementById('cmpAttachBar');
+  bar.querySelectorAll('.cmp-attach-chip').forEach(n=>n.remove());
+  _cmpAttachments.forEach((a,i)=>{
+    const chip = document.createElement('span');
+    chip.className = 'cmp-attach-chip';
+    chip.innerHTML = `📎 ${esc(a.filename)} <span class="att-size">${fmtSize(a.size)}</span> <button title="Remove">×</button>`;
+    chip.querySelector('button').onclick = ()=>{ _cmpAttachments.splice(i,1); renderCmpAttachments(); };
+    bar.insertBefore(chip, bar.firstChild);
+  });
 }
 
 async function sendCompose(){
@@ -966,7 +1039,8 @@ async function sendCompose(){
   if(!to){ toast('Missing "To"', true); return; }
   const btn = document.getElementById('cmpSendBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   const composeAcct = state.lastRealAccount?.id || (state.activeAccount?.all ? '' : (state.activeAccount?.id || ''));
-  const d = await api('/api/email2/send',{method:'POST', body:{mode:'compose', to, cc, bcc, subject, body, account: composeAcct || undefined}});
+  const attachments = _cmpAttachments.map(a => ({type:'upload', token:a.token}));
+  const d = await api('/api/email2/send',{method:'POST', body:{mode:'compose', to, cc, bcc, subject, body, attachments, account: composeAcct || undefined}});
   btn.disabled = false; btn.innerHTML = '📤 Send';
   if(d.ok){ toast('✅ Sent'); closeCompose(); loadThreads(); loadLabels(); }
   else { toast('Send failed: '+(d.error||'?'), true); }
@@ -1008,6 +1082,24 @@ document.getElementById('searchInput').addEventListener('input', e => {
   const q = e.target.value.trim();
   clearTimeout(_searchTimer);
   _searchTimer = setTimeout(()=>{ state.query = q; loadThreads(); }, 300);
+});
+
+document.addEventListener('click', e=>{
+  const el = e.target.closest ? e.target.closest('.att-preview-link') : null;
+  if(el){ e.preventDefault(); openAttachmentPreview(el.dataset.base, el.dataset.name||'', el.dataset.mime||''); }
+});
+
+document.getElementById('cmpFileInput').addEventListener('change', async e=>{
+  for(const file of Array.from(e.target.files||[])){
+    const fd = new FormData(); fd.append('file', file);
+    try{
+      const resp = await fetch('/api/email2/attachments/upload', {method:'POST', body: fd});
+      const j = await resp.json();
+      if(j.ok){ _cmpAttachments.push({token:j.token, filename:j.filename, size:j.size}); renderCmpAttachments(); }
+      else { toast('Upload failed: '+(j.error||'?'), true); }
+    }catch(err){ toast('Upload failed', true); }
+  }
+  e.target.value = '';
 });
 
 // ── Models ───────────────────────────────────────────────────────────────

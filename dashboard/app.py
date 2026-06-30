@@ -579,6 +579,12 @@ def init_cloud_tables():
         );
         CREATE INDEX IF NOT EXISTS idx_cshr_path ON cloud_shares(path);
     """)
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(cloud_shares)").fetchall()]
+        if "root" not in cols:
+            conn.execute("ALTER TABLE cloud_shares ADD COLUMN root TEXT DEFAULT 'cloud'")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -14279,7 +14285,7 @@ if CLOUD_ENABLED:
         conn = _ahb_db()
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT user_id, path, expires_at FROM cloud_shares WHERE token = ?",
+            "SELECT user_id, path, expires_at, root FROM cloud_shares WHERE token = ?",
             (token,),
         ).fetchone()
         if not row:
@@ -14292,9 +14298,13 @@ if CLOUD_ENABLED:
                     return "Share link expired", 410
             except Exception:
                 pass
-        user_dir = os.path.join(CLOUD_STORAGE, str(row['user_id']))
-        target = os.path.realpath(os.path.join(user_dir, row['path']))
-        if not target.startswith(os.path.realpath(user_dir)) or not os.path.isfile(target):
+        root = row['root'] or 'cloud'
+        try:
+            from dashboard.share_service import resolve_share_path
+        except ImportError:
+            from share_service import resolve_share_path
+        target = resolve_share_path(root, row['path'])
+        if not target:
             conn.close()
             return "File no longer available", 404
         conn.execute(
@@ -14302,7 +14312,6 @@ if CLOUD_ENABLED:
             "last_accessed_at = datetime('now') WHERE token = ?", (token,))
         conn.commit()
         conn.close()
-        # Download-as-attachment by default; add ?inline=1 to preview in-browser.
         inline = request.args.get('inline') in ('1', 'true', 'yes')
         return send_from_directory(os.path.dirname(target),
                                    os.path.basename(target),
@@ -15927,6 +15936,21 @@ except ImportError:
     from email_studio import _ensure_email_schema, email_bp as _email_bp
 _ensure_email_schema()
 app.register_blueprint(_email_bp)
+
+try:
+    from dashboard.share_service import share_bp as _share_bp, _ensure_share_schema as _ensure_share
+except ImportError:
+    from share_service import share_bp as _share_bp, _ensure_share_schema as _ensure_share
+_ensure_share()
+app.register_blueprint(_share_bp)
+
+# ── Hardware & Upgrades (Settings tab) blueprint ─────────────────────────────
+try:
+    from dashboard.hardware_ops import hardware_bp as _hardware_bp, _ensure_hardware_tables
+except ImportError:
+    from hardware_ops import hardware_bp as _hardware_bp, _ensure_hardware_tables
+_ensure_hardware_tables()
+app.register_blueprint(_hardware_bp)
 
 # ── Scaffold (Live Build Tree) blueprint ─────────────────────────────────────
 try:

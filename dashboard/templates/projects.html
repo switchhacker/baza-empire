@@ -135,6 +135,10 @@
 
 <script>
 function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+/* Universal Share for a project artifact (id = "<project_id>/<relpath>", same components as /api/artifacts/serve/<project_id>/<path>) */
+function projShareFile(projectId, filename){
+  openShareSheet({source:'artifact', id: projectId + '/' + filename, filename: (filename||'').split('/').pop()});
+}
 function toast(msg, kind){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show'+(kind==='err'?' err':''); setTimeout(()=>t.classList.remove('show'),3000); }
 
 async function loadProjects(){
@@ -284,5 +288,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 loadProjects();
 loadTemplates();
 </script>
+
+{% include '_share_sheet.html' %}
 </body>
 </html>

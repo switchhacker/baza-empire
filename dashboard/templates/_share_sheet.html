@@ -1,0 +1,100 @@
+<!-- Universal Share sheet — BODY LEVEL. Include once per tab template. -->
+<style>
+  .shr-bg{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;z-index:9500}
+  .shr-bg.open{display:flex}
+  .shr-card{background:#0b0b1c;border:1px solid #22224a;border-radius:12px;width:440px;max-width:92vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;color:#dde}
+  .shr-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #1a1a3a;font-size:14px;font-weight:700}
+  .shr-head button{background:none;border:none;color:#889;font-size:20px;cursor:pointer}
+  .shr-file{padding:8px 16px;font-size:12px;color:#8ab;border-bottom:1px solid #14142e;word-break:break-all}
+  .shr-tabs{display:flex;gap:6px;padding:10px 16px 0}
+  .shr-tab{flex:1;padding:8px;text-align:center;background:#13132a;border:1px solid #22224a;border-radius:8px 8px 0 0;cursor:pointer;font-size:12.5px}
+  .shr-tab.active{background:#1c1c3a;border-bottom-color:#1c1c3a;color:#fff}
+  .shr-pane{display:none;padding:14px 16px}
+  .shr-pane.active{display:block}
+  .shr-pane input,.shr-pane textarea{width:100%;box-sizing:border-box;background:#070718;border:1px solid #22224a;border-radius:7px;padding:9px;color:#e0e0e0;font-size:13px;margin-bottom:9px;font-family:inherit}
+  .shr-pane textarea{min-height:70px;resize:vertical}
+  .shr-pane label{font-size:11px;color:#778;display:block;margin-bottom:3px}
+  .shr-go{background:linear-gradient(135deg,#e94560,#c33049);color:#fff;border:none;padding:9px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;width:100%}
+  .shr-result{margin-top:10px;font-size:12px;color:#9d9;word-break:break-all}
+  .shr-linkrow{display:flex;gap:6px;margin-top:8px}
+  .shr-linkrow input{margin:0}
+  .shr-copy{background:#1c1c3a;border:1px solid #33335a;color:#cdd;border-radius:7px;padding:0 12px;cursor:pointer;font-size:12px;white-space:nowrap}
+</style>
+<div class="shr-bg" id="shrBg" onclick="if(event.target===this)closeShareSheet()">
+  <div class="shr-card">
+    <div class="shr-head"><span>🔗 Share</span><button onclick="closeShareSheet()">×</button></div>
+    <div class="shr-file" id="shrFile">file</div>
+    <div class="shr-tabs">
+      <div class="shr-tab active" data-pane="link" onclick="shrTab('link')">Link</div>
+      <div class="shr-tab" data-pane="email" onclick="shrTab('email')">Email</div>
+      <div class="shr-tab" data-pane="telegram" onclick="shrTab('telegram')">Telegram</div>
+    </div>
+    <div class="shr-pane active" id="shrPaneLink">
+      <label>Expires (days, 0 = never)</label>
+      <input type="number" id="shrExpiry" value="7" min="0">
+      <button class="shr-go" onclick="shrCreateLink()">Create link</button>
+      <div class="shr-linkrow" id="shrLinkRow" style="display:none">
+        <input type="text" id="shrLinkUrl" readonly>
+        <button class="shr-copy" onclick="shrCopyLink()">Copy</button>
+      </div>
+      <div class="shr-result" id="shrLinkMsg"></div>
+    </div>
+    <div class="shr-pane" id="shrPaneEmail">
+      <label>To</label><input type="text" id="shrEmailTo" placeholder="recipient@example.com">
+      <label>Subject</label><input type="text" id="shrEmailSubj">
+      <label>Note (optional)</label><textarea id="shrEmailNote"></textarea>
+      <button class="shr-go" onclick="shrSendEmail()">Send email</button>
+      <div class="shr-result" id="shrEmailMsg"></div>
+    </div>
+    <div class="shr-pane" id="shrPaneTelegram">
+      <label>Chat ID (blank = me)</label><input type="text" id="shrTgChat" placeholder="default: Serge">
+      <label>Caption (optional)</label><input type="text" id="shrTgCaption">
+      <button class="shr-go" onclick="shrSendTelegram()">Send to Telegram</button>
+      <div class="shr-result" id="shrTgMsg"></div>
+    </div>
+  </div>
+</div>
+<script>
+let _shrCtx = {source:'', id:'', filename:''};
+function openShareSheet(ctx){
+  _shrCtx = ctx || {};
+  document.getElementById('shrFile').textContent = _shrCtx.filename || _shrCtx.id || '';
+  document.getElementById('shrEmailSubj').value = 'Shared: ' + (_shrCtx.filename || _shrCtx.id || '');
+  ['shrLinkMsg','shrEmailMsg','shrTgMsg'].forEach(i=>document.getElementById(i).textContent='');
+  document.getElementById('shrLinkRow').style.display='none';
+  shrTab('link');
+  document.getElementById('shrBg').classList.add('open');
+}
+function closeShareSheet(){ document.getElementById('shrBg').classList.remove('open'); }
+function shrTab(name){
+  document.querySelectorAll('.shr-tab').forEach(t=>t.classList.toggle('active', t.dataset.pane===name));
+  document.querySelectorAll('.shr-pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('shrPane'+name.charAt(0).toUpperCase()+name.slice(1)).classList.add('active');
+}
+async function _shrPost(channel, extra){
+  const body = Object.assign({source:_shrCtx.source, id:_shrCtx.id, channel}, extra||{});
+  const r = await fetch('/api/share', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  return await r.json();
+}
+async function shrCreateLink(){
+  const days = parseInt(document.getElementById('shrExpiry').value||'7',10);
+  const msg = document.getElementById('shrLinkMsg'); msg.textContent='Creating…';
+  const j = await _shrPost('link', {expires_days: days});
+  if(j.ok){ document.getElementById('shrLinkUrl').value=j.url; document.getElementById('shrLinkRow').style.display='flex'; msg.textContent = j.expires_at?('Expires '+j.expires_at.slice(0,10)):'Never expires'; }
+  else { msg.textContent = '⚠ '+(j.error||'failed'); }
+}
+function shrCopyLink(){ const i=document.getElementById('shrLinkUrl'); i.select(); navigator.clipboard.writeText(i.value); document.getElementById('shrLinkMsg').textContent='Copied ✓'; }
+async function shrSendEmail(){
+  const to = document.getElementById('shrEmailTo').value.trim();
+  const msg = document.getElementById('shrEmailMsg');
+  if(!to){ msg.textContent='⚠ enter a recipient'; return; }
+  msg.textContent='Sending…';
+  const j = await _shrPost('email', {to, subject:document.getElementById('shrEmailSubj').value, note:document.getElementById('shrEmailNote').value});
+  msg.textContent = j.ok ? ('✓ Sent'+(j.via==='link'?' (as link — file >25MB)':' with attachment')) : ('⚠ '+(j.error||'failed'));
+}
+async function shrSendTelegram(){
+  const msg = document.getElementById('shrTgMsg'); msg.textContent='Sending…';
+  const j = await _shrPost('telegram', {chat_id:document.getElementById('shrTgChat').value.trim(), caption:document.getElementById('shrTgCaption').value});
+  msg.textContent = j.ok ? '✓ Sent to Telegram' : ('⚠ '+(j.error||'failed'));
+}
+</script>

@@ -1362,8 +1362,13 @@ function openVideoPlayer(path, name) {
   }
 }
 
-/* ── Share: create tokenized link and copy to clipboard ── */
-async function shareFile(path) {
+/* ── Share: open the universal Share sheet (Link / Email / Telegram) ── */
+function shareFile(path) {
+  openShareSheet({source:'cloud', id: path, filename: (path||'').split('/').pop()});
+}
+
+/* ── Bulk helper: create a tokenized link and copy to clipboard (used by multi-select bulk share) ── */
+async function cloudShareLink(path) {
   try {
     const r = await fetch('/api/cloud/files/share', {
       method:'POST',
@@ -1466,7 +1471,7 @@ async function bulkAction(action) {
   if (action === 'share') {
     const urls = [];
     for (const p of paths) {
-      const u = await shareFile(p);
+      const u = await cloudShareLink(p);
       if (u) urls.push(u);
     }
     if (urls.length) {
@@ -1567,9 +1572,7 @@ function ctxAction(action) {
   if (action === 'download') downloadFile(full);
   else if (action === 'open') openFile(full, target.name);
   else if (action === 'share') {
-    shareFile(full).then(url => {
-      if (url) alert('Share link (copied to clipboard):\n\n' + url);
-    });
+    shareFile(full);
   }
   else if (action === 'telegram') {
     telegramFile(full).then(d => {
@@ -2791,5 +2794,6 @@ async function removeICloudAccount(aid){
 }
 </script>
 
+{% include '_share_sheet.html' %}
 </body>
 </html>

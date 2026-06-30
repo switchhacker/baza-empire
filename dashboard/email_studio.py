@@ -35,6 +35,27 @@ ARTIFACTS_DIR = os.path.join(DASHBOARD_DIR, "artifacts")
 _MAX_ATTACH_BYTES = 25 * 1024 * 1024
 _DENY_ARTIFACT_DIRS = (".private-inbound", ".vault_meta")
 EMAIL_PIPELINE_DIR = os.path.join(FRAMEWORK_DIR, "email-pipeline")
+OUTBOX_DIR = os.path.join(EMAIL_PIPELINE_DIR, ".outbox_uploads")
+
+
+def _sweep_outbox(max_age=6 * 3600):
+    """Delete staged upload dirs older than max_age seconds (orphans)."""
+    import shutil
+    try:
+        now = time.time()
+        for name in os.listdir(OUTBOX_DIR):
+            p = os.path.join(OUTBOX_DIR, name)
+            try:
+                if os.path.isdir(p) and now - os.path.getmtime(p) > max_age:
+                    shutil.rmtree(p, ignore_errors=True)
+            except Exception:
+                pass
+    except FileNotFoundError:
+        pass
+
+
+os.makedirs(OUTBOX_DIR, exist_ok=True)
+_sweep_outbox()
 ACCOUNTS_DIR = os.path.join(EMAIL_PIPELINE_DIR, "accounts")
 LEGACY_TOKEN_PATH = os.path.join(EMAIL_PIPELINE_DIR, "token.json")
 CREDENTIALS_PATH = os.path.join(EMAIL_PIPELINE_DIR, "credentials.json")
@@ -726,14 +747,41 @@ def api_attachment(msg_id: str, att_id: str):
             userId="me", messageId=msg_id, id=att_id
         ).execute()
         data = base64.urlsafe_b64decode(att.get("data", ""))
+        inline = request.args.get("inline") in ("1", "true", "yes")
+        disp = "inline" if inline else "attachment"
         return Response(data, mimetype=mime, headers={
-            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Content-Disposition": f'{disp}; filename="{safe_name}"',
             "Content-Length": str(len(data)),
         })
     except FileNotFoundError as e:
         return jsonify({"error": str(e)}), 503
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@email_bp.route("/api/email2/attachments/upload", methods=["POST"])
+def api_attachment_upload():
+    """Stage an uploaded file for sending. Returns {ok, token, filename, size, mime}."""
+    import mimetypes
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "no file"}), 400
+    cl = request.content_length
+    if cl and cl > _MAX_ATTACH_BYTES:
+        return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
+    token = uuid.uuid4().hex
+    safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(f.filename))[:160] or "file"
+    d = os.path.join(OUTBOX_DIR, token)
+    os.makedirs(d, exist_ok=True)
+    dest = os.path.join(d, safe)
+    f.save(dest)
+    size = os.path.getsize(dest)
+    if size > _MAX_ATTACH_BYTES:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+        return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
+    mime = mimetypes.guess_type(safe)[0] or "application/octet-stream"
+    return jsonify({"ok": True, "token": token, "filename": safe, "size": size, "mime": mime})
 
 
 @email_bp.route("/api/email2/sync", methods=["POST"])
@@ -823,6 +871,20 @@ def _resolve_attachments(refs):
             fn = os.path.basename(full)
             import mimetypes
             mime = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+        elif t == "upload":
+            import mimetypes
+            token = re.sub(r'[^0-9a-f]', "", str(ref.get("token") or ""))[:32]
+            d = os.path.join(OUTBOX_DIR, token)
+            if not token or not os.path.isdir(d):
+                raise ValueError("upload not found")
+            files = [x for x in os.listdir(d) if os.path.isfile(os.path.join(d, x))]
+            if not files:
+                raise ValueError("upload not found")
+            full = os.path.join(d, files[0])
+            with open(full, "rb") as f:
+                data = f.read()
+            fn = os.path.basename(full)
+            mime = mimetypes.guess_type(fn)[0] or "application/octet-stream"
         else:
             raise ValueError(f"unknown attachment type: {t}")
         total += len(data)
@@ -830,6 +892,16 @@ def _resolve_attachments(refs):
             raise ValueError("attachments exceed the 25 MB limit")
         out.append({"filename": fn, "mimetype": mime, "data": data})
     return out
+
+
+def _cleanup_uploads(refs):
+    """Delete staged upload dirs for the given send refs (best-effort)."""
+    import shutil
+    for ref in refs or []:
+        if (ref or {}).get("type") == "upload":
+            token = re.sub(r'[^0-9a-f]', "", str(ref.get("token") or ""))[:32]
+            if token:
+                shutil.rmtree(os.path.join(OUTBOX_DIR, token), ignore_errors=True)
 
 
 def _mime_message(to: str, subject: str, body: str,
@@ -923,6 +995,7 @@ def api_send():
         if thread_id:
             send_body["threadId"] = thread_id
         result = svc.users().messages().send(userId="me", body=send_body).execute()
+        _cleanup_uploads(data.get("attachments"))
         # Best-effort: mark thread read locally
         if thread_id:
             try:

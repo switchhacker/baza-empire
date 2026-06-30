@@ -12,7 +12,7 @@
     "baza-dashboard.service": "running",
     "baza-ddns.service": "dead",
     "baza-email-fetch.service": "dead",
-    "baza-email-summarize.service": "start",
+    "baza-email-summarize.service": "dead",
     "baza-image-indexer.service": "dead",
     "baza-litellm.service": "running",
     "baza-route-watchdog.service": "dead",

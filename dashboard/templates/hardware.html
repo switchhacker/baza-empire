@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Hardware &amp; Upgrades</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:100;flex-wrap:nowrap}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:1000px;margin:0 auto;padding:28px 32px}
+    .page-title{font-size:22px;font-weight:800;color:#fff;margin-bottom:6px;display:flex;align-items:center;gap:12px}
+    .crumb{font-size:12px;color:#555;margin-bottom:22px}
+    .crumb a{color:#7c3aed}
+
+    .subtabs{display:flex;gap:8px;margin-bottom:24px;border-bottom:1px solid #1a1a2e}
+    .subtab{padding:12px 20px;font-size:13px;font-weight:700;color:#666;cursor:pointer;border-bottom:3px solid transparent}
+    .subtab.active{color:#fff;border-bottom-color:#e94560}
+    .view{display:none}
+    .view.active{display:block}
+
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;margin-bottom:22px;overflow:hidden}
+    .card-head{padding:16px 22px;border-bottom:1px solid #111;display:flex;align-items:center;justify-content:space-between}
+    .card-title{font-size:14px;font-weight:700;color:#fff}
+    .card-desc{font-size:12px;color:#555;margin-top:2px}
+    .card-body{padding:22px}
+
+    .btn{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:11px 20px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+    .btn:hover{opacity:.9}
+    .btn.secondary{background:#0d2040;color:#4da6ff;border:1px solid #1a3a6a}
+    .btn.ghost{background:#111;color:#aaa;border:1px solid #1a1a2e}
+    .btn.danger{background:#2a0d0d;color:#ff6666;border:1px solid #5a1a1a}
+    .btn.sm{padding:7px 12px;font-size:12px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+    .banner{padding:16px 22px;border-radius:10px;font-size:15px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+    .banner.pass{background:#0a2a1a;border:1px solid #00d084;color:#00d084}
+    .banner.fail{background:#2a0a0a;border:1px solid #ff5555;color:#ff7777}
+    .banner.none{background:#111;border:1px solid #1a1a2e;color:#888}
+
+    .domgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+    .dom{background:#070718;border:1px solid #111;border-radius:8px;padding:14px}
+    .dom-name{font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .dom-stats{font-family:monospace;font-size:13px}
+    .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;margin-right:5px}
+    .pill.ok{background:#0a2a1a;color:#00d084}
+    .pill.fail{background:#2a0a0a;color:#ff6666}
+    .pill.idle{background:#0d1830;color:#5a7aaa}
+    .pill.warn{background:#2a230a;color:#d0a000}
+
+    .reglist{list-style:none;margin-top:8px}
+    .reglist li{padding:8px 12px;border-radius:6px;font-size:13px;font-family:monospace;margin-bottom:6px}
+    .reglist li.reg{background:#1a0808;border:1px solid #3a1010;color:#ff8888}
+    .reglist li.rec{background:#081a0c;border:1px solid #103a18;color:#88dd99}
+    .reglist li.chg{background:#1a1608;border:1px solid #3a3210;color:#d0b860}
+
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a2e}
+    td{padding:9px 10px;border-bottom:1px solid #0d0d1e;color:#ccc}
+    tr:hover td{background:#0a0a18}
+
+    input,select,textarea{background:#111;border:1px solid #1a1a2e;border-radius:6px;padding:8px 11px;color:#e0e0e0;font-size:13px;outline:none;width:100%;font-family:inherit}
+    input:focus,select:focus,textarea:focus{border-color:#7c3aed}
+    label{font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:5px}
+    .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+    .fgrid.three{grid-template-columns:1fr 1fr 1fr}
+
+    .plan-item{background:#070718;border:1px solid #111;border-radius:8px;padding:14px;margin-bottom:10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+    .plan-item.sel{border-color:#7c3aed;background:#0d0a1e}
+    .plan-title{font-size:14px;font-weight:700;color:#eee}
+    .plan-meta{font-size:12px;color:#555;margin-top:3px}
+    .status-tag{font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;background:#0d2040;color:#4da6ff}
+
+    .step{background:#070718;border:1px solid #111;border-radius:8px;padding:16px;margin-bottom:14px}
+    .step-n{display:inline-flex;width:26px;height:26px;border-radius:50%;background:#e94560;color:#fff;font-weight:800;font-size:13px;align-items:center;justify-content:center;margin-right:10px}
+    .step-title{font-size:14px;font-weight:700;color:#fff}
+    .step-why{font-size:12px;color:#888;margin:8px 0 10px 36px;line-height:1.5}
+    .cmd{position:relative;background:#0a0a14;border:1px solid #15152a;border-radius:6px;padding:11px 40px 11px 14px;font-family:monospace;font-size:12.5px;color:#9ad;white-space:pre-wrap;word-break:break-all;margin:0 0 6px 36px}
+    .cmd .copy{position:absolute;top:6px;right:6px;background:#15152a;border:none;color:#888;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}
+    .cmd .copy:hover{color:#fff}
+    .muted{color:#555;font-size:12px}
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px}
+  </style>
+</head>
+<body>
+
+{% set nav_active = 'settings' %}
+{% include "_nav.html" %}
+
+<div class="container">
+  <div class="page-title">🖥️ Hardware &amp; Upgrades</div>
+  <div class="crumb"><a href="/settings">⚙️ Settings</a> → Hardware &amp; Upgrades</div>
+
+  <div class="subtabs">
+    <div class="subtab active" data-view="verify" onclick="switchView('verify')">Baseline &amp; Verify</div>
+    <div class="subtab" data-view="plans" onclick="switchView('plans')">Plans &amp; Research</div>
+    <div class="subtab" data-view="runbook" onclick="switchView('runbook')">Shutdown Runbook</div>
+  </div>
+
+  <!-- ============ BASELINE & VERIFY ============ -->
+  <div class="view active" id="view-verify">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Baseline &amp; Verify</div>
+          <div class="card-desc">Snapshot the known-good state before you power off, then verify after reboot. The diff catches anything that didn't come back.</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row" style="margin-bottom:18px">
+          <button class="btn" onclick="snapshot()">📸 Snapshot baseline now</button>
+          <button class="btn secondary" onclick="verify()">✅ Verify now</button>
+          <span class="muted">Also runnable from a terminal: <code>scripts/hw_verify.py</code> (works if the dashboard is down)</span>
+        </div>
+        <div id="baselineBox" class="muted">Loading latest baseline…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><div class="card-title">Latest verification</div></div>
+      <div class="card-body" id="verifyBox"><span class="muted">No verification run yet.</span></div>
+    </div>
+  </div>
+
+  <!-- ============ PLANS & RESEARCH ============ -->
+  <div class="view" id="view-plans">
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">Upgrade plans</div><div class="card-desc">Each plan groups the parts + compatibility notes for one upgrade.</div></div>
+      </div>
+      <div class="card-body">
+        <div id="plansList"><span class="muted">Loading…</span></div>
+        <div style="margin-top:16px;border-top:1px solid #111;padding-top:16px">
+          <div class="fgrid">
+            <div><label>New plan title</label><input id="npTitle" placeholder="e.g. 5950X CPU swap"></div>
+            <div><label>BIOS requirement</label><input id="npBios" placeholder="e.g. X570-E ≥ 5021"></div>
+          </div>
+          <div style="margin-bottom:12px"><label>Goal</label><input id="npGoal" placeholder="Why / target outcome"></div>
+          <button class="btn sm" onclick="createPlan()">+ Create plan</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="planDetailCard" style="display:none">
+      <div class="card-head">
+        <div><div class="card-title" id="pdTitle">Components</div><div class="card-desc" id="pdMeta"></div></div>
+        <button class="btn danger sm" onclick="deletePlan()">Delete plan</button>
+      </div>
+      <div class="card-body">
+        <table id="compTable"><thead><tr>
+          <th>Category</th><th>Name</th><th>Specs</th><th>Socket</th><th>TDP</th><th>$</th><th>Compat notes</th><th></th>
+        </tr></thead><tbody id="compBody"></tbody></table>
+
+        <div style="margin-top:18px;border-top:1px solid #111;padding-top:16px">
+          <div class="row" style="margin-bottom:12px">
+            <strong style="font-size:13px;color:#ccc">Add component</strong>
+            <input id="rqQuery" placeholder="Ask local model to draft, e.g. 'Ryzen 9 5900X for X570'" style="flex:1;min-width:200px">
+            <button class="btn ghost sm" onclick="research()">🔍 Draft (local AI)</button>
+          </div>
+          <div class="fgrid three">
+            <div><label>Category</label><select id="ncCat">
+              <option>cpu</option><option>gpu</option><option>ram</option><option>mobo</option>
+              <option>cooler</option><option>psu</option><option>storage</option><option>other</option>
+            </select></div>
+            <div><label>Name</label><input id="ncName" placeholder="AMD Ryzen 9 5950X"></div>
+            <div><label>Socket</label><input id="ncSocket" placeholder="AM4"></div>
+          </div>
+          <div class="fgrid three">
+            <div><label>Specs</label><input id="ncSpecs" placeholder="16C/32T, 3.4GHz"></div>
+            <div><label>TDP</label><input id="ncTdp" placeholder="105W"></div>
+            <div><label>Est. cost ($)</label><input id="ncCost" type="number" placeholder="320"></div>
+          </div>
+          <div style="margin-bottom:12px"><label>Compatibility notes</label><textarea id="ncCompat" rows="2" placeholder="Drop-in on BIOS 5013; 5900XT needs 5021…"></textarea></div>
+          <button class="btn sm" onclick="addComponent()">+ Add component</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RUNBOOK ============ -->
+  <div class="view" id="view-runbook">
+    <div class="card">
+      <div class="card-head">
+        <div><div class="card-title">Shutdown runbook</div><div class="card-desc">Ordered, copy-paste stop sequence generated from the live service inventory. You pull the trigger — the dashboard never powers off on its own.</div></div>
+        <button class="btn secondary sm" onclick="loadRunbook()">↻ Regenerate</button>
+      </div>
+      <div class="card-body" id="runbookBox"><span class="muted">Loading…</span></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3 · Hardware &amp; Upgrades</div>
+
+<script>
+const J = (u,o)=>fetch(u,o).then(r=>r.json());
+let SELECTED_PLAN = null;
+
+function switchView(v){
+  document.querySelectorAll('.subtab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
+  document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id==='view-'+v));
+  if(v==='runbook' && !document.getElementById('runbookBox').dataset.loaded) loadRunbook();
+}
+
+function toast(msg,ok){
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:'+(ok?'#0a2a1a':'#2a0a0a')+';border:1px solid '+(ok?'#00d084':'#ff5555')+';color:'+(ok?'#00d084':'#ff5555')+';padding:12px 20px;border-radius:8px;font-size:13px;font-weight:700;z-index:9999';
+  t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2800);
+}
+
+/* ---------- Baseline & Verify ---------- */
+function domGrid(summary){
+  let h='<div class="domgrid">';
+  for(const [d,c] of Object.entries(summary||{})){
+    h+=`<div class="dom"><div class="dom-name">${d}</div><div class="dom-stats">
+      <span class="pill ok">${c.ok} ok</span>${c.fail?`<span class="pill fail">${c.fail} fail</span>`:''}
+      ${c.idle?`<span class="pill idle">${c.idle} idle</span>`:''}${c.warn?`<span class="pill warn">${c.warn} warn</span>`:''}
+    </div></div>`;
+  }
+  return h+'</div>';
+}
+
+async function loadBaseline(){
+  const d = await J('/api/baza/hw/baseline/latest');
+  const box = document.getElementById('baselineBox');
+  if(!d.summary){ box.innerHTML='<span class="muted">No baseline captured yet. Snapshot one before your next shutdown.</span>'; return; }
+  box.innerHTML = `<div style="font-size:13px;color:#aaa;margin-bottom:12px">Latest baseline: <b style="color:#ccc">${d.label}</b> · captured ${d.captured_at}</div>`+domGrid(d.summary);
+}
+
+async function snapshot(){
+  toast('Probing system…',true);
+  const d = await J('/api/baza/hw/baseline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan_id:SELECTED_PLAN,label:'manual'})});
+  if(d.id){ toast('Baseline #'+d.id+' captured',true); loadBaseline(); } else toast('Snapshot failed',false);
+}
+
+async function verify(){
+  toast('Verifying against baseline…',true);
+  const d = await J('/api/baza/hw/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  if(d.error){ renderVerify({error:d.error}); toast(d.error,false); return; }
+  renderVerify(d); toast(d.diff.pass?'PASS — all healthy':'FAIL — regressions found',d.diff.pass);
+}
+
+function renderVerify(d){
+  const box=document.getElementById('verifyBox');
+  if(d.error){ box.innerHTML=`<div class="banner none">${d.error}</div>`; return; }
+  const diff=d.diff; let h='';
+  h += diff.pass
+    ? `<div class="banner pass">✔ PASS — everything that was healthy in the baseline is back.</div>`
+    : `<div class="banner fail">✘ FAIL — ${diff.regressions.length} regression(s) since baseline.</div>`;
+  h += `<div class="muted" style="margin-bottom:12px">vs baseline ${d.baseline_label||''} · ${diff.baseline_at} → ${diff.current_at}</div>`;
+  if(diff.regressions.length){ h+='<ul class="reglist">'; diff.regressions.forEach(r=>h+=`<li class="reg">✗ [${r.domain}] ${r.name}: was ${r.was} → now ${r.now} ${r.detail||''}</li>`); h+='</ul>'; }
+  if(diff.recovered && diff.recovered.length){ h+='<ul class="reglist">'; diff.recovered.forEach(r=>h+=`<li class="rec">↑ recovered [${r.domain}] ${r.name}</li>`); h+='</ul>'; }
+  if(diff.changes && diff.changes.length){ h+='<div class="muted" style="margin:10px 0 4px">Firmware/info changes (expected on an upgrade):</div><ul class="reglist">'; diff.changes.forEach(c=>h+=`<li class="chg">Δ ${c.name}: ${c.was_detail} → ${c.now_detail}</li>`); h+='</ul>'; }
+  h += '<div style="margin-top:14px">'+domGrid(diff.summary)+'</div>';
+  box.innerHTML=h;
+}
+
+async function loadVerify(){
+  const d=await J('/api/baza/hw/verify/latest');
+  if(d.diff) renderVerify({diff:d.diff,baseline_label:'#'+d.baseline_id});
+}
+
+/* ---------- Plans & Research ---------- */
+async function loadPlans(){
+  const plans=await J('/api/baza/hw/plans');
+  const list=document.getElementById('plansList');
+  if(!plans.length){ list.innerHTML='<span class="muted">No plans yet. Create one below.</span>'; return; }
+  list.innerHTML=plans.map(p=>`<div class="plan-item ${p.id===SELECTED_PLAN?'sel':''}" onclick="selectPlan(${p.id})">
+    <div><div class="plan-title">${esc(p.title)}</div><div class="plan-meta">${esc(p.goal||'')} ${p.bios_req?'· BIOS: '+esc(p.bios_req):''}</div></div>
+    <span class="status-tag">${p.status}</span></div>`).join('');
+}
+
+async function createPlan(){
+  const title=document.getElementById('npTitle').value.trim();
+  if(!title){ toast('Title required',false); return; }
+  const d=await J('/api/baza/hw/plans',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({title,goal:document.getElementById('npGoal').value,bios_req:document.getElementById('npBios').value})});
+  if(d.id){ toast('Plan created',true); document.getElementById('npTitle').value='';document.getElementById('npGoal').value='';document.getElementById('npBios').value=''; await loadPlans(); selectPlan(d.id); }
+}
+
+async function selectPlan(id){
+  SELECTED_PLAN=id; await loadPlans();
+  const plans=await J('/api/baza/hw/plans'); const p=plans.find(x=>x.id===id);
+  document.getElementById('planDetailCard').style.display='block';
+  document.getElementById('pdTitle').textContent=p?('Components — '+p.title):'Components';
+  document.getElementById('pdMeta').textContent=p?(p.goal||''):'';
+  loadComponents();
+}
+
+async function loadComponents(){
+  if(!SELECTED_PLAN) return;
+  const rows=await J(`/api/baza/hw/plans/${SELECTED_PLAN}/components`);
+  document.getElementById('compBody').innerHTML = rows.length ? rows.map(c=>`<tr>
+    <td>${esc(c.category||'')}</td><td><b>${esc(c.name)}</b>${c.source&&c.source.includes('agent')?' <span class="muted">🔍</span>':''}</td>
+    <td>${esc(c.specs||'')}</td><td>${esc(c.socket||'')}</td><td>${esc(c.tdp||'')}</td>
+    <td>${c.est_cost!=null?'$'+c.est_cost:''}</td><td class="muted">${esc(c.compat_notes||'')}</td>
+    <td><button class="btn danger sm" onclick="delComponent(${c.id})">✕</button></td></tr>`).join('')
+    : '<tr><td colspan="8" class="muted">No components yet.</td></tr>';
+}
+
+async function addComponent(){
+  if(!SELECTED_PLAN){ toast('Select a plan first',false); return; }
+  const name=document.getElementById('ncName').value.trim();
+  if(!name){ toast('Name required',false); return; }
+  const body={category:document.getElementById('ncCat').value,name,
+    specs:document.getElementById('ncSpecs').value,socket:document.getElementById('ncSocket').value,
+    tdp:document.getElementById('ncTdp').value,compat_notes:document.getElementById('ncCompat').value};
+  const cost=document.getElementById('ncCost').value; if(cost) body.est_cost=parseFloat(cost);
+  const d=await J(`/api/baza/hw/plans/${SELECTED_PLAN}/components`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(d.id){ toast('Component added',true); ['ncName','ncSpecs','ncSocket','ncTdp','ncCost','ncCompat'].forEach(i=>document.getElementById(i).value=''); loadComponents(); }
+}
+
+async function delComponent(id){
+  await J('/api/baza/hw/components/'+id,{method:'DELETE'}); loadComponents();
+}
+
+async function deletePlan(){
+  if(!SELECTED_PLAN||!confirm('Delete this plan and its components?')) return;
+  await J('/api/baza/hw/plans/'+SELECTED_PLAN,{method:'DELETE'});
+  SELECTED_PLAN=null; document.getElementById('planDetailCard').style.display='none'; loadPlans();
+}
+
+async function research(){
+  const q=document.getElementById('rqQuery').value.trim();
+  if(!q){ toast('Type what to research',false); return; }
+  toast('Asking local model…',true);
+  const d=await J('/api/baza/hw/research',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:q,category:document.getElementById('ncCat').value})});
+  if(d.error){ toast(d.error,false); return; }
+  const dr=d.draft||{};
+  if(dr.name) document.getElementById('ncName').value=dr.name;
+  if(dr.specs) document.getElementById('ncSpecs').value=dr.specs;
+  if(dr.socket) document.getElementById('ncSocket').value=dr.socket;
+  if(dr.tdp) document.getElementById('ncTdp').value=dr.tdp;
+  if(dr.est_cost!=null) document.getElementById('ncCost').value=dr.est_cost;
+  if(dr.compat_notes) document.getElementById('ncCompat').value=dr.compat_notes;
+  toast('Draft from '+d.model+' — review & edit before saving',true);
+}
+
+/* ---------- Runbook ---------- */
+async function loadRunbook(){
+  const box=document.getElementById('runbookBox'); box.dataset.loaded='1';
+  const url = SELECTED_PLAN ? '/api/baza/hw/runbook/'+SELECTED_PLAN : '/api/baza/hw/runbook';
+  const d=await J(url);
+  let h='';
+  if(d.bios_note) h+=`<div class="banner none">⚠ ${esc(d.bios_note)}</div>`;
+  d.steps.forEach(s=>{
+    h+=`<div class="step"><div><span class="step-n">${s.n}</span><span class="step-title">${esc(s.title)}</span></div>
+      <div class="step-why">${esc(s.why)}</div>`;
+    s.cmds.forEach(c=>{ const id='c'+Math.random().toString(36).slice(2,8);
+      h+=`<div class="cmd"><button class="copy" onclick="cp('${id}')">copy</button><span id="${id}">${esc(c)}</span></div>`; });
+    h+='</div>';
+  });
+  h+=`<div class="step" style="border-color:#103a18"><div><span class="step-n" style="background:#00d084">↑</span><span class="step-title">${esc(d.boot.title)}</span></div>
+    <div class="step-why">${esc(d.boot.why)}</div>`;
+  d.boot.cmds.forEach(c=>{ const id='c'+Math.random().toString(36).slice(2,8);
+    h+=`<div class="cmd"><button class="copy" onclick="cp('${id}')">copy</button><span id="${id}">${esc(c)}</span></div>`; });
+  h+='</div>';
+  box.innerHTML=h;
+}
+
+function cp(id){ const t=document.getElementById(id).textContent; navigator.clipboard.writeText(t).then(()=>toast('Copied',true)); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* init */
+loadBaseline(); loadVerify(); loadPlans();
+</script>
+</body>
+</html>

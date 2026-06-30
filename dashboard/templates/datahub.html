@@ -686,6 +686,7 @@ function getFileType(ext){
 }
 function formatSize(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB'}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function dhArg(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Data Loading
@@ -967,6 +968,9 @@ function dhSelectedFilesPayload(){
     return { project_id: k.slice(0, i), name: k.slice(i + 1) };
   });
 }
+function dhShareFile(projectId, name){
+  openShareSheet({source:'datahub', id: projectId + '/' + name, filename: (name||'').split('/').pop()});
+}
 async function dhShareSelected(){
   const items = dhSelectedFilesPayload();
   if(!items.length) return;
@@ -1067,12 +1071,13 @@ function renderGrid(files){
     const isPrivate = !!f.private;
     const lockIcon  = isPrivate ? '\u{1F510}' : '\u{1F513}';
     const lockTitle = isPrivate ? 'In Vault \u2014 click to release' : 'Move to Vault';
-    return `<div class="file-card${_selCls}" data-key="${_key.replace(/"/g,'&quot;')}" onclick="dhCardClick(event,'${f.project_id}','${f.name}')">
+    return `<div class="file-card${_selCls}" data-key="${_key.replace(/"/g,'&quot;')}" onclick="dhCardClick(event,'${dhArg(f.project_id)}','${dhArg(f.name)}')">
       <div class="sel-mark">\u2713</div>
-      <div class="fc-lock${isPrivate?' locked':''}" title="${lockTitle}" onclick="event.stopPropagation();dhToggleLock('${f.project_id}','${f.name}',this)">${lockIcon}</div>
+      <div class="fc-lock${isPrivate?' locked':''}" title="${lockTitle}" onclick="event.stopPropagation();dhToggleLock('${dhArg(f.project_id)}','${dhArg(f.name)}',this)">${lockIcon}</div>
       <div class="file-card-actions">
         <a class="fca-btn" href="/api/artifacts/download/${f.project_id}/${f.name}" download title="Download" onclick="event.stopPropagation()">\u2193</a>
-        <button class="fca-btn" onclick="event.stopPropagation();deleteFile('${f.project_id}','${f.name}')" title="Delete" style="background:rgba(255,50,50,.3)">\u2715</button>
+        <button class="fca-btn" onclick="event.stopPropagation();dhShareFile('${dhArg(f.project_id)}','${dhArg(f.name)}')" title="Share">🔗</button>
+        <button class="fca-btn" onclick="event.stopPropagation();deleteFile('${dhArg(f.project_id)}','${dhArg(f.name)}')" title="Delete" style="background:rgba(255,50,50,.3)">\u2715</button>
       </div>
       <div class="file-card-preview">${preview}${matchBadge}${isPrivate?'<div class="fc-vault-badge">\u{1F510} VAULT</div>':''}</div>
       <div class="file-card-body">
@@ -1225,6 +1230,7 @@ async function openFile(proj,name){
     <div class="fm-overflow-menu" id="fmOverflowMenu">
       <div class="fm-overflow-item" onclick="window.open('/explore?source=artifact&project_id='+encodeURIComponent('${proj}')+'&filename='+encodeURIComponent('${name}'),'_blank')"><span class="fm-overflow-icon">\u{1F310}</span> Open in Explore</div>
       <div class="fm-overflow-item" onclick="copyFileLink()"><span class="fm-overflow-icon">\u{1F517}</span> Copy link</div>
+      <div class="fm-overflow-item" onclick="dhShareFile('${dhArg(proj)}','${dhArg(name)}')"><span class="fm-overflow-icon">\u{1F4E4}</span> Share…</div>
       <div class="fm-overflow-divider"></div>
       <div class="fm-overflow-item" onclick="promptRename()"><span class="fm-overflow-icon">\u{1F4DD}</span> Rename</div>
       <div class="fm-overflow-item" onclick="promptDuplicate()"><span class="fm-overflow-icon">\u{1F4CB}</span> Duplicate</div>
@@ -1797,5 +1803,6 @@ function savePCA(){
 loadFiles();loadFeed();loadSpecter();refreshIndexStatus();setInterval(loadFeed,30000);setInterval(loadSpecter,30000);
 </script>
 
+{% include '_share_sheet.html' %}
 </body>
 </html>
