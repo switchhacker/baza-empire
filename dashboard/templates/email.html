@@ -152,6 +152,9 @@
     .att-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#10102a;border:1px solid #2a2a55;border-radius:16px;color:#a0c0ff;font-size:12px;text-decoration:none;max-width:280px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .att-chip:hover{border-color:#4a4a90;background:#16163a}
     .att-size{color:#666;font-size:11px}
+    .att-chip-wrap{display:inline-flex;align-items:center;gap:2px}
+    .att-save-btn{background:#10102a;border:1px solid #2a2a55;border-radius:14px;color:#a0c0ff;font-size:12px;padding:6px 9px;cursor:pointer;line-height:1}
+    .att-save-btn:hover{border-color:#4a4a90;background:#16163a}
     .msg-card.collapsed{opacity:.78}
     .msg-collapsed-snippet{padding:0 16px 12px;font-size:12px;color:#5a5e7a;display:none}
     .msg-card.collapsed .msg-collapsed-snippet{display:block}
@@ -565,6 +568,37 @@
   </div>
 </div>
 
+<!-- Save attachment to project / cloud -->
+<div class="att-prev-bg" id="attSaveBg" onclick="if(event.target===this)closeSaveAttachment()">
+  <div class="att-prev-card" style="max-width:440px">
+    <div class="att-prev-head">
+      <span>💾 Save attachment</span>
+      <button class="modal-close" onclick="closeSaveAttachment()">×</button>
+    </div>
+    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:13px;color:#aab;word-break:break-all" id="saveAttName">file</div>
+      <div>
+        <label style="font-size:11px;color:#778;font-weight:700;text-transform:uppercase;letter-spacing:1px">Project</label>
+        <select id="saveAttProject" style="width:100%;margin-top:4px;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+          <option value="">— none (cloud only) —</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:#778;font-weight:700;text-transform:uppercase;letter-spacing:1px">File type</label>
+        <select id="saveAttType" style="width:100%;margin-top:4px;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px"></select>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#ccd;cursor:pointer">
+        <input type="checkbox" id="saveAttCloud"> Also add to the Cloud library
+      </label>
+      <div id="saveAttMsg" style="font-size:12px;min-height:16px;color:#8b8"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="cancel-btn" onclick="closeSaveAttachment()">Cancel</button>
+        <button class="send-btn" id="saveAttBtn" onclick="submitSaveAttachment()">💾 Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Contact autocomplete -->
 <div class="ac-pop" id="acPop"></div>
 
@@ -774,6 +808,8 @@ function renderThread(){
     <button class="tool-btn" onclick="modifyAction('archive')">📂 Archive</button>
     <button class="tool-btn danger" onclick="modifyAction('trash')">🗑️ Trash</button>
     <button class="tool-btn" onclick="modifyAction('unread')">●  Mark unread</button>
+    <div class="tool-divider"></div>
+    <button class="tool-btn" onclick="printThread()" title="Print this email to the HP Smart Tank">🖨 Print</button>
   `;
 
   // Messages: collapse all but the last
@@ -819,9 +855,13 @@ function renderAttachments(m){
                 encodeURIComponent(a.attachment_id) +
                 '?name=' + encodeURIComponent(a.filename) +
                 '&mime=' + encodeURIComponent(a.mime || '') + acc;
-    return `<a class="att-chip att-preview-link" href="#" title="${escAttr(a.filename)}"
+    return `<span class="att-chip-wrap">
+      <a class="att-chip att-preview-link" href="#" title="${escAttr(a.filename)}"
               data-base="${escAttr(base)}" data-name="${escAttr(a.filename)}" data-mime="${escAttr(a.mime||'')}">📎 ${esc(a.filename)}
-            <span class="att-size">${fmtSize(a.size)}</span></a>`;
+            <span class="att-size">${fmtSize(a.size)}</span></a>
+      <button class="att-save-btn" title="Save to a project / cloud"
+              onclick="openSaveAttachment('${escAttr(m.gmail_id)}','${escAttr(a.attachment_id)}','${escAttr(a.filename)}','${escAttr(a.mime||'')}')">💾</button>
+    </span>`;
   }).join('') + '</div>';
 }
 
@@ -849,6 +889,69 @@ function openAttachmentPreview(base, name, mime){
   else { const d=document.createElement('div'); d.style.cssText='color:#778;padding:30px;text-align:center'; d.textContent='No preview for this file type. Use Download.'; body.appendChild(d); }
 }
 function closeAttachmentPreview(){ document.getElementById('attPrevBg').classList.remove('open'); document.getElementById('attPrevBody').innerHTML=''; }
+
+// ── Print the open email ───────────────────────────────────────────────────
+async function printThread(){
+  const tid = state.currentThreadId; if(!tid) return;
+  try{
+    const r = await api('/api/email2/thread/' + encodeURIComponent(tid) + '/print', {method:'POST', body:{account: threadAccount(tid)}});
+    toast(r && r.success ? '🖨 Sent to printer' : ('Print failed: ' + ((r&&r.error)||'unknown')));
+  }catch(e){ toast('Print failed: ' + e.message); }
+}
+
+// ── Save an incoming attachment to a project / cloud ────────────────────────
+let _saveAtt = null;   // {gmail_id, att_id, name, mime}
+async function openSaveAttachment(gmail_id, att_id, name, mime){
+  _saveAtt = {gmail_id, att_id, name, mime};
+  document.getElementById('saveAttName').textContent = name;
+  document.getElementById('saveAttMsg').textContent = '';
+  document.getElementById('saveAttCloud').checked = false;
+  document.getElementById('attSaveBg').classList.add('open');
+  // Populate file types
+  const typeSel = document.getElementById('saveAttType');
+  if(!typeSel.dataset.loaded){
+    try{
+      const t = await api('/api/email2/attachment/file-types');
+      typeSel.innerHTML = (t.types||['Other']).map(x=>`<option>${esc(x)}</option>`).join('');
+      typeSel.dataset.loaded = '1';
+    }catch(e){ typeSel.innerHTML = '<option>Other</option>'; }
+  }
+  // Populate projects (once)
+  const projSel = document.getElementById('saveAttProject');
+  if(!projSel.dataset.loaded){
+    try{
+      const r = await fetch('/api/ahb/projects'); const projs = await r.json();
+      const opts = (Array.isArray(projs)?projs:[]).map(p=>`<option value="${escAttr(p.id)}">${esc(p.title||p.id)}</option>`).join('');
+      projSel.innerHTML = '<option value="">— none (cloud only) —</option>' + opts;
+      projSel.dataset.loaded = '1';
+    }catch(e){}
+  }
+}
+function closeSaveAttachment(){ document.getElementById('attSaveBg').classList.remove('open'); _saveAtt = null; }
+async function submitSaveAttachment(){
+  if(!_saveAtt) return;
+  const project_id = document.getElementById('saveAttProject').value;
+  const to_cloud = document.getElementById('saveAttCloud').checked;
+  if(!project_id && !to_cloud){ document.getElementById('saveAttMsg').style.color='#e88'; document.getElementById('saveAttMsg').textContent='Pick a project and/or the cloud library.'; return; }
+  const btn = document.getElementById('saveAttBtn'); btn.disabled = true; btn.textContent = 'Saving…';
+  try{
+    const r = await api('/api/email2/attachment/save', {method:'POST', body:{
+      msg_id:_saveAtt.gmail_id, att_id:_saveAtt.att_id, name:_saveAtt.name, mime:_saveAtt.mime,
+      project_id, file_type: document.getElementById('saveAttType').value, to_cloud,
+      account: state.activeAccount ? state.activeAccount.id : undefined
+    }});
+    if(r && r.success){
+      const where = []; if(r.saved&&r.saved.project) where.push('project'); if(r.saved&&r.saved.cloud) where.push('cloud');
+      document.getElementById('saveAttMsg').style.color='#8b8';
+      document.getElementById('saveAttMsg').textContent='Saved to ' + (where.join(' + ')||'storage') + ' ✓';
+      setTimeout(closeSaveAttachment, 900);
+    } else {
+      document.getElementById('saveAttMsg').style.color='#e88';
+      document.getElementById('saveAttMsg').textContent = 'Failed: ' + ((r&&r.error)||'unknown');
+    }
+  }catch(e){ document.getElementById('saveAttMsg').style.color='#e88'; document.getElementById('saveAttMsg').textContent='Failed: '+e.message; }
+  finally{ btn.disabled = false; btn.textContent = '💾 Save'; }
+}
 
 // ── Modify actions ────────────────────────────────────────────────────────
 async function modifyAction(action){

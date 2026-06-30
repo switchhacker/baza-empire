@@ -1271,6 +1271,45 @@ def social_post_cover(pid: int):
     return jsonify({"error": "no cover"}), 404
 
 
+@social_bp.route("/api/ahb/social/posts/<int:pid>/print", methods=["POST"])
+def social_post_print(pid: int):
+    """Print a social creation (the rendered asset image) on the HP printer."""
+    con = _conn()
+    try:
+        r = con.execute("SELECT asset_path, cover_path FROM ahb_social_posts WHERE id=?", (pid,)).fetchone()
+    finally:
+        con.close()
+    if not r:
+        return jsonify({"success": False, "error": "post not found"}), 404
+    path = (r["asset_path"] if r["asset_path"] and os.path.exists(r["asset_path"]) else None) \
+        or (r["cover_path"] if r["cover_path"] and os.path.exists(r["cover_path"]) else None)
+    if not path:
+        return jsonify({"success": False, "error": "post not rendered yet — render it first"}), 400
+    copies = int((request.get_json(silent=True) or {}).get("copies", 1) or 1)
+    skill = os.path.join(os.path.dirname(DASHBOARD_DIR), "skills", "shared", "print_document.py")
+    venv_py = os.path.join(os.path.dirname(DASHBOARD_DIR), "venv", "bin", "python")
+    py = venv_py if os.path.exists(venv_py) else "python3"
+    env = os.environ.copy()
+    env["SKILL_ARGS"] = json.dumps({"action": "print", "file_path": path,
+                                    "copies": copies, "fit_to_page": True})
+    try:
+        out = subprocess.run([py, skill], capture_output=True, text=True, timeout=30, env=env)
+        parsed = {}
+        for line in reversed(out.stdout.strip().split("\n")):
+            if line.strip().startswith("{"):
+                try:
+                    parsed = json.loads(line.strip())
+                    break
+                except Exception:
+                    pass
+        if not parsed:
+            parsed = {"success": out.returncode == 0, "output": out.stdout.strip(),
+                      "stderr": out.stderr.strip()}
+        return jsonify(parsed), (200 if parsed.get("success") else 500)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @social_bp.route("/api/ahb/social/posts/<int:pid>/bundle", methods=["GET"])
 def social_post_bundle(pid: int):
     con = _conn()

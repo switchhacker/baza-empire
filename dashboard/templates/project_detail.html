@@ -320,6 +320,7 @@
           <button id="scaffold-open-inventory" class="btn-sm">🧰 Inventory</button>
           <button id="scaffold-open-equipment" class="btn-sm">🔧 Equipment</button>
           <button id="scaffold-open-supplies" class="btn-sm">🛒 Supplies</button>
+          <button id="scaffold-print-wiring" class="btn-sm" style="background:#0ea5e9;color:#fff;" title="Print the wiring diagram (components + connections) to the HP Smart Tank" onclick="printProjectWiring()">🖨 Print wiring</button>
         </div>
 
         <!-- Tree canvas -->
@@ -372,6 +373,14 @@ let CURRENT_FILE = null;
 
 function escapeHtml(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function toast(msg, kind){ const t=document.getElementById('toast'); t.textContent=msg; t.className='toast show '+(kind||''); setTimeout(()=>t.classList.remove('show'),3500); }
+async function printProjectWiring(){
+  toast('🖨 Sending wiring diagram to printer…');
+  try{
+    const r = await fetch('/api/ahb/projects/'+encodeURIComponent(PROJECT_ID)+'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d = await r.json();
+    toast(d.success?'🖨 Sent to printer':('Print failed: '+(d.error||'unknown')), d.success?'':'error');
+  }catch(e){ toast('Print failed: '+e.message,'error'); }
+}
 
 function setTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));

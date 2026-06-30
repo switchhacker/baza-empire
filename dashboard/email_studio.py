@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import threading
 import time
 import urllib.request
@@ -757,6 +758,159 @@ def api_attachment(msg_id: str, att_id: str):
         return jsonify({"error": str(e)}), 503
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def _run_print_skill(job: dict) -> dict:
+    """Invoke skills/shared/print_document.py and return its parsed JSON result."""
+    skill = os.path.join(os.path.dirname(DASHBOARD_DIR), "skills", "shared", "print_document.py")
+    venv_py = os.path.join(os.path.dirname(DASHBOARD_DIR), "venv", "bin", "python")
+    py = venv_py if os.path.exists(venv_py) else "python3"
+    env = os.environ.copy()
+    env["SKILL_ARGS"] = json.dumps(job)
+    out = subprocess.run([py, skill], capture_output=True, text=True, timeout=30, env=env)
+    for line in reversed(out.stdout.strip().split("\n")):
+        if line.strip().startswith("{"):
+            try:
+                return json.loads(line.strip())
+            except Exception:
+                pass
+    return {"success": out.returncode == 0, "output": out.stdout.strip(),
+            "stderr": out.stderr.strip()}
+
+
+@email_bp.route("/api/email2/thread/<tid>/print", methods=["POST"])
+def api_thread_print(tid: str):
+    """Print an email thread (or a single message via body {gmail_id}) to the HP printer."""
+    body = request.get_json(silent=True) or {}
+    only_id = body.get("gmail_id")
+    copies = int(body.get("copies", 1) or 1)
+    try:
+        svc = _gmail(_req_account_id())
+        t = svc.users().threads().get(userId="me", id=tid, format="full").execute()
+    except FileNotFoundError as e:
+        return jsonify({"success": False, "error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    msgs = t.get("messages", []) or []
+    if only_id:
+        msgs = [m for m in msgs if m.get("id") == only_id]
+    if not msgs:
+        return jsonify({"success": False, "error": "no messages"}), 404
+    subject = _headers_map(msgs[0]).get("Subject", "(no subject)")
+    blocks = []
+    for m in msgs:
+        hdrs = _headers_map(m)
+        plain, html = _decode_body(m.get("payload") or {})
+        atts = _collect_attachments(m.get("payload") or {})
+        att_line = ("\nAttachments: " + ", ".join(a["filename"] for a in atts)) if atts else ""
+        blocks.append(
+            f"From: {hdrs.get('From','')}\n"
+            f"To: {hdrs.get('To','')}\n"
+            f"Date: {hdrs.get('Date','')}\n"
+            f"Subject: {hdrs.get('Subject','')}{att_line}\n"
+            f"{'-'*64}\n{(plain or '').strip()}\n"
+        )
+    text = ("\n" + "=" * 64 + "\n").join(blocks)
+    res = _run_print_skill({"action": "print", "text": text, "title": subject, "copies": copies})
+    return jsonify(res), (200 if res.get("success") else 500)
+
+
+# Classification labels offered when saving an incoming attachment to a project.
+ATTACHMENT_FILE_TYPES = ["Permit", "Contract", "Invoice", "Quote", "Estimate",
+                         "Receipt", "Photo", "Plan/Drawing", "Insurance", "Other"]
+
+
+@email_bp.route("/api/email2/attachment/file-types", methods=["GET"])
+def api_attachment_file_types():
+    return jsonify({"types": ATTACHMENT_FILE_TYPES})
+
+
+@email_bp.route("/api/email2/attachment/save", methods=["POST"])
+def api_attachment_save():
+    """Save an incoming Gmail attachment to a project's files and/or the cloud library.
+
+    Body: {msg_id, att_id, name, mime, project_id?, file_type?, to_cloud?}
+    At least one of project_id (save to project files) or to_cloud must be set.
+    """
+    body = request.get_json(silent=True) or {}
+    msg_id = body.get("msg_id")
+    att_id = body.get("att_id")
+    if not msg_id or not att_id:
+        return jsonify({"success": False, "error": "msg_id and att_id required"}), 400
+    project_id = (body.get("project_id") or "").strip()
+    to_cloud = bool(body.get("to_cloud"))
+    if not project_id and not to_cloud:
+        return jsonify({"success": False, "error": "pick a project and/or the cloud library"}), 400
+    file_type = (body.get("file_type") or "Other").strip()
+    name = body.get("name") or "attachment"
+    safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(name))[:160] or "attachment"
+    mime = body.get("mime") or "application/octet-stream"
+
+    try:
+        svc = _gmail(_req_account_id())
+        att = svc.users().messages().attachments().get(
+            userId="me", messageId=msg_id, id=att_id).execute()
+        data = base64.urlsafe_b64decode(att.get("data", ""))
+    except FileNotFoundError as e:
+        return jsonify({"success": False, "error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    saved = {}
+    ext = os.path.splitext(safe)[1].lstrip(".").lower()
+
+    # 1) Save into the project's files (artifacts dir + ahb_files row)
+    if project_id:
+        try:
+            base = os.path.realpath(os.path.join(ARTIFACTS_DIR, project_id))
+            if not base.startswith(os.path.realpath(ARTIFACTS_DIR)):
+                return jsonify({"success": False, "error": "bad project_id"}), 400
+            dest_dir = os.path.join(base, "email-attachments")
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, safe)
+            with open(dest, "wb") as fh:
+                fh.write(data)
+            con = _conn()
+            try:
+                con.execute(
+                    """INSERT INTO ahb_files (id, name, file_type, file_path, size, tags,
+                                              category, year, project_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (uuid.uuid4().hex, safe, ext, dest, len(data),
+                     "email", file_type, "", project_id))
+                con.commit()
+            finally:
+                con.close()
+            saved["project"] = {"project_id": project_id, "path": dest, "file_type": file_type}
+        except Exception as e:
+            return jsonify({"success": False, "error": f"project save failed: {e}"}), 500
+
+    # 2) Save into the cloud library (/mnt/empirepool/cloud/1 + baza_cloud_files)
+    if to_cloud:
+        try:
+            cloud_dir = os.path.join("/mnt/empirepool/cloud", "1", "Email-Attachments")
+            os.makedirs(cloud_dir, exist_ok=True)
+            cdest = os.path.join(cloud_dir, safe)
+            if os.path.exists(cdest):
+                stem, dot, e2 = safe.partition(".")
+                cdest = os.path.join(cloud_dir, f"{stem}_{uuid.uuid4().hex[:6]}{dot}{e2}")
+            with open(cdest, "wb") as fh:
+                fh.write(data)
+            con = _conn()
+            try:
+                con.execute(
+                    """INSERT INTO baza_cloud_files (id, user_id, filename, path, size,
+                                                     mime_type, category)
+                       VALUES (?, '1', ?, ?, ?, ?, 'email')""",
+                    (uuid.uuid4().hex, os.path.basename(cdest), cdest, len(data), mime))
+                con.commit()
+            finally:
+                con.close()
+            saved["cloud"] = {"path": cdest}
+        except Exception as e:
+            saved["cloud_error"] = str(e)
+
+    return jsonify({"success": True, "saved": saved, "filename": safe})
 
 
 @email_bp.route("/api/email2/attachments/upload", methods=["POST"])

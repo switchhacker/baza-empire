@@ -67,6 +67,9 @@
     .sp-note.color-4{background:linear-gradient(135deg,#bae6fd,#38bdf8)} /* sky */
     .sp-note.color-5{background:linear-gradient(135deg,#ddd6fe,#a78bfa)} /* lavender */
     .sp-note.dimmed{opacity:.35;filter:saturate(.55)}
+    .sp-resize{position:absolute;right:2px;bottom:2px;width:16px;height:16px;cursor:nwse-resize;opacity:0;z-index:6;background:linear-gradient(135deg,transparent 45%,rgba(0,0,0,.35) 45%,rgba(0,0,0,.35) 55%,transparent 55%,transparent 70%,rgba(0,0,0,.35) 70%,rgba(0,0,0,.35) 80%,transparent 80%);border-radius:0 0 4px 0;transition:opacity .15s}
+    .sp-note:hover .sp-resize,.sp-note.focused .sp-resize{opacity:.7}
+    .sp-note.focused .sp-resize{width:20px;height:20px}
     .sp-iconbtn{background:rgba(0,0,0,.12);color:#0d1a0d;border:none;border-radius:4px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
     .sp-iconbtn:hover{background:rgba(0,0,0,.25)}
     /* Voice-input "star" button — large, lime-tinted, pulses while listening */
@@ -839,7 +842,7 @@
 </head>
 <body>
 
-{% set nav_active = 'ahb123' %}
+{% set nav_active = 'sticky' if active_tab == 'noted' else 'ahb123' %}
 {% include "_nav.html" %}
 
 <!-- Sub Navigation Tabs (super-tabs) -->
@@ -1818,7 +1821,8 @@
           <button class="btn-secondary btn-sm" onclick="m4PullFromInvoice()" title="Pull line-item descriptions from the most recent draft invoice into the description field">⇆ Pull Description From Invoice</button>
           <button class="btn-secondary btn-sm" onclick="m4SaveEstimate()">💾 Save Estimate</button>
           <button class="btn-secondary btn-sm" onclick="m4Attach()">🔗 Attach to Project</button>
-          <button class="btn-secondary btn-sm" onclick="m4Pdf()">🖨 PDF</button>
+          <button class="btn-secondary btn-sm" onclick="m4Pdf()">📄 PDF</button>
+          <button class="btn-secondary btn-sm" onclick="m4Print()" title="Print to HP Smart Tank">🖨 Print</button>
           <button class="btn-secondary btn-sm" onclick="estCopyToClipboard(parseFloat((document.getElementById('m4-row-total').textContent||'').replace(/[^0-9.\-]/g,''))||0)">Copy Total</button>
           <button class="btn-secondary btn-sm" onclick="m4CreateProject()">🏗 Create Project</button>
         </div>
@@ -2779,6 +2783,8 @@
     <div style="display:flex;gap:8px;align-items:center">
       <input id="sp-search" class="search-box" placeholder="🔍 Find by content..." style="width:240px" oninput="spFilter()">
       <button class="btn btn-secondary" id="sp-summarize-btn" onclick="spSummarizeFocused()" style="display:none">✨ Re-summarize</button>
+      <button class="btn btn-secondary" id="sp-layout-btn" onclick="spToggleLayout()" title="Group notes by colour into side-by-side columns, or scatter freely">🎨 By color</button>
+      <button class="btn btn-secondary" onclick="spPrintPad()" title="Print the whole pad to the HP Smart Tank">🖨 Print pad</button>
       <button class="btn btn-primary" onclick="spNewNote()">+ New Note</button>
     </div>
   </div>
@@ -3850,7 +3856,10 @@
     <div style="margin-top:32px;border-top:1px solid #1a1a2e;padding-top:24px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div style="font-size:14px;font-weight:700;color:#fff">Recent Reviews</div>
-        <div style="font-size:12px;color:#555" id="review-count">Loading...</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button onclick="printReviewsSummary()" style="padding:6px 12px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;color:#ccc;font-size:11px;font-weight:700;cursor:pointer" title="Print a summary sheet of all reviews">🖨 Print summary</button>
+          <div style="font-size:12px;color:#555" id="review-count">Loading...</div>
+        </div>
       </div>
       <div id="reviews-list" style="display:flex;flex-direction:column;gap:12px">
         <div style="text-align:center;padding:20px;color:#333;font-size:12px">Loading reviews...</div>
@@ -6479,6 +6488,7 @@ function renderUnlinkedInvoices(){
       <div class="row-actions" style="margin-left:auto" onclick="event.stopPropagation()">
         <button class="btn-icon" onclick="_invoiceReturnPid=null;editInvoice('${i.id}')" title="Edit / link to a project">&#9998;</button>
         <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
+        <button class="btn-icon" onclick="ahbPrintDoc('invoice','${i.id}')" title="Print to HP Smart Tank">&#128424;</button>
         <button class="btn-icon" title="Share PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${escHtml(String(i.invoice_number||''))}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:'${i.id}'}}]})">✉</button>
         <button class="btn-icon del" onclick="deleteInvoice('${i.id}','${escHtml(String(i.invoice_number||''))}')" title="Delete">&#10005;</button>
       </div>
@@ -9733,7 +9743,8 @@ function estActionBar(total){
     <button class="btn-primary btn-sm" onclick="estSaveEstimate()">💾 Save Estimate</button>
     <button class="btn-secondary btn-sm" onclick="estPushItemsToInvoice()">📤 Push to Invoice</button>
     <button class="btn-secondary btn-sm" onclick="estOpenAttach()">🔗 Attach to Project</button>
-    <button class="btn-secondary btn-sm" onclick="estPdf()">🖨 PDF</button>
+    <button class="btn-secondary btn-sm" onclick="estPdf()">📄 PDF</button>
+    <button class="btn-secondary btn-sm" onclick="estPrint()" title="Print to HP Smart Tank">🖨 Print</button>
     <button class="btn-secondary btn-sm" onclick="estCopyToClipboard(${total})">Copy Total</button>
     <button class="btn-secondary btn-sm" onclick="estCreateProject(${total})">🏗 Create Project</button>
   </div>`;
@@ -9765,6 +9776,20 @@ async function estPdf(){
   const id=await estSaveEstimate(true);
   if(id) window.open('/api/ahb/estimates/'+id+'/pdf','_blank');
 }
+
+// ── Direct-to-HP-printer for AHB documents ─────────────────────────────────
+async function ahbPrintDoc(kind, id, copies){
+  if(!id){ showToast('Save the document first','error'); return; }
+  showToast('🖨 Sending to printer…');
+  try{
+    const r = await fetch('/api/ahb/'+kind+'s/'+id+'/print',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({copies:copies||1})});
+    const d = await r.json();
+    showToast(d.success ? '🖨 Sent to printer' : ('Print failed: '+(d.error||'unknown')), d.success?'success':'error');
+  }catch(e){ showToast('Print failed: '+e.message,'error'); }
+}
+async function estPrint(){ const id=await estSaveEstimate(true); if(id) ahbPrintDoc('estimate', id); }
+function m4Print(){ if(m4CaptureLast()) estPrint(); }
 
 let _attachEstimateId=null;
 async function estOpenAttach(estimateId){
@@ -11179,6 +11204,7 @@ async function pdLoadQuotes(pid){
         </div>
         <div style="display:flex;gap:4px;align-items:center">
           <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="View this quote as PDF" onclick="pdViewQuotePDF(${q.id})">📄 PDF</button>
+          <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="Print to HP Smart Tank" onclick="ahbPrintDoc('quote',${q.id})">🖨</button>
           <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px" title="Share Quote PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Quote — '+(document.getElementById('pd-title')||{}).textContent,body:'Please find your quote attached.',attachments:[{type:'quote_pdf',label:'Quote PDF',ref:{type:'quote_pdf',quote_id:${q.id}}}]})">✉ Share</button>
           <button class="btn btn-sm btn-secondary" style="padding:3px 9px;font-size:10px;background:#7c3aed33;color:#c4b5fd;border:1px solid #7c3aed" title="Edit this quote in the ${escHtml((q.method||'manual').replace(/_/g,' '))} tool" onclick="pdEditQuote(${q.id},'${pid}')">✎ Edit</button>
           <button class="btn-icon del" title="Delete" onclick="pdDeleteQuote(${q.id},'${pid}')">&#10005;</button>
@@ -12822,6 +12848,8 @@ async function loadStickyPad(){
     } else {
       spFocusedId = null;
     }
+    if(spLayoutMode === 'color'){ _spColorColumns(); _spSavePositions(); }
+    _spUpdateLayoutBtn();
     spRender();
   }catch(e){
     const c = document.getElementById('sp-canvas');
@@ -12880,9 +12908,11 @@ function _spInnerHtml(n, isFocused){
       <button class="sp-mic${micCls}" id="sp-mic-${n.id}" title="${micTitle}" onclick="event.stopPropagation();spToggleMic('${n.id}')" aria-label="${micTitle}">🎙</button>
       <div class="sp-actions">
         <button class="sp-iconbtn" onclick="event.stopPropagation();spOpenShare('${n.id}',this)" title="Share">↗</button>
+        <button class="sp-iconbtn" onclick="event.stopPropagation();spPrintNote('${n.id}')" title="Print this note">🖨</button>
         <button class="sp-iconbtn" onclick="event.stopPropagation();spShuffle()" title="Shuffle pile">🔀</button>
         <button class="sp-iconbtn" onclick="event.stopPropagation();spDeleteNote('${n.id}')" title="Delete">🗑</button>
       </div>
+      <div class="sp-resize" onmousedown="spResizeStart(event,'${n.id}')" ontouchstart="spResizeStart(event,'${n.id}')" title="Drag to resize"></div>
       <div class="sp-share" id="sp-share-${n.id}" onclick="event.stopPropagation()">
         <button onclick="spShareTelegram('${n.id}')"><span class="sp-share-icon">✈️</span> Telegram</button>
         <button onclick="spShareEmail('${n.id}')"><span class="sp-share-icon">📧</span> Email</button>
@@ -12895,14 +12925,16 @@ function _spInnerHtml(n, isFocused){
   }
   const preview = content.slice(0,180) + (content.length>180?'…':'');
   return `<div class="sp-summary">${escHtml(summary)}</div>
-    <div class="sp-content">${escHtml(preview)}</div>`;
+    <div class="sp-content">${escHtml(preview)}</div>
+    <div class="sp-resize" onmousedown="spResizeStart(event,'${n.id}')" ontouchstart="spResizeStart(event,'${n.id}')" title="Drag to resize"></div>`;
 }
 function _spRenderNote(n, isFocused){
   const pos = spPositions[n.id] || (spPositions[n.id] = _spRandPos());
   const color = _spColor(n);
-  const style = isFocused
+  const size = pos.w ? `;width:${pos.w}px;height:${pos.h}px` : '';
+  const style = (isFocused
     ? 'left:50%;top:5%;transform:translateX(-50%) rotate(0deg)'
-    : `left:${pos.x}%;top:${pos.y}%;transform:rotate(${pos.rot}deg)`;
+    : `left:${pos.x}%;top:${pos.y}%;transform:rotate(${pos.rot}deg)`) + size;
   const handlers = isFocused
     ? ''
     : ` onmousedown="spDragStart(event,'${n.id}')" ontouchstart="spDragStart(event,'${n.id}')"`;
@@ -12919,6 +12951,8 @@ function _spApplyFocusStyle(el, n, isFocused){
     el.style.top  = pos.y + '%';
     el.style.transform = 'rotate(' + pos.rot + 'deg)';
   }
+  if(pos.w){ el.style.width = pos.w + 'px'; el.style.height = pos.h + 'px'; }
+  else { el.style.width = ''; el.style.height = ''; }
 }
 function _spReconfigureNote(el, n, isFocused){
   // Toggle class + replace inner content + reapply position style so the
@@ -13258,9 +13292,113 @@ async function spShareSystem(id){
   _spClosePopovers();
 }
 function spShuffle(){
-  allNotes.forEach(n => { if(n.id !== spFocusedId) spPositions[n.id] = _spRandPos(); });
+  spLayoutMode = 'scatter';
+  try{ localStorage.setItem('ahbStickyLayoutMode','scatter'); }catch(e){}
+  allNotes.forEach(n => { if(n.id !== spFocusedId){ const p = _spRandPos(); const old = spPositions[n.id]||{}; p.w = old.w; p.h = old.h; spPositions[n.id] = p; } });
   _spSavePositions();
+  _spUpdateLayoutBtn();
   spRender();
+}
+
+/* ----- Layout: group by colour into side-by-side columns ----- */
+let spLayoutMode = 'color';
+try{ spLayoutMode = localStorage.getItem('ahbStickyLayoutMode') || 'color'; }catch(e){}
+function _spUpdateLayoutBtn(){
+  const b = document.getElementById('sp-layout-btn');
+  if(b) b.textContent = (spLayoutMode === 'color') ? '🎨 By color' : '🔀 Scatter';
+}
+function _spColorColumns(){
+  // Same colour = same column; columns sit side by side; notes cascade down
+  // each column like a stacked pad (slight horizontal offset + rotation).
+  const visible = _spVisibleNotes();
+  const groups = {};
+  visible.forEach(n => { const c = _spColor(n); (groups[c] = groups[c] || []).push(n); });
+  const colors = Object.keys(groups).map(Number).sort((a,b)=>a-b);
+  const ncols = Math.max(colors.length, 1);
+  const step = (100 - 6) / ncols;             // usable width split into columns
+  colors.forEach((c, ci) => {
+    const colLeft = 3 + step * ci;
+    const items = groups[c].slice().sort((a,b)=>
+      (b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||''));
+    const vstep = Math.min(11, 80 / Math.max(items.length, 1));
+    items.forEach((n, j) => {
+      const xOff = (j % 2 === 0) ? 0 : 3;       // gentle side-to-side stack
+      const rot  = ((j % 2 === 0) ? -1 : 1) * (2 + (j % 4));
+      const old  = spPositions[n.id] || {};
+      spPositions[n.id] = {
+        x: Math.max(0, Math.min(92, colLeft + xOff)),
+        y: Math.max(0, Math.min(90, 4 + j * vstep)),
+        rot, w: old.w, h: old.h
+      };
+    });
+  });
+}
+function spToggleLayout(){
+  spLayoutMode = (spLayoutMode === 'color') ? 'scatter' : 'color';
+  try{ localStorage.setItem('ahbStickyLayoutMode', spLayoutMode); }catch(e){}
+  if(spLayoutMode === 'color'){ _spColorColumns(); }
+  else { allNotes.forEach(n => { if(!spPositions[n.id]) spPositions[n.id] = _spRandPos(); }); }
+  _spSavePositions();
+  _spUpdateLayoutBtn();
+  spRender();
+}
+
+/* ----- Drag to resize a note ----- */
+let _spResize = null;
+function spResizeStart(e, id){
+  e.preventDefault(); e.stopPropagation();
+  const isTouch = e.type === 'touchstart';
+  const pt = isTouch ? e.touches[0] : e;
+  const el = document.getElementById('sp-note-'+id);
+  if(!el) return;
+  const r = el.getBoundingClientRect();
+  _spResize = { id, el, startX: pt.clientX, startY: pt.clientY, startW: r.width, startH: r.height };
+  document.addEventListener('mousemove', spResizeMove);
+  document.addEventListener('mouseup',   spResizeEnd);
+  document.addEventListener('touchmove', spResizeMove, {passive:false});
+  document.addEventListener('touchend',  spResizeEnd);
+}
+function spResizeMove(e){
+  if(!_spResize) return;
+  const isTouch = e.type === 'touchmove';
+  const pt = isTouch ? e.touches[0] : e;
+  if(isTouch) e.preventDefault();
+  const w = Math.max(160, Math.min(680, _spResize.startW + (pt.clientX - _spResize.startX)));
+  const h = Math.max(150, Math.min(680, _spResize.startH + (pt.clientY - _spResize.startY)));
+  _spResize.el.style.width  = w + 'px';
+  _spResize.el.style.height = h + 'px';
+  _spResize.w = w; _spResize.h = h;
+}
+function spResizeEnd(){
+  if(!_spResize) return;
+  document.removeEventListener('mousemove', spResizeMove);
+  document.removeEventListener('mouseup',   spResizeEnd);
+  document.removeEventListener('touchmove', spResizeMove);
+  document.removeEventListener('touchend',  spResizeEnd);
+  if(_spResize.w){
+    const p = spPositions[_spResize.id] || (spPositions[_spResize.id] = _spRandPos());
+    p.w = _spResize.w; p.h = _spResize.h;
+    _spSavePositions();
+  }
+  _spResize = null;
+}
+
+/* ----- Print sticky notes ----- */
+async function spPrintNote(id){
+  showToast('🖨 Printing note…');
+  try{
+    const r = await fetch('/api/ahb/notes/'+id+'/print',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d = await r.json();
+    showToast(d.success?'🖨 Sent to printer':('Print failed: '+(d.error||'unknown')), d.success?'success':'error');
+  }catch(e){ showToast('Print failed: '+e.message,'error'); }
+}
+async function spPrintPad(){
+  showToast('🖨 Sending pad to printer…');
+  try{
+    const r = await fetch('/api/ahb/notes/print-all',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d = await r.json();
+    showToast(d.success?'🖨 Sent to printer':('Print failed: '+(d.error||'unknown')), d.success?'success':'error');
+  }catch(e){ showToast('Print failed: '+e.message,'error'); }
 }
 
 /* ----- Drag & drop within the canvas ----- */
@@ -13269,7 +13407,7 @@ function spDragStart(e, id){
   if(id === spFocusedId) return;          // focused note doesn't drag (it's the showcase)
   // Don't start drag from interactive children (swatch, buttons).
   const t = e.target;
-  if(t.closest && (t.closest('.sp-iconbtn') || t.closest('.sp-swatch') || t.closest('.sp-actions') || t.closest('.sp-mic') || t.closest('.sp-share'))) return;
+  if(t.closest && (t.closest('.sp-iconbtn') || t.closest('.sp-swatch') || t.closest('.sp-actions') || t.closest('.sp-mic') || t.closest('.sp-share') || t.closest('.sp-resize'))) return;
   const isTouch = e.type === 'touchstart';
   const pt = isTouch ? e.touches[0] : e;
   const el = document.getElementById('sp-note-'+id);
@@ -13351,6 +13489,8 @@ async function spSetColor(id, color){
     await fetch('/api/ahb/notes/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({color})});
     const badge = document.getElementById('sp-saved-'+id);
     if(badge){ badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'), 1100); }
+    // In colour-grouped mode, re-flow so this note joins its colour's column.
+    if(spLayoutMode === 'color'){ _spColorColumns(); _spSavePositions(); spRender(); }
   }catch(e){ showToast('Color save failed: '+e.message,'error'); }
 }
 function spFilter(){
@@ -15864,6 +16004,7 @@ function pdRenderInvoices(p){
         ${i.is_primary?'':`<button class="btn-icon" onclick="pdSetPrimaryInvoice('${i.id}')" title="Make this the primary invoice (basis for payment terms & balance invoice)" style="color:#f59e0b">&#9733;</button>`}
         <button class="btn-icon" onclick="pdEditInvoice('${i.id}')" title="Edit invoice">&#9998;</button>
         <button class="btn-icon" onclick="exportInvoicePDF('${i.id}')" title="View PDF">&#128196;</button>
+        <button class="btn-icon" onclick="ahbPrintDoc('invoice','${i.id}')" title="Print to HP Smart Tank">&#128424;</button>
         <button class="btn-icon" onclick="downloadInvoicePDF('${i.id}')" title="Download PDF">&#11015;</button>
         <button class="btn-icon" onclick="shareInvoice('${i.id}','${num}')" title="Share PDF link with client">&#128279;</button>
         <button class="btn-icon" title="Share Invoice PDF via email" onclick="openShareEmail({to:currentClientEmail(),subject:'Invoice ${num}',body:'Please find your invoice attached.',attachments:[{type:'invoice_pdf',label:'Invoice PDF',ref:{type:'invoice_pdf',invoice_id:'${i.id}'}}]})">✉</button>
@@ -18591,9 +18732,28 @@ function renderReviewsList(){
           : `<button onclick="moderateReview('${reviewId}',true)" style="padding:6px 14px;background:#0a2a18;border:1px solid #1a3a2a;border-radius:6px;color:#00d084;font-size:11px;font-weight:700;cursor:pointer">✓ Publish to Website</button>`
         }
         ${isLow?`<button onclick="contactReviewer('${reviewId}')" style="padding:6px 14px;background:#0a1a2a;border:1px solid #1a3a5a;border-radius:6px;color:#4da6ff;font-size:11px;font-weight:700;cursor:pointer">📞 Contact Reviewer</button>`:''}
+        <button onclick="printReview('${rev._file||''}')" style="padding:6px 14px;background:#1a1a2e;border:1px solid #2a2a4a;border-radius:6px;color:#ccc;font-size:11px;font-weight:700;cursor:pointer" title="Print to HP Smart Tank">🖨 Print</button>
       </div>
     </div>`;
   }).join('');
+}
+
+async function printReview(file){
+  if(!file){ showToast('No review file','error'); return; }
+  showToast('🖨 Sending to printer…');
+  try{
+    const r=await fetch('/api/reviews/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file})});
+    const d=await r.json();
+    showToast(d.success?'🖨 Sent to printer':('Print failed: '+(d.error||'unknown')), d.success?'success':'error');
+  }catch(e){ showToast('Print failed: '+e.message,'error'); }
+}
+async function printReviewsSummary(){
+  showToast('🖨 Sending summary to printer…');
+  try{
+    const r=await fetch('/api/reviews/print',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({summary:true})});
+    const d=await r.json();
+    showToast(d.success?'🖨 Sent to printer':('Print failed: '+(d.error||'unknown')), d.success?'success':'error');
+  }catch(e){ showToast('Print failed: '+e.message,'error'); }
 }
 
 async function moderateReview(reviewId,publish){
@@ -22272,6 +22432,7 @@ SocialStudio.modules.postdetail = (function(){
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.approvalLog(${p.id})">&#x2705; Approval log</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.save(${p.id})">Save</button>
           <button class="btn-primary" onclick="SocialStudio.modules.postdetail.bundle(${p.id})">&#x1F4E5; Bundle</button>
+          <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.printPost(${p.id})" title="Print this creation to the HP Smart Tank">&#x1F5A8; Print</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.telegram(${p.id})">&#x1F4F2; Phone</button>
         </div>
       </div>
@@ -22416,6 +22577,15 @@ SocialStudio.modules.postdetail = (function(){
     if (SocialStudio.modules.library) SocialStudio.modules.library.render();
   }
   function bundle(id) { window.open('/api/ahb/social/posts/' + id + '/bundle', '_blank'); }
+  async function printPost(id) {
+    SocialStudio.modules.toast.success('🖨 Sending to printer…');
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id + '/print', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+      const d = await r.json();
+      if (d.success) SocialStudio.modules.toast.success('🖨 Sent to printer');
+      else SocialStudio.modules.toast.error('Print failed: ' + (d.error||'unknown'));
+    } catch(e) { SocialStudio.modules.toast.error('Print failed: ' + e.message); }
+  }
   async function telegram(id) {
     const r = await fetch('/api/ahb/social/posts/' + id + '/telegram', { method: 'POST' });
     if (r.ok) SocialStudio.modules.toast.success('Sent.');
@@ -22486,7 +22656,7 @@ SocialStudio.modules.postdetail = (function(){
       if (SocialStudio.modules.library) SocialStudio.modules.library.render();
     });
   }
-  return { open, save, bundle, telegram, subtitles, coverPick, saveAsTemplate, editTags,
+  return { open, save, bundle, printPost, telegram, subtitles, coverPick, saveAsTemplate, editTags,
            history, restore, approvalLog, addApprovalNote, _scheduleAutosave,
            _scheduleStatsAutosave };
 })();

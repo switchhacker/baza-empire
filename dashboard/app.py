@@ -3464,6 +3464,314 @@ def api_print_status():
         return jsonify({'success': False, 'error': str(e)})
 
 
+# ── Direct-to-printer helpers (HP Smart Tank 5101 via print_document skill) ────
+
+def _send_to_printer(file_path=None, text=None, title="Print Job", copies=1, **opts):
+    """Send a file (or raw text) straight to the HP printer via print_document.py.
+    Returns the parsed JSON result dict from the skill."""
+    skill_path = os.path.join(os.path.dirname(DASHBOARD_DIR), 'skills', 'shared', 'print_document.py')
+    job = {'action': 'print', 'copies': int(copies or 1)}
+    if file_path:
+        job['file_path'] = file_path
+    elif text is not None:
+        job['text'] = text
+        job['title'] = title
+    job.update({k: v for k, v in opts.items() if v is not None})
+    env = os.environ.copy()
+    env['SKILL_ARGS'] = json.dumps(job)
+    result = subprocess.run([VENV_PYTHON, skill_path], capture_output=True, text=True, timeout=30, env=env)
+    for line in reversed(result.stdout.strip().split('\n')):
+        if line.strip().startswith('{'):
+            try:
+                return json.loads(line.strip())
+            except Exception:
+                pass
+    return {'success': result.returncode == 0, 'output': result.stdout.strip(),
+            'stderr': result.stderr.strip()}
+
+
+def _print_pdf_bytes(data, prefix='baza_doc', copies=1, **opts):
+    """Write PDF/HTML bytes to a temp file and print it."""
+    import tempfile
+    suffix = '.pdf' if (data[:5] == b'%PDF-') else '.html'
+    tf = tempfile.NamedTemporaryFile(suffix=suffix, delete=False, prefix=prefix + '_', dir='/tmp')
+    tf.write(data)
+    tf.close()
+    return _send_to_printer(file_path=tf.name, copies=copies, **opts)
+
+
+def _html_to_pdf_bytes(html):
+    """Render an HTML string to PDF bytes via WeasyPrint (None if unavailable)."""
+    if WeasyHTML is not None:
+        try:
+            return WeasyHTML(string=html).write_pdf()
+        except Exception as e:
+            print(f"[print] weasyprint render failed: {e}", flush=True)
+    return html.encode('utf-8')
+
+
+def _print_ahb_doc(kind, doc_id):
+    """Render an AHB document (invoice/quote/estimate) and send straight to printer."""
+    data = request.get_json(silent=True) or {}
+    copies = int(data.get('copies', 1) or 1)
+    try:
+        _fn, mime, payload = render_ahb_doc_pdf(kind, doc_id)
+    except LookupError:
+        return jsonify({'success': False, 'error': f'{kind} not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    if mime != 'application/pdf':
+        return jsonify({'success': False,
+                        'error': 'PDF rendering unavailable (WeasyPrint missing); cannot print'}), 500
+    res = _print_pdf_bytes(payload, prefix=f'baza_{kind}', copies=copies)
+    return jsonify(res), (200 if res.get('success') else 500)
+
+
+@app.route('/api/ahb/invoices/<iid>/print', methods=['POST'])
+def api_ahb_invoice_print(iid):
+    return _print_ahb_doc('invoice', iid)
+
+
+@app.route('/api/ahb/quotes/<qid>/print', methods=['POST'])
+def api_ahb_quote_print(qid):
+    return _print_ahb_doc('quote', qid)
+
+
+@app.route('/api/ahb/estimates/<eid>/print', methods=['POST'])
+def api_ahb_estimate_print(eid):
+    return _print_ahb_doc('estimate', eid)
+
+
+# Sticky-note colour palette (matches .sp-note.color-N in ahb123.html)
+_STICKY_COLORS = {
+    1: ('#d9f99d', '#bef264', 'Lime'),
+    2: ('#fde68a', '#facc15', 'Canary'),
+    3: ('#fbcfe8', '#f472b6', 'Pink'),
+    4: ('#bae6fd', '#38bdf8', 'Sky'),
+    5: ('#ddd6fe', '#a78bfa', 'Lavender'),
+}
+
+
+def _sticky_card_html(note):
+    """Render one sticky note as a printable card matching the on-screen look."""
+    from html import escape as _h
+    import json as _json
+    try:
+        c = int(note.get('color') or 1)
+    except (TypeError, ValueError):
+        c = 1
+    if c not in _STICKY_COLORS:
+        c = 1
+    c1, c2, _name = _STICKY_COLORS[c]
+    title = (note.get('title') or 'Sticky Note').strip()
+    body_html = ''
+    items = note.get('checklist_items')
+    rendered_list = False
+    if note.get('is_list') or note.get('is_task'):
+        try:
+            parsed = _json.loads(items) if isinstance(items, str) else (items or [])
+            if parsed:
+                lis = []
+                for it in parsed:
+                    if isinstance(it, dict):
+                        done = it.get('done') or it.get('checked')
+                        txt = it.get('text') or it.get('label') or ''
+                    else:
+                        done, txt = False, str(it)
+                    box = '&#9745;' if done else '&#9744;'
+                    lis.append(f'<li>{box} {_h(str(txt))}</li>')
+                body_html = '<ul class="cklist">' + ''.join(lis) + '</ul>'
+                rendered_list = True
+        except Exception:
+            rendered_list = False
+    if not rendered_list:
+        body_html = '<div class="body">' + _h(note.get('content') or '').replace('\n', '<br>') + '</div>'
+    tags = (note.get('tags') or '').strip()
+    tags_html = f'<div class="tags">{_h(tags)}</div>' if tags else ''
+    return f'''<div class="sticky" style="background:linear-gradient(135deg,{c1},{c2})">
+      <div class="tape"></div>
+      <div class="title">{_h(title)}</div>
+      {body_html}
+      {tags_html}
+    </div>'''
+
+
+_STICKY_PRINT_CSS = '''
+  @page { size: Letter; margin: 0.6in; }
+  body { font-family: 'Comic Sans MS', 'Segoe Print', cursive, sans-serif; margin:0; }
+  .grid { display:flex; flex-wrap:wrap; gap:22px; }
+  .sticky { position:relative; width:300px; min-height:280px; padding:30px 22px 22px;
+            border-radius:4px; color:#1a1a1a; box-shadow:0 6px 14px rgba(0,0,0,.25);
+            box-sizing:border-box; page-break-inside:avoid; }
+  .sticky .tape { position:absolute; top:-8px; left:50%; transform:translateX(-50%) rotate(-2deg);
+            width:80px; height:18px; background:rgba(231,76,60,.55); border-radius:2px; }
+  .sticky .title { font-weight:700; font-size:20px; margin-bottom:10px;
+            padding-bottom:8px; border-bottom:1px solid rgba(0,0,0,.18); }
+  .sticky .body { font-size:15px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+  .sticky .cklist { list-style:none; padding:0; margin:0; font-size:15px; line-height:1.7; }
+  .sticky .tags { margin-top:12px; font-size:12px; opacity:.7; }
+'''
+
+
+@app.route('/api/ahb/notes/<nid>/print', methods=['POST'])
+def api_ahb_note_print(nid):
+    """Print a single sticky note straight to the HP printer."""
+    conn = _ahb_db()
+    row = conn.execute("SELECT * FROM ahb_notes WHERE id = ?", (nid,)).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'success': False, 'error': 'note not found'}), 404
+    copies = int((request.get_json(silent=True) or {}).get('copies', 1) or 1)
+    html = f'''<!doctype html><html><head><meta charset="utf-8"><style>{_STICKY_PRINT_CSS}</style></head>
+      <body><div class="grid">{_sticky_card_html(dict(row))}</div></body></html>'''
+    res = _print_pdf_bytes(_html_to_pdf_bytes(html), prefix='baza_sticky', copies=copies)
+    return jsonify(res), (200 if res.get('success') else 500)
+
+
+@app.route('/api/ahb/notes/print-all', methods=['POST'])
+def api_ahb_notes_print_all():
+    """Print a batch of sticky notes (default: all), grouped by colour."""
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids')
+    conn = _ahb_db()
+    if ids:
+        qmarks = ','.join('?' * len(ids))
+        rows = conn.execute(f"SELECT * FROM ahb_notes WHERE id IN ({qmarks})", ids).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM ahb_notes ORDER BY color, updated_at DESC").fetchall()
+    conn.close()
+    notes = [dict(r) for r in rows]
+    if not notes:
+        return jsonify({'success': False, 'error': 'no notes to print'}), 404
+    notes.sort(key=lambda n: (int(n.get('color') or 1)))
+    cards = ''.join(_sticky_card_html(n) for n in notes)
+    html = f'''<!doctype html><html><head><meta charset="utf-8"><style>{_STICKY_PRINT_CSS}</style></head>
+      <body><div class="grid">{cards}</div></body></html>'''
+    res = _print_pdf_bytes(_html_to_pdf_bytes(html), prefix='baza_stickypad')
+    return jsonify(res), (200 if res.get('success') else 500)
+
+
+def _review_card_html(rev):
+    from html import escape as _h
+    try:
+        stars = int(rev.get('stars') or 0)
+    except (TypeError, ValueError):
+        stars = 0
+    star_str = '&#9733;' * stars + '&#9734;' * (5 - stars)
+    name = _h(rev.get('name') or 'Anonymous')
+    ptype = _h(rev.get('project_type') or '')
+    date = _h(rev.get('date') or (rev.get('ts') or '')[:10])
+    text = _h(rev.get('text') or '').replace('\n', '<br>')
+    ptype_html = f'<span class="ptype">{ptype}</span>' if ptype else ''
+    return f'''<div class="review">
+      <div class="rev-head"><span class="stars">{star_str}</span>{ptype_html}</div>
+      <div class="rev-text">&ldquo;{text}&rdquo;</div>
+      <div class="rev-foot"><strong>{name}</strong><span class="date">{date}</span></div>
+    </div>'''
+
+
+@app.route('/api/reviews/print', methods=['POST'])
+def api_reviews_print():
+    """Print a single review or a review summary sheet.
+    Body: {file: <review.json>}  -> single review
+          {summary: true, only_published: bool} -> all reviews as a summary."""
+    data = request.get_json(silent=True) or {}
+    reviews = _load_reviews(only_published=bool(data.get('only_published')))
+    if data.get('summary'):
+        if not reviews:
+            return jsonify({'success': False, 'error': 'no reviews'}), 404
+        n = len(reviews)
+        avg = sum(int(r.get('stars') or 0) for r in reviews) / n if n else 0
+        cards = ''.join(_review_card_html(r) for r in reviews)
+        header = (f'<div class="summary-head"><h1>All Home Building Co — Customer Reviews</h1>'
+                  f'<div class="summary-stats">{n} reviews · {avg:.1f} &#9733; average</div></div>')
+    else:
+        target = data.get('file')
+        rev = next((r for r in reviews if r.get('_file') == target), None)
+        if not rev:
+            return jsonify({'success': False, 'error': 'review not found'}), 404
+        cards = _review_card_html(rev)
+        header = ''
+    css = '''
+      @page { size: Letter; margin: 0.7in; }
+      body { font-family: Georgia, 'Times New Roman', serif; color:#1a1a2e; margin:0; }
+      .summary-head { text-align:center; margin-bottom:24px; border-bottom:2px solid #1a1a2e; padding-bottom:12px; }
+      .summary-head h1 { margin:0 0 6px; font-size:24px; }
+      .summary-stats { color:#666; font-size:14px; }
+      .review { border:1px solid #ddd; border-left:4px solid #f5a623; border-radius:8px;
+                padding:16px 20px; margin-bottom:16px; page-break-inside:avoid; }
+      .rev-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+      .stars { color:#f5a623; font-size:20px; letter-spacing:2px; }
+      .ptype { color:#666; font-size:12px; text-transform:uppercase; letter-spacing:1px; }
+      .rev-text { font-size:16px; line-height:1.6; font-style:italic; margin-bottom:12px; }
+      .rev-foot { display:flex; justify-content:space-between; color:#444; font-size:13px; }
+      .date { color:#999; }
+    '''
+    html = f'''<!doctype html><html><head><meta charset="utf-8"><style>{css}</style></head>
+      <body>{header}{cards}</body></html>'''
+    res = _print_pdf_bytes(_html_to_pdf_bytes(html), prefix='baza_reviews')
+    return jsonify(res), (200 if res.get('success') else 500)
+
+
+@app.route('/api/ahb/projects/<pid>/print', methods=['POST'])
+def api_ahb_project_print(pid):
+    """Print a project overview + wiring diagram (scaffold nodes/edges) as a reference sheet."""
+    from html import escape as _h
+    conn = _ahb_db()
+    proj = conn.execute("SELECT * FROM ahb_projects WHERE id = ?", (pid,)).fetchone()
+    nodes, edges = [], []
+    try:
+        nodes = [dict(r) for r in conn.execute(
+            "SELECT * FROM project_scaffold_nodes WHERE project_id = ? ORDER BY depth, id", (pid,)).fetchall()]
+        edges = [dict(r) for r in conn.execute(
+            "SELECT * FROM project_scaffold_edges WHERE project_id = ?", (pid,)).fetchall()]
+    except Exception:
+        pass
+    conn.close()
+    if not proj and not nodes:
+        return jsonify({'success': False, 'error': 'project not found'}), 404
+    # baza-dev projects may not live in ahb_projects; still print the wiring.
+    proj = dict(proj) if proj else {'title': pid}
+    node_by_id = {n['id']: n for n in nodes}
+
+    comp_rows = ''.join(
+        f'<tr><td>{_h(str(n.get("title") or ""))}</td><td>{_h(str(n.get("node_type") or ""))}</td>'
+        f'<td>{_h(str(n.get("description") or ""))}</td></tr>'
+        for n in nodes)
+    wire_rows = ''.join(
+        f'<tr><td>{_h(str(node_by_id.get(e.get("from_node"), {}).get("title", e.get("from_node"))))}</td>'
+        f'<td>&rarr;</td>'
+        f'<td>{_h(str(node_by_id.get(e.get("to_node"), {}).get("title", e.get("to_node"))))}</td>'
+        f'<td>{_h(str(e.get("edge_type") or ""))}</td></tr>'
+        for e in edges)
+    comp_section = (f'<h2>Components ({len(nodes)})</h2><table><thead><tr><th>Component</th>'
+                    f'<th>Type</th><th>Description</th></tr></thead><tbody>{comp_rows}</tbody></table>') if nodes else ''
+    wire_section = (f'<h2>Wiring / Connections ({len(edges)})</h2><table><thead><tr><th>From</th><th></th>'
+                    f'<th>To</th><th>Type</th></tr></thead><tbody>{wire_rows}</tbody></table>') if edges else ''
+    budget = ''
+    if proj.get('budget_low') or proj.get('budget_high'):
+        budget = f'${proj.get("budget_low") or 0:,.0f} – ${proj.get("budget_high") or 0:,.0f}'
+    css = '''
+      @page { size: Letter; margin: 0.7in; }
+      body { font-family: 'Helvetica Neue', Arial, sans-serif; color:#1a1a2e; margin:0; }
+      h1 { font-size:22px; margin:0 0 4px; }
+      h2 { font-size:15px; margin:22px 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
+      .meta { color:#555; font-size:13px; margin-bottom:4px; }
+      table { width:100%; border-collapse:collapse; font-size:12px; }
+      th { text-align:left; background:#f2f2f7; padding:6px 8px; border:1px solid #ddd; }
+      td { padding:6px 8px; border:1px solid #eee; vertical-align:top; }
+    '''
+    html = f'''<!doctype html><html><head><meta charset="utf-8"><style>{css}</style></head><body>
+      <h1>{_h(proj.get('title') or 'Project')}</h1>
+      <div class="meta">{_h(proj.get('address') or '')}</div>
+      <div class="meta">Status: {_h(proj.get('status') or '')}{(' · Budget: ' + budget) if budget else ''}</div>
+      <div class="meta">{_h(proj.get('scope') or proj.get('description') or '')}</div>
+      {comp_section}{wire_section}
+    </body></html>'''
+    res = _print_pdf_bytes(_html_to_pdf_bytes(html), prefix='baza_project')
+    return jsonify(res), (200 if res.get('success') else 500)
+
+
 @app.route('/api/artifacts/delete-bulk', methods=['POST'])
 def api_artifact_delete_bulk():
     data  = request.json or {}
@@ -5526,6 +5834,12 @@ def _ahb_db():
 @app.route('/ahb123/<tab>')
 def ahb123_page(tab='dashboard'):
     return render_template('ahb123.html', active_tab=tab)
+
+
+@app.route('/sticky')
+def sticky_page():
+    """Top-level Sticky Pad tab (renders the AHB123 sticky-pad view directly)."""
+    return render_template('ahb123.html', active_tab='noted')
 
 
 @app.route('/mobile')
