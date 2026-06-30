@@ -45,6 +45,7 @@
     .edge-pill.online{background:#0e3320;color:#5cdc99;border:1px solid #1c5638}
     .edge-pill.offline{background:#3a1a1a;color:#e94560;border:1px solid #5a2828}
     .edge-thumb{width:100%;aspect-ratio:4/3;background:#06060e;border:1px solid #161628;border-radius:7px;object-fit:cover;display:block}
+    .flip180{transform:rotate(180deg)}  /* baza gate cam is mounted inverted — correct in-display */
     .edge-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 12px;font-size:11px;font-family:monospace}
     .edge-meta div{color:#666}
     .edge-meta b{color:#aaa;font-weight:600}
@@ -105,7 +106,7 @@
     <span style="font-size:11px;color:#666;font-weight:400;text-transform:none;letter-spacing:0">latest frame (~3s cadence) · aim the lens at your seated face</span>
   </div>
   <div class="booth-card" style="max-width:540px">
-    <img id="gateLive" class="edge-thumb" style="aspect-ratio:4/3;max-width:500px"
+    <img id="gateLive" class="edge-thumb flip180" style="aspect-ratio:4/3;max-width:500px"
          src="/api/edge/gate/latest.jpg" alt="waiting for a frame…"/>
     <div style="font-size:11px;color:#666;font-family:monospace;margin-top:8px" id="gateLiveMeta">refreshing…</div>
   </div>
@@ -187,8 +188,9 @@ function loadEdge() {
         const pill   = n.online ? '<span class="edge-pill online">ONLINE</span>'
                                 : '<span class="edge-pill offline">OFFLINE</span>';
         const label  = NODE_TYPE_LABEL[n.type] || (n.type || 'NODE').toUpperCase();
+        const thumbCls = (n.node_id === 'baza-gate-cam-01' || n.type === 'gate-cam') ? 'edge-thumb flip180' : 'edge-thumb';
         const thumb  = n.frame_url
-          ? `<img class="edge-thumb" src="/api/edge/frame/${encodeURIComponent(n.node_id)}?t=${Date.now()}" onerror="this.style.display='none'"/>`
+          ? `<img class="${thumbCls}" src="/api/edge/frame/${encodeURIComponent(n.node_id)}?t=${Date.now()}" onerror="this.style.display='none'"/>`
           : '';
         let extra = {};
         try { extra = n.extra ? JSON.parse(n.extra) : {}; } catch(e) {}
