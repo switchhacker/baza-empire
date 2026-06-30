@@ -184,7 +184,10 @@ def load_agent_configs() -> dict:
 
 
 def is_llm_actionable(task: dict) -> bool:
-    title = (task.get("title", "") + " " + task.get("description", "")).lower()
+    # NB: .get(k, "") only defaults on a MISSING key — a present-but-NULL column
+    # (SQLite NULL → None) slips through, so coerce explicitly or a single
+    # null-description task crashes the whole runner.
+    title = ((task.get("title") or "") + " " + (task.get("description") or "")).lower()
     return any(kw in title for kw in LLM_ACTIONABLE)
 
 
@@ -660,6 +663,14 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
     for task in tasks:
         task_id    = task["id"]
         task_title = task["title"]
+
+        # A task with no id can't be addressed (start/update/complete all key on
+        # id) — every state write would error. Skip it loudly rather than spin on
+        # it each run. Upstream data fix needed if these persist (see scaffold).
+        if not task_id:
+            logger.warning(f"[{agent_id}] Skipping task with no id: {str(task_title)[:60]}")
+            results.append({"task": task_title, "status": "skipped_no_id"})
+            continue
 
         logger.info(f"[{agent_id}] Task [{task_id}]: {task_title[:60]}")
 
