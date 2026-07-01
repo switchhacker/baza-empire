@@ -69,13 +69,17 @@
   </div>
   <a class="nav-link {% if _act == 'sticky' %}active{% endif %}" href="/sticky" title="Sticky Pad — scatter your thoughts">&#128204; Sticky</a>
   <a class="nav-link {% if _act == 'datahub' %}active{% endif %}" href="/datahub" title="Data Hub — all artifacts across projects">&#128230; Data Hub</a>
-  <a class="nav-link {% if _act == 'projects' %}active{% endif %}" href="/projects" title="Baza Projects — developer workspaces">&#127959;&#65039; Projects</a>
-  <a class="nav-link {% if _act == 'infra' %}active{% endif %}" href="/infra" title="Infrastructure metrics">&#128737;&#65039; Infra</a>
-  <a class="nav-link {% if _act == 'edge' %}active{% endif %}" href="/edge" title="Edge devices — ESP32 fleet + receipt photo booth">&#128225; Edge</a>
-  <a class="nav-link {% if _act == 'explore' %}active{% endif %}" href="/explore" title="Explore the empire">&#129517; Explore</a>
-  <a class="nav-link" href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">&#127754; Fluid</a>
-  <a class="nav-link {% if _act == 'vision' %}active{% endif %}" href="/vision" title="Vision catalogue">&#129488; Vision</a>
-  <a class="nav-link {% if _act == 'private' %}active{% endif %}" href="/datahub/private" title="Vault — your personal safe (Telegram-inbound + locked files)">&#128272; Vault</a>
+  <div class="nav-dropdown">
+    <a class="nav-link {% if _act == 'projects' %}active{% endif %}" href="/projects" title="Baza Projects — developer workspaces">&#127959;&#65039; Projects</a>
+    <div class="nav-submenu">
+      <a href="/infra" class="{% if _act == 'infra' %}active{% endif %}" title="Infrastructure metrics">&#128737;&#65039; Infra</a>
+      <a href="/edge" class="{% if _act == 'edge' %}active{% endif %}" title="Edge devices — ESP32 fleet + receipt photo booth">&#128225; Edge</a>
+      <a href="/explore" class="{% if _act == 'explore' %}active{% endif %}" title="Explore the empire">&#129517; Explore</a>
+      <a href="#" data-fluid-link title="Fluid (JARVIS-style room, dev port 8889)">&#127754; Fluid</a>
+      <a href="/vision" class="{% if _act == 'vision' %}active{% endif %}" title="Vision catalogue">&#129488; Vision</a>
+      <a href="/datahub/private" class="{% if _act == 'private' %}active{% endif %}" title="Vault — your personal safe (Telegram-inbound + locked files)">&#128272; Vault</a>
+    </div>
+  </div>
   <a class="nav-link {% if _act == 'cloud' %}active{% endif %}" href="/cloud" title="Family cloud">&#9729;&#65039; Cloud</a>
   <a class="nav-link {% if _act == 'shell' %}active{% endif %}" href="/shell" style="color:#7c3aed;font-weight:700" title="Phantom shell">&#128123; Phantom</a>
   <a class="nav-link {% if _act == 'settings' %}active{% endif %}" href="/settings" title="Settings">&#9881;&#65039; Settings</a>
