@@ -34,6 +34,13 @@ def test_resolve_rejects_non_bin_and_traversal(store):
     assert store.resolve_token(missing) is None
 
 
+def test_resolve_rejects_embedded_nul_byte(store):
+    # decoded payload contains a NUL byte -> must return None, not raise
+    import base64
+    tok = "~" + base64.urlsafe_b64encode(b"evil\x00.txt").decode().rstrip("=")
+    assert store.resolve_token(tok) is None
+
+
 def test_copy_to_keeps_original(store, tmp_path):
     item = store.add_file(filename="doc.pdf", data=b"pdfbytes", source="telegram")
     dest = str(tmp_path / "proj" / "copied.pdf")

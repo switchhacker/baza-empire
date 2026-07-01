@@ -180,6 +180,8 @@ def resolve_token(token: str) -> str | None:
         return None
     if "/" in rel or "\\" in rel:      # bin is flat — no subpaths allowed
         return None
+    if "\x00" in rel:
+        return None
     fpath = os.path.realpath(os.path.join(BIN_DIR, rel))
     if not fpath.startswith(BIN_DIR + os.sep) and fpath != BIN_DIR:
         return None
