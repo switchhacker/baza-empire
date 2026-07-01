@@ -1,0 +1,17 @@
+[Unit]
+Description=Baza Bin Bot — any file over Telegram lands in the Data Hub bin
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python3 agents/bin/bin_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
