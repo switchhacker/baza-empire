@@ -295,6 +295,7 @@
     <div class="hub-tab" onclick="setTab('code',this)">&#128187; Code <span class="tab-count" id="tc-code">0</span></div>
     <div class="hub-tab" onclick="setTab('media',this)">&#127912; Media <span class="tab-count" id="tc-media">0</span></div>
     <div class="hub-tab" onclick="setTab('alerts',this)">&#128680; Alerts <span class="tab-count" id="tc-alerts">0</span></div>
+    <div class="hub-tab" id="dh-bin-tab" onclick="dhShowBin()">📦 Bin</div>
   </div>
 
   <!-- Subcategory tabs (shown for Media / Code / Docs) -->
@@ -374,6 +375,25 @@
         <div style="font-size:12px;color:#444">Upload files, or wait for agents to publish artifacts</div>
       </div>
     </div>
+  </div>
+
+  <!-- Bin section (Baza Bin bot drop pile — separate from the project-file browser above) -->
+  <div id="dh-bin-section" style="display:none">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="page-title">📦 Bin</div>
+        <div class="page-sub">Everything dropped to the Baza Bin bot. Newest first. Pull into projects, email &amp; social from those screens.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="binSecSearch" placeholder="Search…" oninput="binSecLoad()"
+               style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+        <label class="btn btn-primary" style="cursor:pointer">⬆ Upload<input type="file" id="binSecUpload" multiple style="display:none" onchange="binSecUploadFiles(event)"></label>
+      </div>
+    </div>
+    <div id="binSecDrop" style="border:2px dashed #2a2a4a;border-radius:10px;padding:14px;text-align:center;color:#556;margin:8px 0;font-size:12px">
+      Drag &amp; drop files here to add them to the bin (no 20 MB limit)
+    </div>
+    <div id="binSecGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px"></div>
   </div>
 </div>
 
@@ -1118,6 +1138,7 @@ function setTab(tab,el){
   currentMdFamily='';
   document.querySelectorAll('.hub-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
+  dhHideBinSection();
   renderAll();
 }
 function setSubcat(key){currentSubcat=key;currentMdFamily='';renderAll()}
@@ -1798,6 +1819,91 @@ function savePCA(){
       } else toast('PCA save failed: '+(d.error||'?'),'err');
     }).catch(e=>toast('PCA error: '+e.message,'err'));
 }
+
+/* ── Bin section: browse / upload / download / delete / to-project ────── */
+const _BIN_ICON = {document:'📄', video:'🎞️', audio:'🎵', other:'📦'};
+// Elements that belong to the normal project-file browser (everything below
+// the tab bar). Hidden while the Bin section is showing, restored when the
+// user picks any other tab via setTab().
+const DH_BROWSE_SELECTORS = ['.stats-bar','#subTabs','#mdFamilyChips','.toolbar','#searchHint','#dropZone','#drawerBackdrop','.hub-layout'];
+function _binSecEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function dhShowBin(){
+  document.querySelectorAll('.hub-tab').forEach(function(t){ t.classList.remove('active'); });
+  document.getElementById('dh-bin-tab').classList.add('active');
+  DH_BROWSE_SELECTORS.forEach(function(sel){ document.querySelectorAll(sel).forEach(function(el){ el.style.display='none'; }); });
+  const selBar=document.getElementById('dhSelBar'); if(selBar) selBar.style.display='none';
+  document.getElementById('dh-bin-section').style.display='block';
+  binSecLoad();
+}
+function dhHideBinSection(){
+  const bin=document.getElementById('dh-bin-section');
+  if(!bin || bin.style.display==='none') return;
+  bin.style.display='none';
+  DH_BROWSE_SELECTORS.forEach(function(sel){ document.querySelectorAll(sel).forEach(function(el){ el.style.display=''; }); });
+  if(typeof dhUpdateSelBar==='function') dhUpdateSelBar();
+}
+async function binSecLoad(){
+  const q = (document.getElementById('binSecSearch').value||'').trim();
+  const grid = document.getElementById('binSecGrid');
+  grid.innerHTML = '<div style="grid-column:1/-1;color:#556;padding:30px;text-align:center">Loading…</div>';
+  try{
+    const r = await fetch('/api/bin/list?limit=300'+(q?('&q='+encodeURIComponent(q)):''));
+    const j = await r.json();
+    if(!j.items.length){ grid.innerHTML='<div style="grid-column:1/-1;color:#556;padding:30px;text-align:center">Bin is empty — send a file to the Baza Bin bot.</div>'; return; }
+    grid.innerHTML = j.items.map(function(it){
+      const thumb = it.kind==='image'
+        ? '<img src="/api/bin/serve/'+encodeURIComponent(it.token)+'" style="width:100%;height:120px;object-fit:cover;border-radius:6px" loading="lazy">'
+        : '<div style="height:120px;display:flex;align-items:center;justify-content:center;font-size:44px;background:#111;border-radius:6px">'+(_BIN_ICON[it.kind]||'📦')+'</div>';
+      const cap = it.caption ? '<div style="font-size:10px;color:#889;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_binSecEsc(it.caption)+'</div>' : '';
+      return '<div style="background:#0d0d1e;border:1px solid #1a1a2e;border-radius:8px;padding:8px">'
+        + thumb
+        + '<div style="font-size:11px;color:#ccd;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+_binSecEsc(it.name)+'">'+_binSecEsc(it.name)+'</div>'
+        + cap
+        + '<div style="display:flex;gap:5px;margin-top:6px">'
+        + '<a class="btn btn-sm btn-secondary" href="/api/bin/serve/'+encodeURIComponent(it.token)+'" download style="flex:1;text-align:center;text-decoration:none">⬇</a>'
+        + '<button class="btn btn-sm btn-secondary" style="flex:1" onclick="binSecToProject(\''+it.id+'\')">➦ Project</button>'
+        + '<button class="btn btn-sm btn-secondary" style="flex:0" onclick="binSecDelete(\''+it.id+'\')">🗑</button>'
+        + '</div></div>';
+    }).join('');
+  }catch(e){ grid.innerHTML='<div style="grid-column:1/-1;color:#a44;padding:30px;text-align:center">Failed to load bin</div>'; }
+}
+async function binSecUploadFiles(ev){
+  const files = Array.from((ev.target && ev.target.files) || ev);
+  for(const f of files){
+    const fd = new FormData(); fd.append('file', f);
+    try{ await fetch('/api/bin/upload', {method:'POST', body:fd}); }catch(e){}
+  }
+  if(ev.target) ev.target.value='';
+  binSecLoad();
+}
+async function binSecDelete(id){
+  if(!confirm('Remove this file from the bin?')) return;
+  await fetch('/api/bin/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:id})});
+  binSecLoad();
+}
+async function binSecToProject(id){
+  let projects = [];
+  try{ const r = await fetch('/api/ahb/projects'); projects = await r.json(); if(!Array.isArray(projects)) projects = projects.projects||[]; }catch(e){}
+  if(!projects.length){ alert('No projects found.'); return; }
+  const list = projects.map(function(p,i){ return i+': '+(p.name||p.title||p.id); }).join('\n');
+  const pick = prompt('Copy to which project?\n'+list, '0');
+  if(pick===null) return;
+  const proj = projects[parseInt(pick,10)];
+  if(!proj){ alert('Invalid choice'); return; }
+  const it = (await (await fetch('/api/bin/list?limit=500')).json()).items.find(function(x){ return x.id===id; });
+  if(!it) return;
+  const fd = new FormData(); fd.append('pick_token', it.token); fd.append('name', it.name);
+  const r = await fetch('/api/ahb/projects/'+proj.id+'/files', {method:'POST', body:fd});
+  const j = await r.json();
+  alert(j.success ? ('Copied to '+(proj.name||proj.id)+' (still in bin)') : ('Failed: '+(j.error||'?')));
+}
+(function(){
+  const drop = document.getElementById('binSecDrop');
+  if(!drop) return;
+  ['dragover','dragenter'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.style.borderColor='#5a8'; }); });
+  ['dragleave','drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.style.borderColor='#2a2a4a'; }); });
+  drop.addEventListener('drop', function(e){ if(e.dataTransfer && e.dataTransfer.files.length) binSecUploadFiles(e.dataTransfer.files); });
+})();
 
 // Init
 loadFiles();loadFeed();loadSpecter();refreshIndexStatus();setInterval(loadFeed,30000);setInterval(loadSpecter,30000);
