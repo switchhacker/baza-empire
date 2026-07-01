@@ -21,6 +21,16 @@ def test_token_roundtrip(store):
     assert store.to_public(item)["token"] == tok
 
 
+def test_to_public_trimmed_to_api_contract(store):
+    item = store.add_file(filename="a.png", data=b"x", source="upload", tg_user_id="12345")
+    pub = store.to_public(item)
+    expected_keys = {"id", "name", "token", "kind", "size", "mime_type",
+                      "caption", "source", "created_at"}
+    assert set(pub.keys()) == expected_keys
+    assert "stored_path" not in pub
+    assert "tg_user_id" not in pub
+
+
 def test_resolve_rejects_non_bin_and_traversal(store):
     # non-~ token -> not ours
     assert store.resolve_token("YWJj") is None

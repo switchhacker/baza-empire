@@ -1493,6 +1493,9 @@ def api_vault_add():
         cur = _pick_decode_token(token)
         if not cur:
             return jsonify({'ok': False, 'error': 'invalid token'}), 400
+        art_root = os.path.realpath(ARTIFACTS_DIR)
+        if not cur.startswith(art_root + os.sep):
+            return jsonify({'ok': False, 'error': 'vault accepts artifacts only'}), 400
     elif name:
         base = os.path.join(ARTIFACTS_DIR, project_id, name) if (project_id and project_id != 'shared') \
                else os.path.join(ARTIFACTS_DIR, name)

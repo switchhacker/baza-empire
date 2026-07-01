@@ -200,9 +200,17 @@ def resolve_token(token: str) -> str | None:
 
 
 def to_public(item: dict) -> dict:
-    out = dict(item)
-    out["token"] = bin_token(item["stored_path"])
-    return out
+    return {
+        'id':         item['id'],
+        'name':       item['name'],
+        'token':      bin_token(item['stored_path']),
+        'kind':       item['kind'],
+        'size':       item['size'],
+        'mime_type':  item.get('mime_type', ''),
+        'caption':    item.get('caption', ''),
+        'source':     item.get('source', ''),
+        'created_at': item.get('created_at', ''),
+    }
 
 
 def copy_to(item_id: str, dest_path: str) -> str:
