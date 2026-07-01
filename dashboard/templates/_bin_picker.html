@@ -1,0 +1,101 @@
+{# dashboard/templates/_bin_picker.html — reusable Baza Bin picker.
+   Body-level modal. Exposes window.openBinPicker({kind, multi, onPick}). #}
+<div class="modal-bg" id="binPickModal" style="z-index:1200;display:none">
+  <div class="modal wide" style="max-width:1050px;padding:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div>
+        <h2 style="margin:0">📦 Pick from Bin</h2>
+        <div class="modal-sub" style="margin:4px 0 0">Files you dropped to the Baza Bin bot</div>
+      </div>
+      <button class="btn-secondary" onclick="binPickClose()" style="padding:6px 14px">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="binPickSearch" placeholder="Search name / caption…" oninput="binPickLoad()"
+             style="flex:1;min-width:200px;background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+      <select id="binPickKind" onchange="binPickLoad()" style="background:#111;border:1px solid #2a2a4a;border-radius:6px;padding:8px 10px;color:#e0e0e0;font-size:13px">
+        <option value="">All types</option>
+        <option value="image">Images</option>
+        <option value="document">Documents</option>
+        <option value="video">Video</option>
+        <option value="audio">Audio</option>
+        <option value="other">Other</option>
+      </select>
+      <button class="btn btn-sm btn-secondary" onclick="binPickLoad()">↻ Refresh</button>
+      <span id="binPickCount" style="color:#666;font-size:11px;margin-left:auto"></span>
+    </div>
+    <div id="binPickGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:60vh;overflow-y:auto;padding:4px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:8px;min-height:200px">
+      <div style="grid-column:1/-1;text-align:center;padding:40px;color:#444;font-size:12px">Loading…</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;flex-wrap:wrap">
+      <div style="color:#888;font-size:11px"><span id="binPickSelCount">0</span> selected</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="binPickClose()">Cancel</button>
+        <button class="btn-primary" id="binPickUseBtn" onclick="binPickConfirm()" disabled>Use selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  let _items = [], _sel = new Set(), _opts = {kind:null, multi:true, onPick:null};
+  const ICON = {document:'📄', video:'🎞️', audio:'🎵', other:'📦'};
+
+  window.openBinPicker = function(opts){
+    _opts = Object.assign({kind:null, multi:true, onPick:null}, opts||{});
+    _sel = new Set();
+    const kindSel = document.getElementById('binPickKind');
+    if(_opts.kind){ kindSel.value = _opts.kind; kindSel.disabled = true; }
+    else { kindSel.disabled = false; }
+    document.getElementById('binPickSearch').value = '';
+    document.getElementById('binPickModal').style.display = 'flex';
+    binPickLoad();
+  };
+  window.binPickClose = function(){
+    document.getElementById('binPickModal').style.display = 'none';
+  };
+  window.binPickLoad = async function(){
+    const q = document.getElementById('binPickSearch').value.trim();
+    const kind = document.getElementById('binPickKind').value;
+    const p = new URLSearchParams({limit:'250'});
+    if(q) p.set('q', q);
+    if(kind) p.set('kind', kind);
+    const grid = document.getElementById('binPickGrid');
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#444">Loading…</div>';
+    try{
+      const r = await fetch('/api/bin/list?'+p.toString());
+      const j = await r.json();
+      _items = j.items||[];
+      binPickRender();
+    }catch(e){
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#a44">Failed to load bin</div>';
+    }
+  };
+  window.binPickRender = function(){
+    const grid = document.getElementById('binPickGrid');
+    document.getElementById('binPickCount').textContent = _items.length + ' item(s)';
+    if(!_items.length){ grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#444">Bin is empty</div>'; return; }
+    grid.innerHTML = _items.map(function(it){
+      const on = _sel.has(it.id);
+      const thumb = it.kind==='image'
+        ? '<img src="/api/bin/serve/'+encodeURIComponent(it.token)+'" style="width:100%;height:90px;object-fit:cover;border-radius:5px" loading="lazy">'
+        : '<div style="height:90px;display:flex;align-items:center;justify-content:center;font-size:34px;background:#111;border-radius:5px">'+(ICON[it.kind]||'📦')+'</div>';
+      return '<div onclick="binPickToggle(\''+it.id+'\')" style="cursor:pointer;border:2px solid '+(on?'#5a8':'#1a1a2e')+';border-radius:7px;padding:5px;background:#0d0d1e">'
+        + thumb
+        + '<div style="font-size:10px;color:#bbb;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+(it.name||'')+'">'+(it.name||'')+'</div>'
+        + '</div>';
+    }).join('');
+  };
+  window.binPickToggle = function(id){
+    if(_sel.has(id)) _sel.delete(id);
+    else { if(!_opts.multi) _sel.clear(); _sel.add(id); }
+    document.getElementById('binPickSelCount').textContent = _sel.size;
+    document.getElementById('binPickUseBtn').disabled = _sel.size===0;
+    binPickRender();
+  };
+  window.binPickConfirm = function(){
+    const chosen = _items.filter(function(it){ return _sel.has(it.id); });
+    binPickClose();
+    if(_opts.onPick) _opts.onPick(chosen);
+  };
+})();
+</script>
