@@ -1492,12 +1492,36 @@ def api_search():
 
 @email_bp.route("/api/email2/contacts/suggest", methods=["GET"])
 def api_contact_suggest():
-    """Autocomplete contact emails from history."""
+    """Autocomplete recipients from AHB clients + email history."""
     q = (request.args.get("q") or "").strip().lower()
     if len(q) < 2:
         return jsonify({"contacts": []})
+    out = []
+    seen = set()
     con = _conn()
     try:
+        # 1) AHB client address book — surfaced first so clients are easy to pick.
+        try:
+            crows = con.execute(
+                """SELECT name, email, company FROM ahb_clients
+                   WHERE email IS NOT NULL AND email != ''
+                     AND (LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(COALESCE(company,'')) LIKE ?)
+                   ORDER BY name LIMIT 12""",
+                (f"%{q}%", f"%{q}%", f"%{q}%")
+            ).fetchall()
+            for r in crows:
+                addr = (r["email"] or "").strip()
+                key = addr.lower()
+                if not addr or key in seen:
+                    continue
+                seen.add(key)
+                nm = (r["name"] or "").strip()
+                out.append({"name": nm, "email": addr,
+                            "raw": f"{nm} <{addr}>" if nm else addr,
+                            "source": "client", "company": (r["company"] or "").strip()})
+        except Exception:
+            pass  # ahb_clients may be absent in some deployments
+        # 2) People we've emailed with before (from message history).
         rows = con.execute(
             """SELECT from_addr, COUNT(*) AS n FROM emails
                WHERE LOWER(from_addr) LIKE ? GROUP BY from_addr ORDER BY n DESC LIMIT 12""",
@@ -1505,14 +1529,13 @@ def api_contact_suggest():
         ).fetchall()
     finally:
         con.close()
-    out = []
-    seen = set()
     for r in rows:
         name, addr = parseaddr(r["from_addr"] or "")
-        if not addr or addr in seen:
+        if not addr or addr.lower() in seen:
             continue
-        seen.add(addr)
-        out.append({"name": name, "email": addr, "raw": r["from_addr"], "count": r["n"]})
+        seen.add(addr.lower())
+        out.append({"name": name, "email": addr, "raw": r["from_addr"],
+                    "source": "history", "count": r["n"]})
     return jsonify({"contacts": out})
 
 

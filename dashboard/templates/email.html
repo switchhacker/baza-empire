@@ -538,6 +538,7 @@
       </div>
       <div class="cmp-attach-bar" id="cmpAttachBar">
         <label class="cmp-attach-add">📎 Attach<input type="file" id="cmpFileInput" multiple style="display:none"></label>
+        <button type="button" class="cmp-attach-add" style="cursor:pointer;border:none" onclick="openBazaAttach()" title="Attach a file from a baza project">🗂 From baza</button>
       </div>
     </div>
     <div class="modal-foot">
@@ -595,6 +596,23 @@
         <button class="cancel-btn" onclick="closeSaveAttachment()">Cancel</button>
         <button class="send-btn" id="saveAttBtn" onclick="submitSaveAttachment()">💾 Save</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Attach from baza (project artifacts) -->
+<div class="att-prev-bg" id="bazaAttachBg" onclick="if(event.target===this)closeBazaAttach()">
+  <div class="att-prev-card" style="max-width:540px">
+    <div class="att-prev-head">
+      <span>🗂 Attach from baza</span>
+      <button class="modal-close" onclick="closeBazaAttach()">×</button>
+    </div>
+    <div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+      <select id="bazaAttachProject" onchange="bazaAttachLoadFiles()" style="width:100%;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+        <option value="">— select a project —</option>
+      </select>
+      <input id="bazaAttachFilter" placeholder="🔍 Filter files…" oninput="bazaAttachRenderFiles()" style="width:100%;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+      <div id="bazaAttachList" style="max-height:340px;overflow:auto;display:flex;flex-direction:column;gap:6px;color:#889">Pick a project to see its files…</div>
     </div>
   </div>
 </div>
@@ -1142,7 +1160,7 @@ async function sendCompose(){
   if(!to){ toast('Missing "To"', true); return; }
   const btn = document.getElementById('cmpSendBtn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   const composeAcct = state.lastRealAccount?.id || (state.activeAccount?.all ? '' : (state.activeAccount?.id || ''));
-  const attachments = _cmpAttachments.map(a => ({type:'upload', token:a.token}));
+  const attachments = _cmpAttachments.map(a => a.ref ? a.ref : ({type:'upload', token:a.token}));
   const d = await api('/api/email2/send',{method:'POST', body:{mode:'compose', to, cc, bcc, subject, body, attachments, account: composeAcct || undefined}});
   btn.disabled = false; btn.innerHTML = '📤 Send';
   if(d.ok){ toast('✅ Sent'); closeCompose(); loadThreads(); loadLabels(); }
@@ -1204,6 +1222,116 @@ document.getElementById('cmpFileInput').addEventListener('change', async e=>{
   }
   e.target.value = '';
 });
+
+// ── Attach from baza (project artifacts) ───────────────────────────────────
+let _bazaFiles = [];
+async function openBazaAttach(){
+  document.getElementById('bazaAttachBg').classList.add('open');
+  const sel = document.getElementById('bazaAttachProject');
+  if(!sel.dataset.loaded){
+    try{
+      const r = await fetch('/api/ahb/projects'); const projs = await r.json();
+      sel.innerHTML = '<option value="">— select a project —</option>' +
+        (Array.isArray(projs)?projs:[]).map(p=>`<option value="${escAttr(p.id)}">${esc(p.title||p.id)}</option>`).join('');
+      sel.dataset.loaded = '1';
+    }catch(e){}
+  }
+}
+function closeBazaAttach(){ document.getElementById('bazaAttachBg').classList.remove('open'); }
+async function bazaAttachLoadFiles(){
+  const pid = document.getElementById('bazaAttachProject').value;
+  const list = document.getElementById('bazaAttachList');
+  _bazaFiles = [];
+  if(!pid){ list.textContent = 'Pick a project to see its files…'; return; }
+  list.textContent = 'Loading…';
+  try{
+    const r = await fetch('/api/artifacts?project_id=' + encodeURIComponent(pid));
+    const arts = await r.json();
+    _bazaFiles = (Array.isArray(arts)?arts:[]).filter(a=>!a.private);
+    bazaAttachRenderFiles();
+  }catch(e){ list.textContent = 'Failed to load files'; }
+}
+function bazaAttachVisible(){
+  const q = (document.getElementById('bazaAttachFilter').value||'').toLowerCase();
+  return _bazaFiles.filter(a=>!q || (a.name||'').toLowerCase().includes(q));
+}
+function bazaAttachRenderFiles(){
+  const list = document.getElementById('bazaAttachList');
+  const files = bazaAttachVisible();
+  if(!files.length){ list.textContent = 'No files'; return; }
+  list.innerHTML = files.map((a,i)=>`<div class="baza-file-row" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:#0a0a18;border:1px solid #1a1a2e;border-radius:6px;cursor:pointer">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cfd2e8">📄 ${esc(a.name)}</span>
+      <span class="att-size">${fmtSize(a.size)}</span></div>`).join('');
+  list.querySelectorAll('.baza-file-row').forEach(el=>{
+    el.onmouseenter = ()=>el.style.borderColor='#4a4a90';
+    el.onmouseleave = ()=>el.style.borderColor='#1a1a2e';
+    el.onclick = ()=>bazaAttachPick(parseInt(el.dataset.i));
+  });
+}
+function bazaAttachPick(i){
+  const a = bazaAttachVisible()[i]; if(!a) return;
+  const fname = (a.name||'file').split('/').pop();
+  _cmpAttachments.push({filename: fname, size: a.size, ref: {type:'artifact', project_id: a.project_id, path: a.name}});
+  renderCmpAttachments();
+  toast('📎 Attached ' + fname);
+  closeBazaAttach();
+}
+
+// ── Recipient autocomplete (AHB clients + email history) ───────────────────
+(function(){
+  const pop = document.getElementById('acPop');
+  if(!pop) return;
+  let acInput = null, acItems = [], acSel = -1, acTimer = null;
+  const lastToken = v => { const i = v.lastIndexOf(','); return v.slice(i+1).replace(/^\s+/,''); };
+  const replaceLast = (v, val) => { const i = v.lastIndexOf(','); return (i>=0 ? v.slice(0,i+1)+' ' : '') + val; };
+  function closeAc(){ pop.classList.remove('open'); pop.innerHTML=''; acItems=[]; acSel=-1; acInput=null; }
+  function renderAc(){
+    pop.innerHTML = acItems.map((c,idx)=>{
+      const label = c.name || c.email;
+      const badge = c.source==='client' ? ' <span style="color:#00d084;font-size:9px;font-weight:800">CLIENT</span>' : '';
+      const sub = esc(c.email) + (c.company ? (' · ' + esc(c.company)) : '');
+      return `<div class="ac-item ${idx===acSel?'sel':''}" data-idx="${idx}"><div class="ac-item-name">${esc(label)}${badge}</div><div class="ac-item-email">${sub}</div></div>`;
+    }).join('');
+    pop.querySelectorAll('.ac-item').forEach(el=>{
+      el.addEventListener('mousedown', ev=>{ ev.preventDefault(); pick(parseInt(el.dataset.idx)); });
+    });
+  }
+  function positionAc(input){
+    const r = input.getBoundingClientRect();
+    pop.style.left = (window.scrollX + r.left) + 'px';
+    pop.style.top  = (window.scrollY + r.bottom + 2) + 'px';
+    pop.style.minWidth = r.width + 'px';
+  }
+  function pick(idx){
+    const c = acItems[idx]; if(!acInput || !c) return;
+    const val = c.name ? `${c.name} <${c.email}>` : c.email;
+    acInput.value = replaceLast(acInput.value, val) + ', ';
+    acInput.focus(); closeAc();
+  }
+  async function query(input){
+    const tok = lastToken(input.value);
+    if(tok.length < 2){ closeAc(); return; }
+    try{
+      const r = await fetch('/api/email2/contacts/suggest?q=' + encodeURIComponent(tok));
+      const d = await r.json();
+      acItems = d.contacts || [];
+      if(!acItems.length){ closeAc(); return; }
+      acInput = input; acSel = -1; renderAc(); positionAc(input); pop.classList.add('open');
+    }catch(e){ closeAc(); }
+  }
+  function wire(input){
+    input.addEventListener('input', ()=>{ clearTimeout(acTimer); acTimer = setTimeout(()=>query(input), 160); });
+    input.addEventListener('keydown', e=>{
+      if(!pop.classList.contains('open') || acInput!==input) return;
+      if(e.key==='ArrowDown'){ e.preventDefault(); acSel = Math.min(acSel+1, acItems.length-1); renderAc(); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); acSel = Math.max(acSel-1, 0); renderAc(); }
+      else if(e.key==='Enter' && acSel>=0){ e.preventDefault(); e.stopPropagation(); pick(acSel); }
+      else if(e.key==='Escape'){ e.stopPropagation(); closeAc(); }
+    });
+    input.addEventListener('blur', ()=>{ setTimeout(closeAc, 150); });
+  }
+  ['cmpTo','cmpCc','cmpBcc'].forEach(id=>{ const el = document.getElementById(id); if(el) wire(el); });
+})();
 
 // ── Models ───────────────────────────────────────────────────────────────
 async function loadModels(){

@@ -70,6 +70,15 @@
     .sp-resize{position:absolute;right:2px;bottom:2px;width:16px;height:16px;cursor:nwse-resize;opacity:0;z-index:6;background:linear-gradient(135deg,transparent 45%,rgba(0,0,0,.35) 45%,rgba(0,0,0,.35) 55%,transparent 55%,transparent 70%,rgba(0,0,0,.35) 70%,rgba(0,0,0,.35) 80%,transparent 80%);border-radius:0 0 4px 0;transition:opacity .15s}
     .sp-note:hover .sp-resize,.sp-note.focused .sp-resize{opacity:.7}
     .sp-note.focused .sp-resize{width:20px;height:20px}
+    /* ---- Stacked flow layout: focused on top, colour rows below, document flow ---- */
+    .sp-canvas.flow{position:relative;display:block;min-height:0;height:auto;overflow:visible;perspective:none;padding:24px}
+    .sp-canvas.flow .sp-note{position:relative !important;left:auto !important;top:auto !important;transform:none !important;margin:0;will-change:auto}
+    .sp-canvas.flow .sp-note:hover{transform:none !important;box-shadow:0 16px 36px rgba(0,0,0,.7),0 4px 10px rgba(0,0,0,.5)}
+    .sp-flow-top{display:flex;justify-content:center;margin-bottom:26px}
+    .sp-canvas.flow .sp-note.focused{position:relative !important;left:auto !important;top:auto !important;transform:none !important;margin:0 auto;width:min(560px,94%)}
+    .sp-canvas.flow .sp-note.focused:hover{transform:none !important}
+    .sp-flow-rows{display:flex;flex-direction:column;gap:18px}
+    .sp-flow-row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
     .sp-iconbtn{background:rgba(0,0,0,.12);color:#0d1a0d;border:none;border-radius:4px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
     .sp-iconbtn:hover{background:rgba(0,0,0,.25)}
     /* Voice-input "star" button — large, lime-tinted, pulses while listening */
@@ -2783,7 +2792,7 @@
     <div style="display:flex;gap:8px;align-items:center">
       <input id="sp-search" class="search-box" placeholder="🔍 Find by content..." style="width:240px" oninput="spFilter()">
       <button class="btn btn-secondary" id="sp-summarize-btn" onclick="spSummarizeFocused()" style="display:none">✨ Re-summarize</button>
-      <button class="btn btn-secondary" id="sp-layout-btn" onclick="spToggleLayout()" title="Group notes by colour into side-by-side columns, or scatter freely">🎨 By color</button>
+      <button class="btn btn-secondary" id="sp-layout-btn" onclick="spToggleLayout()" title="Stacked: focused note on top, colours in rows below — or free scatter">📚 Stacked</button>
       <button class="btn btn-secondary" onclick="spPrintPad()" title="Print the whole pad to the HP Smart Tank">🖨 Print pad</button>
       <button class="btn btn-primary" onclick="spNewNote()">+ New Note</button>
     </div>
@@ -12848,7 +12857,6 @@ async function loadStickyPad(){
     } else {
       spFocusedId = null;
     }
-    if(spLayoutMode === 'color'){ _spColorColumns(); _spSavePositions(); }
     _spUpdateLayoutBtn();
     spRender();
   }catch(e){
@@ -12869,11 +12877,28 @@ function spRender(){
     if(btn) btn.style.display='none';
     return;
   }
+  canvas.classList.toggle('flow', spLayoutMode === 'stack');
   const focused = visible.find(n=>n.id===spFocusedId);
   if(btn) btn.style.display = focused ? '' : 'none';
   const others = visible.filter(n=>n.id!==spFocusedId);
-  const html = others.map(n=>_spRenderNote(n,false)).join('') + (focused ? _spRenderNote(focused,true) : '');
-  canvas.innerHTML = html;
+  if(spLayoutMode === 'stack'){
+    // Focused sticky pinned at top; the rest grouped by colour in rows below.
+    // Document flow → expanding a sticky pushes the ones below it lower.
+    const groups = {};
+    others.forEach(n=>{ const c=_spColor(n); (groups[c]=groups[c]||[]).push(n); });
+    const colors = Object.keys(groups).map(Number).sort((a,b)=>a-b);
+    let html = '';
+    if(focused) html += '<div class="sp-flow-top">'+_spRenderNote(focused,true)+'</div>';
+    html += '<div class="sp-flow-rows">';
+    colors.forEach(c=>{
+      html += '<div class="sp-flow-row">'+ groups[c].map(n=>_spRenderNote(n,false)).join('') +'</div>';
+    });
+    html += '</div>';
+    canvas.innerHTML = html;
+  } else {
+    const html = others.map(n=>_spRenderNote(n,false)).join('') + (focused ? _spRenderNote(focused,true) : '');
+    canvas.innerHTML = html;
+  }
   if(focused){
     const el = document.getElementById('sp-note-'+focused.id);
     if(el){
@@ -12977,6 +13002,15 @@ function spFocus(id){
   if(spFocusedId === id) return;
   // If voice input was running on the previous focus, hand it off cleanly.
   if(_spMic && _spMic.listening) spStopMic();
+  // Stacked layout: focus changes the flow structure (new note to the top,
+  // old note back into its colour row), so rebuild the whole pad.
+  if(spLayoutMode === 'stack'){
+    spFocusedId = id;
+    spRender();
+    const el = document.getElementById('sp-note-'+id);
+    if(el) el.scrollIntoView({behavior:'smooth', block:'nearest'});
+    return;
+  }
   const prevId = spFocusedId;
   spFocusedId = id;
   const prevEl = prevId ? document.getElementById('sp-note-'+prevId) : null;
@@ -13300,45 +13334,26 @@ function spShuffle(){
   spRender();
 }
 
-/* ----- Layout: group by colour into side-by-side columns ----- */
-let spLayoutMode = 'color';
-try{ spLayoutMode = localStorage.getItem('ahbStickyLayoutMode') || 'color'; }catch(e){}
+/* ----- Layout: stacked flow (focused on top, colours in rows below) ----- */
+// 'stack' = focused sticky pinned at top, the rest grouped by colour in rows
+//           below it, laid out in document flow so resizing pushes others down.
+// 'scatter' = free-floating rotated notes on the canvas (drag to move).
+let spLayoutMode = 'stack';
+try{
+  const saved = localStorage.getItem('ahbStickyLayoutMode');
+  spLayoutMode = (saved === 'scatter') ? 'scatter' : 'stack';   // migrate old 'color' → 'stack'
+}catch(e){}
 function _spUpdateLayoutBtn(){
   const b = document.getElementById('sp-layout-btn');
-  if(b) b.textContent = (spLayoutMode === 'color') ? '🎨 By color' : '🔀 Scatter';
-}
-function _spColorColumns(){
-  // Same colour = same column; columns sit side by side; notes cascade down
-  // each column like a stacked pad (slight horizontal offset + rotation).
-  const visible = _spVisibleNotes();
-  const groups = {};
-  visible.forEach(n => { const c = _spColor(n); (groups[c] = groups[c] || []).push(n); });
-  const colors = Object.keys(groups).map(Number).sort((a,b)=>a-b);
-  const ncols = Math.max(colors.length, 1);
-  const step = (100 - 6) / ncols;             // usable width split into columns
-  colors.forEach((c, ci) => {
-    const colLeft = 3 + step * ci;
-    const items = groups[c].slice().sort((a,b)=>
-      (b.updated_at||b.created_at||'').localeCompare(a.updated_at||a.created_at||''));
-    const vstep = Math.min(11, 80 / Math.max(items.length, 1));
-    items.forEach((n, j) => {
-      const xOff = (j % 2 === 0) ? 0 : 3;       // gentle side-to-side stack
-      const rot  = ((j % 2 === 0) ? -1 : 1) * (2 + (j % 4));
-      const old  = spPositions[n.id] || {};
-      spPositions[n.id] = {
-        x: Math.max(0, Math.min(92, colLeft + xOff)),
-        y: Math.max(0, Math.min(90, 4 + j * vstep)),
-        rot, w: old.w, h: old.h
-      };
-    });
-  });
+  if(b) b.textContent = (spLayoutMode === 'stack') ? '📚 Stacked' : '🔀 Scatter';
 }
 function spToggleLayout(){
-  spLayoutMode = (spLayoutMode === 'color') ? 'scatter' : 'color';
+  spLayoutMode = (spLayoutMode === 'stack') ? 'scatter' : 'stack';
   try{ localStorage.setItem('ahbStickyLayoutMode', spLayoutMode); }catch(e){}
-  if(spLayoutMode === 'color'){ _spColorColumns(); }
-  else { allNotes.forEach(n => { if(!spPositions[n.id]) spPositions[n.id] = _spRandPos(); }); }
-  _spSavePositions();
+  if(spLayoutMode === 'scatter'){
+    allNotes.forEach(n => { if(!spPositions[n.id]) spPositions[n.id] = _spRandPos(); });
+    _spSavePositions();
+  }
   _spUpdateLayoutBtn();
   spRender();
 }
@@ -13489,8 +13504,8 @@ async function spSetColor(id, color){
     await fetch('/api/ahb/notes/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({color})});
     const badge = document.getElementById('sp-saved-'+id);
     if(badge){ badge.classList.add('show'); setTimeout(()=>badge.classList.remove('show'), 1100); }
-    // In colour-grouped mode, re-flow so this note joins its colour's column.
-    if(spLayoutMode === 'color'){ _spColorColumns(); _spSavePositions(); spRender(); }
+    // In stacked mode, re-render so this note jumps to its colour's row.
+    if(spLayoutMode === 'stack'){ spRender(); }
   }catch(e){ showToast('Color save failed: '+e.message,'error'); }
 }
 function spFilter(){
