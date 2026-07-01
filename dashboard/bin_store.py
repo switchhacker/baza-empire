@@ -152,3 +152,70 @@ def get(item_id: str) -> dict | None:
     finally:
         conn.close()
     return _row_to_item(row) if row else None
+
+
+def bin_token(stored_path_or_item) -> str:
+    if isinstance(stored_path_or_item, dict):
+        stored_path = stored_path_or_item["stored_path"]
+    else:
+        stored_path = stored_path_or_item
+    rel = os.path.basename(stored_path)
+    return "~" + base64.urlsafe_b64encode(rel.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def resolve_token(token: str) -> str | None:
+    """Resolve a '~'-prefixed bin token to an absolute path inside BIN_DIR.
+    Returns None for anything not ours, out-of-tree, or missing. Mirrors the
+    hardening in app.py::_pick_decode_token."""
+    if not token or not isinstance(token, str) or not token.startswith("~"):
+        return None
+    raw = token[1:]
+    try:
+        pad = "=" * (-len(raw) % 4)
+        rel = base64.urlsafe_b64decode((raw + pad).encode("ascii")).decode("utf-8")
+    except Exception:
+        return None
+    parts = rel.replace("\\", "/").split("/")
+    if ".." in parts or "" in parts and len(parts) > 1:
+        return None
+    if "/" in rel or "\\" in rel:      # bin is flat — no subpaths allowed
+        return None
+    fpath = os.path.realpath(os.path.join(BIN_DIR, rel))
+    if not fpath.startswith(BIN_DIR + os.sep) and fpath != BIN_DIR:
+        return None
+    if not os.path.isfile(fpath):
+        return None
+    return fpath
+
+
+def to_public(item: dict) -> dict:
+    out = dict(item)
+    out["token"] = bin_token(item["stored_path"])
+    return out
+
+
+def copy_to(item_id: str, dest_path: str) -> str:
+    item = get(item_id)
+    if not item:
+        raise KeyError(item_id)
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    shutil.copy2(item["stored_path"], dest_path)   # copy: bin keeps its copy
+    return dest_path
+
+
+def delete(item_id: str) -> bool:
+    item = get(item_id)
+    if not item:
+        return False
+    try:
+        if os.path.isfile(item["stored_path"]):
+            os.remove(item["stored_path"])
+    except OSError:
+        pass
+    conn = _bin_db()
+    try:
+        conn.execute("DELETE FROM bin_files WHERE id=?", (item_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return True
