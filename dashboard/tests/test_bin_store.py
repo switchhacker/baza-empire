@@ -54,3 +54,11 @@ def test_list_filters_by_kind_and_query(store):
     store.add_file(filename="beach.jpg", data=b"2")
     assert [i["name"] for i in store.list_items(kind="image")] == ["beach.jpg"]
     assert [i["name"] for i in store.list_items(q="pdf")] == ["a.pdf"]
+
+
+def test_get_by_stored_path(store):
+    item = store.add_file(filename="quote.pdf", data=b"PDFDATA", source="upload")
+    found = store.get_by_stored_path(item["stored_path"])
+    assert found is not None
+    assert found["name"] == "quote.pdf"
+    assert store.get_by_stored_path("/no/such/path") is None

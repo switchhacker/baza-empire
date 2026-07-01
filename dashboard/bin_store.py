@@ -154,6 +154,15 @@ def get(item_id: str) -> dict | None:
     return _row_to_item(row) if row else None
 
 
+def get_by_stored_path(stored_path: str) -> dict | None:
+    conn = _bin_db()
+    try:
+        row = conn.execute("SELECT * FROM bin_files WHERE stored_path=?", (stored_path,)).fetchone()
+    finally:
+        conn.close()
+    return _row_to_item(row) if row else None
+
+
 def bin_token(stored_path_or_item) -> str:
     if isinstance(stored_path_or_item, dict):
         stored_path = stored_path_or_item["stored_path"]

@@ -30,6 +30,9 @@ def test_from_bin_stages_attachment(client):
     assert j["ok"] and j["filename"] == "quote.pdf" and j["size"] == len(b"PDFDATA")
     # bin file untouched
     assert os.path.isfile(item["stored_path"])
+    # staged copy actually lands on disk under OUTBOX_DIR/<token>/<filename>
+    staged = os.path.join(os.environ["EMAIL_OUTBOX_DIR"], j["token"], j["filename"])
+    assert os.path.isfile(staged)
 
 
 def test_from_bin_bad_token(client):

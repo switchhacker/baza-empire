@@ -953,15 +953,8 @@ def api_attachment_from_bin():
         return jsonify({"ok": False, "error": "invalid bin token"}), 404
     # bin_store stores files under a timestamp-prefixed name (see bin_store.add_file);
     # the original filename lives in the bin_files row, not the on-disk basename.
-    orig_name = os.path.basename(src)
-    try:
-        bcon = sqlite3.connect(bin_store.bin_db_path())
-        brow = bcon.execute("SELECT name FROM bin_files WHERE stored_path=?", (src,)).fetchone()
-        bcon.close()
-        if brow and brow[0]:
-            orig_name = brow[0]
-    except Exception:
-        pass
+    _binitem = bin_store.get_by_stored_path(src)
+    orig_name = _binitem["name"] if _binitem else os.path.basename(src)
     token = uuid.uuid4().hex
     safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(orig_name))[:160] or "file"
     d = os.path.join(OUTBOX_DIR, token)
