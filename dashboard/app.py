@@ -2484,6 +2484,33 @@ def _pick_list_images(limit: int = 60, agent_filter: str = '',
                 'private':  private,
                 'caption':  caption,
             })
+    # merge Baza Bin images so they appear in the existing image/Sam picker (Task 11)
+    if not agent_filter or agent_filter == 'bin':
+        try:
+            try:
+                from dashboard import bin_store as _bs
+            except ImportError:
+                import bin_store as _bs
+            for _it in _bs.list_items(kind='image', limit=limit or 300):
+                try:
+                    _mt = os.path.getmtime(_it['stored_path'])
+                except OSError:
+                    _mt = 0
+                out.append({
+                    'token':    _bs.bin_token(_it['stored_path']),
+                    'name':     _it['name'],
+                    'rel_path': '',
+                    'size':     _it['size'],
+                    'mtime':    _mt,
+                    'modified': (_it.get('created_at') or '')[:16].replace('T', ' '),
+                    'ext':      os.path.splitext(_it['name'])[1].lower(),
+                    'agent_id': 'bin',
+                    'private':  False,
+                    'caption':  _it.get('caption') or '',
+                })
+        except Exception:
+            pass
+
     out.sort(key=lambda r: r['mtime'], reverse=True)
     if limit and len(out) > limit:
         out = out[:limit]
