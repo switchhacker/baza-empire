@@ -79,6 +79,25 @@
     .sp-canvas.flow .sp-note.focused:hover{transform:none !important}
     .sp-flow-rows{display:flex;flex-direction:column;gap:18px}
     .sp-flow-row{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+    /* ---- Colour-pile dock: 5 fixed vertical stacks below the focused sticky ---- */
+    .sp-dock{display:flex;justify-content:center;gap:22px;flex-wrap:wrap;align-items:flex-start;padding:6px 4px 28px}
+    .sp-pile{width:150px;display:flex;flex-direction:column;align-items:center}
+    .sp-pile-head{display:flex;align-items:center;gap:7px;margin-bottom:12px;font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#8a8aa0;font-family:system-ui,sans-serif}
+    .sp-pile-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.4)}
+    .sp-pile-dot.color-1{background:#bef264}.sp-pile-dot.color-2{background:#facc15}.sp-pile-dot.color-3{background:#f472b6}.sp-pile-dot.color-4{background:#38bdf8}.sp-pile-dot.color-5{background:#a78bfa}
+    .sp-pile-body{position:relative;width:100%;display:flex;flex-direction:column;align-items:center;min-height:60px}
+    .sp-pile-item{position:relative;width:140px;min-height:54px;margin-top:-38px;padding:9px 11px;border-radius:4px;color:#1a1a1a;font-family:'Caveat','Comic Sans MS',cursive,sans-serif;font-weight:700;font-size:15px;line-height:1.25;box-shadow:0 7px 16px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.42);cursor:pointer;overflow:hidden;transition:transform .13s cubic-bezier(.34,1.4,.64,1),box-shadow .13s;transform-origin:center left;will-change:transform;border-top:1px solid rgba(0,0,0,.1)}
+    .sp-pile-item:first-child{margin-top:0}
+    .sp-pile-item .sp-pi-sum{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+    .sp-pile-item.color-1{background:linear-gradient(135deg,#d9f99d,#bef264)}
+    .sp-pile-item.color-2{background:linear-gradient(135deg,#fde68a,#facc15)}
+    .sp-pile-item.color-3{background:linear-gradient(135deg,#fbcfe8,#f472b6)}
+    .sp-pile-item.color-4{background:linear-gradient(135deg,#bae6fd,#38bdf8)}
+    .sp-pile-item.color-5{background:linear-gradient(135deg,#ddd6fe,#a78bfa)}
+    .sp-pile-empty{opacity:.6}
+    .sp-pile-placeholder{width:140px;min-height:56px;border:2px dashed rgba(255,255,255,.13);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#565672;font-style:italic;font-family:system-ui,sans-serif}
+    @keyframes spPileIn{0%{transform:scale(1.7);opacity:.35}100%{transform:scale(1);opacity:1}}
+    .sp-pile-item.sp-just-piled{animation:spPileIn .36s cubic-bezier(.34,1.3,.64,1)}
     .sp-iconbtn{background:rgba(0,0,0,.12);color:#0d1a0d;border:none;border-radius:4px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
     .sp-iconbtn:hover{background:rgba(0,0,0,.25)}
     /* Voice-input "star" button — large, lime-tinted, pulses while listening */
@@ -12777,6 +12796,7 @@ async function deleteEvent(id){
 
 /* ===================== STICKY PAD (was NoteD) ===================== */
 let spFocusedId = null;        // currently focused note id
+let _spPrevFocusId = null;     // note being demoted this render → shrink-into-pile anim
 let spPositions = {};          // id → {x%, y%, rot°}
 let spSearch = '';
 let spSaveTimers = {};
@@ -12882,19 +12902,29 @@ function spRender(){
   if(btn) btn.style.display = focused ? '' : 'none';
   const others = visible.filter(n=>n.id!==spFocusedId);
   if(spLayoutMode === 'stack'){
-    // Focused sticky pinned at top; the rest grouped by colour in rows below.
-    // Document flow → expanding a sticky pushes the ones below it lower.
-    const groups = {};
-    others.forEach(n=>{ const c=_spColor(n); (groups[c]=groups[c]||[]).push(n); });
-    const colors = Object.keys(groups).map(Number).sort((a,b)=>a-b);
+    // Focused sticky pinned at top; below it a dock of 5 fixed colour piles.
+    // Every de-focused note lives in the compact vertical stack of its own
+    // colour. All 5 colours always render (empty ones show a placeholder).
+    const groups = {1:[],2:[],3:[],4:[],5:[]};
+    others.forEach(n=>{ groups[_spColor(n)].push(n); });
+    const justId = _spPrevFocusId; _spPrevFocusId = null;   // shrink-in tag (consumed once)
     let html = '';
     if(focused) html += '<div class="sp-flow-top">'+_spRenderNote(focused,true)+'</div>';
-    html += '<div class="sp-flow-rows">';
-    colors.forEach(c=>{
-      html += '<div class="sp-flow-row">'+ groups[c].map(n=>_spRenderNote(n,false)).join('') +'</div>';
-    });
+    html += '<div class="sp-dock">';
+    for(let c=1;c<=5;c++){
+      const items = groups[c];
+      html += '<div class="sp-pile'+(items.length?'':' sp-pile-empty')+'">'
+            +   '<div class="sp-pile-head"><span class="sp-pile-dot color-'+c+'"></span>'+(items.length||'')+'</div>'
+            +   '<div class="sp-pile-body">'
+            +     (items.length
+                    ? items.map(n=>_spRenderPileItem(n, justId)).join('')
+                    : '<div class="sp-pile-placeholder">empty</div>')
+            +   '</div>'
+            + '</div>';
+    }
     html += '</div>';
     canvas.innerHTML = html;
+    _spWireDock();
   } else {
     const html = others.map(n=>_spRenderNote(n,false)).join('') + (focused ? _spRenderNote(focused,true) : '');
     canvas.innerHTML = html;
@@ -12965,6 +12995,37 @@ function _spRenderNote(n, isFocused){
     : ` onmousedown="spDragStart(event,'${n.id}')" ontouchstart="spDragStart(event,'${n.id}')"`;
   return `<div id="sp-note-${n.id}" class="sp-note${isFocused?' focused':''} color-${color}" style="${style}" data-id="${n.id}"${handlers}>${_spInnerHtml(n, isFocused)}</div>`;
 }
+function _spRenderPileItem(n, justId){
+  const color = _spColor(n);
+  const just = (justId != null && n.id === justId) ? ' sp-just-piled' : '';
+  const summary = escHtml(_spSummary(n));
+  return '<div class="sp-pile-item color-'+color+just+'" data-id="'+n.id+'" '
+       + 'onclick="spFocus(\''+n.id+'\')" title="'+summary+'">'
+       + '<div class="sp-pi-sum">'+summary+'</div></div>';
+}
+// macOS-dock magnification: hovering a pile zooms the card nearest the cursor
+// (neighbours scale by proximity) so you can look through the stack.
+function _spWireDock(){
+  const R = 132, MAX = 0.95, JUT = 26;
+  document.querySelectorAll('#sp-canvas .sp-pile-body').forEach(body=>{
+    const items = Array.from(body.querySelectorAll('.sp-pile-item'));
+    if(!items.length) return;
+    const reset = ()=>items.forEach(it=>{ it.style.transform=''; it.style.zIndex=''; it.style.boxShadow=''; });
+    body.addEventListener('mousemove', (e)=>{
+      items.forEach(it=>{
+        const r = it.getBoundingClientRect();
+        const d = Math.abs(e.clientY - (r.top + r.height/2));
+        if(d < R){
+          const t = 1 - d/R;
+          it.style.transform = 'scale('+(1 + MAX*t).toFixed(3)+') translateX('+(JUT*t).toFixed(1)+'px)';
+          it.style.zIndex = String(600 + Math.round(R - d));
+          it.style.boxShadow = '0 16px 32px rgba(0,0,0,.72)';
+        } else { it.style.transform=''; it.style.zIndex=''; it.style.boxShadow=''; }
+      });
+    });
+    body.addEventListener('mouseleave', reset);
+  });
+}
 function _spApplyFocusStyle(el, n, isFocused){
   const pos = spPositions[n.id] || (spPositions[n.id] = _spRandPos());
   if(isFocused){
@@ -13005,6 +13066,7 @@ function spFocus(id){
   // Stacked layout: focus changes the flow structure (new note to the top,
   // old note back into its colour row), so rebuild the whole pad.
   if(spLayoutMode === 'stack'){
+    _spPrevFocusId = spFocusedId;   // demote the current focus into its colour pile (shrink-in)
     spFocusedId = id;
     spRender();
     const el = document.getElementById('sp-note-'+id);
@@ -13518,6 +13580,7 @@ async function spNewNote(){
     const r = await fetch('/api/ahb/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:'New note', content:''})});
     const d = await r.json();
     if(d && d.id){
+      _spPrevFocusId = spFocusedId;   // old focus drops into its colour pile
       spFocusedId = d.id;
       spPositions[d.id] = _spRandPos();
       await loadStickyPad();

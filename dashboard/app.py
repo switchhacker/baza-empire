@@ -16252,6 +16252,18 @@ _ensure_email_schema()
 app.register_blueprint(_email_bp)
 
 try:
+    from dashboard.bin_routes import bin_bp as _bin_bp
+    from dashboard import bin_store as _bin_store
+except ImportError:
+    from bin_routes import bin_bp as _bin_bp
+    import bin_store as _bin_store
+try:
+    _bin_store.init_bin_db()
+except Exception as _e:
+    print(f"[bin] init_bin_db failed: {_e}")
+app.register_blueprint(_bin_bp)
+
+try:
     from dashboard.share_service import share_bp as _share_bp, _ensure_share_schema as _ensure_share
 except ImportError:
     from share_service import share_bp as _share_bp, _ensure_share_schema as _ensure_share
