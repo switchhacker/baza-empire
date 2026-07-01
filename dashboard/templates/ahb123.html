@@ -5028,10 +5028,13 @@
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             <label class="btn btn-sm btn-secondary" style="cursor:pointer" title="Upload from this device">+ Before<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'before')"></label>
             <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub (incl. Sam's Telegram drops)" onclick="pickProjectPhotosFromBaza('before')">📂 Baza</button>
+            <button class="btn btn-sm btn-secondary" style="background:#05966922;color:#6ee7b7;border:1px solid #059669" title="Pick from Baza Bin" onclick="pickProjectPhotosFromBin('before')">📦 From Bin</button>
             <label class="btn btn-sm btn-secondary" style="cursor:pointer" title="Upload from this device">+ During<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'during')"></label>
             <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub" onclick="pickProjectPhotosFromBaza('during')">📂 Baza</button>
+            <button class="btn btn-sm btn-secondary" style="background:#05966922;color:#6ee7b7;border:1px solid #059669" title="Pick from Baza Bin" onclick="pickProjectPhotosFromBin('during')">📦 From Bin</button>
             <label class="btn btn-sm btn-secondary" style="cursor:pointer" title="Upload from this device">+ After<input type="file" accept="image/*" multiple style="display:none" onchange="uploadProjectPhotos(this.files,'after')"></label>
             <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub" onclick="pickProjectPhotosFromBaza('after')">📂 Baza</button>
+            <button class="btn btn-sm btn-secondary" style="background:#05966922;color:#6ee7b7;border:1px solid #059669" title="Pick from Baza Bin" onclick="pickProjectPhotosFromBin('after')">📦 From Bin</button>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
@@ -5049,6 +5052,7 @@
               <input type="file" multiple style="display:none" onchange="uploadProjectDoc(this.files)">
             </label>
             <button class="btn btn-sm btn-secondary" style="background:#7c3aed22;color:#c4b5fd;border:1px solid #7c3aed" title="Pick from Baza Data Hub" onclick="pickProjectDocFromBaza()">📂 Baza</button>
+            <button class="btn btn-sm btn-secondary" style="background:#05966922;color:#6ee7b7;border:1px solid #059669" title="Pick from Baza Bin" onclick="pickProjectDocFromBin()">📦 From Bin</button>
           </div>
         </div>
         <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
@@ -15897,6 +15901,30 @@ async function pickProjectPhotosFromBaza(section){
   },{title:'📂 Pick '+section.toUpperCase()+' photos from Baza',subtitle:'Click images to select; "Use selected" attaches to this project'});
 }
 
+async function pickProjectPhotosFromBin(section){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid){showToast('Open a project first','error');return;}
+  openBinPicker({multi:true, kind:'image', onPick: async(items)=>{
+    if(!items.length) return;
+    let ok=0;
+    for(const it of items){
+      const fd=new FormData();
+      fd.append('pick_token',it.token);
+      fd.append('project_id',pid);
+      fd.append('photo_section',section);
+      fd.append('name',it.name);
+      fd.append('file_type','image');
+      try{
+        const r=await fetch('/api/ahb/projects/'+pid+'/files',{method:'POST',body:fd});
+        const j=await r.json();
+        if(j.success) ok++;
+      }catch(e){}
+    }
+    showToast(ok+' photo(s) attached from Bin');
+    openProjectDetail(pid);
+  }});
+}
+
 async function pickProjectDocFromBaza(){
   const pid=document.getElementById('pd-id').value;
   if(!pid){showToast('Open a project first','error');return;}
@@ -15921,6 +15949,32 @@ async function pickProjectDocFromBaza(){
     showToast(ok+' document(s) attached from Baza');
     openProjectDetail(pid);
   },{title:'📂 Pick '+dt+' from Baza'});
+}
+
+async function pickProjectDocFromBin(){
+  const pid=document.getElementById('pd-id').value;
+  if(!pid){showToast('Open a project first','error');return;}
+  const docType=prompt('Document type:\n1. Permit\n2. Contract\n3. COI\n4. W9\n5. Estimate\n6. Change Order\n7. Other');
+  const types={'1':'Permit','2':'Contract','3':'COI (Certificate of Insurance)','4':'W9 Form','5':'Estimate','6':'Change Order','7':'Other'};
+  const dt=types[docType]||'Other';
+  openBinPicker({multi:true, onPick: async(items)=>{
+    if(!items.length) return;
+    let ok=0;
+    for(const it of items){
+      const fd=new FormData();
+      fd.append('pick_token',it.token);
+      fd.append('project_id',pid);
+      fd.append('document_type',dt);
+      fd.append('name',it.name);
+      try{
+        const r=await fetch('/api/ahb/projects/'+pid+'/files',{method:'POST',body:fd});
+        const j=await r.json();
+        if(j.success) ok++;
+      }catch(e){}
+    }
+    showToast(ok+' document(s) attached from Bin');
+    openProjectDetail(pid);
+  }});
 }
 
 async function pickReceiptImageFromBazaForExisting(){
