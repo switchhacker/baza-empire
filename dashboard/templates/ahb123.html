@@ -22558,6 +22558,7 @@ SocialStudio.modules.postdetail = (function(){
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.subtitles(${p.id})">&#x1F4DD; Subtitles</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.voiceover && SocialStudio.modules.voiceover.open(${p.id}, document.getElementById('pd-caption').value)">&#x1F50A; VO</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.coverPick(${p.id})">&#x1F5BC;&#xFE0F; Pick cover</button>
+          <button class="btn-secondary" onclick="socialAssetFromBin(${p.id})">&#x1F4E6; From Bin</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.saveAsTemplate(${p.id})">&#x1F4CB; Save as template</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.editTags(${p.id})">&#x1F3F7; Tags</button>
           <button class="btn-secondary" onclick="SocialStudio.modules.postdetail.history(${p.id})">&#x1F4DC; History</button>
@@ -22792,6 +22793,29 @@ SocialStudio.modules.postdetail = (function(){
            history, restore, approvalLog, addApprovalNote, _scheduleAutosave,
            _scheduleStatsAutosave };
 })();
+
+async function socialAssetFromBin(id) {
+  openBinPicker({ multi: false, onPick: async function(items) {
+    if (!items.length) return;
+    const it = items[0];
+    const tid = SocialStudio.modules.toast.progress('Setting asset from bin…');
+    try {
+      const r = await fetch('/api/ahb/social/posts/' + id + '/asset-from-bin', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ token: it.token }),
+      });
+      const j = await r.json();
+      if (r.ok && j.ok) {
+        SocialStudio.modules.toast.resolve(tid, 'success', 'Asset set from bin');
+        if (SocialStudio.modules.library) SocialStudio.modules.library.render();
+      } else {
+        SocialStudio.modules.toast.resolve(tid, 'error', 'From Bin failed: ' + (j.error || '?'));
+      }
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'From Bin failed: ' + e.message);
+    }
+  }});
+}
 
 SocialStudio.modules.presets = (function(){
   const root = () => document.getElementById('ss-sub-presets');

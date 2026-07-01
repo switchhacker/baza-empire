@@ -1271,6 +1271,38 @@ def social_post_cover(pid: int):
     return jsonify({"error": "no cover"}), 404
 
 
+@social_bp.route("/api/ahb/social/posts/<int:pid>/asset-from-bin", methods=["POST"])
+def social_asset_from_bin(pid: int):
+    """Use a Baza Bin image/video directly as this post's asset. Body: {token}."""
+    import shutil
+    try:
+        from dashboard import bin_store
+    except ImportError:
+        import bin_store
+    body = request.get_json(silent=True) or {}
+    src = bin_store.resolve_token((body.get("token") or "").strip())
+    if not src:
+        return jsonify({"error": "invalid bin token"}), 404
+    out_dir = os.path.join(DASHBOARD_DIR, "artifacts", "social", "bin", str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    dest = os.path.join(out_dir, os.path.basename(src))
+    shutil.copy2(src, dest)                     # copy: bin keeps the original
+    is_img = dest.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
+    cover = dest if is_img else None
+    con = _conn()
+    try:
+        if cover:
+            con.execute("UPDATE ahb_social_posts SET asset_path=?, cover_path=?, updated_at=? WHERE id=?",
+                        (dest, cover, datetime.utcnow().isoformat(timespec="seconds"), pid))
+        else:
+            con.execute("UPDATE ahb_social_posts SET asset_path=?, updated_at=? WHERE id=?",
+                        (dest, datetime.utcnow().isoformat(timespec="seconds"), pid))
+        con.commit()
+    finally:
+        con.close()
+    return jsonify({"ok": True, "asset_path": dest})
+
+
 @social_bp.route("/api/ahb/social/posts/<int:pid>/print", methods=["POST"])
 def social_post_print(pid: int):
     """Print a social creation (the rendered asset image) on the HP printer."""
