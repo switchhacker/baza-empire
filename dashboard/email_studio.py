@@ -36,7 +36,7 @@ ARTIFACTS_DIR = os.path.join(DASHBOARD_DIR, "artifacts")
 _MAX_ATTACH_BYTES = 25 * 1024 * 1024
 _DENY_ARTIFACT_DIRS = (".private-inbound", ".vault_meta")
 EMAIL_PIPELINE_DIR = os.path.join(FRAMEWORK_DIR, "email-pipeline")
-OUTBOX_DIR = os.path.join(EMAIL_PIPELINE_DIR, ".outbox_uploads")
+OUTBOX_DIR = os.environ.get("EMAIL_OUTBOX_DIR") or os.path.join(EMAIL_PIPELINE_DIR, ".outbox_uploads")
 
 
 def _sweep_outbox(max_age=6 * 3600):
@@ -932,6 +932,44 @@ def api_attachment_upload():
     size = os.path.getsize(dest)
     if size > _MAX_ATTACH_BYTES:
         import shutil
+        shutil.rmtree(d, ignore_errors=True)
+        return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
+    mime = mimetypes.guess_type(safe)[0] or "application/octet-stream"
+    return jsonify({"ok": True, "token": token, "filename": safe, "size": size, "mime": mime})
+
+
+@email_bp.route("/api/email2/attachments/from-bin", methods=["POST"])
+def api_attachment_from_bin():
+    """Stage a Baza Bin file as an outgoing attachment. Body: {token}.
+    Returns the same shape as /api/email2/attachments/upload."""
+    import mimetypes, shutil
+    try:
+        from dashboard import bin_store
+    except ImportError:
+        import bin_store
+    body = request.get_json(silent=True) or {}
+    src = bin_store.resolve_token((body.get("token") or "").strip())
+    if not src:
+        return jsonify({"ok": False, "error": "invalid bin token"}), 404
+    # bin_store stores files under a timestamp-prefixed name (see bin_store.add_file);
+    # the original filename lives in the bin_files row, not the on-disk basename.
+    orig_name = os.path.basename(src)
+    try:
+        bcon = sqlite3.connect(bin_store.bin_db_path())
+        brow = bcon.execute("SELECT name FROM bin_files WHERE stored_path=?", (src,)).fetchone()
+        bcon.close()
+        if brow and brow[0]:
+            orig_name = brow[0]
+    except Exception:
+        pass
+    token = uuid.uuid4().hex
+    safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(orig_name))[:160] or "file"
+    d = os.path.join(OUTBOX_DIR, token)
+    os.makedirs(d, exist_ok=True)
+    dest = os.path.join(d, safe)
+    shutil.copy2(src, dest)
+    size = os.path.getsize(dest)
+    if size > _MAX_ATTACH_BYTES:
         shutil.rmtree(d, ignore_errors=True)
         return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
     mime = mimetypes.guess_type(safe)[0] or "application/octet-stream"

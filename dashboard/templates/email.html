@@ -539,6 +539,7 @@
       <div class="cmp-attach-bar" id="cmpAttachBar">
         <label class="cmp-attach-add">📎 Attach<input type="file" id="cmpFileInput" multiple style="display:none"></label>
         <button type="button" class="cmp-attach-add" style="cursor:pointer;border:none" onclick="openBazaAttach()" title="Attach a file from a baza project">🗂 From baza</button>
+        <button type="button" class="cmp-attach-add" style="cursor:pointer;border:none" onclick="cmpFromBin()" title="Attach a file from the Baza Bin">📦 From Bin</button>
       </div>
     </div>
     <div class="modal-foot">
@@ -1222,6 +1223,22 @@ document.getElementById('cmpFileInput').addEventListener('change', async e=>{
   }
   e.target.value = '';
 });
+
+// ── Attach from the Baza Bin ────────────────────────────────────────────────
+async function cmpFromBin(){
+  openBinPicker({multi:true, onPick: async function(items){
+    for(const it of items){
+      try{
+        const r = await fetch('/api/email2/attachments/from-bin', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({token: it.token})});
+        const j = await r.json();
+        if(j.ok){ _cmpAttachments.push({token:j.token, filename:j.filename, size:j.size}); renderCmpAttachments(); }
+        else { toast('From Bin failed: '+(j.error||'?'), true); }
+      }catch(e){ toast('From Bin failed', true); }
+    }
+  }});
+}
 
 // ── Attach from baza (project artifacts) ───────────────────────────────────
 let _bazaFiles = [];
