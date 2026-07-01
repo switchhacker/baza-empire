@@ -42,5 +42,13 @@
   {
     "ts": "2026-06-25T20:56:35+00:00",
     "change": "+ services: baza-ddns.service"
+  },
+  {
+    "ts": "2026-07-01T04:01:46+00:00",
+    "change": "+ services: baza-bin-bot.service"
+  },
+  {
+    "ts": "2026-07-01T04:01:46+00:00",
+    "change": "- services: baza-terminal-bot.service"
   }
 ]
