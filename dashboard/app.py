@@ -2394,12 +2394,20 @@ def _pick_encode_token(rel_path: str) -> str:
 
 
 def _pick_decode_token(token: str):
-    """Decode a Baza-picker token to an absolute path inside ARTIFACTS_DIR.
-    Returns None for invalid / out-of-tree / non-existent paths. Vault
-    files are refused — they're only reachable via the vault flow."""
+    """Decode a Baza-picker token to an absolute path. '~'-prefixed tokens are
+    Baza Bin files (resolved under BIN_DIR by bin_store); all other tokens are
+    artifacts-relative and resolved under ARTIFACTS_DIR. Returns None for
+    invalid / out-of-tree / non-existent paths. Vault files are refused."""
     import base64 as _b64
     if not token or not isinstance(token, str):
         return None
+    if token.startswith("~"):
+        try:
+            from dashboard import bin_store as _bs
+        except ImportError:
+            import bin_store as _bs
+        return _bs.resolve_token(token)
+    # ---- existing artifacts path resolution below (unchanged) ----
     try:
         pad = '=' * (-len(token) % 4)
         rel = _b64.urlsafe_b64decode((token + pad).encode('ascii')).decode('utf-8')
