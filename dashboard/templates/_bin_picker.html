@@ -39,6 +39,7 @@
 (function(){
   let _items = [], _sel = new Set(), _opts = {kind:null, multi:true, onPick:null};
   const ICON = {document:'📄', video:'🎞️', audio:'🎵', other:'📦'};
+  function _binEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 
   window.openBinPicker = function(opts){
     _opts = Object.assign({kind:null, multi:true, onPick:null}, opts||{});
@@ -81,7 +82,7 @@
         : '<div style="height:90px;display:flex;align-items:center;justify-content:center;font-size:34px;background:#111;border-radius:5px">'+(ICON[it.kind]||'📦')+'</div>';
       return '<div onclick="binPickToggle(\''+it.id+'\')" style="cursor:pointer;border:2px solid '+(on?'#5a8':'#1a1a2e')+';border-radius:7px;padding:5px;background:#0d0d1e">'
         + thumb
-        + '<div style="font-size:10px;color:#bbb;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+(it.name||'')+'">'+(it.name||'')+'</div>'
+        + '<div style="font-size:10px;color:#bbb;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+_binEsc(it.name)+'">'+_binEsc(it.name)+'</div>'
         + '</div>';
     }).join('');
   };
