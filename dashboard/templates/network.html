@@ -240,6 +240,20 @@
     </div>
   </div>
 
+  <!-- ================= MIGRATION WIZARD ================= -->
+  <div class="card" id="wizard-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Cloudflare migration wizard</div>
+        <div class="card-desc">Link the dashboard to baza.ahb123.com via a Cloudflare Tunnel + Access gate. 🟢 baza runs its phases · 🔴 Serge does the browser phases.</div>
+      </div>
+      <button class="btn secondary sm" onclick="wizRefresh()">&#8635; Re-detect</button>
+    </div>
+    <div class="card-body">
+      <div id="wizardBox"><span class="muted">loading…</span></div>
+    </div>
+  </div>
+
   <!-- deSEC edit-row modal (body-level) -->
   <div id="desecEditModalBg" style="display:none;position:fixed;inset:0;background:#0009;z-index:10000;align-items:center;justify-content:center">
     <div style="background:#0b0b17;border:1px solid #1a1a3a;border-radius:14px;width:min(540px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px #000c">
@@ -268,6 +282,76 @@
         <button class="btn ghost sm" onclick="closeDesecEditModal()">Cancel</button>
         <span id="desecEditStatus" class="muted" style="font-size:12px"></span>
       </div>
+    </div>
+  </div>
+
+  <!-- ================= FIREWALL ================= -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Firewall</div>
+        <div class="card-desc">ufw status and rule controls. Enabling with default-deny may block Tailscale or Caddy.</div>
+      </div>
+    </div>
+    <div class="card-body" id="firewallBox"><span class="muted">loading…</span></div>
+  </div>
+
+  <!-- ================= DIAGNOSTICS (Task 12) ================= -->
+  <div class="card" id="diag-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Diagnostics</div>
+        <div class="card-desc">Network probes — ping, traceroute, dig, curl headers, port check. All inputs validated server-side.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <label class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Tool</label>
+          <select id="diagTool" onchange="diagToolChange()"
+            style="background:#070714;border:1px solid #1a1a2e;color:#e0e0e0;padding:7px 10px;border-radius:7px;font-size:13px;min-width:130px">
+            <option value="ping">ping</option>
+            <option value="traceroute">traceroute</option>
+            <option value="dig">dig</option>
+            <option value="curl">curl (headers)</option>
+            <option value="port">port check</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px">
+          <label class="muted" id="diagTargetLabel" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Target (hostname or IP)</label>
+          <input id="diagTarget" type="text" placeholder="e.g. ahb123.com"
+            style="background:#070714;border:1px solid #1a1a2e;color:#e0e0e0;padding:7px 10px;border-radius:7px;font-size:13px;width:100%"
+            onkeydown="if(event.key==='Enter')diagRun()">
+        </div>
+        <!-- ping: count -->
+        <div id="diagCountWrap" style="display:flex;flex-direction:column;gap:4px">
+          <label class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Count (1-10)</label>
+          <input id="diagCount" type="number" min="1" max="10" value="4"
+            style="background:#070714;border:1px solid #1a1a2e;color:#e0e0e0;padding:7px 10px;border-radius:7px;font-size:13px;width:80px">
+        </div>
+        <!-- dig: rtype -->
+        <div id="diagRtypeWrap" style="display:none;flex-direction:column;gap:4px">
+          <label class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Record type</label>
+          <select id="diagRtype"
+            style="background:#070714;border:1px solid #1a1a2e;color:#e0e0e0;padding:7px 10px;border-radius:7px;font-size:13px">
+            <option>A</option><option>AAAA</option><option>CNAME</option>
+            <option>MX</option><option>NS</option><option>TXT</option><option>SOA</option>
+          </select>
+        </div>
+        <!-- port: port number -->
+        <div id="diagPortWrap" style="display:none;flex-direction:column;gap:4px">
+          <label class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Port (1-65535)</label>
+          <input id="diagPort" type="number" min="1" max="65535" value="443"
+            style="background:#070714;border:1px solid #1a1a2e;color:#e0e0e0;padding:7px 10px;border-radius:7px;font-size:13px;width:100px">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;padding-top:18px">
+          <button class="btn sm" id="diagGoBtn" onclick="diagRun()">&#9654; Go</button>
+        </div>
+      </div>
+      <div id="diagStatusLine" class="muted" style="font-size:12px;margin-top:8px;min-height:16px"></div>
+      <pre id="diagOut" style="background:#070714;border:1px solid #15152a;border-radius:8px;padding:14px;
+           font-size:12px;color:#9ad;white-space:pre-wrap;word-break:break-all;
+           font-family:monospace;max-height:400px;overflow:auto;margin-top:10px;display:none"></pre>
     </div>
   </div>
 
@@ -362,6 +446,7 @@ async function refresh(){
   catch(e){ toast('status fetch failed', false); return; }
   LAST = s;
   renderMap(s); renderEdges(s); renderServices(s); renderTailscale(s); renderNics(s); renderCaddy(s);
+  renderFirewall(s);
   renderGcloudDns(s);
   const el=document.getElementById('lastTs'); if(el) el.textContent = s.ts ? ('updated '+esc(s.ts)) : '';
   // if node drawer open, keep it fresh
@@ -728,6 +813,78 @@ async function caddyRollback(name){
   }
 }
 
+/* ---------- firewall card ---------- */
+function renderFirewall(s){
+  const fw = s.firewall || {};
+  const present = fw.present;
+  const active = fw.active;
+  const rules = fw.rules || [];
+  const box = document.getElementById('firewallBox');
+
+  let statusLabel, statusClass;
+  if (!present) {
+    statusLabel = 'ufw not found';
+    statusClass = 'other';
+  } else if (active === true) {
+    statusLabel = 'active';
+    statusClass = 'active';
+  } else if (active === false) {
+    statusLabel = 'inactive';
+    statusClass = 'inactive';
+  } else {
+    statusLabel = 'unknown';
+    statusClass = 'other';
+  }
+
+  let html = `<div class="row" style="margin-bottom:14px;align-items:center;gap:14px">
+    <span class="muted" style="font-size:12px">ufw status:</span>
+    <span class="state ${esc(statusClass)}">${esc(statusLabel)}</span>
+  </div>`;
+
+  // Controls — ufw_toggle on is styled red (risky)
+  html += `<div class="row" style="margin-bottom:14px;gap:8px;flex-wrap:wrap">
+    <button class="btn-risky sm" data-action="ufw_toggle" data-params="${esc(JSON.stringify({on:true}))}" title="Risky — may block Tailscale/Caddy if default-deny">&#128274; Enable ufw</button>
+    <button class="btn secondary sm" data-action="ufw_toggle" data-params="${esc(JSON.stringify({on:false}))}">Disable ufw</button>
+  </div>`;
+
+  // Quick-add rule form
+  html += `<div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <span class="muted" style="font-size:12px;font-weight:700">Add/Remove rule:</span>
+    <select id="fwVerb" style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:6px 10px;font-size:12px;color:#ccc">
+      <option value="allow">allow</option>
+      <option value="deny">deny</option>
+      <option value="delete-allow">delete-allow</option>
+      <option value="delete-deny">delete-deny</option>
+    </select>
+    <input id="fwPort" type="number" min="1" max="65535" placeholder="port" style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:6px 10px;font-size:12px;color:#ccc;width:90px">
+    <select id="fwProto" style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:6px 10px;font-size:12px;color:#ccc">
+      <option value="tcp">tcp</option>
+      <option value="udp">udp</option>
+    </select>
+    <button class="btn sm" onclick="firewallAddRule()">Apply</button>
+  </div>`;
+
+  // Rules list (read-only display)
+  if (rules.length) {
+    html += `<div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">
+      ${esc(present ? 'ufw rules' : 'iptables -S (read-only fallback)')}
+    </div>
+    <pre style="background:#070714;border:1px solid #15152a;border-radius:8px;padding:10px 14px;font-size:11.5px;color:#9ad;font-family:monospace;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all">${esc(rules.join('\n'))}</pre>`;
+  } else {
+    html += `<span class="muted">no rules</span>`;
+  }
+
+  box.innerHTML = html;
+}
+
+function firewallAddRule(){
+  const verb = document.getElementById('fwVerb').value;
+  const port = parseInt(document.getElementById('fwPort').value, 10);
+  const proto = document.getElementById('fwProto').value;
+  if (!port || port < 1 || port > 65535) { toast('Invalid port (1-65535)', false); return; }
+  postAction('ufw_rule', {verb, port, proto});
+}
+
 /* ── deSEC DNS panel ── */
 
 async function desecCheckToken(){
@@ -1000,8 +1157,183 @@ async function cfRefresh(){
   } catch(e) { box.innerHTML = `<span class="muted">fetch error: ${esc(String(e))}</span>`; }
 }
 
+/* ---------- migration wizard ---------- */
+// esc() FIRST, then apply a tiny safe markdown subset (bold, inline code, breaks).
+function wizMd(s){
+  let h = esc(s);
+  h = h.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  h = h.replace(/`([^`]+)`/g, '<code style="background:#0d2040;padding:1px 5px;border-radius:4px;font-size:11px;color:#4da6ff">$1</code>');
+  h = h.replace(/\n/g, '<br>');
+  return h;
+}
+function wizStateClass(st){
+  return st==='verified' ? 'active' : (st==='done' ? 'active' : (st==='blocked' ? 'inactive' : 'other'));
+}
+function wizStateLabel(st){ return st || 'todo'; }
+
+async function wizRefresh(){
+  const box = document.getElementById('wizardBox');
+  if(!box) return;
+  try {
+    const j = await (await fetch('/api/network/wizard')).json();
+    const phases = j.phases || [];
+    box.innerHTML = phases.map(p => {
+      const who = p.who === 'serge'
+        ? '<span class="badge" style="background:#2a0a0a;color:#ff8888;border:1px solid #dc2626">&#128308; Serge</span>'
+        : '<span class="badge" style="background:#0a2a1a;color:#00d084;border:1px solid #00d084">&#128994; baza</span>';
+      const st = wizStateLabel(p.state);
+      const stBadge = `<span class="state ${esc(wizStateClass(st))}">${esc(st)}</span>`;
+      const ev = p.evidence ? `<span class="muted" style="font-size:11px;margin-left:6px">${esc(p.evidence)}</span>` : '';
+      // Run button: phase5 exposes its three sub-actions; other phases use p.run
+      let runBtns = '';
+      if(p.id === 'phase5'){
+        runBtns = `
+          <button class="btn-risky xs" data-action="wiz_tunnel_create" data-params="{}">&#9654; Create tunnel</button>
+          <button class="btn-risky xs" data-action="wiz_write_config" data-params="{}">&#9654; Write config</button>
+          <button class="btn-risky xs" data-action="wiz_route_dns" data-params="{}">&#9654; Route DNS</button>`;
+      } else if(p.run){
+        runBtns = `<button class="btn-risky xs" data-action="${esc(p.run)}" data-params="{}">&#9654; Run</button>`;
+      }
+      const verifyBtn = p.verify
+        ? `<button class="btn secondary xs" data-wiz-verify="${esc(p.id)}">&#10003; Verify</button>` : '';
+      const markBtns = (p.who === 'serge')
+        ? `<button class="btn secondary xs" data-wiz-mark="${esc(p.id)}" data-state="done">Mark done</button>
+           <button class="btn ghost xs" data-wiz-mark="${esc(p.id)}" data-state="todo">Reset</button>` : '';
+      return `
+        <div class="wiz-phase" style="border:1px solid #1a1a2e;border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#0a0a16">
+          <div class="row" style="align-items:center;gap:10px;cursor:pointer" data-wiz-toggle="${esc(p.id)}">
+            <span style="font-family:monospace;color:#666;font-size:11px">${esc(p.id)}</span>
+            ${who}
+            <b style="color:#ddd">${esc(p.title)}</b>
+            ${stBadge}${ev}
+            <span style="margin-left:auto;color:#666" class="wiz-caret" id="caret-${esc(p.id)}">&#9662;</span>
+          </div>
+          <div class="wiz-body" id="wizbody-${esc(p.id)}" style="display:none;margin-top:10px">
+            <div class="muted" style="font-size:12.5px;line-height:1.55">${wizMd(p.instructions)}</div>
+            <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">${runBtns}${verifyBtn}${markBtns}</div>
+            <div class="wiz-verify-out muted" id="wizverify-${esc(p.id)}" style="font-size:11px;margin-top:6px;font-family:monospace"></div>
+          </div>
+        </div>`;
+    }).join('') || '<span class="muted">no phases</span>';
+  } catch(e){
+    box.innerHTML = `<span class="muted">wizard fetch error: ${esc(String(e))}</span>`;
+  }
+}
+
+// Delegated handlers for wizard toggle / verify / mark (kept separate from data-action).
+document.addEventListener('click', async e => {
+  const toggle = e.target.closest('[data-wiz-toggle]');
+  if(toggle){
+    const id = toggle.dataset.wizToggle;
+    const body = document.getElementById('wizbody-'+id);
+    const caret = document.getElementById('caret-'+id);
+    if(body){ const open = body.style.display !== 'none'; body.style.display = open ? 'none' : 'block'; if(caret) caret.innerHTML = open ? '&#9662;' : '&#9652;'; }
+    return;
+  }
+  const vbtn = e.target.closest('[data-wiz-verify]');
+  if(vbtn){
+    const id = vbtn.dataset.wizVerify;
+    const out = document.getElementById('wizverify-'+id);
+    if(out) out.textContent = 'verifying…';
+    try {
+      const j = await (await fetch('/api/network/wizard/verify', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({phase:id})})).json();
+      const okTxt = j.ok===true ? '✓ ok' : (j.ok===false ? '✗ not yet' : '— n/a');
+      if(out) out.textContent = okTxt + '  ' + JSON.stringify(j.evidence||{});
+      toast(`${id} verify: ${okTxt}`, j.ok===true);
+      wizRefresh();
+    } catch(err){ if(out) out.textContent = 'verify error: '+esc(String(err)); }
+    return;
+  }
+  const mbtn = e.target.closest('[data-wiz-mark]');
+  if(mbtn){
+    const id = mbtn.dataset.wizMark;
+    const state = mbtn.dataset.state;
+    try {
+      const j = await (await fetch('/api/network/wizard/mark', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({phase:id, state})})).json();
+      toast(j.ok ? `${id} → ${state}` : `mark failed: ${esc(j.error||'')}`, !!j.ok);
+      wizRefresh();
+    } catch(err){ toast('mark error: '+esc(String(err)), false); }
+    return;
+  }
+});
+
+/* ── Diagnostics toolbox (Task 12) ────────────────────────────────────────── */
+function diagToolChange() {
+  const tool = document.getElementById('diagTool').value;
+  const tLabel = document.getElementById('diagTargetLabel');
+  // show/hide optional panels
+  document.getElementById('diagCountWrap').style.display  = (tool === 'ping')        ? 'flex' : 'none';
+  document.getElementById('diagRtypeWrap').style.display  = (tool === 'dig')         ? 'flex' : 'none';
+  document.getElementById('diagPortWrap').style.display   = (tool === 'port')        ? 'flex' : 'none';
+  // adjust target label / placeholder
+  const inp = document.getElementById('diagTarget');
+  if (tool === 'curl') {
+    tLabel.textContent = 'URL (https:// or http://)';
+    inp.placeholder = 'e.g. https://ahb123.com';
+  } else {
+    tLabel.textContent = 'Target (hostname or IP)';
+    inp.placeholder = 'e.g. ahb123.com';
+  }
+}
+
+async function diagRun() {
+  const tool = document.getElementById('diagTool').value;
+  const target = document.getElementById('diagTarget').value.trim();
+  const statusEl = document.getElementById('diagStatusLine');
+  const outEl    = document.getElementById('diagOut');
+  const btn      = document.getElementById('diagGoBtn');
+
+  if (!target) { statusEl.textContent = 'Enter a target first.'; return; }
+
+  const extra = {};
+  if (tool === 'ping') {
+    const c = parseInt(document.getElementById('diagCount').value, 10);
+    if (c >= 1 && c <= 10) extra.count = c;
+  } else if (tool === 'dig') {
+    extra.rtype = document.getElementById('diagRtype').value;
+  } else if (tool === 'port') {
+    const p = parseInt(document.getElementById('diagPort').value, 10);
+    if (p >= 1 && p <= 65535) extra.port = p;
+  }
+
+  btn.disabled = true;
+  statusEl.textContent = 'running…';
+  outEl.style.display = 'none';
+  outEl.textContent = '';
+
+  try {
+    const resp = await fetch('/api/network/diag', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tool, target, extra})
+    });
+    const j = await resp.json();
+    if (!resp.ok) {
+      statusEl.textContent = 'Error: ' + esc(j.error || resp.statusText);
+      toast('diag error: ' + esc(j.error || ''), false);
+    } else {
+      const combined = [j.out, j.err].filter(Boolean).join('\n').trim();
+      statusEl.textContent = j.ok ? 'rc=0 (success)' : `rc=${j.rc} (non-zero)`;
+      outEl.textContent = combined || '(no output)';
+      outEl.style.display = 'block';
+      toast(`diag_${tool} ${j.ok ? 'ok' : 'rc=' + j.rc}`, !!j.ok);
+    }
+  } catch(err) {
+    statusEl.textContent = 'fetch error: ' + esc(String(err));
+    toast('diag fetch error', false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// init tool visibility state
+diagToolChange();
+
 /* init */
 cfCheckToken().then(isSet => { if(isSet) cfRefresh(); });
+wizRefresh(); setInterval(wizRefresh, 30000);
 refresh(); setInterval(refresh, 15000);
 </script>
 </body>

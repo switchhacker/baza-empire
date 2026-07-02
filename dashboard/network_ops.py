@@ -165,6 +165,46 @@ WantedBy=timers.target
 """
 
 
+_VALID_UFW_VERBS = {"allow", "deny", "delete-allow", "delete-deny"}
+_VALID_UFW_PROTOS = {"tcp", "udp"}
+
+
+def _argv_ufw_toggle(params):
+    on = params.get("on")
+    if not isinstance(on, bool):
+        raise ValueError("ufw_toggle requires 'on' as bool")
+    if on:
+        return ["sudo", "-n", "ufw", "--force", "enable"]
+    else:
+        return ["sudo", "-n", "ufw", "disable"]
+
+
+def _risk_ufw_toggle(params):
+    on = params.get("on")
+    return "risky" if on else "safe"
+
+
+def _argv_ufw_rule(params):
+    verb = params.get("verb", "")
+    port = params.get("port")
+    proto = params.get("proto", "")
+    if verb not in _VALID_UFW_VERBS:
+        raise ValueError(f"ufw_rule verb {verb!r} must be one of {sorted(_VALID_UFW_VERBS)}")
+    if not isinstance(port, int) or not (1 <= port <= 65535):
+        raise ValueError(f"ufw_rule port must be int 1-65535, got {port!r}")
+    if proto not in _VALID_UFW_PROTOS:
+        raise ValueError(f"ufw_rule proto {proto!r} must be one of {sorted(_VALID_UFW_PROTOS)}")
+    portproto = f"{port}/{proto}"
+    if verb == "allow":
+        return ["sudo", "-n", "ufw", "allow", portproto]
+    elif verb == "deny":
+        return ["sudo", "-n", "ufw", "deny", portproto]
+    elif verb == "delete-allow":
+        return ["sudo", "-n", "ufw", "delete", "allow", portproto]
+    elif verb == "delete-deny":
+        return ["sudo", "-n", "ufw", "delete", "deny", portproto]
+
+
 def _fn_ddns_timer_enable(params, db_path=None):
     """Enable baza-ddns.timer; write unit file first if missing.
 
@@ -265,6 +305,55 @@ ACTIONS = {
 }
 
 
+# ── Cloudflare migration wizard run-actions (fn-style, all audited) ───────────
+# Registered here so they flow through run_action's audited fn path. The fns
+# live in network_wizard (imported lazily to avoid an import cycle).
+
+def _wiz_fn(name):
+    """Return an fn(params, db_path=None) that dispatches to network_wizard.<name>."""
+    def _dispatch(params, db_path=None):
+        try:
+            from dashboard import network_wizard
+        except ImportError:
+            import network_wizard
+        return getattr(network_wizard, name)(params, db_path=db_path)
+    return _dispatch
+
+
+ACTIONS["ufw_toggle"] = {
+    "risk": "safe",          # base; on=risky via risk_fn
+    "risk_fn": _risk_ufw_toggle,
+    "desc": "Enable (risky — may block tailscale/caddy if default-deny) or disable ufw",
+    "argv": _argv_ufw_toggle,
+}
+ACTIONS["ufw_rule"] = {
+    "risk": "safe",
+    "desc": "Add or delete a ufw allow/deny rule (port/proto)",
+    "argv": _argv_ufw_rule,
+}
+
+ACTIONS["wiz_tunnel_create"] = {
+    "risk": "risky",
+    "desc": "Create the Cloudflare tunnel (cloudflared tunnel create baza-dashboard)",
+    "fn": _wiz_fn("wiz_tunnel_create"),
+}
+ACTIONS["wiz_write_config"] = {
+    "risk": "risky",
+    "desc": "Write ~/.cloudflared/config.yml (ingress baza.ahb123.com → localhost:8888)",
+    "fn": _wiz_fn("wiz_write_config"),
+}
+ACTIONS["wiz_route_dns"] = {
+    "risk": "risky",
+    "desc": "Route DNS for baza.ahb123.com to the tunnel (creates proxied CNAME)",
+    "fn": _wiz_fn("wiz_route_dns"),
+}
+ACTIONS["wiz_install_service"] = {
+    "risk": "risky",
+    "desc": "Install + enable the cloudflared systemd service (reboot-safe)",
+    "fn": _wiz_fn("wiz_install_service"),
+}
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
 def run_action(key: str, params: dict, db_path=None) -> dict:
@@ -284,7 +373,7 @@ def run_action(key: str, params: dict, db_path=None) -> dict:
     if "fn" in entry:
         fn = entry["fn"]
         try:
-            rc, out, err = fn(params)
+            rc, out, err = fn(params, db_path=db_path)
         except ValueError as e:
             network_db.audit(key, params, -2, "", f"rejected: {str(e)}", db_path=db_path)
             raise
@@ -421,6 +510,89 @@ def caddy_apply(text: str, db_path=None) -> dict:
     stage = "done" if ok else "reload"
     network_db.audit("caddy_apply", {"stage": stage, "bak": bak_path}, rc, out, err, db_path=db_path)
     return {"ok": ok, "stage": stage, "err": err if not ok else ""}
+
+
+# ── Diagnostics toolbox (Task 12) ────────────────────────────────────────────
+# run_diag is NOT an ACTIONS entry — routes call it directly.
+# Strict input validation is the security boundary: target/url/count/port/rtype
+# are all validated with re.fullmatch / range checks before argv is built.
+
+_DIAG_TARGET_RE = re.compile(r"[A-Za-z0-9.\-]{1,253}")
+_DIAG_URL_RE = re.compile(
+    r"https?://[A-Za-z0-9.\-]+(?::\d+)?(/[A-Za-z0-9.\-_/?=&%]*)?"
+)
+_DIAG_VALID_RTYPES = {"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"}
+_DIAG_VALID_TOOLS = {"ping", "traceroute", "dig", "curl", "port"}
+
+
+def run_diag(tool: str, target: str, extra: dict, db_path=None) -> dict:
+    """Run a network diagnostic tool with strict argument validation.
+
+    tool    — one of: ping, traceroute, dig, curl, port
+    target  — hostname/IPv4 for ping/traceroute/dig/port;
+              http(s):// URL for curl (passed as 'target' by the caller)
+    extra   — optional overrides: count (ping), rtype (dig), port (port tool)
+    db_path — sqlite path for audit; defaults to network_db default
+
+    Returns {"ok": bool, "out": str, "err": str, "rc": int}.
+    Raises ValueError on any validation failure (routes map that to HTTP 400).
+    All calls are audited as diag_<tool>.
+    """
+    if tool not in _DIAG_VALID_TOOLS:
+        raise ValueError(f"tool {tool!r} not in whitelist {sorted(_DIAG_VALID_TOOLS)}")
+
+    if tool == "curl":
+        url = target
+        if not _DIAG_URL_RE.fullmatch(url):
+            raise ValueError(
+                f"invalid url {url!r}; must match https?://hostname[/path]"
+            )
+        argv = ["curl", "-sSI", "--max-time", "8", url]
+        audit_params = {"url": url}
+        timeout = 20
+
+    else:
+        # All non-curl tools take a hostname/IPv4 target
+        if not _DIAG_TARGET_RE.fullmatch(target):
+            raise ValueError(
+                f"invalid target {target!r}; must match [A-Za-z0-9.\\-]{{1,253}}"
+            )
+
+        if tool == "ping":
+            count = extra.get("count", 4)
+            if not isinstance(count, int) or not (1 <= count <= 10):
+                raise ValueError(f"count must be int 1-10, got {count!r}")
+            argv = ["ping", "-c", str(count), "-W", "2", target]
+            audit_params = {"target": target, "count": count}
+            timeout = 20
+
+        elif tool == "traceroute":
+            argv = ["traceroute", "-w", "2", "-m", "20", target]
+            audit_params = {"target": target}
+            timeout = 45
+
+        elif tool == "dig":
+            rtype = extra.get("rtype", "A")
+            if rtype not in _DIAG_VALID_RTYPES:
+                raise ValueError(
+                    f"rtype {rtype!r} must be one of {sorted(_DIAG_VALID_RTYPES)}"
+                )
+            argv = ["dig", "+short", target, rtype]
+            audit_params = {"target": target, "rtype": rtype}
+            timeout = 20
+
+        elif tool == "port":
+            port = extra.get("port")
+            if not isinstance(port, int) or not (1 <= port <= 65535):
+                raise ValueError(f"port must be int 1-65535, got {port!r}")
+            argv = ["nc", "-z", "-v", "-w", "3", target, str(port)]
+            audit_params = {"target": target, "port": port}
+            timeout = 20
+
+    rc, out, err = _run(argv, timeout=timeout)
+    ok = rc == 0
+    network_db.audit(f"diag_{tool}", audit_params, rc, out, err, db_path=db_path)
+    return {"ok": ok, "rc": rc, "out": out, "err": err}
 
 
 def caddy_rollback(backup_name: str, db_path=None) -> dict:

@@ -325,6 +325,68 @@ def probe_cloudflared():
     return result
 
 
+def parse_ufw(text):
+    """Pure: parse `ufw status verbose` output.
+
+    Returns {"present": bool, "active": bool, "rules": [str]}.
+    present=False / active=False / rules=[] when text is empty or missing.
+    """
+    if not text or not text.strip():
+        return {"present": False, "active": False, "rules": []}
+
+    lines = text.splitlines()
+    # Check for "Status: active" or "Status: inactive"
+    active = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.lower().startswith("status:"):
+            status_val = stripped[len("status:"):].strip().lower()
+            if status_val == "active":
+                active = True
+                break
+            elif status_val == "inactive":
+                active = False
+                break
+
+    # Collect rule lines: lines after the header separator (line starting with "--")
+    # The separator in ufw output looks like "--    ------    ----"
+    rules = []
+    in_rules = False
+    for line in lines:
+        stripped = line.strip()
+        # Detect separator: a line composed entirely of dashes and whitespace.
+        # ufw emits "--  ------  ----"; require a "--" prefix so a stray
+        # single-dash line can't be mistaken for the header rule.
+        if not in_rules and stripped and all(c in "- " for c in stripped) and stripped.startswith("--"):
+            in_rules = True
+            continue
+        if in_rules and stripped:
+            rules.append(stripped)
+
+    return {"present": True, "active": active, "rules": rules}
+
+
+def probe_firewall():
+    """Probe ufw status; fall back to iptables -S if ufw missing/rc!=0.
+
+    Returns {"present": bool, "active": bool|None, "rules": [str]}.
+    Never raises.
+    """
+    try:
+        rc, out, _err = _run(["sudo", "-n", "ufw", "status", "verbose"])
+        if rc == 0 and out.strip():
+            return parse_ufw(out)
+        # ufw absent or failed — fall back to iptables
+        try:
+            rc2, out2, _err2 = _run(["sudo", "-n", "iptables", "-S"])
+            rules = [line.strip() for line in out2.splitlines()[:40] if line.strip()]
+            return {"present": False, "active": None, "rules": rules}
+        except Exception:
+            return {"present": False, "active": None, "rules": []}
+    except Exception:
+        return {"present": False, "active": False, "rules": []}
+
+
 def probe_certs():
     """TLS cert days_left for nova.ahb123.com."""
     import ssl
@@ -536,6 +598,7 @@ def status():
     cloudflared_info = probe_cloudflared()
     certs = probe_certs()
     reach = probe_reachability()
+    firewall = probe_firewall()
 
     # Inject reach results into edges builder for ahb123.com + nova hops
     edges = _build_edges_with_reach(dns, wan_ip, caddy, cloudflared_info, listeners, ts, reach)
@@ -552,6 +615,7 @@ def status():
         "certs": certs,
         "reach": reach,
         "edges": edges,
+        "firewall": firewall,
         "known_ports": KNOWN_PORTS,
         "ts": datetime.now(timezone.utc).isoformat(),
     }

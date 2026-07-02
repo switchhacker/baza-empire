@@ -2,9 +2,9 @@
 from flask import Blueprint, jsonify, render_template, request
 
 try:
-    from dashboard import network_db, network_ops, network_probe, network_dns
+    from dashboard import network_db, network_ops, network_probe, network_dns, network_wizard
 except ImportError:
-    import network_db, network_ops, network_probe, network_dns
+    import network_db, network_ops, network_probe, network_dns, network_wizard
 
 network_bp = Blueprint("network", __name__)
 
@@ -106,6 +106,47 @@ def api_cloudflare_status():
     return jsonify(result)
 
 
+# ── Cloudflare migration wizard routes ─────────────────────────────────────
+
+@network_bp.route("/api/network/wizard", methods=["GET"])
+def api_wizard():
+    """Return the resolved phase list (live probe evidence merged over stored state)."""
+    status = network_probe.status()
+    wizard_db = network_db.wizard_get()
+    return jsonify({"phases": network_wizard.detect(status, wizard_db)})
+
+
+@network_bp.route("/api/network/wizard/mark", methods=["POST"])
+def api_wizard_mark():
+    """Set a manual phase's state (Serge's 'Mark done'). Body: {phase, state, note?}."""
+    body = request.get_json(force=True, silent=True) or {}
+    body = body if isinstance(body, dict) else {}
+    phase = body.get("phase", "")
+    state = body.get("state", "")
+    note = body.get("note", "")
+    valid_phases = {p["id"] for p in network_wizard.PHASES}
+    valid_states = {"todo", "done", "verified", "blocked"}
+    if phase not in valid_phases:
+        return jsonify({"error": f"unknown phase {phase!r}"}), 400
+    if state not in valid_states:
+        return jsonify({"error": f"state must be one of {sorted(valid_states)}"}), 400
+    note = note if isinstance(note, str) else ""
+    network_db.wizard_set(phase, state, note)
+    return jsonify({"ok": True, "phase": phase, "state": state})
+
+
+@network_bp.route("/api/network/wizard/verify", methods=["POST"])
+def api_wizard_verify():
+    """Run a phase's verify fn. Body: {phase}. Returns {ok, evidence}."""
+    body = request.get_json(force=True, silent=True) or {}
+    body = body if isinstance(body, dict) else {}
+    phase = body.get("phase", "")
+    valid_phases = {p["id"] for p in network_wizard.PHASES}
+    if phase not in valid_phases:
+        return jsonify({"error": f"unknown phase {phase!r}"}), 400
+    return jsonify(network_wizard.run_verify(phase))
+
+
 # ── deSEC RRset routes ──────────────────────────────────────────────────────
 
 @network_bp.route("/api/network/desec", methods=["GET"])
@@ -116,6 +157,26 @@ def api_desec_get():
         return jsonify({"error": "no token — paste a deSEC token first"}), 400
     rrsets = network_dns.desec_rrsets(tok)
     return jsonify(rrsets)
+
+
+@network_bp.route("/api/network/diag", methods=["POST"])
+def api_diag():
+    """Run a network diagnostic tool.
+
+    Body: {tool, target, extra?}
+    Returns run_diag result or 400 on validation error.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    body = body if isinstance(body, dict) else {}
+    tool = body.get("tool", "")
+    target = body.get("target", "")
+    extra = body.get("extra") or {}
+    extra = extra if isinstance(extra, dict) else {}
+    try:
+        result = network_ops.run_diag(tool, target, extra)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(result)
 
 
 @network_bp.route("/api/network/desec", methods=["POST"])
