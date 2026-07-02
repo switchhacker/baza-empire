@@ -128,6 +128,11 @@ def test_strip_markdown():
 def test_html_to_plain():
     assert html_to_plain("<b>a &amp; b</b>\n<pre>c</pre>") == "a & b\nc"
 
+def test_html_to_plain_preserves_non_tag_brackets():
+    src = "Report back with: REPORT:t1:<your full report> and x < 100ms"
+    assert html_to_plain(src) == src.strip()
+    assert html_to_plain("<b>ok</b> a < b") == "ok a < b"
+
 
 import asyncio
 from core.telegram_fmt import chunk_html, send_html, post_html
@@ -151,12 +156,50 @@ def test_chunk_reopens_pre_across_boundary():
     assert len(chunks) >= 2
     for c in chunks:
         assert c.count("<pre") == c.count("</pre>")  # balanced per chunk
+        assert len(c) <= 4000
 
 def test_chunk_hard_splits_giant_line():
     text = "y" * 9000  # no newlines at all
     chunks = chunk_html(text, limit=4000)
     assert all(len(c) <= 4000 for c in chunks)
     assert "".join(chunks) == text
+
+
+def test_chunk_language_pre_block_keeps_code_tag_balanced():
+    code_lines = "\n".join("print(%d)" % i for i in range(700))
+    html = md_to_html("```python\n" + code_lines + "\n```")
+    chunks = chunk_html(html, limit=4000)
+    assert len(chunks) >= 2
+    for c in chunks:
+        assert len(c) <= 4000
+        assert c.count("<pre") == c.count("</pre>")
+        assert c.count("<code") == c.count("</code>")
+    assert chunks[1].startswith('<pre><code class="language-python">')
+
+
+def test_chunk_never_exceeds_limit_generic():
+    body = "\n".join("line %d" % i for i in range(600))
+    for text in ("<pre>" + body + "</pre>", body, "x" * 12345):
+        for c in chunk_html(text, limit=4000):
+            assert len(c) <= 4000
+
+
+def test_chunk_long_language_tag_never_exceeds_limit():
+    lang = "x" * 30
+    code_lines = "\n".join("print(%d)_%s" % (i, "z" * 20) for i in range(1000))
+    html = md_to_html("```" + lang + "\n" + code_lines + "\n```")
+    chunks = chunk_html(html, limit=4000)
+    assert len(chunks) >= 3
+    for c in chunks:
+        assert len(c) <= 4000
+        assert c.count("<pre") == c.count("</pre>")
+        assert c.count("<code") == c.count("</code>")
+
+def test_chunk_blank_line_at_boundary_round_trips():
+    eff = 4000 - 64
+    text = "\n".join(["P" * 100, "A" * eff, "", "Next section after blank line"])
+    chunks = chunk_html(text, limit=4000)
+    assert "\n".join(chunks) == text
 
 
 # ── send_html (async, stub bot) ─────────────────────────────────────────
@@ -208,3 +251,20 @@ def test_post_html_sends_html_then_falls_back(monkeypatch):
     assert ok is True
     assert calls[0]["parse_mode"] == "HTML" and calls[0]["text"] == "<b>hi</b>"
     assert "parse_mode" not in calls[1] and calls[1]["text"] == "hi"
+
+
+# ── BaseAgent._send_response wiring ──────────────────────────────────────
+def test_base_agent_no_longer_strips_markdown():
+    """_send_response must route through telegram_fmt, not the old stripper."""
+    import inspect
+    from core import base_agent
+    src = inspect.getsource(base_agent.BaseAgent._send_response)
+    assert "send_html" in src, "_send_response should call telegram_fmt.send_html"
+    assert "_strip_markdown(text)" not in src, "old stripper still in send path"
+
+
+# ── house style block injected into shared system prompt ─────────────────
+def test_house_style_in_context_mixin_source():
+    src = (ROOT / "core" / "context_mixin.py").read_text()
+    assert "TELEGRAM_STYLE" in src
+    assert "✅" in src and "☐" in src
