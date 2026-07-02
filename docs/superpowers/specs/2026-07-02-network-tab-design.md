@@ -117,7 +117,8 @@ fixtures.
 `ACTIONS` dict: `key → {cmd builder, risk: safe|risky, description}`. The API route
 accepts an action key + validated params only — **no free-form commands** (the
 diagnostics toolbox below is the one exception, with its own arg sanitizer).
-Dashboard runs as root, so no sudoers changes needed. Every call appends to
+Dashboard runs as `switchhacker`, which has blanket NOPASSWD sudo — privileged
+commands run via `sudo -n` (no sudoers changes needed). Every call appends to
 `audit_log` (ts, action, params, rc, stdout/stderr tail).
 
 - **Services**: start/stop/restart × {caddy, tailscaled, cloudflared, openvpn};
