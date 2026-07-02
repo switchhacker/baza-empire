@@ -12,6 +12,10 @@
 /estimate        /#estimate   302
 /quote           /#estimate   302
 
+# Reviews — the QR code encodes https://ahb123.com/review → served by /review/index.html
+/reviews         /#reviews    302
+/leave-a-review  /review/     301
+
 # Alternate directions (kept for reference / A-B testing)
 /momentum        /                       302
 /homestead       /v2-homestead/          302

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Leave a Review — All Home Building Co.</title>
+<meta name="description" content="Share your experience with All Home Building Co. — it only takes a minute.">
+<style>
+  :root{--ink:#0a0d14;--ink2:#0f131d;--panel:#141a26;--line:rgba(255,255,255,.1);
+    --cyan:#25c3ef;--blue:#1668cf;--orange:#f7911e;--txt:#eaf0f7;--mut:#93a1b5;
+    --grad:linear-gradient(120deg,var(--cyan),var(--blue) 55%,var(--orange))}
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{background:radial-gradient(60% 45% at 50% 0%,#12203a,#0a0d14 70%);color:var(--txt);
+    font:16px/1.6 "Segoe UI",system-ui,sans-serif;min-height:100vh;padding:28px 16px 70px}
+  .wrap{max-width:540px;margin:0 auto}
+  .brand{text-align:center;margin-bottom:22px}
+  .brand img{width:66px;height:66px;border-radius:16px;background:#fff;padding:5px;margin-bottom:10px}
+  .brand h1{font-size:19px;font-weight:900;letter-spacing:.5px}
+  .brand small{font-size:11px;letter-spacing:2px;color:var(--mut);text-transform:uppercase;font-weight:700}
+  .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .nova{background:linear-gradient(135deg,#0d1b2c,#0f131d);border:1px solid var(--line);border-radius:16px;
+    padding:16px;margin-bottom:22px;display:flex;gap:13px;align-items:flex-start}
+  .nova .av{width:42px;height:42px;border-radius:50%;background:var(--grad);color:#04121e;display:flex;
+    align-items:center;justify-content:center;font-size:18px;font-weight:900;flex-shrink:0}
+  .nova .nm{font-size:12.5px;font-weight:800;color:var(--cyan);margin-bottom:3px}
+  .nova .msg{font-size:13.5px;color:#cfd8e3;line-height:1.55}
+  .card{background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line);
+    border-radius:18px;padding:22px;margin-bottom:18px}
+  .starwrap{text-align:center;margin-bottom:6px}
+  .starlab{font-size:11px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:2px;margin-bottom:14px}
+  .stars{display:flex;justify-content:center;gap:8px}
+  .star{font-size:44px;background:none;border:none;cursor:pointer;transition:transform .12s;filter:grayscale(1) brightness(.45);padding:2px;line-height:1}
+  .star.active{filter:none;transform:scale(1.06)}
+  .startxt{font-size:13px;color:var(--mut);margin-top:12px;min-height:18px;font-weight:700}
+  .form{display:none;margin-top:6px}.form.show{display:block;animation:fade .3s}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  label{display:block;font-size:11.5px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:1px;margin:14px 0 7px}
+  textarea,input,select{width:100%;background:#080b12;border:1px solid var(--line);border-radius:11px;
+    padding:13px;color:var(--txt);font-size:15px;font-family:inherit;outline:none}
+  textarea{resize:vertical;min-height:100px}
+  textarea:focus,input:focus,select:focus{border-color:transparent;outline:2px solid var(--cyan)}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:420px){.row{grid-template-columns:1fr}}
+  .btn{width:100%;margin-top:18px;padding:15px;border:0;border-radius:12px;background:var(--grad);
+    color:#04121e;font-weight:900;font-size:16px;cursor:pointer}
+  .btn:hover{transform:translateY(-2px)}
+  .fine{font-size:11.5px;color:var(--mut);text-align:center;margin-top:12px}
+  .ext{margin-top:8px;text-align:center}
+  .ext p{font-size:12px;color:var(--mut);margin-bottom:10px}
+  .ext a{display:inline-block;margin:4px;padding:9px 14px;border:1px solid var(--line);border-radius:20px;font-size:12.5px;font-weight:700;color:var(--txt)}
+  .ext a:hover{border-color:var(--cyan);color:var(--cyan)}
+  .done{text-align:center;padding:30px 10px;display:none}
+  .done.show{display:block}
+  .done .ok{width:76px;height:76px;border-radius:50%;background:var(--grad);color:#04121e;display:flex;align-items:center;justify-content:center;font-size:40px;margin:0 auto 16px}
+  .done h2{font-size:22px;font-weight:900;margin-bottom:8px}
+  .done p{color:var(--mut);font-size:14px}
+  a{color:inherit;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <img src="../assets/ahb-logo.jpeg" alt="All Home Building Co.">
+    <h1>ALL HOME BUILDING CO.</h1>
+    <small>Bensalem, PA</small>
+  </div>
+
+  <div class="nova">
+    <div class="av">N</div>
+    <div><div class="nm">Nova · Client Relations</div>
+      <div class="msg">Thank you for choosing All Home Building! 💙 Your feedback means the world to us and helps other homeowners. Mind sharing how we did?</div></div>
+  </div>
+
+  <div id="reviewUI">
+    <div class="card">
+      <div class="starwrap">
+        <div class="starlab">Tap to rate your experience</div>
+        <div class="stars" id="stars">
+          <button class="star" data-v="1" aria-label="1 star">★</button>
+          <button class="star" data-v="2" aria-label="2 stars">★</button>
+          <button class="star" data-v="3" aria-label="3 stars">★</button>
+          <button class="star" data-v="4" aria-label="4 stars">★</button>
+          <button class="star" data-v="5" aria-label="5 stars">★</button>
+        </div>
+        <div class="startxt" id="startxt"></div>
+      </div>
+
+      <form class="form" id="form" onsubmit="return submitReview(event)">
+        <label>Your review</label>
+        <textarea id="text" placeholder="Tell us about your project and how it went…" required></textarea>
+        <div class="row">
+          <div><label>Your name</label><input id="name" placeholder="Jane H." required></div>
+          <div><label>Project type</label>
+            <select id="service">
+              <option value="">Select…</option>
+              <option>Kitchen Remodel</option><option>Bathroom Remodel</option>
+              <option>Roofing</option><option>Addition / New Build</option>
+              <option>Basement / Deck</option><option>Other</option>
+            </select></div>
+        </div>
+        <div class="row">
+          <div><label>Town <span style="color:#4a5568">(optional)</span></label><input id="location" placeholder="Bensalem, PA"></div>
+          <div><label>Email <span style="color:#4a5568">(optional)</span></label><input id="email" type="email" placeholder="you@email.com"></div>
+        </div>
+        <button class="btn" type="submit">Submit My Review ✓</button>
+        <p class="fine">🔒 Your review is read before it's published. Thank you for helping us grow!</p>
+      </form>
+    </div>
+
+    <div class="ext" id="ext" style="display:none">
+      <p>Loved working with us? A quick review on these sites helps a lot 💙</p>
+      <!-- TODO: paste real profile URLs -->
+      <a href="#" target="_blank" rel="noopener">⭐ Google</a>
+      <a href="#" target="_blank" rel="noopener">🔨 Thumbtack</a>
+      <a href="#" target="_blank" rel="noopener">🏠 Angi / HomeAdvisor</a>
+    </div>
+  </div>
+
+  <div class="done" id="done">
+    <div class="ok">✓</div>
+    <h2 class="grad">Thank you!</h2>
+    <p>Your review has been submitted. We truly appreciate you taking the time — it means everything to a local, family-owned business.</p>
+    <p style="margin-top:16px"><a class="btn" style="display:inline-block;width:auto;padding:13px 22px" href="../index.html">← Back to our site</a></p>
+  </div>
+</div>
+
+<script>
+  var rating=0;
+  var labels={1:"We're sorry to hear that — we'll make it right.",2:"Thanks — tell us how we can improve.",3:"Thank you for the honest feedback.",4:"Great! We're glad you're happy. 😊",5:"Wonderful! Thank you so much! 🌟"};
+  var stars=document.querySelectorAll('#stars .star');
+  stars.forEach(function(s){
+    s.addEventListener('click',function(){
+      rating=+s.dataset.v;
+      stars.forEach(function(x){x.classList.toggle('active', +x.dataset.v<=rating)});
+      document.getElementById('startxt').textContent=labels[rating]||'';
+      document.getElementById('form').classList.add('show');
+      // show external-profile nudges only for happy (4-5★) raters
+      document.getElementById('ext').style.display = rating>=4 ? 'block' : 'none';
+    });
+  });
+  function submitReview(e){
+    e.preventDefault();
+    var payload={stars:rating,text:text.value,name:name.value,service:service.value,
+      location:location.value,email:email.value,source:'qr-review'};
+    document.getElementById('reviewUI').style.display='none';
+    document.getElementById('done').classList.add('show');
+    fetch('/api/review/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
+    return false;
+  }
+</script>
+</body>
+</html>

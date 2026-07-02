@@ -140,6 +140,9 @@ typical managed host at $20–50/mo — while gaining git history, previews, and
 - `website/functions/api/lead.js` — Cloudflare Pages Function that captures leads into D1.
 - `website/functions/api/estimate.js` — instant ballpark estimator.
 - `website/functions/api/chat.js` + `website/assets/nova-chat.js` — Nova Sterling live chat.
+- `website/functions/api/reviews.js` — serves real reviews (first-party QR + Thumbtack/Angi).
+- `website/review/` + `functions/api/review/submit.js` + `assets/review-qr.svg` — the QR
+  "Leave a Review" flow (QR → `/review` → `/api/review/submit`, moderated before publish).
 - `website/wrangler.toml`, `_headers`, `_redirects` — Cloudflare Pages config.
 
 > **Note on placeholder content:** review counts, ratings, years-in-business, and testimonial

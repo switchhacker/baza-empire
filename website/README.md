@@ -11,12 +11,16 @@ website/
 ├── schemes.html            ← scheme showcase / picker (all three directions)
 ├── v2-homestead/index.html ← Scheme B · light, trust-first (before/after slider)
 ├── v3-instant/index.html   ← Scheme C · conversion landing page (instant estimator)
+├── review/index.html       ← "Leave a Review" page — the QR code target (/review)
 ├── functions/api/
-│   ├── lead.js             ← POST /api/lead     — captures leads into D1 + notifies agents
-│   ├── estimate.js         ← POST /api/estimate — server-side ballpark pricing
-│   └── chat.js             ← POST /api/chat     — relays to the Nova Sterling agent
+│   ├── lead.js             ← POST /api/lead        — captures leads into D1 + notifies agents
+│   ├── estimate.js         ← POST /api/estimate    — server-side ballpark pricing
+│   ├── chat.js             ← POST /api/chat        — relays to the Nova Sterling agent
+│   ├── reviews.js          ← GET  /api/reviews     — real reviews (QR + Thumbtack/Angi)
+│   └── review/submit.js    ← POST /api/review/submit — stores a new QR review (pending)
 ├── assets/
 │   ├── nova-chat.js        ← Nova Sterling live chat widget (on every page)
+│   ├── review-qr.svg       ← QR code → https://ahb123.com/review (scan to review)
 │   └── (logo — images sync from R2 in production)
 ├── wrangler.toml           ← Pages project + D1/KV/R2 bindings
 ├── _headers                ← security + cache headers
@@ -82,11 +86,18 @@ verifiable facts (licensed, insured, free estimates, warranty). This is safe to 
 
 **When you have real numbers, upgrade the proof** (all optional, all a plus for conversion):
 
-- Paste real **Google / Facebook reviews** into the "Our Promise" cards (search the HTML for
-  `paste real` to find the exact spot on each page).
+- **Real reviews load automatically.** The homepage calls `GET /api/reviews`, which merges the
+  business's existing sources — first-party QR reviews (dashboard `/api/reviews/published`) and
+  Thumbtack + Angi/HomeAdvisor (`/api/ahb/reviews/external`). Set `REVIEWS_UPSTREAM` /
+  `REVIEWS_EXTERNAL_UPSTREAM` (or bind D1) and the "Our Promise" cards are replaced by real
+  reviews. Until then the promise cards show — nothing is fabricated.
+- **Reviews QR code** is live on the homepage (`assets/review-qr.svg` → `/review`). The `/review`
+  page posts to `/api/review/submit` (stored pending moderation, mirroring today's flow).
+  Regenerate the QR for a different URL with: `python3 -c "import segno; segno.make('https://ahb123.com/review',error='q').save('assets/review-qr.svg',scale=10,border=2,dark='#0a0d14')"`
 - Add real **rating + review count** and **years in business / projects completed** once verified.
 - **Financing** is phrased as "ask about financing" (an invitation, not a claim) — search
   `TODO: confirm financing` before advertising any specific lender or terms.
+- On `/review`, paste your real **Google / Thumbtack / Angi profile URLs** (search `TODO: paste`).
 
 Everything else — company name, phone (215-554-5488), email
 (contactahbco@gmail.com), address (2725 Colmar Ave, Bensalem, PA), social
