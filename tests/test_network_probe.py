@@ -73,3 +73,219 @@ def test_dns_verdict():
     assert bad["ok"] is False
     info = np.dns_verdict("ahb123.com", "TXT", None, ["v=spf1 ..."])
     assert info["ok"] is True  # informational: non-empty answer
+
+
+# ── Task 3: new tests ──────────────────────────────────────────────────────
+
+CADDYFILE = """\
+nova.ahb123.com {
+    bind 192.168.1.68
+    reverse_proxy localhost:8888
+    reverse_proxy localhost:8000
+}
+
+www.example.com {
+    reverse_proxy localhost:9000
+}
+"""
+
+def test_parse_caddy_sites():
+    sites = np.parse_caddy_sites(CADDYFILE)
+    by_host = {s["host"]: s for s in sites}
+    assert "nova.ahb123.com" in by_host
+    nova = by_host["nova.ahb123.com"]
+    assert nova["bind"] == "192.168.1.68"
+    assert set(nova["upstreams"]) == {"localhost:8888", "localhost:8000"}
+    assert "www.example.com" in by_host
+    assert by_host["www.example.com"]["bind"] is None
+
+
+def test_parse_caddy_sites_nested():
+    """Nested handle blocks containing reverse_proxy must be extracted."""
+    nested_caddyfile = """\
+nova.ahb123.com {
+    bind 192.168.1.68
+    handle @reviews {
+        reverse_proxy localhost:8888
+    }
+    handle @api {
+        reverse_proxy localhost:8000
+    }
+}
+"""
+    sites = np.parse_caddy_sites(nested_caddyfile)
+    by_host = {s["host"]: s for s in sites}
+    assert "nova.ahb123.com" in by_host
+    nova = by_host["nova.ahb123.com"]
+    assert nova["bind"] == "192.168.1.68"
+    assert set(nova["upstreams"]) == {"localhost:8888", "localhost:8000"}
+
+
+def test_build_edges_nova_drift():
+    """nova A record != WAN IP → nova chain DNS hop ok=False."""
+    dns = [
+        {"name": "ahb123.com", "rtype": "A", "ok": True, "expected": ["198.49.23.144"], "actual": ["198.49.23.144"]},
+        {"name": "nova.ahb123.com", "rtype": "A", "ok": False, "expected": ["96.227.96.20"], "actual": ["1.2.3.4"]},
+    ]
+    caddy = {"active": True, "sites": [{"host": "nova.ahb123.com", "bind": "192.168.1.68", "upstreams": ["localhost:8888"]}], "valid": True, "validate_err": None, "backups": []}
+    cloudflared = {"installed": True, "version": "2024.x", "config_exists": False, "unit_state": "inactive", "tunnels": "not authenticated"}
+    listeners = [
+        {"addr": "0.0.0.0", "port": 8888, "proc": "python"},
+        {"addr": "192.168.1.68", "port": 443, "proc": "caddy"},
+    ]
+    tailscale = {"self": {"host": "baza-1", "ip": "100.127.118.103"}, "peers": [], "serves": [{"listen": "443", "target": "http://127.0.0.1:8888"}]}
+    wan_ip = "96.227.96.20"
+
+    edges = np.build_edges(dns, wan_ip, caddy, cloudflared, listeners, tailscale)
+    nova_chain = next(e for e in edges if e["chain"] == "nova.ahb123.com")
+    dns_hop = next(h for h in nova_chain["hops"] if "deSEC" in h["label"] or "DNS" in h["label"])
+    assert dns_hop["ok"] is False
+
+
+def test_build_edges_baza_planned():
+    """No cloudflared config → baza chain single planned hop with ok=None."""
+    dns = []
+    caddy = {"active": True, "sites": [], "valid": True, "validate_err": None, "backups": []}
+    cloudflared = {"installed": True, "version": "2024.x", "config_exists": False, "unit_state": "inactive", "tunnels": "not authenticated"}
+    listeners = []
+    tailscale = {"self": {"host": "baza-1", "ip": "100.127.118.103"}, "peers": [], "serves": []}
+    wan_ip = "96.227.96.20"
+
+    edges = np.build_edges(dns, wan_ip, caddy, cloudflared, listeners, tailscale)
+    baza_chain = next(e for e in edges if e["chain"] == "baza.ahb123.com")
+    assert len(baza_chain["hops"]) == 1
+    assert baza_chain["hops"][0]["ok"] is None
+
+
+def test_probe_interfaces_shape():
+    r = np.probe_interfaces()
+    assert "nics" in r and "routes" in r
+    assert isinstance(r["nics"], list)
+
+
+def test_probe_tailscale_shape():
+    r = np.probe_tailscale()
+    assert "self" in r and "peers" in r and "serves" in r
+
+
+def test_probe_services_shape():
+    r = np.probe_services()
+    assert isinstance(r, dict)
+    for unit in np.UNITS:
+        assert unit in r
+        assert "active" in r[unit]
+
+
+def test_probe_listeners_shape():
+    r = np.probe_listeners()
+    assert isinstance(r, list)
+
+
+def test_probe_wan_ip_shape():
+    r = np.probe_wan_ip()
+    assert r is None or isinstance(r, str)
+
+
+def test_probe_caddy_shape():
+    r = np.probe_caddy()
+    assert "active" in r and "sites" in r and "valid" in r
+
+
+def test_probe_cloudflared_shape():
+    r = np.probe_cloudflared()
+    assert "installed" in r and "config_exists" in r and "tunnels" in r
+
+
+def test_status_shape():
+    s = np.status()
+    for key in ("interfaces", "tailscale", "services", "listeners", "wan_ip", "dns", "caddy", "cloudflared", "certs", "reach", "edges", "ts"):
+        assert key in s, f"missing key: {key}"
+    assert isinstance(s["edges"], list)
+    assert len(s["edges"]) == 4
+
+
+def test_probe_certs_shape():
+    r = np.probe_certs()
+    assert isinstance(r, list)
+    for c in r:
+        assert {"host", "days_left", "ok"} <= set(c)
+
+
+def test_probe_dns_shape():
+    r = np.probe_dns()
+    assert isinstance(r, list)
+    for v in r:
+        assert {"name", "rtype", "expected", "actual", "ok"} <= set(v)
+
+
+def test_build_edges_with_reach_nova_url():
+    """nova.ahb123.com reach lookup uses /health endpoint."""
+    dns = [
+        {"name": "ahb123.com", "rtype": "A", "ok": True, "expected": ["198.49.23.144"], "actual": ["198.49.23.144"]},
+        {"name": "nova.ahb123.com", "rtype": "A", "ok": True, "expected": ["96.227.96.20"], "actual": ["96.227.96.20"]},
+    ]
+    caddy = {"active": True, "sites": [{"host": "nova.ahb123.com", "bind": "192.168.1.68", "upstreams": ["localhost:8000"]}], "valid": True, "validate_err": None, "backups": []}
+    cloudflared = {"installed": False, "version": None, "config_exists": False, "unit_state": "inactive", "tunnels": ""}
+    listeners = [
+        {"addr": "192.168.1.68", "port": 443, "proc": "caddy"},
+        {"addr": "0.0.0.0", "port": 8000, "proc": "tool-server"},
+    ]
+    tailscale = {"self": {"host": "baza-1", "ip": "100.127.118.103"}, "peers": [], "serves": []}
+    wan_ip = "96.227.96.20"
+    reach = [
+        {"url": "https://ahb123.com", "status": 200, "ok": True},
+        {"url": "https://nova.ahb123.com/health", "status": 200, "ok": True},
+    ]
+
+    edges = np.build_edges(dns, wan_ip, caddy, cloudflared, listeners, tailscale)
+    edges_with_reach = np._build_edges_with_reach(dns, wan_ip, caddy, cloudflared, listeners, tailscale, reach)
+    nova_chain = next(e for e in edges_with_reach if e["chain"] == "nova.ahb123.com")
+    reach_hop = nova_chain["hops"][1]
+    assert reach_hop["ok"] is True
+    assert "HTTP 200" in reach_hop["detail"]
+
+
+def test_http_status_head_ok():
+    """_http_status with successful HEAD request returns status."""
+    import urllib.error
+    from unittest.mock import Mock, patch
+
+    mock_response = Mock()
+    mock_response.status = 200
+    mock_response.__enter__ = Mock(return_value=mock_response)
+    mock_response.__exit__ = Mock(return_value=None)
+
+    with patch('urllib.request.urlopen', return_value=mock_response):
+        status = np._http_status("https://example.com", timeout=5)
+    assert status == 200
+
+
+def test_http_status_head_405_retry_get():
+    """_http_status retries GET when HEAD returns 405 (Method Not Allowed)."""
+    import urllib.error
+    from unittest.mock import Mock, patch, call
+
+    # First call (HEAD) raises 405; second call (GET) succeeds with 200
+    http_error_405 = urllib.error.HTTPError("url", 405, "Method Not Allowed", {}, None)
+    mock_response_get = Mock()
+    mock_response_get.status = 200
+    mock_response_get.__enter__ = Mock(return_value=mock_response_get)
+    mock_response_get.__exit__ = Mock(return_value=None)
+
+    with patch('urllib.request.urlopen') as mock_urlopen:
+        # First call raises 405, second call returns the mock
+        mock_urlopen.side_effect = [http_error_405, mock_response_get]
+        status = np._http_status("https://nova.ahb123.com/health", timeout=5)
+    assert status == 200
+    # Verify two requests were made
+    assert mock_urlopen.call_count == 2
+
+
+def test_http_status_other_error():
+    """_http_status returns None on connection errors."""
+    import urllib.error
+    from unittest.mock import patch
+
+    with patch('urllib.request.urlopen', side_effect=Exception("Connection timeout")):
+        status = np._http_status("https://example.com", timeout=5)
+    assert status is None
