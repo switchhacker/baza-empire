@@ -1,0 +1,38 @@
+# Cloudflare Pages configuration for ahb123.com
+#
+# Deploy this directory (`website/`) as a Pages project. Two ways:
+#   • Git integration: connect the repo, set the build output directory to `website`.
+#   • Direct upload:   `npx wrangler pages deploy website --project-name ahb123`
+#
+# The bindings below are read by the Pages Functions in functions/api/*.js.
+# Create the resources first, then wire them in the Pages dashboard
+# (Settings → Functions → Bindings) or via `wrangler`.
+
+name = "ahb123"
+pages_build_output_dir = "."
+compatibility_date = "2026-07-01"
+
+# --- D1: stores leads (see functions/api/lead.js for the schema) ---
+# Create with:  npx wrangler d1 create ahb123
+[[d1_databases]]
+binding = "DB"
+database_name = "ahb123"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# --- KV: promo banner text, business hours, A/B variant flag ---
+# Create with:  npx wrangler kv namespace create ahb123-config
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# --- R2: project photos, before/after images, blueprints, quote PDFs ---
+# Create with:  npx wrangler r2 bucket create ahb123-media
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "ahb123-media"
+
+# --- Environment variables (set secrets with `wrangler pages secret put`) ---
+# [vars]
+# LEADS_WEBHOOK = "https://your-baza-endpoint.example/leads"   # agent notify URL
+# Secrets (do NOT commit real values):
+#   npx wrangler pages secret put TURNSTILE_SECRET

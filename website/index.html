@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AHB123.com — Redesign Schemes</title>
+<meta name="description" content="Three homepage redesign directions for All Home Building Co., built for Cloudflare.">
+<style>
+  :root{--ink:#0a0d14;--panel:#141a26;--line:rgba(255,255,255,.09);--cyan:#25c3ef;--blue:#1668cf;--orange:#f7911e;--txt:#eaf0f7;--mut:#93a1b5;--grad:linear-gradient(120deg,var(--cyan),var(--blue) 55%,var(--orange))}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--ink);color:var(--txt);font:16px/1.6 "Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero{text-align:center;padding:70px 0 40px;position:relative;overflow:hidden}
+  .hero::before{content:"";position:absolute;inset:0;opacity:.5;background:radial-gradient(50% 60% at 50% 0%,rgba(37,195,239,.25),transparent 65%)}
+  .hero>*{position:relative}
+  .brand{display:inline-flex;align-items:center;gap:12px;margin-bottom:22px}
+  .brand img{width:46px;height:46px;border-radius:11px;background:#fff;padding:4px}
+  .brand b{font-weight:900;letter-spacing:.5px;font-size:19px}.brand small{display:block;color:var(--mut);font-size:10px;letter-spacing:2px}
+  .eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:var(--cyan)}
+  .hero h1{font-size:clamp(30px,5vw,50px);font-weight:900;letter-spacing:-1px;margin:14px 0}
+  .hero p{color:var(--mut);font-size:18px;max-width:620px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;padding:30px 0 40px}
+  .scheme{background:linear-gradient(180deg,var(--panel),#0e131c);border:1px solid var(--line);border-radius:20px;overflow:hidden;transition:.2s;display:flex;flex-direction:column}
+  .scheme:hover{transform:translateY(-5px);border-color:rgba(37,195,239,.4);box-shadow:0 26px 60px rgba(0,0,0,.5)}
+  .thumb{height:170px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;letter-spacing:1px}
+  .t1{background:radial-gradient(60% 90% at 75% 10%,rgba(37,195,239,.5),transparent 60%),linear-gradient(135deg,#0a0d14,#141a26);color:#fff}
+  .t2{background:linear-gradient(135deg,#f7f5f0,#efe9df);color:#1560bd}
+  .t3{background:radial-gradient(60% 90% at 80% 15%,rgba(247,145,30,.4),transparent 60%),linear-gradient(135deg,#0c1017,#151b25);color:#25c3ef}
+  .thumb .mock{position:absolute;inset:auto 16px 16px 16px;height:60px;border-radius:10px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);backdrop-filter:blur(4px)}
+  .t2 .mock{background:rgba(21,96,189,.12);border-color:rgba(21,96,189,.2)}
+  .scheme .body{padding:22px;flex:1;display:flex;flex-direction:column}
+  .scheme .tag{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--cyan);margin-bottom:8px}
+  .scheme h3{font-size:22px;font-weight:900;margin-bottom:8px}
+  .scheme p{color:var(--mut);font-size:14px;flex:1}
+  .scheme ul{list-style:none;margin:14px 0 18px}
+  .scheme li{font-size:13px;color:var(--mut);padding:4px 0 4px 20px;position:relative}
+  .scheme li::before{content:"›";position:absolute;left:4px;color:var(--cyan);font-weight:900}
+  .scheme .btn{display:block;text-align:center;padding:13px;border-radius:11px;background:var(--grad);color:#04121e;font-weight:800;transition:.15s}
+  .scheme .btn:hover{transform:translateY(-2px)}
+  .note{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 26px;margin:10px 0 60px;color:var(--mut);font-size:14px}
+  .note b{color:var(--txt)}
+  .note a{color:var(--cyan);font-weight:700}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="hero"><div class="wrap">
+    <div class="brand"><img src="assets/ahb-logo.jpeg" alt="All Home Building Co."><span><b>ALL HOME BUILDING CO.</b><small>AHB123.COM REDESIGN</small></span></div>
+    <div class="eyebrow">Marketing &amp; Lead-Funnel Redesign · Cloudflare-Ready</div>
+    <h1>Three ways to make <span class="grad">ahb123.com</span> convert.</h1>
+    <p>Same brand, three distinct directions — each engineered for more impressive marketing and
+      more booked estimates. Click any scheme to open the live homepage.</p>
+  </div></div>
+
+  <div class="wrap">
+    <div class="grid">
+      <div class="scheme">
+        <div class="thumb t1">MOMENTUM<div class="mock"></div></div>
+        <div class="body">
+          <div class="tag">Scheme A · Premium</div>
+          <h3>Momentum</h3>
+          <p>Dark, cinematic and modern — signals a high-end, tech-forward builder. Anchored by an
+            animated hero and a multi-step estimate funnel.</p>
+          <ul>
+            <li>Best for premium / high-ticket positioning</li>
+            <li>3-step interactive lead funnel</li>
+            <li>Gradient glass UI, sticky mobile call bar</li>
+          </ul>
+          <a class="btn" href="v1-momentum/index.html">Open Momentum →</a>
+        </div>
+      </div>
+
+      <div class="scheme">
+        <div class="thumb t2">HOMESTEAD<div class="mock"></div></div>
+        <div class="body">
+          <div class="tag">Scheme B · Trust-First</div>
+          <h3>Homestead</h3>
+          <p>Light, warm and editorial — built to win local trust and rank. Serif headlines,
+            a before/after slider, and review-heavy social proof.</p>
+          <ul>
+            <li>Best for local SEO &amp; reviews</li>
+            <li>Drag before/after transformation slider</li>
+            <li>Classic-premium, family-run feel</li>
+          </ul>
+          <a class="btn" href="v2-homestead/index.html">Open Homestead →</a>
+        </div>
+      </div>
+
+      <div class="scheme">
+        <div class="thumb t3">INSTANT<div class="mock"></div></div>
+        <div class="body">
+          <div class="tag">Scheme C · Conversion</div>
+          <h3>Instant Estimate</h3>
+          <p>A conversion-first landing page with a live ballpark calculator front and center —
+            a pure lead machine for paid ads and Google.</p>
+          <ul>
+            <li>Best for paid traffic / ad campaigns</li>
+            <li>Live instant-price calculator</li>
+            <li>Fewest distractions, highest intent</li>
+          </ul>
+          <a class="btn" href="v3-instant/index.html">Open Instant →</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>How this ships:</b> all three are self-contained static pages that deploy to
+      <b>Cloudflare Pages</b> as-is. Every lead form posts to <code>/api/lead</code>
+      (a Pages Function), and the instant estimator uses <code>/api/estimate</code>. Pick a
+      direction — or mix elements — and it becomes the live <b>ahb123.com</b>.
+      See <a href="CLOUDFLARE_MIGRATION.md">CLOUDFLARE_MIGRATION.md</a> for the full migration &amp;
+      AI-management plan, and <a href="README.md">README.md</a> to preview or deploy.
+      <br><br><b>Note:</b> stats, ratings and testimonials are marked <code>TODO: confirm</code>
+      placeholders — swap in real numbers before go-live.
+    </div>
+  </div>
+</body>
+</html>
