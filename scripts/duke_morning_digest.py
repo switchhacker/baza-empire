@@ -87,27 +87,8 @@ def send_telegram(text: str) -> bool:
         print("[duke_digest] missing TELEGRAM_DUKE_HARMON or SERGE_CHAT_ID — printing instead:")
         print(text)
         return False
-    # Telegram caps message length around 4096; chunk if needed
-    chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)] or [text]
-    ok_all = True
-    for chunk in chunks:
-        payload = json.dumps({
-            "chat_id": SERGE_CHAT_ID, "text": chunk, "disable_web_page_preview": True,
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{DUKE_TOKEN}/sendMessage",
-            data=payload, headers={"Content-Type": "application/json"}, method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                d = json.loads(r.read())
-                if not d.get("ok"):
-                    print(f"[duke_digest] telegram error: {d}")
-                    ok_all = False
-        except Exception as e:
-            print(f"[duke_digest] telegram exception: {e}")
-            ok_all = False
-    return ok_all
+    from core.telegram_fmt import post_html
+    return post_html(DUKE_TOKEN, SERGE_CHAT_ID, text)
 
 
 def main() -> int:

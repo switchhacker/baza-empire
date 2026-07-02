@@ -140,24 +140,8 @@ def send_telegram(text: str) -> bool:
         print("[hallucination_digest] missing Telegram env — printing instead:")
         print(text)
         return False
-    chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)] or [text]
-    ok = True
-    for chunk in chunks:
-        payload = json.dumps({
-            "chat_id": SERGE_CHAT, "text": chunk, "disable_web_page_preview": True,
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{SIMON_TOKEN}/sendMessage",
-            data=payload, headers={"Content-Type": "application/json"}, method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                if not (json.loads(r.read()).get("ok")):
-                    ok = False
-        except Exception as e:
-            print(f"[hallucination_digest] send error: {e}")
-            ok = False
-    return ok
+    from core.telegram_fmt import post_html
+    return post_html(SIMON_TOKEN, SERGE_CHAT, text)
 
 
 def main() -> int:
