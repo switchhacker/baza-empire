@@ -27,6 +27,7 @@ from core.memory import (
     get_active_task, set_task, complete_task
 )
 from core.coordinator import should_agent_respond, build_group_context, is_task_complete
+from core.telegram_fmt import md_to_html, chunk_html, html_to_plain
 
 logging.basicConfig(
     level=logging.INFO,
@@ -164,19 +165,32 @@ async def handle_message(
 
     save_message(chat_id, agent_id, "assistant", full_response)
 
-    # Deliver response (split if >4000 chars)
-    chunks = [full_response[i:i+4000] for i in range(0, len(full_response), 4000)]
+    # Deliver response as Telegram-rendered HTML (markdown -> HTML, chunked at
+    # the tag-safe limit). The placeholder takes the first chunk via edit_text;
+    # any remaining chunks go out as new messages, send_html-style. Each send
+    # falls back to plain text on a Telegram BadRequest (bad HTML, too long).
+    html_text = md_to_html(full_response)
+    chunks = chunk_html(html_text)
     try:
         if sent:
-            await sent.edit_text(chunks[0])
+            await sent.edit_text(chunks[0], parse_mode="HTML")
         else:
-            await message.reply_text(chunks[0])
-    except (BadRequest, TimedOut):
-        await message.reply_text(chunks[0])
+            await message.reply_text(chunks[0], parse_mode="HTML")
+    except BadRequest:
+        plain = html_to_plain(chunks[0])
+        if sent:
+            await sent.edit_text(plain)
+        else:
+            await message.reply_text(plain)
+    except TimedOut:
+        await message.reply_text(html_to_plain(chunks[0]))
 
     for extra in chunks[1:]:
         await asyncio.sleep(0.3)
-        await message.reply_text(extra)
+        try:
+            await message.reply_text(extra, parse_mode="HTML")
+        except BadRequest:
+            await message.reply_text(html_to_plain(extra))
 
 
 async def handle_start(
