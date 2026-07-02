@@ -197,6 +197,20 @@ def _is_parse_error(exc: Exception) -> bool:
     return "parse entities" in msg or "can't parse" in msg or "unsupported start tag" in msg
 
 
+def _is_bad_request(exc: Exception) -> bool:
+    """True for any Telegram BadRequest-class error (parse errors, too-long,
+    etc.) — the send_html fallback net. Network/auth errors return False and
+    must propagate."""
+    if _is_parse_error(exc):
+        return True
+    if type(exc).__name__ == "BadRequest":  # telegram.error.BadRequest, no import needed
+        return True
+    return "bad request" in str(exc).lower()
+
+
+_PLAIN_FALLBACK_LIMIT = 3500
+
+
 async def send_html(bot, chat_id, text, already_html: bool = False, **kwargs):
     """Async sender for PTB bots: convert, chunk, send HTML, fall back to plain."""
     html_text = text if already_html else md_to_html(text)
@@ -207,10 +221,17 @@ async def send_html(bot, chat_id, text, already_html: bool = False, **kwargs):
         try:
             await bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML", **kwargs)
         except Exception as e:
-            if not _is_parse_error(e):
+            if not _is_bad_request(e):
                 raise
-            logger.warning("telegram_fmt: HTML parse rejected, plain fallback: %.120s", chunk)
-            await bot.send_message(chat_id=chat_id, text=html_to_plain(chunk), **kwargs)
+            logger.warning("telegram_fmt: HTML send rejected, plain fallback: %.120s", chunk)
+            plain = html_to_plain(chunk)
+            # Belt-and-suspenders: chunking counts codepoints, Telegram counts
+            # UTF-16 units, so an emoji-heavy chunk can still be too long even
+            # after stripping tags. Plain text has no tags to break, so a hard
+            # truncate here is safe insurance.
+            if len(plain) > _PLAIN_FALLBACK_LIMIT:
+                plain = plain[:_PLAIN_FALLBACK_LIMIT] + "…"
+            await bot.send_message(chat_id=chat_id, text=plain, **kwargs)
         if i < len(chunks) - 1:
             await asyncio.sleep(0.3)
 
