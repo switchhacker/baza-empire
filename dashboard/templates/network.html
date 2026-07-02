@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Network</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:100;flex-wrap:nowrap}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:1200px;margin:0 auto;padding:28px 32px}
+    .page-title{font-size:22px;font-weight:800;color:#fff;margin-bottom:6px;display:flex;align-items:center;gap:12px}
+    .crumb{font-size:12px;color:#555;margin-bottom:22px}
+    .crumb a{color:#7c3aed}
+
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;margin-bottom:22px;overflow:hidden}
+    .card-head{padding:16px 22px;border-bottom:1px solid #111;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .card-title{font-size:14px;font-weight:700;color:#fff}
+    .card-desc{font-size:12px;color:#555;margin-top:2px}
+    .card-body{padding:22px}
+
+    .btn{background:linear-gradient(135deg,#e94560,#7c3aed);color:#fff;border:none;padding:11px 20px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+    .btn:hover{opacity:.9}
+    .btn.secondary{background:#0d2040;color:#4da6ff;border:1px solid #1a3a6a}
+    .btn.ghost{background:#111;color:#aaa;border:1px solid #1a1a2e}
+    .btn.sm{padding:7px 12px;font-size:12px}
+    .btn.xs{padding:5px 10px;font-size:11px}
+    .btn-risky{background:#7f1d1d;border-color:#dc2626;color:#fff;border-style:solid;border-width:1px}
+    .btn-risky::after{content:" ⚡"}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .muted{color:#555;font-size:12px}
+
+    /* ---- topology map ---- */
+    .mapgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:8px}
+    @media(max-width:900px){.mapgrid{grid-template-columns:1fr}}
+    .node{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s}
+    .node:hover{border-color:#7c3aed}
+    .node-h{font-size:11px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+    .node-sub{font-size:13px;color:#ccc;font-family:monospace;margin-bottom:6px;word-break:break-all}
+    .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;flex-shrink:0}
+    .dot.up{background:#00d084;box-shadow:0 0 6px #00d08488}
+    .dot.down{background:#ff5555}
+    .dot.grey{background:#555}
+    .peerline{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 0;font-family:monospace;color:#bbb;flex-wrap:wrap}
+    .badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700}
+    .badge.exit{background:#2a230a;color:#e0b000}
+    .badge.serve{background:#0d2040;color:#4da6ff}
+    .badge.reach-ok{background:#0a2a1a;color:#00d084}
+    .badge.reach-bad{background:#2a0a0a;color:#ff6666}
+    .lstable{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+    .lstable td{padding:4px 6px;border-bottom:1px solid #0d0d1e;color:#bbb;font-family:monospace}
+    .lstable td.port{color:#4da6ff;width:60px}
+
+    /* ---- edge chains ---- */
+    .edgerow{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #111;flex-wrap:wrap}
+    .edge-name{font-size:12px;font-weight:700;color:#aaa;min-width:130px}
+    .hops{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    .hop{display:inline-block;padding:4px 10px;border-radius:14px;font-size:11px;font-weight:700;font-family:monospace}
+    .hop-ok{background:#0a2a1a;color:#00d084;border:1px solid #103a28}
+    .hop-bad{background:#2a0a0a;color:#ff6666;border:1px solid #3a1010}
+    .hop-amber{background:#2a230a;color:#e0b000;border:1px solid #3a3210}
+    .hop-arrow{color:#444;font-size:13px}
+
+    /* ---- controls tables ---- */
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:8px 10px;border-bottom:1px solid #1a1a2e}
+    td{padding:9px 10px;border-bottom:1px solid #0d0d1e;color:#ccc;vertical-align:middle}
+    tr:hover td{background:#0a0a18}
+    .state{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700}
+    .state.active{background:#0a2a1a;color:#00d084}
+    .state.inactive{background:#2a0a0a;color:#ff6666}
+    .state.other{background:#1a1608;color:#d0b860}
+    label.chk{font-size:12px;color:#ccc;display:inline-flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:600}
+    label.chk input{width:auto}
+
+    /* ---- drawer (body-level) ---- */
+    .drawer{position:fixed;right:0;top:0;height:100%;width:440px;max-width:92vw;background:#0b0b17;border-left:1px solid #1a1a3a;z-index:9999;box-shadow:-8px 0 30px #000a;transform:translateX(100%);transition:transform .2s ease;display:flex;flex-direction:column}
+    .drawer.open{transform:translateX(0)}
+    .drawer-head{padding:16px 20px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between}
+    .drawer-title{font-size:15px;font-weight:800;color:#fff}
+    .drawer-x{background:#15152a;border:none;color:#aaa;border-radius:6px;padding:5px 11px;font-size:15px;cursor:pointer}
+    .drawer-x:hover{color:#fff}
+    .drawer-body{padding:18px 20px;overflow-y:auto;flex:1}
+    .drawer-sec{font-size:11px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:1.5px;margin:14px 0 8px}
+    pre.facts{background:#070714;border:1px solid #15152a;border-radius:8px;padding:12px;font-size:11.5px;color:#9ad;white-space:pre-wrap;word-break:break-all;font-family:monospace;max-height:340px;overflow:auto}
+    .backdrop{position:fixed;inset:0;background:#0008;z-index:9998;display:none}
+    .backdrop.open{display:block}
+
+    .footer{text-align:center;padding:28px;color:#222;font-size:12px}
+    .risky-label{color:#f87171}
+    .risky-label::after{content:" ⚡"}
+  </style>
+</head>
+<body>
+
+{% set nav_active = 'network' %}
+{% include "_nav.html" %}
+
+<div class="container">
+  <div class="page-title">&#127760; Network</div>
+  <div class="crumb"><a href="/projects">Projects</a> / Network</div>
+
+  <div class="row" style="margin-bottom:18px">
+    <button class="btn secondary sm" onclick="refresh()">&#8635; Refresh</button>
+    <button class="btn ghost sm" onclick="openAudit()">&#129535; Audit</button>
+    <span class="muted" id="lastTs"></span>
+  </div>
+
+  <!-- ================= TOPOLOGY MAP ================= -->
+  <div id="net-map"><span class="muted">loading…</span></div>
+
+  <!-- edge chains -->
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Edge chains</div><div class="card-desc">End-to-end reachability paths. Hover a hop for detail.</div></div></div>
+    <div class="card-body" id="edgeBox"><span class="muted">loading…</span></div>
+  </div>
+
+  <!-- ================= CONTROLS ================= -->
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Services</div><div class="card-desc">systemd units. Stop on caddy / tailscaled is destructive.</div></div></div>
+    <div class="card-body">
+      <table><thead><tr><th>Unit</th><th>State</th><th>Since</th><th style="text-align:right">Controls</th></tr></thead>
+        <tbody id="svcBody"><tr><td colspan="4" class="muted">loading…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Tailscale</div><div class="card-desc">Mesh up/down, exit node, serve mappings.</div></div></div>
+    <div class="card-body" id="tsBox"><span class="muted">loading…</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Network interfaces</div><div class="card-desc">NIC up/down + DHCP renew. Bringing a NIC down can cut your connection.</div></div></div>
+    <div class="card-body">
+      <table><thead><tr><th>NIC</th><th>State</th><th>IPs</th><th style="text-align:right">Controls</th></tr></thead>
+        <tbody id="nicBody"><tr><td colspan="4" class="muted">loading…</td></tr></tbody></table>
+    </div>
+  </div>
+
+  <!-- ================= DNS PROVIDERS ================= -->
+  <div class="card" id="desec-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">DNS Providers — deSEC</div>
+        <div class="card-desc">nova.ahb123.com RRsets via deSEC API. Fix A-record drift here.</div>
+      </div>
+      <button class="btn secondary sm" onclick="desecRefresh()">&#8635; Reload RRsets</button>
+    </div>
+    <div class="card-body">
+
+      <!-- token section -->
+      <div id="desecTokenSection" style="margin-bottom:18px">
+        <div class="muted" style="font-size:12px;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:1px">deSEC API Token</div>
+        <div id="desecTokenStatus" class="muted" style="margin-bottom:8px">checking…</div>
+        <div class="row" id="desecTokenInputRow" style="display:none">
+          <input type="password" id="desecTokenInput"
+            style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:12px;color:#ccc;width:320px;outline:none"
+            placeholder="Paste deSEC token…" autocomplete="off" />
+          <button class="btn sm" onclick="desecSaveToken()">Save token</button>
+        </div>
+        <div id="desecTokenSetMsg" style="display:none;color:#00d084;font-size:12px;font-weight:700">token set &#10003;</div>
+      </div>
+
+      <!-- "Point nova A → WAN IP" button -->
+      <div style="margin-bottom:18px" id="desecQuickFixRow" style="display:none">
+        <button class="btn sm" onclick="desecPointNovaToWan()" id="desecPointBtn">
+          &#9656; Point nova A &#8594; current WAN IP
+        </button>
+        <span id="desecPointStatus" class="muted" style="font-size:12px;margin-left:10px"></span>
+      </div>
+
+      <!-- RRset table -->
+      <div id="desecRrsetBox"><span class="muted">no token set — paste a deSEC token to enable</span></div>
+
+    </div>
+  </div>
+
+  <!-- ================= GOOGLE CLOUD DNS ================= -->
+  <div class="card" id="gcloud-dns-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">DNS Providers — Google Cloud DNS</div>
+        <div class="card-desc">baza-ddns.service syncs WAN IP to Cloud DNS. Enable the hourly timer below.</div>
+      </div>
+      <button class="btn secondary sm" onclick="refresh()">&#8635; Refresh</button>
+    </div>
+    <div class="card-body">
+      <div class="row" style="margin-bottom:14px">
+        <span class="muted" style="font-size:12px">DDNS service state:</span>
+        <span id="gcloudDdnsSvcState" class="muted">loading…</span>
+        <span class="muted" style="font-size:12px;margin-left:18px">Timer:</span>
+        <span id="gcloudDdnsTimerState" class="muted">loading…</span>
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn sm" data-action="ddns_run" data-params="{}">&#9654; Run DDNS now</button>
+        <button class="btn secondary sm" data-action="ddns_timer_enable" data-params="{}">&#9201; Enable hourly timer</button>
+        <button class="btn-risky sm" data-action="ddns_timer_disable" data-params="{}">&#9209; Disable timer</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:10px">
+        Timer unit: <code>/etc/systemd/system/baza-ddns.timer</code> — OnCalendar=hourly, RandomizedDelaySec=300.
+        <b>Enable is Serge's call</b> — button is here but does not auto-fire.
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CLOUDFLARE ================= -->
+  <div class="card" id="cloudflare-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">DNS Providers — Cloudflare</div>
+        <div class="card-desc">ahb123.com zone migration scaffold. Zone status via Cloudflare API.</div>
+      </div>
+      <button class="btn secondary sm" onclick="cfRefresh()">&#8635; Check zone</button>
+    </div>
+    <div class="card-body">
+
+      <!-- token section -->
+      <div id="cfTokenSection" style="margin-bottom:18px">
+        <div class="muted" style="font-size:12px;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Cloudflare API Token</div>
+        <div id="cfTokenStatus" class="muted" style="margin-bottom:8px">checking…</div>
+        <div class="row" id="cfTokenInputRow" style="display:none">
+          <input type="password" id="cfTokenInput"
+            style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:12px;color:#ccc;width:320px;outline:none"
+            placeholder="Paste Cloudflare API token…" autocomplete="off" />
+          <button class="btn sm" onclick="cfSaveToken()">Save token</button>
+        </div>
+        <div id="cfTokenSetMsg" style="display:none;color:#00d084;font-size:12px;font-weight:700">token set &#10003;</div>
+      </div>
+
+      <!-- zone status -->
+      <div id="cfZoneBox">
+        <span class="muted">no token set — paste a Cloudflare token to check zone status</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- deSEC edit-row modal (body-level) -->
+  <div id="desecEditModalBg" style="display:none;position:fixed;inset:0;background:#0009;z-index:10000;align-items:center;justify-content:center">
+    <div style="background:#0b0b17;border:1px solid #1a1a3a;border-radius:14px;width:min(540px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px #000c">
+      <div style="padding:16px 22px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:15px;font-weight:800;color:#fff">&#9998; Edit RRset</div>
+        <button onclick="closeDesecEditModal()" style="background:#15152a;border:none;color:#aaa;border-radius:6px;padding:5px 11px;font-size:15px;cursor:pointer">&#10005;</button>
+      </div>
+      <div style="padding:18px 22px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+        <div id="desecEditErr" style="display:none;background:#2a0a0a;border:1px solid #dc2626;border-radius:8px;padding:12px;font-size:12px;color:#ff6666"></div>
+        <label style="font-size:12px;color:#888">Subname</label>
+        <input id="desecEditSubname" type="text" style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#ccc;outline:none" />
+        <label style="font-size:12px;color:#888">Type</label>
+        <select id="desecEditType" style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 10px;font-size:13px;color:#ccc;outline:none">
+          <option value="A">A</option><option value="AAAA">AAAA</option>
+          <option value="CNAME">CNAME</option><option value="TXT">TXT</option>
+          <option value="MX">MX</option><option value="NS">NS</option>
+        </select>
+        <label style="font-size:12px;color:#888">TTL (seconds, min 60)</label>
+        <input id="desecEditTtl" type="number" min="60" value="300" style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#ccc;outline:none;width:120px" />
+        <label style="font-size:12px;color:#888">Records (one per line)</label>
+        <textarea id="desecEditRecords" rows="4"
+          style="background:#070714;border:1px solid #1a1a2e;border-radius:8px;padding:10px 12px;font-family:monospace;font-size:12px;color:#9ad;outline:none;resize:vertical"></textarea>
+      </div>
+      <div style="padding:14px 22px;border-top:1px solid #1a1a2e;display:flex;align-items:center;gap:10px">
+        <button class="btn sm" id="desecEditSaveBtn" onclick="desecEditSave()">&#10003; Save</button>
+        <button class="btn ghost sm" onclick="closeDesecEditModal()">Cancel</button>
+        <span id="desecEditStatus" class="muted" style="font-size:12px"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CADDY ================= -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Caddy</div>
+        <div class="card-desc">Live reverse-proxy config for nova.ahb123.com. Apply runs validate→backup→reload.</div>
+      </div>
+      <button class="btn secondary sm" onclick="openCaddyEditor()">✏️ Edit Caddyfile</button>
+    </div>
+    <div class="card-body">
+      <div class="row" style="margin-bottom:10px">
+        <span id="caddyStateSpan" class="muted">loading…</span>
+      </div>
+      <div id="caddySitesBox"></div>
+      <div style="margin-top:14px">
+        <div class="muted" style="margin-bottom:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Backups</div>
+        <div id="caddyBackupsBox"><span class="muted">loading…</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">Baza Empire Agent Framework v3 · Network</div>
+
+<!-- ============ DRAWERS (body-level) ============ -->
+<div class="backdrop" id="backdrop" onclick="closeDrawer()"></div>
+
+<div class="drawer" id="node-drawer">
+  <div class="drawer-head">
+    <div class="drawer-title" id="ndTitle">Node</div>
+    <button class="drawer-x" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="ndBody"></div>
+</div>
+
+<div class="drawer" id="audit-drawer">
+  <div class="drawer-head">
+    <div class="drawer-title">🧾 Audit log</div>
+    <button class="drawer-x" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="auditBody"><span class="muted">loading…</span></div>
+</div>
+
+<!-- ============ CADDY MODAL (body-level) ============ -->
+<div id="caddyModalBg" style="display:none;position:fixed;inset:0;background:#0009;z-index:10000;align-items:center;justify-content:center">
+  <div style="background:#0b0b17;border:1px solid #1a1a3a;border-radius:14px;width:min(800px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 40px #000c">
+    <div style="padding:16px 22px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:15px;font-weight:800;color:#fff">✏️ Edit Caddyfile</div>
+      <button onclick="closeCaddyModal()" style="background:#15152a;border:none;color:#aaa;border-radius:6px;padding:5px 11px;font-size:15px;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:18px 22px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+      <div id="caddyModalErr" style="display:none;background:#2a0a0a;border:1px solid #dc2626;border-radius:8px;padding:12px;font-size:12px;color:#ff6666"></div>
+      <textarea id="caddyTextarea"
+        style="background:#070714;border:1px solid #1a1a2e;border-radius:8px;padding:14px;font-family:monospace;font-size:12.5px;color:#9ad;resize:vertical;min-height:340px;outline:none;width:100%"
+        spellcheck="false" autocomplete="off"></textarea>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid #1a1a2e;display:flex;align-items:center;gap:10px">
+      <button class="btn sm" id="caddyApplyBtn" onclick="caddyApply()">✓ Apply</button>
+      <button class="btn ghost sm" onclick="closeCaddyModal()">Cancel</button>
+      <span id="caddyApplyStatus" class="muted" style="font-size:12px"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let LAST = null;   // last status payload
+
+/* ---------- helpers ---------- */
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function toast(msg,ok){
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:'+(ok?'#0a2a1a':'#2a0a0a')+';border:1px solid '+(ok?'#00d084':'#ff5555')+';color:'+(ok?'#00d084':'#ff5555')+';padding:12px 20px;border-radius:8px;font-size:13px;font-weight:700;z-index:10001;max-width:60vw';
+  t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3200);
+}
+
+async function postAction(action, params){
+  const r = await fetch('/api/network/action', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action, params})});
+  const j = await r.json();
+  toast(j.ok ? `✓ ${action}` : `✗ ${action}: ${(j.err||j.error||'').slice(0,200)}`, !!j.ok);
+  setTimeout(refresh, 1200);
+}
+
+async function refresh(){
+  let s;
+  try { s = await (await fetch('/api/network/status')).json(); }
+  catch(e){ toast('status fetch failed', false); return; }
+  LAST = s;
+  renderMap(s); renderEdges(s); renderServices(s); renderTailscale(s); renderNics(s); renderCaddy(s);
+  renderGcloudDns(s);
+  const el=document.getElementById('lastTs'); if(el) el.textContent = s.ts ? ('updated '+esc(s.ts)) : '';
+  // if node drawer open, keep it fresh
+  if(document.getElementById('node-drawer').classList.contains('open') && CUR_NODE) openNode(CUR_NODE);
+}
+
+/* ---------- topology map ---------- */
+function reachDots(reach){
+  if(!reach || !reach.length) return '';
+  return reach.map(r=>`<span class="badge ${r.ok?'reach-ok':'reach-bad'}" title="${esc(r.url)} → ${esc(r.status)}">${esc(r.url)}</span>`).join(' ');
+}
+
+function renderMap(s){
+  const ts = s.tailscale||{};
+  const self = ts.self||{};
+  const peers = ts.peers||[];
+  const serves = ts.serves||[];
+  const nics = (s.interfaces&&s.interfaces.nics)||[];
+  const listeners = s.listeners||[];
+  const known = s.known_ports||{};
+
+  // col 1 — Internet
+  let c1 = `<div class="node" onclick="openNode('internet')">
+    <div class="node-h">🌐 Internet</div>
+    <div class="node-sub">WAN ${esc(s.wan_ip||'unknown')}</div>
+    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:5px">${reachDots(s.reach)}</div>
+  </div>`;
+
+  // col 2 — Router + Tailscale mesh
+  let c2 = `<div class="node" onclick="openNode('router')">
+    <div class="node-h">📶 Router</div>
+    <div class="node-sub">192.168.1.1</div>
+    <div class="muted">LAN gateway · facts are manually configured</div>
+  </div>`;
+  let peerHtml = peers.map(p=>`<div class="peerline">
+      <span class="dot ${p.online?'up':'grey'}"></span>
+      <b>${esc(p.host||'?')}</b> <span style="color:#777">${esc(p.ip||'')}</span>
+      ${p.exit_node?'<span class="badge exit">⚡ exit</span>':''}
+      ${(!p.online && p.last_seen)?`<span style="color:#666">seen ${esc(p.last_seen)}</span>`:''}
+    </div>`).join('') || '<div class="muted">no peers</div>';
+  c2 += `<div class="node" onclick="openNode('tailscale')">
+    <div class="node-h">🔗 Tailscale mesh</div>
+    <div class="peerline"><span class="dot ${self.online?'up':'grey'}"></span><b>${esc(self.host||'self')}</b> <span style="color:#777">${esc(self.ip||'')}</span> <span class="badge serve">self</span></div>
+    ${peerHtml}
+    ${serves.length?`<div style="margin-top:6px">${serves.map(sv=>`<span class="badge serve" title="${esc(sv.target)}">${esc(sv.listen)}→${esc(sv.target)}</span>`).join(' ')}</div>`:''}
+  </div>`;
+
+  // col 3 — baza NICs + listeners
+  let nicHtml = nics.map(n=>`<div class="peerline">
+      <span class="dot ${n.up?'up':'down'}"></span>
+      <b>${esc(n.name)}</b> <span style="color:#777">${esc((n.ips||[]).join(', '))}</span>
+    </div>`).join('') || '<div class="muted">no NICs</div>';
+  let lsRows = listeners.map(l=>{
+    const label = known[l.port] || known[String(l.port)] || '';
+    return `<tr><td class="port">${esc(l.port)}</td><td>${esc(l.proc||'')}</td><td style="color:#777">${esc(label)}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="muted">no listeners</td></tr>';
+  let c3 = `<div class="node" onclick="openNode('baza')">
+    <div class="node-h">🖥️ baza</div>
+    ${nicHtml}
+    <table class="lstable">${lsRows}</table>
+  </div>`;
+
+  document.getElementById('net-map').innerHTML =
+    `<div class="mapgrid">
+       <div>${c1}</div>
+       <div>${c2}</div>
+       <div>${c3}</div>
+     </div>`;
+}
+
+function hopClass(ok){ return ok===true?'hop-ok':(ok===false?'hop-bad':'hop-amber'); }
+
+function renderEdges(s){
+  const edges = s.edges||[];
+  const box = document.getElementById('edgeBox');
+  if(!edges.length){ box.innerHTML='<span class="muted">no edges defined</span>'; return; }
+  box.innerHTML = edges.map(e=>{
+    const hops = (e.hops||[]).map((h,i)=>`${i?'<span class="hop-arrow">→</span>':''}<span class="hop ${hopClass(h.ok)}" title="${esc(h.detail||'')}">${esc(h.label)}</span>`).join('');
+    return `<div class="edgerow"><span class="edge-name">${esc(e.chain)}</span><span class="hops">${hops}</span></div>`;
+  }).join('');
+}
+
+/* ---------- services card ---------- */
+const RISKY_STOP = new Set(['caddy.service','snap.tailscale.tailscaled.service']);
+function svcStateClass(active){ return active==='active'?'active':(active==='inactive'||active==='failed'?'inactive':'other'); }
+
+function renderServices(s){
+  const svcs = s.services||{};
+  const names = Object.keys(svcs);
+  const body = document.getElementById('svcBody');
+  if(!names.length){ body.innerHTML='<tr><td colspan="4" class="muted">no services</td></tr>'; return; }
+  body.innerHTML = names.map(unit=>{
+    const st = svcs[unit]||{};
+    const active = st.active||'?';
+    const stopRisky = RISKY_STOP.has(unit) ? 'btn-risky' : 'btn ghost';
+    let ctrls = `<button class="btn secondary xs" data-action="svc" data-params="${esc(JSON.stringify({unit,verb:'start'}))}">Start</button>
+      <button class="${stopRisky} xs" data-action="svc" data-params="${esc(JSON.stringify({unit,verb:'stop'}))}">Stop</button>
+      <button class="btn ghost xs" data-action="svc" data-params="${esc(JSON.stringify({unit,verb:'restart'}))}">Restart</button>`;
+    if(unit==='baza-ddns.service'){
+      ctrls += ` <button class="btn xs" data-action="ddns_run" data-params="{}">Run DDNS</button>`;
+    }
+    return `<tr>
+      <td style="font-family:monospace">${esc(unit)}</td>
+      <td><span class="state ${svcStateClass(active)}">${esc(active)}${st.sub&&st.sub!==active?' / '+esc(st.sub):''}</span></td>
+      <td class="muted">${esc(st.since||'')}</td>
+      <td style="text-align:right;white-space:nowrap">${ctrls}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ---------- tailscale card ---------- */
+function renderTailscale(s){
+  const ts = s.tailscale||{};
+  const self = ts.self||{};
+  const serves = ts.serves||[];
+  const isExit = (self.exit_node===true);
+  const dashOn = serves.some(sv => (sv.mapping==='dash') || sv.listen==='443');
+  const visionOn = serves.some(sv => (sv.mapping==='vision') || sv.listen==='8443');
+  document.getElementById('tsBox').innerHTML = `
+    <div class="row" style="margin-bottom:14px">
+      <span class="dot ${self.online?'up':'grey'}"></span>
+      <b style="font-family:monospace">${esc(self.host||'self')}</b>
+      <span class="muted">${esc(self.ip||'')} · ${esc(self.os||'')} · ${self.online?'online':'offline'}</span>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <button class="btn secondary sm" data-action="ts_up" data-params="{}">Up</button>
+      <button class="btn-risky sm" data-action="ts_down" data-params="{}">Down</button>
+    </div>
+    <div style="margin-bottom:12px">
+      <label class="chk"><input type="checkbox" ${isExit?'checked':''} onchange="postAction('ts_exit_node',{on:this.checked})"> Advertise exit node</label>
+    </div>
+    <div class="muted" style="margin-bottom:6px">Serve mappings</div>
+    <div class="row">
+      <label class="chk ${dashOn?'risky-label':''}"><input type="checkbox" ${dashOn?'checked':''} onchange="tsServe('dash',this)"> dash</label>
+      <label class="chk ${visionOn?'risky-label':''}"><input type="checkbox" ${visionOn?'checked':''} onchange="tsServe('vision',this)"> vision</label>
+    </div>`;
+}
+// serve OFF is risky — no visual button, but keep the raw call correct
+function tsServe(mapping, el){ postAction('ts_serve', {mapping, on: el.checked}); }
+
+/* ---------- NIC card ---------- */
+const NICS = ['enp6s0','enp7s0','wlp5s0'];
+function renderNics(s){
+  const nics = (s.interfaces&&s.interfaces.nics)||[];
+  const byName = {}; nics.forEach(n=>byName[n.name]=n);
+  const body = document.getElementById('nicBody');
+  body.innerHTML = NICS.map(name=>{
+    const n = byName[name]||{};
+    const up = !!n.up;
+    return `<tr>
+      <td style="font-family:monospace">${esc(name)}</td>
+      <td><span class="state ${up?'active':'inactive'}">${up?'up':'down'}</span></td>
+      <td class="muted" style="font-family:monospace">${esc((n.ips||[]).join(', '))}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn secondary xs" data-action="nic" data-params="${esc(JSON.stringify({name,verb:'up'}))}">Up</button>
+        <button class="btn-risky xs" data-action="nic" data-params="${esc(JSON.stringify({name,verb:'down'}))}">Down</button>
+        <button class="btn-risky xs" data-action="dhcp_renew" data-params="${esc(JSON.stringify({name}))}">Renew DHCP</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ---------- drawers ---------- */
+let CUR_NODE = null;
+function openDrawer(id){
+  document.querySelectorAll('.drawer').forEach(d=>d.classList.remove('open'));
+  document.getElementById(id).classList.add('open');
+  document.getElementById('backdrop').classList.add('open');
+}
+function closeDrawer(){
+  document.querySelectorAll('.drawer').forEach(d=>d.classList.remove('open'));
+  document.getElementById('backdrop').classList.remove('open');
+  CUR_NODE = null;
+}
+
+function factsFor(node, s){
+  const ts = s.tailscale||{};
+  switch(node){
+    case 'internet': return {wan_ip:s.wan_ip, reach:s.reach, dns:s.dns, certs:s.certs};
+    case 'router':   return {gateway:'192.168.1.1', note:'router facts are manually configured', wan_ip:s.wan_ip};
+    case 'tailscale':return {self:ts.self, peers:ts.peers, serves:ts.serves};
+    case 'baza':     return {interfaces:s.interfaces, listeners:s.listeners, caddy:s.caddy, cloudflared:s.cloudflared};
+    default: return s;
+  }
+}
+function controlsFor(node){
+  switch(node){
+    case 'internet':
+      return `<button class="btn secondary sm" data-action="ddns_run" data-params="{}">Run DDNS</button>`;
+    case 'tailscale':
+      return `<div class="row">
+        <button class="btn secondary sm" data-action="ts_up" data-params="{}">Up</button>
+        <button class="btn-risky sm" data-action="ts_down" data-params="{}">Down</button>
+      </div>`;
+    case 'baza':
+      return NICS.map(name=>`<div class="row" style="margin-bottom:6px"><span style="font-family:monospace;min-width:80px">${esc(name)}</span>
+        <button class="btn secondary xs" data-action="nic" data-params="${esc(JSON.stringify({name,verb:'up'}))}">Up</button>
+        <button class="btn-risky xs" data-action="nic" data-params="${esc(JSON.stringify({name,verb:'down'}))}">Down</button>
+        <button class="btn-risky xs" data-action="dhcp_renew" data-params="${esc(JSON.stringify({name}))}">Renew DHCP</button></div>`).join('');
+    default:
+      return '<span class="muted">No direct controls for this node — see the cards below.</span>';
+  }
+}
+const NODE_TITLES = {internet:'🌐 Internet', router:'📶 Router', tailscale:'🔗 Tailscale mesh', baza:'🖥️ baza'};
+function openNode(node){
+  if(!LAST) return;
+  CUR_NODE = node;
+  document.getElementById('ndTitle').textContent = NODE_TITLES[node]||node;
+  const facts = factsFor(node, LAST);
+  document.getElementById('ndBody').innerHTML =
+    `<div class="drawer-sec">Controls</div>${controlsFor(node)}
+     <div class="drawer-sec">Raw facts</div>
+     <pre class="facts">${esc(JSON.stringify(facts, null, 2))}</pre>`;
+  openDrawer('node-drawer');
+}
+
+async function openAudit(){
+  openDrawer('audit-drawer');
+  const box = document.getElementById('auditBody');
+  box.innerHTML = '<span class="muted">loading…</span>';
+  let d;
+  try { d = await (await fetch('/api/network/audit?limit=200')).json(); }
+  catch(e){ box.innerHTML='<span class="muted">audit fetch failed</span>'; return; }
+  const rows = (d && d.rows) || [];
+  if(!rows.length){ box.innerHTML='<span class="muted">no audit entries</span>'; return; }
+  box.innerHTML = `<table><thead><tr><th>Time</th><th>Action</th><th>rc</th></tr></thead><tbody>${
+    rows.map(r=>{
+      const params = (r.params==null)?'' : (typeof r.params==='string'?r.params:JSON.stringify(r.params));
+      const rc = (r.rc===0)?'✓':(r.rc==null?'':'✗ '+esc(r.rc));
+      const tail = ((r.err&&String(r.err).trim())||(r.out&&String(r.out).trim())||'');
+      return `<tr>
+        <td class="muted" style="font-family:monospace;white-space:nowrap">${esc(r.ts||'')}</td>
+        <td><b>${esc(r.action||'')}</b><div class="muted" style="font-family:monospace;word-break:break-all">${esc(params)}</div>
+          ${tail?`<div class="muted" style="font-family:monospace;word-break:break-all;color:#7a5">${esc(String(tail).slice(0,240))}</div>`:''}</td>
+        <td>${rc}</td>
+      </tr>`;
+    }).join('')
+  }</tbody></table>`;
+}
+
+/* ---------- delegated action handler ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-action]');
+  if (b) postAction(b.dataset.action, JSON.parse(b.dataset.params || '{}'));
+});
+
+/* ---------- caddy card ---------- */
+function renderCaddy(s){
+  const caddy = s.caddy || {};
+  const state = caddy.state || caddy.active || '?';
+  const sites = caddy.sites || [];
+  const stateClass = state === 'active' ? 'active' : (state === 'inactive' || state === 'failed' ? 'inactive' : 'other');
+  document.getElementById('caddyStateSpan').innerHTML =
+    `State: <span class="state ${esc(stateClass)}">${esc(state)}</span>`;
+  const sitesEl = document.getElementById('caddySitesBox');
+  if(sites.length){
+    sitesEl.innerHTML = `<table><thead><tr><th>Site</th><th>Target</th></tr></thead><tbody>${
+      sites.map(sv=>`<tr><td style="font-family:monospace">${esc(sv.listen||sv.site||'')}</td><td class="muted" style="font-family:monospace">${esc(sv.target||'')}</td></tr>`).join('')
+    }</tbody></table>`;
+  } else {
+    sitesEl.innerHTML = '<span class="muted">No sites detected</span>';
+  }
+}
+
+function renderCaddyBackups(backups){
+  const box = document.getElementById('caddyBackupsBox');
+  if(!backups || !backups.length){
+    box.innerHTML = '<span class="muted">no backups</span>';
+    return;
+  }
+  box.innerHTML = backups.map(name=>`
+    <div class="row" style="margin-bottom:4px">
+      <span style="font-family:monospace;font-size:12px;color:#bbb">${esc(name)}</span>
+      <button class="btn ghost xs" onclick="caddyRollback(${JSON.stringify(name)})">Rollback</button>
+    </div>`).join('');
+}
+
+async function openCaddyEditor(){
+  const bg = document.getElementById('caddyModalBg');
+  const ta = document.getElementById('caddyTextarea');
+  const errEl = document.getElementById('caddyModalErr');
+  const statusEl = document.getElementById('caddyApplyStatus');
+  errEl.style.display = 'none';
+  statusEl.textContent = 'loading…';
+  ta.value = '';
+  bg.style.display = 'flex';
+  try {
+    const r = await fetch('/api/network/caddyfile');
+    const j = await r.json();
+    ta.value = j.text || '';
+    statusEl.textContent = '';
+    renderCaddyBackups(j.backups || []);
+  } catch(e) {
+    statusEl.textContent = 'fetch failed: ' + e;
+  }
+}
+
+function closeCaddyModal(){
+  document.getElementById('caddyModalBg').style.display = 'none';
+}
+
+// close on background click
+document.getElementById('caddyModalBg').addEventListener('click', function(e){
+  if(e.target === this) closeCaddyModal();
+});
+
+// close on Escape
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeCaddyModal();
+});
+
+async function caddyApply(){
+  const ta = document.getElementById('caddyTextarea');
+  const errEl = document.getElementById('caddyModalErr');
+  const statusEl = document.getElementById('caddyApplyStatus');
+  const btn = document.getElementById('caddyApplyBtn');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  statusEl.textContent = 'applying…';
+  try {
+    const r = await fetch('/api/network/caddyfile', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: ta.value})
+    });
+    const j = await r.json();
+    if(j.ok){
+      statusEl.textContent = '';
+      closeCaddyModal();
+      toast('✓ Caddyfile applied + caddy reloaded', true);
+      setTimeout(refresh, 1200);
+    } else {
+      statusEl.textContent = '';
+      const stageInfo = j.stage ? `[stage: ${esc(j.stage)}] ` : '';
+      const errText = esc(j.err || j.error || 'apply failed');
+      errEl.innerHTML = `<b>Apply failed</b> ${stageInfo}<br><pre style="margin-top:6px;white-space:pre-wrap;word-break:break-all;font-size:11px">${errText}</pre>`;
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    statusEl.textContent = 'request failed: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function caddyRollback(name){
+  if(!confirm('Roll back to ' + name + '? Current Caddyfile will be backed up first.')) return;
+  try {
+    const r = await fetch('/api/network/caddyfile/rollback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name})
+    });
+    const j = await r.json();
+    if(j.ok){
+      closeCaddyModal();
+      toast('✓ Rolled back to ' + name, true);
+      setTimeout(refresh, 1200);
+    } else {
+      toast('✗ Rollback failed: ' + esc((j.err || j.error || '').slice(0, 200)), false);
+    }
+  } catch(e) {
+    toast('✗ Rollback request failed: ' + e, false);
+  }
+}
+
+/* ── deSEC DNS panel ── */
+
+async function desecCheckToken(){
+  try {
+    const r = await fetch('/api/network/token/desec');
+    const j = await r.json();
+    const isSet = !!(j && j.set);
+    document.getElementById('desecTokenStatus').textContent = isSet
+      ? 'token is stored' : 'no token stored';
+    document.getElementById('desecTokenInputRow').style.display = isSet ? 'none' : '';
+    document.getElementById('desecTokenSetMsg').style.display  = isSet ? '' : 'none';
+    // show or hide the quick-fix button row
+    const qfRow = document.getElementById('desecQuickFixRow');
+    if (qfRow) qfRow.style.display = isSet ? '' : 'none';
+    return isSet;
+  } catch(e) {
+    document.getElementById('desecTokenStatus').textContent = 'could not check token';
+    return false;
+  }
+}
+
+async function desecSaveToken(){
+  const tok = document.getElementById('desecTokenInput').value.trim();
+  if(!tok){ toast('Token cannot be empty', false); return; }
+  try {
+    const r = await fetch('/api/network/token/desec', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: tok})
+    });
+    const j = await r.json();
+    if(j.ok){
+      document.getElementById('desecTokenInput').value = '';
+      await desecCheckToken();
+      await desecRefresh();
+      toast('deSEC token saved', true);
+    } else {
+      toast('Failed to save token: ' + esc(j.error || ''), false);
+    }
+  } catch(e) { toast('Token save failed: ' + e, false); }
+}
+
+async function desecRefresh(){
+  const isSet = await desecCheckToken();
+  const box = document.getElementById('desecRrsetBox');
+  if(!isSet){
+    box.innerHTML = '<span class="muted">no token set — paste a deSEC token to enable</span>';
+    return;
+  }
+  box.innerHTML = '<span class="muted">loading RRsets…</span>';
+  try {
+    const r = await fetch('/api/network/desec');
+    if(!r.ok){
+      const j = await r.json();
+      box.innerHTML = `<span class="muted">error: ${esc(j.error||r.status)}</span>`;
+      return;
+    }
+    const rrsets = await r.json();
+    if(!rrsets || !rrsets.length){
+      box.innerHTML = '<span class="muted">no RRsets returned</span>';
+      return;
+    }
+    box.innerHTML = `<table>
+      <thead><tr><th>Subname</th><th>Type</th><th>TTL</th><th>Records</th><th></th></tr></thead>
+      <tbody>${rrsets.map(rr => `<tr>
+        <td style="font-family:monospace">${esc(rr.subname||'@')}</td>
+        <td><span class="badge serve">${esc(rr.type)}</span></td>
+        <td class="muted">${esc(rr.ttl)}</td>
+        <td style="font-family:monospace;max-width:320px;word-break:break-all">${esc((rr.records||[]).join(', '))}</td>
+        <td><button class="btn ghost xs desec-edit-btn" data-rr="${esc(JSON.stringify(rr))}">Edit</button></td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } catch(e) { box.innerHTML = `<span class="muted">fetch error: ${esc(String(e))}</span>`; }
+}
+
+async function desecPointNovaToWan(){
+  const wan = LAST && LAST.wan_ip;
+  if(!wan){
+    toast('WAN IP not available — refresh status first', false);
+    return;
+  }
+  const btn = document.getElementById('desecPointBtn');
+  const st  = document.getElementById('desecPointStatus');
+  btn.disabled = true;
+  st.textContent = `pointing @ A → ${esc(wan)}…`;
+  try {
+    const r = await fetch('/api/network/desec', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({subname:'@', rtype:'A', ttl:300, records:[wan]})
+    });
+    const j = await r.json();
+    if(r.ok){
+      st.textContent = `done — @ A → ${esc(wan)}`;
+      toast(`nova A → ${esc(wan)} updated`, true);
+      await desecRefresh();
+    } else {
+      st.textContent = 'failed';
+      toast(`deSEC set failed: ${esc(j.error||'')}`, false);
+    }
+  } catch(e) {
+    st.textContent = 'request error';
+    toast('desec request failed: ' + e, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function openDesecEditModal(rr){
+  document.getElementById('desecEditSubname').value = rr.subname || '@';
+  const sel = document.getElementById('desecEditType');
+  sel.value = rr.type || 'A';
+  document.getElementById('desecEditTtl').value = rr.ttl || 300;
+  document.getElementById('desecEditRecords').value = (rr.records||[]).join('\n');
+  document.getElementById('desecEditErr').style.display = 'none';
+  document.getElementById('desecEditStatus').textContent = '';
+  document.getElementById('desecEditModalBg').style.display = 'flex';
+}
+
+function closeDesecEditModal(){
+  document.getElementById('desecEditModalBg').style.display = 'none';
+}
+
+async function desecEditSave(){
+  const subname = document.getElementById('desecEditSubname').value.trim();
+  const rtype   = document.getElementById('desecEditType').value;
+  const ttl     = parseInt(document.getElementById('desecEditTtl').value, 10);
+  const records = document.getElementById('desecEditRecords').value
+                    .split('\n').map(s=>s.trim()).filter(Boolean);
+  const errEl   = document.getElementById('desecEditErr');
+  const btn     = document.getElementById('desecEditSaveBtn');
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  document.getElementById('desecEditStatus').textContent = 'saving…';
+  try {
+    const r = await fetch('/api/network/desec', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({subname, rtype, ttl, records})
+    });
+    const j = await r.json();
+    if(r.ok){
+      closeDesecEditModal();
+      toast(`RRset ${esc(subname)} ${esc(rtype)} saved`, true);
+      await desecRefresh();
+    } else {
+      const msg = esc(j.error||'save failed');
+      errEl.innerHTML = `<b>Error:</b> ${msg}`;
+      errEl.style.display = 'block';
+      document.getElementById('desecEditStatus').textContent = '';
+    }
+  } catch(e) {
+    document.getElementById('desecEditStatus').textContent = 'request failed: ' + e;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// delegated click handler for deSEC RRset edit buttons
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('.desec-edit-btn');
+  if(btn){
+    const rr = JSON.parse(btn.dataset.rr);
+    openDesecEditModal(rr);
+  }
+});
+
+// close modals on Escape / background click
+document.getElementById('desecEditModalBg').addEventListener('click', function(e){
+  if(e.target === this) closeDesecEditModal();
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeDesecEditModal();
+});
+
+// init deSEC panel on page load
+desecCheckToken().then(isSet => { if(isSet) desecRefresh(); });
+
+/* ---------- GCloud DNS card — populate unit/timer state from status ---------- */
+function renderGcloudDns(s){
+  const svcs = s.services || {};
+  // baza-ddns.service state
+  const ddnsSvc = svcs['baza-ddns.service'] || {};
+  const svcActive = ddnsSvc.active || 'unknown';
+  const svcClass = svcActive === 'active' ? 'active' : (svcActive === 'inactive' ? 'inactive' : 'other');
+  const svcEl = document.getElementById('gcloudDdnsSvcState');
+  if(svcEl) svcEl.innerHTML = `<span class="state ${esc(svcClass)}">${esc(svcActive)}</span>`;
+
+  // baza-ddns.timer state (may not exist yet)
+  const ddnsTimer = svcs['baza-ddns.timer'] || {};
+  const timerActive = ddnsTimer.active || null;
+  const timerEl = document.getElementById('gcloudDdnsTimerState');
+  if(timerEl){
+    if(!timerActive){
+      timerEl.innerHTML = '<span class="muted">not installed</span>';
+    } else {
+      const tc = timerActive === 'active' ? 'active' : (timerActive === 'inactive' ? 'inactive' : 'other');
+      timerEl.innerHTML = `<span class="state ${esc(tc)}">${esc(timerActive)}</span>`;
+    }
+  }
+}
+
+/* ---------- Cloudflare panel ---------- */
+
+async function cfCheckToken(){
+  try {
+    const r = await fetch('/api/network/token/cloudflare');
+    const j = await r.json();
+    const isSet = !!(j && j.set);
+    document.getElementById('cfTokenStatus').textContent = isSet ? 'token is stored' : 'no token stored';
+    document.getElementById('cfTokenInputRow').style.display = isSet ? 'none' : '';
+    document.getElementById('cfTokenSetMsg').style.display  = isSet ? '' : 'none';
+    return isSet;
+  } catch(e) {
+    document.getElementById('cfTokenStatus').textContent = 'could not check token';
+    return false;
+  }
+}
+
+async function cfSaveToken(){
+  const tok = document.getElementById('cfTokenInput').value.trim();
+  if(!tok){ toast('Token cannot be empty', false); return; }
+  try {
+    const r = await fetch('/api/network/token/cloudflare', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: tok})
+    });
+    const j = await r.json();
+    if(j.ok){
+      document.getElementById('cfTokenInput').value = '';
+      await cfCheckToken();
+      await cfRefresh();
+      toast('Cloudflare token saved', true);
+    } else {
+      toast('Failed to save token: ' + esc(j.error || ''), false);
+    }
+  } catch(e) { toast('Token save failed: ' + e, false); }
+}
+
+async function cfRefresh(){
+  const isSet = await cfCheckToken();
+  const box = document.getElementById('cfZoneBox');
+  if(!isSet){
+    box.innerHTML = '<span class="muted">no token set — paste a Cloudflare token to check zone status</span>';
+    return;
+  }
+  box.innerHTML = '<span class="muted">checking zone…</span>';
+  try {
+    const r = await fetch('/api/network/cloudflare');
+    if(!r.ok){
+      const j = await r.json();
+      box.innerHTML = `<span class="muted">error: ${esc(j.error||r.status)}</span>`;
+      return;
+    }
+    const z = await r.json();
+    if(!z.found){
+      box.innerHTML = `
+        <div style="background:#2a230a;border:1px solid #e0b000;border-radius:8px;padding:14px;font-size:13px;color:#e0b000;margin-bottom:10px">
+          <b>Zone not on Cloudflare yet</b> — see Migration wizard once DNS is transferred to Cloudflare.
+        </div>
+        <div class="muted" style="font-size:12px">ahb123.com is not currently a zone in this Cloudflare account.</div>`;
+    } else {
+      const ns = (z.name_servers||[]).map(n=>`<code style="display:inline-block;margin:2px 4px;background:#0d2040;padding:2px 8px;border-radius:4px;font-size:11px;color:#4da6ff">${esc(n)}</code>`).join('');
+      const stateClass = z.status === 'active' ? 'active' : 'other';
+      box.innerHTML = `
+        <div class="row" style="margin-bottom:10px">
+          <span class="muted" style="font-size:12px">Zone status:</span>
+          <span class="state ${esc(stateClass)}">${esc(z.status||'unknown')}</span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:6px">Name servers:</div>
+        <div>${ns || '<span class="muted">none</span>'}</div>`;
+    }
+  } catch(e) { box.innerHTML = `<span class="muted">fetch error: ${esc(String(e))}</span>`; }
+}
+
+/* init */
+cfCheckToken().then(isSet => { if(isSet) cfRefresh(); });
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>

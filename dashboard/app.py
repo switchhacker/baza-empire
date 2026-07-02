@@ -16322,6 +16322,14 @@ except ImportError:
 _ensure_hardware_tables()
 app.register_blueprint(_hardware_bp)
 
+# ── Network tab blueprint ─────────────────────────────────────────────────────
+try:
+    from dashboard.network_routes import network_bp as _network_bp, init_network as _init_network
+except ImportError:
+    from network_routes import network_bp as _network_bp, init_network as _init_network
+_init_network()
+app.register_blueprint(_network_bp)
+
 # ── Scaffold (Live Build Tree) blueprint ─────────────────────────────────────
 try:
     from dashboard.scaffold import scaffold_bp
