@@ -481,6 +481,10 @@ def _init_ahb_tables_inner():
         "ALTER TABLE ahb_invoices ADD COLUMN milestone_index INTEGER DEFAULT -1",
         "ALTER TABLE ahb_invoices ADD COLUMN amount_due REAL",
         "ALTER TABLE ahb_invoices ADD COLUMN terms_snapshot TEXT DEFAULT ''",
+        # Nominatim geocoding cache for jobsite weather alerts (cron-improvements task 3)
+        "ALTER TABLE ahb_projects ADD COLUMN latitude REAL",
+        "ALTER TABLE ahb_projects ADD COLUMN longitude REAL",
+        "ALTER TABLE ahb_projects ADD COLUMN geocoded_at TEXT",
     ]
     for stmt in alter_stmts:
         try:
@@ -6176,6 +6180,16 @@ def api_ahb_projects_create():
              data.get('contact_info', ''), data.get('address', ''), 1))
 
         conn.commit()
+
+        # Best-effort geocode of the new jobsite address (never blocks the save;
+        # later cron tasks read latitude/longitude for weather alerts).
+        if data.get('address') or data.get('location'):
+            try:
+                from core.geocode import ensure_project_coords
+                ensure_project_coords(conn, pid)
+            except Exception:
+                pass
+
         conn.close()
         return jsonify({'success': True, 'id': pid, 'invoice_id': iid, 'invoice_number': inv_num})
     except Exception as e:
@@ -6213,6 +6227,18 @@ def api_ahb_projects_update(pid):
         # Push header changes (title, address, client info, value) into linked invoice
         invoice_id = _sync_invoice_from_project(conn, pid, data)
         conn.commit()
+
+        # Best-effort geocode if the address changed and coords aren't cached yet
+        # (never blocks the save; later cron tasks read lat/lon for weather alerts).
+        if 'address' in data or 'location' in data:
+            try:
+                row = conn.execute("SELECT latitude FROM ahb_projects WHERE id = ?", (pid,)).fetchone()
+                if row and row['latitude'] is None:
+                    from core.geocode import ensure_project_coords
+                    ensure_project_coords(conn, pid)
+            except Exception:
+                pass
+
         conn.close()
         return jsonify({'success': True, 'invoice_id': invoice_id})
     except Exception as e:
