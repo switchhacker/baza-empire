@@ -2092,6 +2092,57 @@
   </div>
 </div>
 
+<!-- New Call Log Modal -->
+<div class="modal-bg" id="newCallLogModal">
+  <div class="modal" style="max-width:560px">
+    <h2>📞 Log Call</h2>
+    <div class="modal-sub">Record a Rex Valor voice interaction or manual call entry.</div>
+    <div style="display:flex;gap:12px;margin-bottom:14px">
+      <div style="flex:1">
+        <label style="font-size:11px;color:#888">Caller Name</label>
+        <input type="text" id="ncl-name" placeholder="Jane Doe" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:11px;color:#888">Phone</label>
+        <input type="text" id="ncl-phone" placeholder="+1 555 010 1234" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:14px">
+      <div style="flex:1">
+        <label style="font-size:11px;color:#888">Direction</label>
+        <select id="ncl-direction" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+          <option value="inbound">Inbound</option>
+          <option value="outbound">Outbound</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label style="font-size:11px;color:#888">Status</label>
+        <select id="ncl-status" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+          <option value="completed">Completed</option>
+          <option value="missed">Missed</option>
+          <option value="voicemail">Voicemail</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label style="font-size:11px;color:#888">Duration (sec)</label>
+        <input type="number" id="ncl-duration" min="0" value="0" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;color:#888">Transcript</label>
+      <textarea id="ncl-transcript" rows="3" placeholder="What was discussed on the call…" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px;resize:vertical"></textarea>
+    </div>
+    <div style="margin-bottom:4px">
+      <label style="font-size:11px;color:#888">Agent Notes</label>
+      <textarea id="ncl-notes" rows="2" placeholder="Follow-up actions, lead quality…" style="width:100%;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px;resize:vertical"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('newCallLogModal')">Cancel</button>
+      <button class="btn-primary" onclick="submitNewCallLog()">Save Call Log</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== TAB: ARCHITECT ===================== -->
 <div class="tab-pane" id="tab-architect">
   <div class="page-header">
@@ -16725,7 +16776,44 @@ function filterVoiceLogs(status) {
 }
 
 function openNewCallLog() {
-  showToast('Call log form coming soon');
+  document.getElementById('ncl-name').value = '';
+  document.getElementById('ncl-phone').value = '';
+  document.getElementById('ncl-direction').value = 'inbound';
+  document.getElementById('ncl-status').value = 'completed';
+  document.getElementById('ncl-duration').value = '0';
+  document.getElementById('ncl-transcript').value = '';
+  document.getElementById('ncl-notes').value = '';
+  document.getElementById('newCallLogModal').classList.add('open');
+}
+
+function submitNewCallLog() {
+  const payload = {
+    caller_name: document.getElementById('ncl-name').value.trim(),
+    caller_phone: document.getElementById('ncl-phone').value.trim(),
+    direction: document.getElementById('ncl-direction').value,
+    status: document.getElementById('ncl-status').value,
+    duration_seconds: parseInt(document.getElementById('ncl-duration').value, 10) || 0,
+    transcript: document.getElementById('ncl-transcript').value.trim(),
+    agent_notes: document.getElementById('ncl-notes').value.trim()
+  };
+  if (!payload.caller_name && !payload.caller_phone) {
+    showToast('Enter a caller name or phone number', 'error');
+    return;
+  }
+  fetch('/api/ahb/voice/logs', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(res => {
+    if (res && res.success) {
+      showToast('Call log saved');
+      closeModal('newCallLogModal');
+      loadVoiceLogs('');
+      loadVoiceStats();
+    } else {
+      showToast('Failed to save call log', 'error');
+    }
+  }).catch(() => showToast('Failed to save call log', 'error'));
 }
 
 /* ===================== INIT ===================== */
