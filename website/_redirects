@@ -1,14 +1,18 @@
 # Cloudflare Pages — redirects
 # https://developers.cloudflare.com/pages/configuration/redirects/
 #
-# Pick the winning scheme, then point the root at it. Example: make Momentum (v1)
-# the live homepage by uncommenting the next line:
+# Scheme A · Momentum is the chosen design and is served directly at the root
+# (website/index.html), so no rewrite is needed for the homepage.
 #
-# /            /v1-momentum/    200
-#
-# Keep the scheme picker reachable during review:
-/schemes       /index.html      200
+# The scheme showcase / alternate directions stay reachable for reference:
+/schemes       /schemes.html    200
 
-# Legacy / common paths → estimate funnel (adjust to the old site's URLs)
-/free-estimate   /v1-momentum/#estimate   302
-/quote           /v1-momentum/#estimate   302
+# Common marketing paths → the estimate funnel on the homepage
+/free-estimate   /#estimate   302
+/estimate        /#estimate   302
+/quote           /#estimate   302
+
+# Alternate directions (kept for reference / A-B testing)
+/momentum        /                       302
+/homestead       /v2-homestead/          302
+/instant         /v3-instant/            302

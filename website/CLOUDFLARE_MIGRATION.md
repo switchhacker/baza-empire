@@ -58,7 +58,7 @@ are atomic and global in ~10s, and the bill for a contractor-scale site is effec
 | **Structured data** | **D1** | `leads`, `estimates`, `gallery_assets`, `page_content` tables. Queryable by agents. |
 | **Config / flags** | **KV** | A/B test variant, promo banner text, business hours — editable without a deploy. |
 | **Spam control** | **Turnstile** | Invisible bot check on every form. |
-| **Inbound email** | **Email Routing** | `leads@`, `admin@allhomebuilding.co` → forward to inbox + POST to agent webhook. |
+| **Inbound email** | **Email Routing** | `leads@`, `contactahbco@gmail.com` → forward to inbox + POST to agent webhook. |
 | **DNS + security** | **Cloudflare DNS / WAF / SSL** | Free managed TLS, DDoS protection, caching, analytics. |
 
 ---
@@ -77,8 +77,11 @@ Because everything is an API or a git file, the Baza agents get real leverage:
    notify. Agents poll new leads, deduplicate, score, and either auto-reply or DISPATCH to Serge.
 4. **Instant estimates** — `/api/estimate` runs the same pricing logic the dashboard uses, so a
    visitor gets a ballpark number *and* the agent gets a qualified lead with project scope.
-5. **Support** — The existing chat widget (`dashboard/static/ahb-chat-widget.js`) points at a
-   Worker that relays to the agent chat backend; escalations create a lead + Telegram ping.
+5. **Support (Nova)** — **Nova Sterling**, AHBCO's Director of Client Relations, greets every
+   visitor via the chat widget (`assets/nova-chat.js`) on all pages. It POSTs to `/api/chat`,
+   which relays to the live `nova_sterling` agent (`env.NOVA_WEBHOOK`). Nova qualifies the lead,
+   captures name + phone/email, and hands off to Rex/Simon via her own skills — with a warm
+   built-in fallback so the widget stays conversational even before the agent is wired.
 
 ---
 
@@ -136,6 +139,7 @@ typical managed host at $20–50/mo — while gaining git history, previews, and
 - `website/v3-instant/` — **Instant Estimate**: a conversion-first lead-funnel landing page.
 - `website/functions/api/lead.js` — Cloudflare Pages Function that captures leads into D1.
 - `website/functions/api/estimate.js` — instant ballpark estimator.
+- `website/functions/api/chat.js` + `website/assets/nova-chat.js` — Nova Sterling live chat.
 - `website/wrangler.toml`, `_headers`, `_redirects` — Cloudflare Pages config.
 
 > **Note on placeholder content:** review counts, ratings, years-in-business, and testimonial

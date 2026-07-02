@@ -7,14 +7,17 @@ static site that deploys to **Cloudflare Pages** with lead capture via Pages Fun
 
 ```
 website/
-├── index.html              ← scheme picker (open this first)
-├── v1-momentum/index.html  ← Scheme A · dark, premium, AI-forward (3-step funnel)
+├── index.html              ← LIVE HOMEPAGE — Scheme A · Momentum (chosen design)
+├── schemes.html            ← scheme showcase / picker (all three directions)
 ├── v2-homestead/index.html ← Scheme B · light, trust-first (before/after slider)
 ├── v3-instant/index.html   ← Scheme C · conversion landing page (instant estimator)
 ├── functions/api/
 │   ├── lead.js             ← POST /api/lead     — captures leads into D1 + notifies agents
-│   └── estimate.js         ← POST /api/estimate — server-side ballpark pricing
-├── assets/                 ← logo (images sync from R2 in production)
+│   ├── estimate.js         ← POST /api/estimate — server-side ballpark pricing
+│   └── chat.js             ← POST /api/chat     — relays to the Nova Sterling agent
+├── assets/
+│   ├── nova-chat.js        ← Nova Sterling live chat widget (on every page)
+│   └── (logo — images sync from R2 in production)
 ├── wrangler.toml           ← Pages project + D1/KV/R2 bindings
 ├── _headers                ← security + cache headers
 ├── _redirects              ← route the winning scheme to /
@@ -79,6 +82,6 @@ Search the HTML for `TODO: confirm` and replace with real values:
 - Testimonial names & quotes (swap the samples for real reviews)
 - Financing partner / terms
 
-Everything else — company name, phone (800-484-6404), email
-(admin@allhomebuilding.co), address (2725 Colmar Ave, Bensalem, PA), social
+Everything else — company name, phone (215-554-5488), email
+(contactahbco@gmail.com), address (2725 Colmar Ave, Bensalem, PA), social
 (@allhomebuilding), and the service list — is pulled from the business records.
