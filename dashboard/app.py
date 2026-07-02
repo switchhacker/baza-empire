@@ -16302,6 +16302,12 @@ except Exception as _e:
 app.register_blueprint(_bin_bp)
 
 try:
+    from dashboard.claw_api import claw_bp as _claw_bp
+except ImportError:
+    from claw_api import claw_bp as _claw_bp
+app.register_blueprint(_claw_bp)
+
+try:
     from dashboard.share_service import share_bp as _share_bp, _ensure_share_schema as _ensure_share
 except ImportError:
     from share_service import share_bp as _share_bp, _ensure_share_schema as _ensure_share
