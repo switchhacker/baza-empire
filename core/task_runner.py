@@ -449,9 +449,8 @@ def notify_serge(message: str):
         logger.warning("No Telegram token — skipping notify")
         return
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        for chunk in [message[i:i+4000] for i in range(0, len(message), 4000)]:
-            requests.post(url, json={"chat_id": SERGE_CHAT_ID, "text": chunk}, timeout=15)
+        from core.telegram_fmt import post_html
+        post_html(TELEGRAM_TOKEN, SERGE_CHAT_ID, message)
     except Exception as e:
         logger.error(f"Telegram notify error: {e}")
 
@@ -825,11 +824,8 @@ def notify_agent(agent_id: str, message: str):
         logger.warning(f"No token for {agent_id} — cannot ping")
         return
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": SERGE_CHAT_ID, "text": message},
-            timeout=10
-        )
+        from core.telegram_fmt import post_html
+        post_html(token, SERGE_CHAT_ID, message)
         logger.info(f"  📤 Pinged {agent_id}")
     except Exception as e:
         logger.warning(f"  Ping {agent_id} failed: {e}")

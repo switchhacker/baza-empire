@@ -1882,22 +1882,9 @@ class BaseAgent(ContextMixin):
 
     @staticmethod
     def _strip_markdown(text: str) -> str:
-        """Remove markdown formatting so Telegram displays clean plain text."""
-        import re
-        # Remove headers: ### ## #
-        text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-        # Remove bold/italic: **text** *text* __text__ _text_
-        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-        text = re.sub(r'\*(.+?)\*', r'\1', text)
-        text = re.sub(r'__(.+?)__', r'\1', text)
-        text = re.sub(r'_(.+?)_', r'\1', text)
-        # Remove inline code
-        text = re.sub(r'`(.+?)`', r'\1', text)
-        # Remove markdown links [text](url) -> text
-        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
-        # Remove leading - bullet dashes (keep emoji bullets)
-        text = re.sub(r'^- ', '', text, flags=re.MULTILINE)
-        return text.strip()
+        """Plain-text fallback — delegated to core.telegram_fmt."""
+        from core.telegram_fmt import strip_markdown
+        return strip_markdown(text)
 
     async def _send_response(self, bot: Bot, chat_id: int, text: str):
         """Send response, splitting into chunks if > 4096 chars (Telegram limit).
@@ -1949,24 +1936,8 @@ class BaseAgent(ContextMixin):
                             pass
             except Exception as e:
                 logger.debug(f"[{self.AGENT_ID}] claim_verifier skipped: {e}")
-        text = self._strip_markdown(text)
-        MAX_LEN = 4000
-        if len(text) <= MAX_LEN:
-            await bot.send_message(chat_id=chat_id, text=text)
-        else:
-            parts = []
-            current = ""
-            for line in text.split("\n"):
-                if len(current) + len(line) + 1 > MAX_LEN:
-                    parts.append(current)
-                    current = line
-                else:
-                    current += ("\n" if current else "") + line
-            if current:
-                parts.append(current)
-            for part in parts:
-                await bot.send_message(chat_id=chat_id, text=part)
-                await asyncio.sleep(0.3)
+        from core.telegram_fmt import send_html
+        await send_html(bot, chat_id, text)
 
     # ── Bot Runner ────────────────────────────────────────────────────────────
 

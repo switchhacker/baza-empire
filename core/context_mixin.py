@@ -44,6 +44,17 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PERSONA_SECTIONS = ("IDENTITY.md", "SOUL.md", "MISSION.md", "USER.md")
 _PERSONA_CACHE: dict = {}   # agent_id → (mtime_sum, content)
 
+TELEGRAM_STYLE = """
+## Telegram formatting (house style)
+Your replies render in Telegram with rich text. Write normal markdown — it is converted automatically.
+- Simple answers: 1-3 plain sentences. Do NOT force structure onto chit-chat.
+- Structured answers: start with one short **bold** header line.
+- Status marks: ✅ done · ⚠️ needs attention · ❌ failed · ☐ todo.
+- Use "- " bullets for lists and "- [x] / - [ ]" checklists for multi-step work.
+- Put file paths, commands, and service names in `backticks`.
+- No tables, no nested headers. Keep messages compact.
+"""
+
 
 def _load_persona_files(agent_id: str) -> str:
     """Load and concatenate persona/*.md files for an agent.
@@ -139,8 +150,8 @@ class ContextMixin:
 
         ctx = self.context()
         if ctx:
-            return f"<context>\n{ctx}\n</context>\n\n{base}"
-        return base
+            return f"<context>\n{ctx}\n</context>\n\n{base}{TELEGRAM_STYLE}"
+        return base + TELEGRAM_STYLE
 
     def remember(self, key: str, value: str, category: str = "general"):
         """Persist a memory fact."""

@@ -28,6 +28,7 @@ authorized what and when.
 import os
 import json
 import time
+import html
 import logging
 import urllib.request
 
@@ -59,19 +60,9 @@ def _bot_token_for(agent_id: str) -> str:
 def _send_telegram(token: str, chat_id: str, text: str) -> dict:
     if not token or not chat_id:
         return {"ok": False, "error": "missing token or chat_id"}
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML",
-    }).encode()
-    req = urllib.request.Request(url, data=data,
-                                 headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    from core.telegram_fmt import post_html
+    ok = post_html(token, chat_id, text, already_html=True)
+    return {"ok": ok} if ok else {"ok": False, "error": "telegram send failed (post_html; see logs)"}
 
 
 def _get_updates(token: str, offset: int = 0) -> list:
@@ -135,13 +126,13 @@ def request_approval(agent_id: str, action: str, details: str = "",
 
     pretty_agent = agent_id.replace("_", " ").title()
     msg = (
-        f"<b>{pretty_agent.upper()} — APPROVAL REQUEST</b>\n"
+        f"<b>{html.escape(pretty_agent.upper())} — APPROVAL REQUEST</b>\n"
         f"{'━' * 28}\n\n"
-        f"<b>Action:</b> {action}\n"
-        f"<b>Category:</b> {category}\n"
+        f"<b>Action:</b> {html.escape(action)}\n"
+        f"<b>Category:</b> {html.escape(category)}\n"
     )
     if details:
-        msg += f"\n<b>Details:</b>\n<code>{details[:800]}</code>\n"
+        msg += f"\n<b>Details:</b>\n<code>{html.escape(details[:800])}</code>\n"
     msg += (
         f"\n{'━' * 28}\n"
         f"Reply <b>yes</b> to approve · <b>no</b> to deny\n"
@@ -158,17 +149,17 @@ def request_approval(agent_id: str, action: str, details: str = "",
     reply = _wait_for_reply(token, SERGE_CHAT_ID, timeout)
 
     if reply in _APPROVAL_WORDS:
-        _send_telegram(token, SERGE_CHAT_ID, f"Approved. Executing: {action}")
+        _send_telegram(token, SERGE_CHAT_ID, f"Approved. Executing: {html.escape(action)}")
         logger.info(f"[approval] {agent_id}: APPROVED — {action}")
         _journal(agent_id, action, category, "approved", details)
         return True
     if reply in _DENIAL_WORDS:
-        _send_telegram(token, SERGE_CHAT_ID, f"Denied. Skipping: {action}")
+        _send_telegram(token, SERGE_CHAT_ID, f"Denied. Skipping: {html.escape(action)}")
         logger.info(f"[approval] {agent_id}: DENIED — {action}")
         _journal(agent_id, action, category, "denied", details)
         return False
 
-    _send_telegram(token, SERGE_CHAT_ID, f"Timed out. Skipping: {action}")
+    _send_telegram(token, SERGE_CHAT_ID, f"Timed out. Skipping: {html.escape(action)}")
     logger.info(f"[approval] {agent_id}: TIMEOUT — {action}")
     _journal(agent_id, action, category, "timeout", details)
     return False

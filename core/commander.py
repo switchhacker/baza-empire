@@ -9,6 +9,7 @@ automatically. Collects results and reports a final summary to Serge.
 import os
 import json
 import time
+import html
 import logging
 import asyncio
 import httpx
@@ -187,15 +188,22 @@ class SimonCommander:
             tool_note = f"\n\n[Tool fired: {tool_name}]" if tool_name else ""
             message = (
                 f"[TASK:{task_id}] Simon says:\n\n"
-                f"{instruction}{tool_note}\n\n"
-                f"Report back with: REPORT:{task_id}:<your full report>"
+                f"{html.escape(instruction)}{html.escape(tool_note)}\n\n"
+                f"Report back with: REPORT:{task_id}:&lt;your full report&gt;"
             )
             try:
+                from core.telegram_fmt import chunk_html, html_to_plain
                 async with httpx.AsyncClient(timeout=15) as client:
-                    resp = await client.post(
-                        TELEGRAM_API.format(token=token, method="sendMessage"),
-                        json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
-                    )
+                    for chunk in chunk_html(message):
+                        resp = await client.post(
+                            TELEGRAM_API.format(token=token, method="sendMessage"),
+                            json={"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"},
+                        )
+                        if resp.status_code == 400:
+                            resp = await client.post(
+                                TELEGRAM_API.format(token=token, method="sendMessage"),
+                                json={"chat_id": chat_id, "text": html_to_plain(chunk)},
+                            )
                     results['telegram'] = resp.ok
             except Exception as e:
                 logger.error(f"Telegram dispatch failed for {task_id}: {e}")
@@ -314,26 +322,35 @@ class SimonCommander:
                 parsed = json.loads(report)
                 # Format known tool outputs nicely
                 if tool == 'disk-usage':
-                    report_text = f"<code>{parsed.get('output','')[:400]}</code>"
+                    report_text = f"<code>{html.escape(parsed.get('output','')[:400])}</code>"
                 elif tool == 'docker-status':
                     count = parsed.get('count', 0)
                     containers = ', '.join(c['name'] for c in parsed.get('containers', []))
-                    report_text = f"{count} running: {containers}" if containers else "No containers running"
+                    report_text = html.escape(
+                        f"{count} running: {containers}" if containers else "No containers running"
+                    )
                 else:
-                    report_text = json.dumps(parsed, indent=2)[:400]
+                    report_text = html.escape(json.dumps(parsed, indent=2)[:400])
             except Exception:
-                report_text = report[:400]
-            tool_tag = f" <i>({tool})</i>" if tool != 'none' else ""
-            lines.append(f"<b>{agent_name}{tool_tag}:</b>\n{report_text}\n")
+                report_text = html.escape(report[:400])
+            tool_tag = f" <i>({html.escape(tool)})</i>" if tool != 'none' else ""
+            lines.append(f"<b>{html.escape(agent_name)}{tool_tag}:</b>\n{report_text}\n")
 
         lines.append("<i>Simon standing by.</i>")
         full_report = "\n".join(lines)
 
+        from core.telegram_fmt import chunk_html, html_to_plain
         async with httpx.AsyncClient(timeout=15) as client:
-            await client.post(
-                TELEGRAM_API.format(token=self.simon_token, method="sendMessage"),
-                json={"chat_id": self.serge_chat_id, "text": full_report, "parse_mode": "HTML"}
-            )
+            for chunk in chunk_html(full_report):
+                resp = await client.post(
+                    TELEGRAM_API.format(token=self.simon_token, method="sendMessage"),
+                    json={"chat_id": self.serge_chat_id, "text": chunk, "parse_mode": "HTML"},
+                )
+                if resp.status_code == 400:
+                    resp = await client.post(
+                        TELEGRAM_API.format(token=self.simon_token, method="sendMessage"),
+                        json={"chat_id": self.serge_chat_id, "text": html_to_plain(chunk)},
+                    )
         logger.info(f"Final report for job {job_id} sent to Serge")
 
     def register_agent_chat(self, agent_id: str, chat_id: str) -> None:

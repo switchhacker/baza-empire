@@ -138,42 +138,56 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
+_STRIP_TAG_RE = re.compile(
+    r"</?(b|strong|i|em|u|ins|s|strike|del|code|pre|a|blockquote|tg-spoiler|span)(\s[^<>]*)?>", re.I)
+
+
 def html_to_plain(html_text: str) -> str:
-    """Strip HTML tags + unescape entities — used when Telegram rejects a chunk."""
-    return _html.unescape(re.sub(r"</?[^>]+>", "", html_text)).strip()
+    """Strip Telegram HTML tags + unescape entities — used when Telegram rejects a chunk."""
+    return _html.unescape(_STRIP_TAG_RE.sub("", html_text)).strip()
+
+
+_PRE_OPEN_RE = re.compile(r'<pre>(<code class="language-[\w+-]+">)?')
 
 
 def chunk_html(text: str, limit: int = MAX_LEN) -> list[str]:
-    """Split on line boundaries at <= limit chars; keep <pre> balanced per chunk."""
+    """Split on line boundaries at <= limit chars; keep <pre>[<code>] balanced per chunk."""
     if len(text) <= limit:
         return [text]
-    chunks, cur = [], ""
+    # Reserve room for the closing tags appended to a split chunk PLUS the
+    # reopening tags prepended to the next one — both can land on one chunk.
+    openers = _PRE_OPEN_RE.findall(text)
+    max_opener = max((len("<pre>") + len(code) for code in openers), default=0)
+    reserve = max_opener + len("</code></pre>")
+    eff = max(limit // 2, limit - reserve)
+    chunks, cur = [], None
     for line in text.split("\n"):
-        while len(line) > limit:  # pathological single line — hard split
-            if cur:
+        while len(line) > eff:  # pathological single line — hard split
+            if cur is not None:
                 chunks.append(cur)
-                cur = ""
-            chunks.append(line[:limit])
-            line = line[limit:]
-        cand = (cur + "\n" + line) if cur else line
-        if len(cand) > limit:
+                cur = None
+            chunks.append(line[:eff])
+            line = line[eff:]
+        cand = line if cur is None else cur + "\n" + line
+        if len(cand) > eff and cur is not None:
             chunks.append(cur)
             cur = line
         else:
             cur = cand
-    if cur:
+    if cur is not None:
         chunks.append(cur)
-    # Re-balance <pre> across chunk boundaries
-    out, carry = [], False
+    # Re-balance <pre> (and its optional <code class="language-…">) across chunks
+    out, carry = [], ""
     for c in chunks:
         if carry:
-            c = "<pre>" + c
-        open_pre = len(re.findall(r"<pre\b", c)) - c.count("</pre>")
-        if open_pre > 0:
-            c += "</pre>"
-            carry = True
+            c = carry + c
+        opens = list(_PRE_OPEN_RE.finditer(c))
+        if len(opens) > c.count("</pre>"):
+            code_part = opens[-1].group(1) or ""
+            c += ("</code></pre>" if code_part else "</pre>")
+            carry = "<pre>" + code_part
         else:
-            carry = False
+            carry = ""
         out.append(c)
     return out
 
@@ -188,6 +202,8 @@ async def send_html(bot, chat_id, text, already_html: bool = False, **kwargs):
     html_text = text if already_html else md_to_html(text)
     chunks = chunk_html(html_text)
     for i, chunk in enumerate(chunks):
+        if not chunk.strip():
+            continue
         try:
             await bot.send_message(chat_id=chat_id, text=chunk, parse_mode="HTML", **kwargs)
         except Exception as e:
@@ -210,6 +226,8 @@ def post_html(token: str, chat_id, text: str, already_html: bool = False,
     chunks = chunk_html(html_text)
     ok_all = True
     for i, chunk in enumerate(chunks):
+        if not chunk.strip():
+            continue
         try:
             r = requests.post(url, json={
                 "chat_id": chat_id, "text": chunk, "parse_mode": "HTML",
