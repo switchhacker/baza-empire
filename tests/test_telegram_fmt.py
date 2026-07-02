@@ -231,6 +231,24 @@ def test_send_html_already_html_passthrough():
     asyncio.run(send_html(bot, 123, "<b>x</b>", already_html=True))
     assert bot.sent == [("<b>x</b>", "HTML")]
 
+def test_send_html_falls_back_on_message_too_long():
+    class TooLongBot(StubBot):
+        async def send_message(self, chat_id=None, text=None, parse_mode=None, **kw):
+            if parse_mode == "HTML":
+                raise Exception("Bad Request: message is too long")
+            self.sent.append((text, parse_mode))
+    bot = TooLongBot()
+    asyncio.run(send_html(bot, 1, "**hi** " + "🚀" * 10))
+    assert len(bot.sent) == 1 and bot.sent[0][1] is None
+
+def test_send_html_still_raises_on_network_error():
+    class NetBot(StubBot):
+        async def send_message(self, **kw):
+            raise Exception("Connection refused")
+    import pytest
+    with pytest.raises(Exception):
+        asyncio.run(send_html(NetBot(), 1, "hi"))
+
 
 # ── post_html (sync, monkeypatched requests) ────────────────────────────
 def test_post_html_sends_html_then_falls_back(monkeypatch):
@@ -268,3 +286,9 @@ def test_house_style_in_context_mixin_source():
     src = (ROOT / "core" / "context_mixin.py").read_text()
     assert "TELEGRAM_STYLE" in src
     assert "✅" in src and "☐" in src
+
+
+# ── control marker invariant (task_runner regexes read echoed text) ──────
+def test_control_markers_survive_conversion():
+    line = "DISPATCH:claw_batto:Re-do and save. Use ##SKILL:artifact_save## with a file."
+    assert md_to_html(line) == line
