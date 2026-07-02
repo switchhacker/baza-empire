@@ -5,7 +5,7 @@ Runs every 2 hours via cron. Pulls LIVE data on entire team state,
 project progress, blockers, weather — and tells Serge
 exactly where the empire stands and what Simon is commanding the team to do.
 """
-import os, sys, json, logging, sqlite3, subprocess, datetime, urllib.request
+import os, re, sys, json, logging, sqlite3, subprocess, datetime, urllib.request
 from pathlib import Path
 
 FRAMEWORK_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -316,39 +316,26 @@ def looks_non_english(text: str) -> bool:
     return (suspect / total) > 0.03
 
 
-def strip_markdown(text: str) -> str:
-    import re
-    # Strip qwen/chat-template control tokens that occasionally leak into output
+def _strip_llm_tokens(text: str) -> str:
+    """Drop leaked chat-template tokens without touching markdown.
+
+    post_html renders markdown now, so this must NOT strip #, **, _, etc.
+    It only removes qwen/chat-template control tokens that occasionally
+    leak into model output: <think>...</think> reasoning blocks (whole
+    block, including content — a leaked chain-of-thought shouldn't reach
+    Serge), <tool_call>/</tool_call> tags, and <|...|> special tokens.
+    """
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     text = re.sub(r'</?tool_call>', '', text)
-    text = re.sub(r'</?think>', '', text)
     text = re.sub(r'<\|[^|]*\|>', '', text)
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.+?)\*', r'\1', text)
-    text = re.sub(r'__(.+?)__', r'\1', text)
-    text = re.sub(r'_(.+?)_', r'\1', text)
-    text = re.sub(r'`(.+?)`', r'\1', text)
-    text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
     return text.strip()
 
 def send_telegram(text: str):
-    text = strip_markdown(text)
-    chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
-    for chunk in chunks:
-        payload = json.dumps({"chat_id": SERGE_CHAT_ID, "text": chunk}).encode()
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data=payload, headers={"Content-Type":"application/json"}, method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                result = json.loads(r.read())
-                if result.get("ok"):
-                    log.info("Briefing sent.")
-                else:
-                    log.error(f"Telegram error: {result}")
-        except Exception as e:
-            log.error(f"Telegram send failed: {e}")
+    from core.telegram_fmt import post_html
+    text = _strip_llm_tokens(text)
+    ok = post_html(TELEGRAM_TOKEN, SERGE_CHAT_ID, text)
+    if not ok:
+        print("[briefing] telegram send failed")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 

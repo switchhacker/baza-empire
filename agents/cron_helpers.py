@@ -64,22 +64,17 @@ def ollama_generate(model: str, system_prompt: str, user_prompt: str, max_tokens
 
 
 def send_telegram(message: str, token: str = None, chat_id: str = None):
-    """Send a Telegram message to Serge."""
+    """Send a Telegram message to Serge (markdown → rich HTML, auto-chunked)."""
     tok = token or TELEGRAM_TOKEN
     cid = chat_id or SERGE_CHAT_ID
     if not tok or not cid:
         log.warning("No Telegram token/chat_id configured")
         return
-    # Truncate to Telegram limit
-    if len(message) > 4000:
-        message = message[:3950] + "\n\n...(truncated)"
     try:
-        data = json.dumps({"chat_id": cid, "text": message, "parse_mode": "HTML"}).encode()
-        req = urllib.request.Request(f"https://api.telegram.org/bot{tok}/sendMessage",
-                                     data=data, headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=10)
+        from core.telegram_fmt import post_html
+        post_html(tok, cid, message)
     except Exception as e:
-        log.warning(f"Telegram send failed: {e}")
+        log.error(f"Telegram send failed: {e}")
 
 
 def save_artifact(project_id: str, filename: str, content: str) -> str:
