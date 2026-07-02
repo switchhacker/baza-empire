@@ -97,3 +97,38 @@ def test_knowledge_add_rejects_oversize_value():
     r = run_skill("knowledge_add.py", {"key": "k", "value": "x" * 5000})
     assert r.returncode == 1
     assert "too long" in json.loads(r.stdout)["error"]
+
+
+def test_bin_list_remote_fallback_clean_error(tmp_path):
+    # No local bin DB + unreachable dashboard → clean JSON error, not a traceback
+    r = run_skill("bin_list.py", {}, extra_env={
+        "BAZA_BIN_DB": str(tmp_path / "missing.db"),
+        "BAZA_DASHBOARD_URL": "http://127.0.0.1:1",
+    })
+    assert r.returncode == 1
+    assert "unreachable" in json.loads(r.stdout)["error"]
+
+
+def test_claw_api_blueprint(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.join(REPO_ROOT, "dashboard"))
+    sys.path.insert(0, REPO_ROOT)
+    from flask import Flask
+    import importlib
+    import claw_api
+    importlib.reload(claw_api)
+    from core import claw_review_db
+    # point the module at a temp DB with one finding
+    monkeypatch.setattr(claw_review_db, "DB_PATH", tmp_path / "claw.db")
+    claw_review_db.init_db() if hasattr(claw_review_db, "init_db") else None
+    app = Flask(__name__)
+    app.register_blueprint(claw_api.claw_bp)
+    c = app.test_client()
+    r = c.get("/api/claw/findings?limit=5")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert "findings" in j and "count" in j
+    r2 = c.get("/api/claw/findings?severity=bogus")
+    assert r2.status_code == 400
+    r3 = c.get("/api/claw/findings?counts=1")
+    assert r3.status_code == 200
+    assert "severity_counts" in r3.get_json()
