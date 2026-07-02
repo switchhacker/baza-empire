@@ -110,15 +110,25 @@ def read_crontab():
 
 
 def build_cron_line(agent_id, task):
-    """Render a managed crontab block for one declared task."""
+    """Render a managed crontab block for one declared task.
+
+    - Every invocation is wrapped in `timeout {timeout_min}m` (optional
+      per-task `timeout_min` key, default 30) so a hung cron can't run
+      forever and starve the crontab. `timeout` wraps the interpreter
+      invocation, not the `cd` — matches `cd <fw> && timeout 30m <bin> <script> >> log 2>&1`.
+    - `.sh` scripts run via `bash <script>`; everything else runs via the
+      venv's `PYTHON_BIN`.
+    """
     name = f"{agent_id}_{task['name']}"
     schedule = task["schedule"]
     script = task["script"]
     log = task.get("log", f"logs/{agent_id}_{task['name']}.log")
+    timeout_min = task.get("timeout_min", 30)
     abs_script = os.path.join(REPO_ROOT, script)
     abs_log = os.path.join(REPO_ROOT, log)
+    interpreter = "bash" if script.endswith(".sh") else PYTHON_BIN
     cmd = (
-        f"cd {REPO_ROOT} && {PYTHON_BIN} {abs_script} "
+        f"cd {REPO_ROOT} && timeout {timeout_min}m {interpreter} {abs_script} "
         f">> {abs_log} 2>&1"
     )
     return name, schedule, cmd
