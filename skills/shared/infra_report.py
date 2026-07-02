@@ -13,6 +13,7 @@ import os, sys, json, subprocess, datetime, socket, urllib.request
 TELEGRAM_TOKEN = os.environ.get("SIMON_TELEGRAM_TOKEN", "8259565938:AAFCNLSrw096JALxvgmiBCkgByn0uDyGGMo")
 SERGE_CHAT_ID  = os.environ.get("SERGE_CHAT_ID", "8551331144")
 FRAMEWORK_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, FRAMEWORK_DIR)
 ARTIFACTS_DIR  = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts", "proj-baza-empire")
 REPORT_LOG     = os.path.join(FRAMEWORK_DIR, "logs", "infra_report.log")
 
@@ -88,16 +89,9 @@ def agent_statuses() -> str:
     return "\n".join(lines)
 
 def send_telegram(msg: str):
-    payload = json.dumps({"chat_id": SERGE_CHAT_ID, "text": msg, "parse_mode": "HTML"}).encode()
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read()).get("ok", False)
+        from core.telegram_fmt import post_html
+        return post_html(TELEGRAM_TOKEN, SERGE_CHAT_ID, msg, already_html=True)
     except Exception as e:
         print(f"Telegram error: {e}", file=sys.stderr)
         return False

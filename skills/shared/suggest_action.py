@@ -28,9 +28,12 @@ import os
 import sys
 import json
 import time
+import html
 import urllib.request
 import subprocess
 from datetime import datetime
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 # ── Inputs ────────────────────────────────────────────────────────────────────
 args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
@@ -67,15 +70,9 @@ icon = ICONS.get(category, "💡")
 
 
 def tg_send(text):
-    data = {"chat_id": SERGE_CHAT_ID, "text": text[:4000], "parse_mode": "HTML"}
-    req = urllib.request.Request(
-        f"{API}/sendMessage",
-        data=json.dumps(data).encode(),
-        headers={"Content-Type": "application/json"},
-    )
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
+        from core.telegram_fmt import post_html
+        return {"ok": post_html(BOT_TOKEN, SERGE_CHAT_ID, text, already_html=True)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -107,16 +104,20 @@ def wait_for_reply():
 
 
 # ── Build the suggestion message ──────────────────────────────────────────────
-msg = f"{icon} <b>{PRETTY_AGENT} SUGGESTION</b>\n"
+msg = f"{icon} <b>{html.escape(PRETTY_AGENT)} SUGGESTION</b>\n"
 msg += f"{'━' * 28}\n\n"
-msg += f"<b>Category:</b> {category}\n"
-msg += f"<b>Title:</b> {title}\n\n"
+msg += f"<b>Category:</b> {html.escape(category)}\n"
+msg += f"<b>Title:</b> {html.escape(title)}\n\n"
 if reasoning:
-    msg += f"<b>Why it matters:</b>\n{reasoning}\n\n"
+    msg += f"<b>Why it matters:</b>\n{html.escape(reasoning)}\n\n"
 if proposed_action:
-    msg += f"<b>What I propose:</b>\n{proposed_action}\n\n"
+    msg += f"<b>What I propose:</b>\n{html.escape(proposed_action)}\n\n"
 if auto_execute:
-    msg += f"<b>Auto-execute (if yes):</b>\n<code>{auto_execute[:400]}</code>\n\n"
+    # This is the shell command Serge is approving — the displayed preview
+    # MUST match exactly what subprocess.run() below actually executes.
+    # Only the DISPLAY is escaped/wrapped in <code>; auto_execute itself is
+    # passed to subprocess.run() untouched.
+    msg += f"<b>Auto-execute (if yes):</b>\n<code>{html.escape(auto_execute[:400])}</code>\n\n"
 msg += f"{'━' * 28}\n"
 msg += f"Reply <b>yes</b> to approve · <b>no</b> to drop\n"
 msg += f"<i>Times out in {timeout}s</i>"
@@ -165,21 +166,23 @@ except Exception as e:
 
 # ── Outcome ───────────────────────────────────────────────────────────────────
 if approved:
-    tg_send(f"✓ <b>Approved.</b> Executing: {title}")
+    tg_send(f"✓ <b>Approved.</b> Executing: {html.escape(title)}")
     print("APPROVED")
     if auto_execute:
         try:
+            # auto_execute is passed to subprocess.run() EXACTLY as approved above —
+            # only the result display below is escaped, not what runs.
             proc = subprocess.run(auto_execute, shell=True,
                                   capture_output=True, text=True, timeout=180)
             output = (proc.stdout or proc.stderr)[:1500]
-            tg_send(f"📋 <b>Execution result:</b>\n<pre>{output}</pre>")
+            tg_send(f"📋 <b>Execution result:</b>\n<pre>{html.escape(output)}</pre>")
             print(f"Executed: {output[:500]}")
         except Exception as e:
-            tg_send(f"❌ Execution failed: {e}")
+            tg_send(f"❌ Execution failed: {html.escape(str(e))}")
             print(f"Exec error: {e}")
 elif denied:
-    tg_send(f"✗ <b>Dropped.</b> {title}")
+    tg_send(f"✗ <b>Dropped.</b> {html.escape(title)}")
     print("DENIED")
 else:
-    tg_send(f"⏱ <b>Timed out.</b> Dropped: {title}")
+    tg_send(f"⏱ <b>Timed out.</b> Dropped: {html.escape(title)}")
     print("TIMEOUT")

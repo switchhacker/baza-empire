@@ -53,15 +53,13 @@ except Exception:
 try:
     from dotenv import load_dotenv
     load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../configs/secrets.env"))
-    import urllib.request
     token = os.getenv("TELEGRAM_SIMON_BATELY", "")
     chat_id = os.getenv("SERGE_CHAT_ID", "")
+    from core.telegram_fmt import post_html
     if token and chat_id:
-        msg = f"📋 Research Report: {topic}\nBy: {agent_id}\n\n{findings[:500]}\n\n💬 Was this sufficient? Reply with feedback or 'ok'."
-        data = json.dumps({"chat_id": chat_id, "text": msg}).encode()
-        req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage",
-                                     data=data, headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=10)
+        msg = (f"📋 **Research Report: {topic}**\nBy: {agent_id}\n\n{findings[:500]}\n\n"
+               f"💬 Was this sufficient? Reply with feedback or 'ok'.")
+        post_html(token, chat_id, msg)
 except Exception:
     pass
 
