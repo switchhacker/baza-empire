@@ -154,6 +154,10 @@ def test_action_meta_structure():
     expected_keys = {
         "svc", "ddns_run", "ts_up", "ts_down", "ts_exit_node", "ts_serve", "nic", "dhcp_renew",
         "ddns_timer_enable", "ddns_timer_disable",
+        # Task 10: Cloudflare migration wizard run-actions (fn-style)
+        "wiz_tunnel_create", "wiz_write_config", "wiz_route_dns", "wiz_install_service",
+        # Task 11: firewall actions
+        "ufw_toggle", "ufw_rule",
     }
     assert expected_keys == keys
     for m in meta:
@@ -378,9 +382,10 @@ def test_ddns_timer_enable_writes_unit_when_missing(tmp_path, monkeypatch):
     tee_calls = [(c, t) for c, t in recorded if "tee" in c and _TIMER_PATH in c]
     assert tee_calls, f"tee to {_TIMER_PATH} not called; recorded={recorded}"
     tee_input = tee_calls[0][1]
-    assert "baza-ddns" in tee_input or "DDNS" in tee_input
+    assert "Description=baza DDNS — hourly WAN IP sync to Google Cloud DNS" in tee_input
     assert "OnCalendar=hourly" in tee_input
     assert "RandomizedDelaySec=300" in tee_input
+    assert "WantedBy=timers.target" in tee_input
 
     # daemon-reload must be present
     daemon_reload = [c for c, _ in recorded if "daemon-reload" in c]
@@ -478,3 +483,207 @@ def test_action_meta_includes_timer_actions():
     keys = {m["key"] for m in meta}
     assert "ddns_timer_enable" in keys
     assert "ddns_timer_disable" in keys
+
+
+# ─── Task 11: ufw_toggle + ufw_rule ──────────────────────────────────────────
+
+def test_ufw_toggle_on_argv():
+    argv = network_ops.ACTIONS["ufw_toggle"]["argv"]({"on": True})
+    assert argv == ["sudo", "-n", "ufw", "--force", "enable"]
+
+
+def test_ufw_toggle_off_argv():
+    argv = network_ops.ACTIONS["ufw_toggle"]["argv"]({"on": False})
+    assert argv == ["sudo", "-n", "ufw", "disable"]
+
+
+def test_ufw_toggle_on_is_risky():
+    risk_fn = network_ops.ACTIONS["ufw_toggle"].get("risk_fn")
+    assert risk_fn is not None
+    assert risk_fn({"on": True}) == "risky"
+    assert risk_fn({"on": False}) == "safe"
+
+
+def test_ufw_rule_allow_argv():
+    argv = network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "allow", "port": 8888, "proto": "tcp"})
+    assert argv == ["sudo", "-n", "ufw", "allow", "8888/tcp"]
+
+
+def test_ufw_rule_deny_argv():
+    argv = network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "deny", "port": 22, "proto": "udp"})
+    assert argv == ["sudo", "-n", "ufw", "deny", "22/udp"]
+
+
+def test_ufw_rule_delete_allow_argv():
+    argv = network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "delete-allow", "port": 8888, "proto": "tcp"})
+    assert argv == ["sudo", "-n", "ufw", "delete", "allow", "8888/tcp"]
+
+
+def test_ufw_rule_delete_deny_argv():
+    argv = network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "delete-deny", "port": 443, "proto": "tcp"})
+    assert argv == ["sudo", "-n", "ufw", "delete", "deny", "443/tcp"]
+
+
+def test_ufw_rule_port_too_high_raises():
+    with pytest.raises(ValueError):
+        network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "allow", "port": 99999, "proto": "tcp"})
+
+
+def test_ufw_rule_port_zero_raises():
+    with pytest.raises(ValueError):
+        network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "allow", "port": 0, "proto": "tcp"})
+
+
+def test_ufw_rule_bad_proto_raises():
+    with pytest.raises(ValueError):
+        network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "allow", "port": 80, "proto": "icmp"})
+
+
+def test_ufw_rule_bad_verb_raises():
+    with pytest.raises(ValueError):
+        network_ops.ACTIONS["ufw_rule"]["argv"]({"verb": "block", "port": 80, "proto": "tcp"})
+
+
+def test_ufw_rule_is_safe():
+    assert network_ops.ACTIONS["ufw_rule"]["risk"] == "safe"
+
+
+def test_action_meta_includes_ufw_actions():
+    meta = network_ops.action_meta()
+    keys = {m["key"] for m in meta}
+    assert "ufw_toggle" in keys
+    assert "ufw_rule" in keys
+
+
+# ─── Task 12: run_diag diagnostics toolbox ───────────────────────────────────
+
+def test_diag_bad_target_raises():
+    """target with shell metachars raises ValueError."""
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("ping", "a.com; reboot", {})
+
+
+def test_diag_bad_target_space_raises():
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("traceroute", "host name", {})
+
+
+def test_diag_bad_target_semicolon_raises():
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("dig", "host;bad", {})
+
+
+def test_diag_ping_argv(tmp_path, monkeypatch):
+    """ping builds correct argv with default count=4."""
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "pong", "")))
+    r = network_ops.run_diag("ping", "8.8.8.8", {}, db_path=db)
+    assert r["ok"] is True
+    assert recorded[0] == ["ping", "-c", "4", "-W", "2", "8.8.8.8"]
+
+
+def test_diag_ping_custom_count(tmp_path, monkeypatch):
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "", "")))
+    network_ops.run_diag("ping", "1.1.1.1", {"count": 3}, db_path=db)
+    assert recorded[0][2] == "3"
+
+
+def test_diag_ping_count_too_high_raises():
+    with pytest.raises(ValueError, match="count"):
+        network_ops.run_diag("ping", "1.1.1.1", {"count": 50})
+
+
+def test_diag_ping_count_zero_raises():
+    with pytest.raises(ValueError, match="count"):
+        network_ops.run_diag("ping", "1.1.1.1", {"count": 0})
+
+
+def test_diag_traceroute_argv(tmp_path, monkeypatch):
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=45: (recorded.append(cmd) or (0, "", "")))
+    network_ops.run_diag("traceroute", "ahb123.com", {}, db_path=db)
+    assert recorded[0] == ["traceroute", "-w", "2", "-m", "20", "ahb123.com"]
+
+
+def test_diag_dig_argv(tmp_path, monkeypatch):
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "1.2.3.4", "")))
+    r = network_ops.run_diag("dig", "ahb123.com", {"rtype": "A"}, db_path=db)
+    assert recorded[0] == ["dig", "+short", "ahb123.com", "A"]
+    assert r["ok"] is True
+
+
+def test_diag_dig_bad_rtype_raises():
+    with pytest.raises(ValueError, match="rtype"):
+        network_ops.run_diag("dig", "ahb123.com", {"rtype": "HACK"})
+
+
+def test_diag_curl_argv(tmp_path, monkeypatch):
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "HTTP/2 200", "")))
+    network_ops.run_diag("curl", "https://ahb123.com", {}, db_path=db)
+    assert recorded[0] == ["curl", "-sSI", "--max-time", "8", "https://ahb123.com"]
+
+
+def test_diag_curl_bad_scheme_raises():
+    with pytest.raises(ValueError, match="url"):
+        network_ops.run_diag("curl", "ftp://ahb123.com", {})
+
+
+def test_diag_curl_shell_metachars_raises():
+    with pytest.raises(ValueError, match="url"):
+        network_ops.run_diag("curl", "http://ahb123.com; rm -rf /", {})
+
+
+def test_diag_port_argv(tmp_path, monkeypatch):
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "", "succeeded")))
+    network_ops.run_diag("port", "ahb123.com", {"port": 443}, db_path=db)
+    assert recorded[0] == ["nc", "-z", "-v", "-w", "3", "ahb123.com", "443"]
+
+
+def test_diag_port_too_high_raises():
+    with pytest.raises(ValueError, match="port"):
+        network_ops.run_diag("port", "ahb123.com", {"port": 70000})
+
+
+def test_diag_port_zero_raises():
+    with pytest.raises(ValueError, match="port"):
+        network_ops.run_diag("port", "ahb123.com", {"port": 0})
+
+
+def test_diag_unknown_tool_raises():
+    with pytest.raises(ValueError, match="tool"):
+        network_ops.run_diag("nmap", "ahb123.com", {})
+
+
+def test_diag_result_shape(tmp_path, monkeypatch):
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (0, "ok", ""))
+    r = network_ops.run_diag("dig", "google.com", {"rtype": "MX"}, db_path=db)
+    assert set(r.keys()) >= {"ok", "out", "err", "rc"}
+    assert r["ok"] is True
+
+
+def test_diag_audited(tmp_path, monkeypatch):
+    """Each diag call is audited as diag_<tool>."""
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (0, "out", ""))
+    network_ops.run_diag("ping", "8.8.8.8", {"count": 2}, db_path=db)
+    rows = network_db.recent_audit(db_path=db)
+    assert rows[0]["action"] == "diag_ping"

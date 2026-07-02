@@ -289,3 +289,101 @@ def test_http_status_other_error():
     with patch('urllib.request.urlopen', side_effect=Exception("Connection timeout")):
         status = np._http_status("https://example.com", timeout=5)
     assert status is None
+
+
+# ── Task 11: parse_ufw + probe_firewall ───────────────────────────────────────
+
+UFW_ACTIVE = """\
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere
+8888/tcp                   ALLOW IN    Anywhere
+41641/udp                  ALLOW IN    Anywhere
+22/tcp (v6)                ALLOW IN    Anywhere (v6)
+"""
+
+UFW_INACTIVE = """\
+Status: inactive
+"""
+
+UFW_MISSING = ""  # empty / rc!=0 path
+
+
+def test_parse_ufw_active():
+    r = np.parse_ufw(UFW_ACTIVE)
+    assert r["present"] is True
+    assert r["active"] is True
+    assert isinstance(r["rules"], list)
+    assert len(r["rules"]) >= 3
+    # Rules should include the table lines with ports
+    assert any("22/tcp" in rule for rule in r["rules"])
+
+
+def test_parse_ufw_inactive():
+    r = np.parse_ufw(UFW_INACTIVE)
+    assert r["present"] is True
+    assert r["active"] is False
+    assert isinstance(r["rules"], list)
+
+
+def test_parse_ufw_missing():
+    """Empty/missing text → present=False, active=False, rules=[]."""
+    r = np.parse_ufw(UFW_MISSING)
+    assert r["present"] is False
+    assert r["active"] is False
+    assert r["rules"] == []
+
+
+def test_probe_firewall_shape(monkeypatch):
+    """probe_firewall returns correct shape when ufw is present and active."""
+    monkeypatch.setattr(np, "_run", lambda cmd, timeout=10: (0, UFW_ACTIVE, ""))
+    r = np.probe_firewall()
+    assert r["present"] is True
+    assert r["active"] is True
+    assert isinstance(r["rules"], list)
+
+
+def test_probe_firewall_absent_falls_back_to_iptables(monkeypatch):
+    """When ufw rc!=0, falls back to iptables -S; present=False, active=None."""
+    IPTABLES_OUT = "-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n"
+
+    def fake_run(cmd, timeout=10):
+        if "ufw" in cmd:
+            return (1, "", "ufw: command not found")
+        if "iptables" in cmd:
+            return (0, IPTABLES_OUT, "")
+        return (-1, "", "")
+
+    monkeypatch.setattr(np, "_run", fake_run)
+    r = np.probe_firewall()
+    assert r["present"] is False
+    # active is None or "unknown" when ufw absent
+    assert r["active"] in (None, False, "unknown")
+    assert isinstance(r["rules"], list)
+    assert any("INPUT" in rule or "ACCEPT" in rule for rule in r["rules"])
+
+
+def test_probe_firewall_never_raises(monkeypatch):
+    """probe_firewall never raises even when everything fails."""
+    monkeypatch.setattr(np, "_run", lambda cmd, timeout=10: (_ for _ in ()).throw(RuntimeError("boom")))
+    # Should not raise
+    try:
+        r = np.probe_firewall()
+        assert isinstance(r, dict)
+    except Exception as e:
+        raise AssertionError(f"probe_firewall raised: {e}")
+
+
+def test_status_includes_firewall():
+    """status() dict must contain a 'firewall' key."""
+    s = np.status()
+    assert "firewall" in s, "status() missing 'firewall' key"
+    fw = s["firewall"]
+    assert "present" in fw
+    assert "active" in fw
+    assert "rules" in fw
