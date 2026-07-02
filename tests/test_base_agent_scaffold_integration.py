@@ -8,9 +8,12 @@ from core import skill_registry as reg
 from core import skill_selector
 
 
-def test_scaffold_disabled_by_default():
+def test_scaffold_enabled_fleet_wide():
+    # Flipped on 2026-07-01 (Serge: "make the agents more capable"). If this
+    # fails, someone turned the scaffold off — that should be a deliberate
+    # decision, not config drift.
     scaffold_config.reload()
-    assert scaffold_config.is_enabled("phil_hass") is False
+    assert scaffold_config.is_enabled("phil_hass") is True
 
 
 def test_selector_block_built_from_manifest(tmp_path):

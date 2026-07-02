@@ -158,3 +158,103 @@ def test_preprocess_with_edits_noop_returns_source(render_mod, tmp_path):
     src.write_bytes(b"fake")
     out = render_mod.preprocess_with_edits(str(src), {})
     assert out == str(src)
+
+
+# ── Advanced edit ops (flip / temperature / hue / sharpen / vignette) ────────
+
+@pytest.fixture()
+def studio_mod():
+    sys.path.insert(0, os.path.join(REPO_ROOT, "dashboard"))
+    if "social_studio" in sys.modules:
+        del sys.modules["social_studio"]
+    import social_studio
+    yield social_studio
+
+
+def test_edits_filter_chain_flips(render_mod):
+    chain = render_mod.build_edits_filter_chain({"flip_h": True, "flip_v": True})
+    assert "hflip" in chain
+    assert "vflip" in chain
+
+
+def test_edits_filter_chain_flip_false_skipped(render_mod):
+    chain = render_mod.build_edits_filter_chain({"flip_h": False})
+    assert "hflip" not in chain
+
+
+def test_edits_filter_chain_temperature_warm(render_mod):
+    chain = render_mod.build_edits_filter_chain({"temperature": 1.0})
+    # warm = lower Kelvin target
+    assert "colortemperature=temperature=4500" in chain
+
+
+def test_edits_filter_chain_temperature_cool(render_mod):
+    chain = render_mod.build_edits_filter_chain({"temperature": -1.0})
+    assert "colortemperature=temperature=8500" in chain
+
+
+def test_edits_filter_chain_hue(render_mod):
+    chain = render_mod.build_edits_filter_chain({"hue": 45})
+    assert "hue=h=45" in chain
+
+
+def test_edits_filter_chain_sharpen_positive(render_mod):
+    chain = render_mod.build_edits_filter_chain({"sharpen": 0.5})
+    assert "unsharp=5:5:1.00" in chain
+
+
+def test_edits_filter_chain_sharpen_negative_blurs(render_mod):
+    chain = render_mod.build_edits_filter_chain({"sharpen": -0.5})
+    assert "unsharp=5:5:-1.00" in chain
+
+
+def test_edits_filter_chain_vignette(render_mod):
+    chain = render_mod.build_edits_filter_chain({"vignette": 0.6})
+    assert "vignette=angle=" in chain
+
+
+def test_edits_filter_chain_advanced_order(render_mod):
+    chain = render_mod.build_edits_filter_chain({
+        "rotate": 90, "flip_h": True, "brightness": 0.1,
+        "temperature": 0.5, "hue": 10, "sharpen": 0.5, "vignette": 0.3,
+    })
+    rot = chain.find("transpose=")
+    flip = chain.find("hflip")
+    eq = chain.find("eq=")
+    temp = chain.find("colortemperature=")
+    hue = chain.find("hue=h=")
+    sharp = chain.find("unsharp=")
+    vig = chain.find("vignette=")
+    assert 0 <= rot < flip < eq < temp < hue < sharp < vig
+
+
+def test_normalize_edits_new_keys(studio_mod):
+    out = studio_mod._normalize_edits({
+        "flip_h": True, "flip_v": 1,
+        "temperature": 0.4, "hue": 33.0, "sharpen": -0.3, "vignette": 0.7,
+    })
+    assert out["flip_h"] is True
+    assert out["flip_v"] is True
+    assert out["temperature"] == pytest.approx(0.4)
+    assert out["hue"] == pytest.approx(33.0)
+    assert out["sharpen"] == pytest.approx(-0.3)
+    assert out["vignette"] == pytest.approx(0.7)
+
+
+def test_normalize_edits_new_keys_clamped(studio_mod):
+    out = studio_mod._normalize_edits({
+        "temperature": 5, "hue": 999, "sharpen": -9, "vignette": 3,
+    })
+    assert out["temperature"] == 1.0
+    assert out["hue"] == 180.0
+    assert out["sharpen"] == -1.0
+    assert out["vignette"] == 1.0
+
+
+def test_normalize_edits_new_keys_zero_dropped(studio_mod):
+    out = studio_mod._normalize_edits({
+        "flip_h": False, "flip_v": 0,
+        "temperature": 0, "hue": 0, "sharpen": 0.0, "vignette": 0,
+    })
+    for k in ("flip_h", "flip_v", "temperature", "hue", "sharpen", "vignette"):
+        assert k not in out
