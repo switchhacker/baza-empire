@@ -9,6 +9,7 @@ Every cron script imports this for common functions:
   - DB access
 """
 import os, sys, json, subprocess, datetime, urllib.request, sqlite3, logging
+from contextlib import contextmanager
 
 FRAMEWORK_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, FRAMEWORK_DIR)
@@ -129,3 +130,206 @@ def today():
 
 def now():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Routing layer (Task 4 of the cron-improvements plan): heartbeats, quiet
+# hours, delta-suppressed reports, deduped alerts. Built on core/cron_health_db.py
+# (Task 1). All cron_health_db access goes through _chdb() so registry
+# failures (DB locked, disk full, whatever) never break a cron that's
+# otherwise doing real work -- they're logged and swallowed at each call
+# site, matching this file's existing send_telegram()/publish_event() style.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _chdb():
+    """Deferred import of core.cron_health_db (house style in this file: core.*
+    imports are deferred per-call, see send_telegram/publish_event/log_activity
+    above). Re-resolved from sys.modules on every call so tests that reimport
+    core.cron_health_db against a fresh tmp DB are picked up without also
+    needing to reimport this module."""
+    from core import cron_health_db
+    return cron_health_db
+
+
+@contextmanager
+def cron_run(name: str):
+    """Heartbeat context manager for a cron script's body.
+
+    Records a cron_runs row (record_run_start) before the body runs and
+    closes it out (record_run_end) after -- status='ok' on a clean exit,
+    status='error' with the exception message (truncated to 500 chars) if
+    the body raises. The body's exception is always re-raised afterward;
+    this context manager never masks a cron's exit code/failure. A
+    SystemExit with code None/0 is treated as a normal ('ok') exit rather
+    than an error, since that's just how a cron script chooses to stop.
+
+    cron_health_db itself failing (record_run_start/record_run_end raising)
+    is logged as a warning and swallowed -- a registry hiccup must never
+    prevent the wrapped cron body from running or from propagating its own
+    exception.
+
+    Usage:
+        with cron_run("infra_health"):
+            ... cron body ...
+    """
+    run_id = None
+    try:
+        run_id = _chdb().record_run_start(name)
+    except Exception as e:
+        log.warning(f"cron_health_db.record_run_start failed for {name!r}: {e}")
+        run_id = None
+
+    try:
+        yield
+    except BaseException as exc:
+        if isinstance(exc, SystemExit):
+            code = exc.code
+            is_ok = code is None or code == 0
+            status = "ok" if is_ok else "error"
+            err = None if is_ok else f"SystemExit({code!r})"
+        else:
+            status = "error"
+            err = str(exc)[:500]
+        if run_id is not None:
+            try:
+                _chdb().record_run_end(run_id, status, error=err)
+            except Exception as e2:
+                log.warning(f"cron_health_db.record_run_end failed for {name!r}: {e2}")
+        raise
+    else:
+        if run_id is not None:
+            try:
+                _chdb().record_run_end(run_id, "ok")
+            except Exception as e:
+                log.warning(f"cron_health_db.record_run_end failed for {name!r}: {e}")
+
+
+def in_quiet_hours(now: datetime.datetime | None = None) -> bool:
+    """True if `now` (default: current local time) falls inside the quiet-hours
+    window from env BAZA_QUIET_HOURS ("HH:MM-HH:MM", default "21:00-06:30").
+    Handles windows that wrap past midnight (start > end, e.g. the default).
+    Start is inclusive, end is exclusive. Malformed env values degrade to
+    "never quiet" (logged) rather than raising.
+    """
+    now = now or datetime.datetime.now()
+    spec = os.getenv("BAZA_QUIET_HOURS", "21:00-06:30")
+    try:
+        start_s, end_s = spec.split("-")
+        start_h, start_m = (int(x) for x in start_s.split(":"))
+        end_h, end_m = (int(x) for x in end_s.split(":"))
+        start_t = datetime.time(start_h, start_m)
+        end_t = datetime.time(end_h, end_m)
+    except Exception:
+        log.warning(f"Bad BAZA_QUIET_HOURS={spec!r}, treating as never-quiet")
+        return False
+
+    t = now.time()
+    if start_t <= end_t:
+        return start_t <= t < end_t
+    return t >= start_t or t < end_t
+
+
+def _next_quiet_hours_end(now: datetime.datetime | None = None) -> datetime.datetime:
+    """The next datetime the quiet-hours window (BAZA_QUIET_HOURS) ends --
+    today's end time if it hasn't passed yet, else tomorrow's. Used as the
+    release_after for FYIs queued while in_quiet_hours() is True."""
+    now = now or datetime.datetime.now()
+    spec = os.getenv("BAZA_QUIET_HOURS", "21:00-06:30")
+    try:
+        _, end_s = spec.split("-")
+        end_h, end_m = (int(x) for x in end_s.split(":"))
+    except Exception:
+        end_h, end_m = 6, 30
+    end_today = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    if now < end_today:
+        return end_today
+    return end_today + datetime.timedelta(days=1)
+
+
+def send_report(cron_name: str, message: str, priority: str = "fyi",
+                delta_key: str | None = None, token=None, chat_id=None) -> bool:
+    """Route a routine cron report.
+
+    - delta_key set and the message body is unchanged since the last send
+      (per cron_health_db.delta_changed) -> suppress, return False.
+    - priority == "alert" -> send immediately via send_telegram, return True.
+    - priority == "fyi" (default) during quiet hours -> queue via
+      cron_health_db.enqueue_fyi (release_after = next quiet-hours end),
+      return False.
+    - priority == "fyi" outside quiet hours -> send immediately, return True.
+
+    Never raises (mirrors send_telegram's swallow-and-log style). Returns
+    whether the message was sent right now (queueing/suppression -> False).
+    """
+    try:
+        if delta_key:
+            try:
+                changed = _chdb().delta_changed(delta_key, message)
+            except Exception as e:
+                log.warning(f"cron_health_db.delta_changed failed for {delta_key!r}: {e}")
+                changed = True  # fail open: a DB hiccup shouldn't silently eat a report
+            if not changed:
+                log.info(f"send_report: {cron_name!r} unchanged (delta_key={delta_key!r}), suppressing")
+                return False
+
+        if priority == "alert":
+            send_telegram(message, token=token, chat_id=chat_id)
+            return True
+
+        # priority == "fyi" (or any other value defaults to fyi routing)
+        if in_quiet_hours():
+            release_after = _next_quiet_hours_end().isoformat(timespec="seconds")
+            try:
+                _chdb().enqueue_fyi(cron_name, message, release_after)
+            except Exception as e:
+                log.warning(f"cron_health_db.enqueue_fyi failed for {cron_name!r}: {e}")
+            return False
+
+        send_telegram(message, token=token, chat_id=chat_id)
+        return True
+    except Exception as e:
+        log.error(f"send_report failed for {cron_name!r}: {e}")
+        return False
+
+
+def send_alert(cron_name: str, message: str, alert_key: str,
+              renotify_hours: float | None = None, buttons: bool = True,
+              token=None, chat_id=None) -> bool:
+    """Send a deduped alert.
+
+    Dedup/renotify/ack/snooze state lives in cron_health_db's
+    cron_alert_state, keyed by alert_key (via should_alert). The message's
+    first line is stashed in that row's meta as {"title": ...} for a later
+    task to surface on inline reply buttons. Sends via
+    core.telegram_fmt.post_html (not the send_telegram wrapper) so the
+    actual-delivery boolean can be returned to the caller.
+
+    `buttons` is accepted for forward compatibility with a later task that
+    wires up inline Telegram buttons (ack/snooze) on alerts -- it has no
+    effect yet; alerts are sent with no reply_markup until then.
+
+    Never raises. Returns True iff a message was actually sent just now.
+    """
+    try:
+        title = message.splitlines()[0] if message else ""
+        try:
+            send_now, _row_id = _chdb().should_alert(alert_key, renotify_hours, {"title": title})
+        except Exception as e:
+            log.warning(f"cron_health_db.should_alert failed for {alert_key!r}: {e}")
+            send_now = True  # fail open: prefer a possible dup over a dropped alert
+
+        if not send_now:
+            log.info(f"send_alert: {cron_name!r}/{alert_key!r} deduped, not sending")
+            return False
+
+        tok = token or TELEGRAM_TOKEN
+        cid = chat_id or SERGE_CHAT_ID
+        try:
+            from core.telegram_fmt import post_html
+            return bool(post_html(tok, cid, message))
+        except Exception as e:
+            log.error(f"send_alert: telegram send failed for {cron_name!r}: {e}")
+            return False
+    except Exception as e:
+        log.error(f"send_alert failed for {cron_name!r}: {e}")
+        return False
