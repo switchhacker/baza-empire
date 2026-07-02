@@ -495,9 +495,13 @@ def _normalize_edits(raw: dict) -> dict:
             out["rotate"] = rot
     except (TypeError, ValueError):
         pass
-    for k, lo, hi in (("brightness", -1.0, 1.0),
-                       ("contrast",   -1.0, 1.0),
-                       ("saturation", -1.0, 1.0)):
+    for k, lo, hi in (("brightness",  -1.0, 1.0),
+                       ("contrast",    -1.0, 1.0),
+                       ("saturation",  -1.0, 1.0),
+                       ("temperature", -1.0, 1.0),
+                       ("sharpen",     -1.0, 1.0),
+                       ("hue",       -180.0, 180.0),
+                       ("vignette",     0.0, 1.0)):
         v = raw.get(k)
         if v is None:
             continue
@@ -507,6 +511,9 @@ def _normalize_edits(raw: dict) -> dict:
                 out[k] = fv
         except (TypeError, ValueError):
             continue
+    for k in ("flip_h", "flip_v"):
+        if raw.get(k):
+            out[k] = True
     f = raw.get("filter")
     if f and f in ALLOWED_FILTER_PRESETS and f != "none":
         out["filter"] = f

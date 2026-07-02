@@ -137,7 +137,12 @@ def build_edits_filter_chain(edits: dict) -> str:
     Supported keys:
       crop: {x, y, w, h}      → crop=W:H:X:Y
       rotate: float degrees   → ±90/180/270 use transpose; other angles use rotate=
+      flip_h / flip_v: bool   → hflip / vflip
       brightness/contrast/saturation: -1..1 → eq=brightness=:contrast=:saturation=
+      temperature: -1..1      → colortemperature (warm = lower Kelvin)
+      hue: -180..180 degrees  → hue=h=
+      sharpen: -1..1          → unsharp (negative softens)
+      vignette: 0..1          → vignette=angle=
       filter: cinematic/vibrant/moody/bw/warm → lut3d=<file>
     """
     if not edits:
@@ -167,6 +172,10 @@ def build_edits_filter_chain(edits: dict) -> str:
             parts.append(
                 f"rotate={rad:.6f}:ow=rotw({rad:.6f}):oh=roth({rad:.6f}):c=black"
             )
+    if edits.get("flip_h"):
+        parts.append("hflip")
+    if edits.get("flip_v"):
+        parts.append("vflip")
     eq_parts = []
     b = edits.get("brightness")
     c = edits.get("contrast")
@@ -182,6 +191,21 @@ def build_edits_filter_chain(edits: dict) -> str:
         eq_parts.append(f"saturation={1.0 + float(s):.3f}")
     if eq_parts:
         parts.append("eq=" + ":".join(eq_parts))
+    t = edits.get("temperature")
+    if isinstance(t, (int, float)) and abs(t) > 0.001:
+        # 6500K neutral; +1 (warm) → 4500K, -1 (cool) → 8500K
+        parts.append(f"colortemperature=temperature={int(round(6500 - float(t) * 2000))}")
+    h = edits.get("hue")
+    if isinstance(h, (int, float)) and abs(h) > 0.5:
+        parts.append(f"hue=h={float(h):g}")
+    sh = edits.get("sharpen")
+    if isinstance(sh, (int, float)) and abs(sh) > 0.001:
+        # unsharp luma amount: -2 (blur) .. 5 (sharpen); map -1..1 → -2..2
+        parts.append(f"unsharp=5:5:{float(sh) * 2:.2f}")
+    v = edits.get("vignette")
+    if isinstance(v, (int, float)) and v > 0.001:
+        # angle PI/2 is the strongest vignette ffmpeg allows
+        parts.append(f"vignette=angle={min(float(v), 1.0) * math.pi / 2:.4f}")
     f = edits.get("filter")
     if f and f != "none":
         lut_path = os.path.join(_LUT_DIR, f"{f}.cube")

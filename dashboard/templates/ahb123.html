@@ -728,8 +728,9 @@
   .ss-grid { display:grid; grid-template-columns: 320px 1fr 340px; gap: 12px; }
   @media (max-width: 1200px) { .ss-grid { grid-template-columns: 1fr; } }
   .ss-card { background:#0e0e1e; border:1px solid #1a1a2e; border-radius:12px; padding:12px; }
-  .ss-thumb { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:8px; cursor:pointer; }
-  .ss-thumb.selected { outline:3px solid #10b981; }
+  .ss-thumb { width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:6px; cursor:pointer; }
+  .ss-thumb.selected { outline:2px solid #10b981; outline-offset:-2px; }
+  .ss-source-item .ss-cap { font-size:9px; color:#666; margin-top:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ss-platform-tabs { display:flex; gap:6px; margin-bottom:8px; }
   .ss-platform-tab { padding:6px 10px; border:1px solid #1a1a2e; border-radius:6px; font-size:11px; cursor:pointer; color:#aaa; background:#070712; }
   .ss-platform-tab.active { background:#10b981; color:#0a0a18; border-color:#10b981; }
@@ -738,6 +739,9 @@
   .ss-preview-shell.ig_feed_square { aspect-ratio: 1/1; }
   .ss-preview-shell.ig_feed_portrait { aspect-ratio: 4/5; }
   .ss-preview-shell canvas, .ss-preview-shell video, .ss-preview-shell img { width:100%; height:100%; object-fit:cover; display:block; }
+  .ss-sel-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px; display:block; }
+  .ss-sel-label select { margin-top:2px; }
+  .ss-group-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin:10px 0 4px; }
   .ss-status-pill { padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; text-transform:uppercase; }
   .ss-pill-draft { background:#1f2937; color:#9ca3af; }
   .ss-pill-pending_review { background:#7c2d12; color:#fdba74; }
@@ -20394,6 +20398,13 @@ window.SocialStudio = window.SocialStudio || {
     if (name === 'social') SocialStudio.init();
     return r;
   };
+  // ?tab=social deep links run the page-level init() before this wrapper
+  // exists, so the pane is already active but never initialized. Defer the
+  // catch-up past parse so the composer/library modules exist when it runs.
+  setTimeout(() => {
+    const pane = document.getElementById('tab-social');
+    if (pane && pane.classList.contains('active')) SocialStudio.init();
+  }, 0);
 })();
 
 SocialStudio.modules.composer = (function(){
@@ -20452,17 +20463,17 @@ SocialStudio.modules.composer = (function(){
         ? `onclick="SocialStudio.modules.composer.toggle(${s.id})"`
         : `onclick="SocialStudio.modules.composer.importAndToggle(${idx})"`;
       const editBtn = isComposer
-        ? `<button class="ss-edit-btn" title="Edit (crop/rotate/adjust)" onclick="event.stopPropagation();SocialStudio.modules.imageEditor.open(${s.id})" style="position:absolute;top:2px;right:2px;background:rgba(7,7,18,0.85);border:1px solid #2a2a4a;color:#fff;font-size:10px;width:22px;height:22px;border-radius:4px;cursor:pointer;line-height:1">&#x270F;&#xFE0F;</button>`
+        ? `<button class="ss-edit-btn" title="Edit (crop/rotate/adjust)" onclick="event.stopPropagation();SocialStudio.modules.imageEditor.open(${s.id})" style="position:absolute;top:2px;right:2px;background:rgba(7,7,18,0.85);border:1px solid #2a2a4a;color:#fff;font-size:9px;width:18px;height:18px;border-radius:4px;cursor:pointer;line-height:1;padding:0">&#x270F;&#xFE0F;</button>`
         : '';
       return `
-        <div class="ss-source-item" data-idx="${idx}" style="position:relative">
+        <div class="ss-source-item" data-idx="${idx}" style="position:relative" title="${_esc(s.caption||s.sub_path||'')}">
           ${_originBadge(s.origin)}
           ${editBtn}
           <img class="ss-thumb${selected ? ' selected' : ''}"
                src="${thumbUrl(_serveTokenFor(s))}"
                onerror="this.style.opacity='0.3'"
                loading="lazy" ${clickAttr}>
-          <div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc((s.caption||s.sub_path||'').slice(0,40))}</div>
+          <div class="ss-cap">${_esc((s.caption||s.sub_path||'').slice(0,40))}</div>
         </div>
       `;
     }).join('');
@@ -20667,31 +20678,75 @@ SocialStudio.modules.composer = (function(){
     });
   }
 
-  async function aiCaption() {
-    const r = await fetch('/api/ahb/social/ai/caption', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        source_ids: state.shotList, platform: state.activePlatform,
-        tone: document.getElementById('ss-tone').value,
-        length: document.getElementById('ss-length').value,
-        style: document.getElementById('ss-style').value,
-      }),
-    });
-    const j = await r.json();
-    document.getElementById('ss-caption-' + state.activePlatform).value = j.caption || '';
+  async function aiCaption(quiet) {
+    const tid = quiet ? null : SocialStudio.modules.toast.progress('Writing caption…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/caption', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          source_ids: state.shotList, platform: state.activePlatform,
+          tone: document.getElementById('ss-tone').value,
+          length: document.getElementById('ss-length').value,
+          style: document.getElementById('ss-style').value,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Caption failed');
+      document.getElementById('ss-caption-' + state.activePlatform).value = j.caption || '';
+      if (tid) SocialStudio.modules.toast.resolve(tid, 'success', 'Caption ready');
+    } catch (e) {
+      if (tid) SocialStudio.modules.toast.resolve(tid, 'error', e.message);
+      throw e;
+    }
   }
 
-  async function aiHashtags() {
-    const r = await fetch('/api/ahb/social/ai/hashtags', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
-        platform: state.activePlatform,
-        count: 18,
-      }),
+  async function aiHashtags(quiet) {
+    const tid = quiet ? null : SocialStudio.modules.toast.progress('Picking hashtags…');
+    try {
+      const r = await fetch('/api/ahb/social/ai/hashtags', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+          platform: state.activePlatform,
+          count: 18,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'Hashtags failed');
+      document.getElementById('ss-hashtags-' + state.activePlatform).value = (j.hashtags || []).join(' ');
+      if (tid) SocialStudio.modules.toast.resolve(tid, 'success', 'Hashtags ready');
+    } catch (e) {
+      if (tid) SocialStudio.modules.toast.resolve(tid, 'error', e.message);
+      throw e;
+    }
+  }
+
+  async function aiAutoWrite() {
+    if (!state.shotList.length) {
+      SocialStudio.modules.toast.info('Pick media at left first — then Auto-write.');
+      return;
+    }
+    const tid = SocialStudio.modules.toast.progress('Auto-writing: caption…');
+    try {
+      await aiCaption(true);
+      SocialStudio.modules.toast.update && SocialStudio.modules.toast.update(tid, 'Auto-writing: hashtags…');
+      await aiHashtags(true);
+      SocialStudio.modules.toast.resolve(tid, 'success', 'Caption + hashtags written — tweak them, add a 🪝 Hook, then Render.');
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Auto-write: ' + e.message);
+    }
+  }
+
+  function editFirstShot() {
+    const first = state.shotList.find(item => {
+      const id = typeof item === 'object' ? item.id : item;
+      return id != null;
     });
-    const j = await r.json();
-    document.getElementById('ss-hashtags-' + state.activePlatform).value = (j.hashtags || []).join(' ');
+    if (!first) {
+      SocialStudio.modules.toast.info('Pick media at left first.');
+      return;
+    }
+    SocialStudio.modules.imageEditor.open(typeof first === 'object' ? first.id : first);
   }
 
   async function aiHooks() {
@@ -20974,16 +21029,47 @@ SocialStudio.modules.composer = (function(){
   }
 
   async function aiScore() {
-    const r = await fetch('/api/ahb/social/ai/score', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        caption: document.getElementById('ss-caption-' + state.activePlatform).value,
-        hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
-        platform: state.activePlatform,
-      }),
-    });
-    const j = await r.json();
-    alert(`Score: ${j.score}/100\n\n${j.notes}`);
+    const tid = SocialStudio.modules.toast.progress('Scoring post…');
+    let j;
+    try {
+      const r = await fetch('/api/ahb/social/ai/score', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          caption: document.getElementById('ss-caption-' + state.activePlatform).value,
+          hashtags: document.getElementById('ss-hashtags-' + state.activePlatform).value,
+          platform: state.activePlatform,
+        }),
+      });
+      j = await r.json();
+      if (!r.ok) { SocialStudio.modules.toast.resolve(tid, 'error', j.error || 'Score failed'); return; }
+      SocialStudio.modules.toast.resolve(tid, 'success', 'Scored ' + j.score + '/100');
+    } catch (e) {
+      SocialStudio.modules.toast.resolve(tid, 'error', 'Network: ' + e.message);
+      return;
+    }
+    const score = Math.max(0, Math.min(100, parseInt(j.score, 10) || 0));
+    const color = score >= 75 ? '#10b981' : score >= 50 ? '#fbbf24' : '#f87171';
+    const m = document.createElement('div');
+    m.className = 'modal-bg'; m.style.cssText = 'display:flex';
+    document.body.appendChild(m);
+    const close = () => document.body.removeChild(m);
+    m.innerHTML = `
+      <div class="modal" style="max-width:480px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:16px;font-weight:800">🎯 Post score</div>
+          <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
+        </div>
+        <div style="text-align:center;margin:8px 0 14px">
+          <div style="font-size:42px;font-weight:800;color:${color}">${score}<span style="font-size:16px;color:#666">/100</span></div>
+          <div style="height:8px;background:#1a1a2e;border-radius:4px;margin:10px 20px 0;overflow:hidden">
+            <div style="height:100%;width:${score}%;background:${color};border-radius:4px"></div>
+          </div>
+        </div>
+        <div style="font-size:13px;color:#ccc;line-height:1.6;white-space:pre-wrap">${_esc(j.notes || '')}</div>
+      </div>
+    `;
+    m.querySelector('[data-close]').addEventListener('click', close);
+    m.addEventListener('click', (e) => { if (e.target === m) close(); });
   }
 
   async function renderPackage() {
@@ -21300,7 +21386,7 @@ SocialStudio.modules.composer = (function(){
           <div id="ss-drop-zone" style="border:1px dashed #2a2a4a;border-radius:6px;padding:8px;margin-bottom:6px;text-align:center;color:#666;font-size:11px;cursor:pointer">
             Drop files here to upload (or click any button above)
           </div>
-          <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-height:280px;overflow-y:auto"></div>
+          <div id="ss-source-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;height:clamp(340px,48vh,640px);overflow-y:auto;align-content:start;border:1px solid #1a1a2e;border-radius:8px;padding:4px;background:#070712"></div>
           <div style="margin-top:10px">
             <div style="font-weight:700;font-size:12px;color:#aaa;margin-bottom:6px">📋 Shot list (drag to reorder)</div>
             <div id="ss-shot-rail" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto;border:1px dashed #2a2a4a;border-radius:6px;padding:6px;min-height:60px"></div>
@@ -21333,45 +21419,75 @@ SocialStudio.modules.composer = (function(){
             <span style="color:#666;font-size:10px;margin-left:auto">Motion</span>
           </div>
           <div id="ss-preview-shell" class="ss-preview-shell tiktok"></div>
-          <input id="ss-hook-input" placeholder="Hook overlay text (≤ 60 chars)" maxlength="60" style="width:100%;margin-top:8px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" oninput="SocialStudio.modules.composer.renderPreview()">
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <input id="ss-hook-input" placeholder="Hook overlay text (≤ 60 chars)" maxlength="60" style="flex:1;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:8px;color:#fff" oninput="SocialStudio.modules.composer.renderPreview()">
+            <button class="btn-secondary ss-tip" data-tip="Open the media editor for the first picked shot (rotate, flip, color, crop…)" style="white-space:nowrap" onclick="SocialStudio.modules.composer.editFirstShot()">✏️ Edit media</button>
+          </div>
         </div>
         <div class="ss-card" id="ss-variant-panel">
-          <div style="font-weight:700;font-size:13px;margin-bottom:8px">Copy</div>
-          <button class="btn-secondary" style="width:100%;margin-bottom:8px" onclick="SocialStudio.modules.templates.picker(draft => SocialStudio.modules.composer._applyTemplate(draft))">&#x1F4CB; Use template</button>
-          <select id="ss-tone" class="filter-select" style="width:100%;margin-bottom:4px">
-            <option value="pro">Pro</option><option value="hype">Hype</option>
-            <option value="casual">Casual</option><option value="educational">Educational</option>
-            <option value="trade">Trade</option><option value="funny">Funny</option>
-          </select>
-          <select id="ss-length" class="filter-select" style="width:100%;margin-bottom:4px">
-            <option value="short">Short</option><option value="medium" selected>Medium</option><option value="long">Long</option>
-          </select>
-          <select id="ss-style" class="filter-select" style="width:100%;margin-bottom:8px">
-            <option value="trade">Trade</option><option value="lifestyle">Lifestyle</option>
-            <option value="behind">Behind-the-scenes</option><option value="tutorial">Tutorial</option>
-            <option value="showcase">Showcase</option>
-          </select>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700;font-size:13px">Copy</div>
+            <button class="btn-secondary ss-tip" data-tip="Start from a saved caption/hashtag template" style="font-size:11px;padding:4px 10px" onclick="SocialStudio.modules.templates.picker(draft => SocialStudio.modules.composer._applyTemplate(draft))">&#x1F4CB; Template</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px">
+            <label class="ss-sel-label">Tone
+              <select id="ss-tone" class="filter-select" style="width:100%">
+                <option value="pro">Pro</option><option value="hype">Hype</option>
+                <option value="casual">Casual</option><option value="educational">Educational</option>
+                <option value="trade">Trade</option><option value="funny">Funny</option>
+              </select>
+            </label>
+            <label class="ss-sel-label">Length
+              <select id="ss-length" class="filter-select" style="width:100%">
+                <option value="short">Short</option><option value="medium" selected>Medium</option><option value="long">Long</option>
+              </select>
+            </label>
+            <label class="ss-sel-label">Angle
+              <select id="ss-style" class="filter-select" style="width:100%">
+                <option value="trade">Trade</option><option value="lifestyle">Lifestyle</option>
+                <option value="behind">Behind-the-scenes</option><option value="tutorial">Tutorial</option>
+                <option value="showcase">Showcase</option>
+              </select>
+            </label>
+          </div>
           ${['tiktok','ig_reel','ig_feed_square','ig_feed_portrait','ig_story'].map(p => `
             <div data-platform-block="${p}" style="${p==='tiktok'?'':'display:none'};margin-bottom:6px">
               <textarea id="ss-caption-${p}" placeholder="${p} caption" style="width:100%;height:80px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px"></textarea>
               <input id="ss-hashtags-${p}" placeholder="#hashtag #pool" style="width:100%;margin-top:4px;background:#070712;border:1px solid #2a2a4a;border-radius:6px;padding:6px;color:#fff;font-size:12px">
             </div>
           `).join('')}
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn-secondary ss-tip" data-tip="Generate caption (local AI)" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
-            <button class="btn-secondary ss-tip" data-tip="Suggest hashtags (forces brand floor tags)" onclick="SocialStudio.modules.composer.aiHashtags()"># Tags</button>
-            <button class="btn-secondary ss-tip" data-tip="3 hook variants — pick a virality pattern" onclick="SocialStudio.modules.composer.aiHookPattern()">🪝 Hooks</button>
-            <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 + critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score</button>
-            <button class="btn-secondary ss-tip" data-tip="Generate 2 caption variants" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B</button>
-            <button class="btn-secondary ss-tip" data-tip="Translate caption + hashtags to multiple languages" onclick="SocialStudio.modules.composer.aiTranslateAll()">🌐 Translate</button>
-            <button class="btn-secondary ss-tip" data-tip="Pick a music bed for video posts" onclick="SocialStudio.modules.composer.pickMusic()">🎵 Music</button>
-            <button class="btn-secondary ss-tip" data-tip="Generate voiceover from caption (piper TTS)" onclick="SocialStudio.modules.voiceover.open(null, document.getElementById('ss-caption-' + SocialStudio.state.activePlatform).value)">🔊 VO</button>
-            <button class="btn-secondary ss-tip" data-tip="3 platform-tuned CTAs" onclick="SocialStudio.modules.composer.aiCta()">🎯 CTA</button>
-            <button class="btn-secondary ss-tip" data-tip="3 comment-bait prompts" onclick="SocialStudio.modules.composer.aiCommentBait()">💬 Engage</button>
-            <button class="btn-secondary ss-tip" data-tip="Performance prediction + improvements" onclick="SocialStudio.modules.composer.aiPredict()">🔮 Predict</button>
-            <button class="btn-secondary ss-tip" data-tip="Plan a 5-10 shot storyboard" onclick="SocialStudio.modules.composer.aiStoryboard()">📋 Storyboard</button>
-            <button class="btn-secondary ss-tip" data-tip="Suggest B-roll shots to fill gaps" onclick="SocialStudio.modules.composer.aiBroll()">📸 B-roll</button>
+          <button class="btn-primary ss-tip" data-tip="One click: writes the caption, then the hashtags, for the current platform (local AI)" style="width:100%;margin-top:4px" onclick="SocialStudio.modules.composer.aiAutoWrite()">✨ Auto-write caption + hashtags</button>
+          <div class="ss-group-label">Write</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+            <button class="btn-secondary ss-tip" data-tip="Write just the caption (uses Tone/Length/Angle above)" onclick="SocialStudio.modules.composer.aiCaption()">✨ Caption</button>
+            <button class="btn-secondary ss-tip" data-tip="Suggest hashtags for the caption (always includes brand tags)" onclick="SocialStudio.modules.composer.aiHashtags()"># Hashtags</button>
+            <button class="btn-secondary ss-tip" data-tip="Write the big text overlay on the video — pick a style, get 3 options" onclick="SocialStudio.modules.composer.aiHookPattern()">🪝 Hook</button>
           </div>
+          <details id="ss-more-ai" style="margin-top:8px">
+            <summary style="cursor:pointer;font-size:12px;color:#aaa;font-weight:700;padding:4px 0">🎛 More AI tools <span style="color:#555;font-weight:400">— polish, check, plan, audio</span></summary>
+            <div class="ss-group-label">Polish the caption</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <button class="btn-secondary ss-tip" data-tip="Write 2 alternative captions to compare against yours" onclick="SocialStudio.modules.composer.aiAB()">🧪 A/B variants</button>
+              <button class="btn-secondary ss-tip" data-tip="Translate caption + hashtags into other languages" onclick="SocialStudio.modules.composer.aiTranslateAll()">🌐 Translate</button>
+              <button class="btn-secondary ss-tip" data-tip="Append a call-to-action line (call us, DM, link in bio…)" onclick="SocialStudio.modules.composer.aiCta()">📣 Add CTA</button>
+              <button class="btn-secondary ss-tip" data-tip="Append a question that makes viewers comment" onclick="SocialStudio.modules.composer.aiCommentBait()">💬 Ask a question</button>
+            </div>
+            <div class="ss-group-label">Check before posting</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <button class="btn-secondary ss-tip" data-tip="Rate this post 0–100 with a short critique" onclick="SocialStudio.modules.composer.aiScore()">🎯 Score it</button>
+              <button class="btn-secondary ss-tip" data-tip="Estimate the view range + what to improve" onclick="SocialStudio.modules.composer.aiPredict()">🔮 Predict views</button>
+            </div>
+            <div class="ss-group-label">Plan a shoot</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <button class="btn-secondary ss-tip" data-tip="Plan a 5–10 shot storyboard from a project description" onclick="SocialStudio.modules.composer.aiStoryboard()">📋 Storyboard</button>
+              <button class="btn-secondary ss-tip" data-tip="Suggest extra B-roll shots to go film" onclick="SocialStudio.modules.composer.aiBroll()">📸 B-roll ideas</button>
+            </div>
+            <div class="ss-group-label">Audio</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <button class="btn-secondary ss-tip" data-tip="Attach a music bed to video posts" onclick="SocialStudio.modules.composer.pickMusic()">🎵 Music</button>
+              <button class="btn-secondary ss-tip" data-tip="Read the caption aloud as a voiceover (local TTS)" onclick="SocialStudio.modules.voiceover.open(null, document.getElementById('ss-caption-' + SocialStudio.state.activePlatform).value)">🔊 Voiceover</button>
+            </div>
+          </details>
           <button class="btn-primary" style="width:100%;margin-top:10px" onclick="SocialStudio.modules.composer.renderPackage()">▶️ Render current platform</button>
           <button class="btn-secondary" style="width:100%;margin-top:6px;color:#FFD700;font-weight:700" onclick="SocialStudio.modules.composer.renderAll()">▶️▶️ Render ALL selected platforms</button>
         </div>
@@ -21389,7 +21505,7 @@ SocialStudio.modules.composer = (function(){
     loadSources(p, null, q, origins);
   }
 
-  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiCta, aiCommentBait, aiPredict, aiStoryboard, aiBroll, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic, importAndToggle, _applyTemplate };
+  return { render, toggle, setPlatform, setLut, aiCaption, aiHashtags, aiHooks, aiHookPattern, aiAutoWrite, editFirstShot, aiCta, aiCommentBait, aiPredict, aiStoryboard, aiBroll, aiScore, renderPackage, renderAll, aiAB, aiTranslate, aiTranslateAll, renderPreview, renderShotRail, shotRemove, shotTrim, _reload, pickMusic, importAndToggle, _applyTemplate };
 })();
 
 // ── Source Browser: full-window, multi-select media picker ──────────────────
@@ -25296,6 +25412,15 @@ SocialStudio.modules.imageEditor = (function(){
     if (typeof e.brightness === 'number') parts.push('brightness(' + (1 + e.brightness) + ')');
     if (typeof e.contrast === 'number')   parts.push('contrast(' + (1 + e.contrast) + ')');
     if (typeof e.saturation === 'number') parts.push('saturate(' + (1 + e.saturation) + ')');
+    // Temperature/hue/sharpen previews are CSS approximations; the final
+    // render goes through ffmpeg (colortemperature/hue/unsharp).
+    if (typeof e.temperature === 'number') {
+      if (e.temperature > 0) parts.push('sepia(' + (e.temperature * 0.25).toFixed(2) + ') saturate(' + (1 + e.temperature * 0.1).toFixed(2) + ')');
+      else parts.push('hue-rotate(' + (e.temperature * 15).toFixed(0) + 'deg) brightness(' + (1 - e.temperature * 0.02).toFixed(2) + ')');
+    }
+    if (typeof e.hue === 'number') parts.push('hue-rotate(' + e.hue + 'deg)');
+    if (typeof e.sharpen === 'number' && e.sharpen > 0) parts.push('contrast(' + (1 + e.sharpen * 0.08).toFixed(2) + ')');
+    if (typeof e.sharpen === 'number' && e.sharpen < 0) parts.push('blur(' + (-e.sharpen * 1.5).toFixed(1) + 'px)');
     if (e.filter === 'bw') parts.push('grayscale(1)');
     if (e.filter === 'cinematic') parts.push('contrast(1.1) saturate(0.85) hue-rotate(-5deg)');
     if (e.filter === 'vibrant')   parts.push('saturate(1.35) contrast(1.05)');
@@ -25305,10 +25430,11 @@ SocialStudio.modules.imageEditor = (function(){
   }
 
   function _previewCssTransform(e) {
-    if (typeof e.rotate === 'number' && Math.abs(e.rotate) > 0.01) {
-      return 'rotate(' + e.rotate + 'deg)';
-    }
-    return '';
+    const parts = [];
+    if (typeof e.rotate === 'number' && Math.abs(e.rotate) > 0.01) parts.push('rotate(' + e.rotate + 'deg)');
+    if (e.flip_h) parts.push('scaleX(-1)');
+    if (e.flip_v) parts.push('scaleY(-1)');
+    return parts.join(' ');
   }
 
   function _centerCrop(natW, natH, aspectW, aspectH) {
@@ -25350,7 +25476,7 @@ SocialStudio.modules.imageEditor = (function(){
     const close = () => document.body.removeChild(m);
     const previewSrc = row.sub_path ? ('/api/cloud/media/serve/' + encodeURIComponent(row.sub_path)) : '';
     m.innerHTML = `
-      <div class="modal" style="max-width:780px;max-height:90vh;overflow-y:auto">
+      <div class="modal" style="max-width:860px;max-height:90vh;overflow-y:auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div style="font-size:16px;font-weight:800">&#x270F;&#xFE0F; Edit source #${sourceId}</div>
           <button data-close style="background:none;border:none;color:#666;cursor:pointer;font-size:20px">&times;</button>
@@ -25359,26 +25485,47 @@ SocialStudio.modules.imageEditor = (function(){
           <div style="background:#070712;border-radius:8px;padding:12px;text-align:center;min-height:300px;display:flex;align-items:center;justify-content:center;position:relative">
             <img id="ie-preview" src="${_esc(previewSrc)}" style="max-width:100%;max-height:60vh;display:block" crossorigin="anonymous"
                  onload="SocialStudio.modules.imageEditor._onPreviewLoad(this)">
+            <div id="ie-vig-overlay" style="position:absolute;pointer-events:none;display:none"></div>
             <div id="ie-crop-overlay" style="position:absolute;border:2px dashed #10b981;pointer-events:none;display:none"></div>
           </div>
           <div>
-            <div style="font-weight:700;font-size:12px;color:#aaa;margin-bottom:6px">Rotation</div>
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin-bottom:6px">Rotate &amp; flip</div>
             <div style="display:flex;gap:4px;margin-bottom:6px">
               <button class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.rot(-90)">&#x21B6; 90&deg;</button>
               <button class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.rot(90)">90&deg; &#x21B7;</button>
               <button class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.rot(0,true)">Reset</button>
             </div>
-            <input type="range" id="ie-rotate" min="-180" max="180" step="1" value="${edits.rotate || 0}" oninput="SocialStudio.modules.imageEditor._slider('rotate', parseFloat(this.value))" style="width:100%">
+            <div style="display:flex;gap:4px;margin-bottom:6px">
+              <button id="ie-flip-h" class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.flip('h')">⇋ Flip H</button>
+              <button id="ie-flip-v" class="btn-secondary" style="flex:1;font-size:11px" onclick="SocialStudio.modules.imageEditor.flip('v')">⇵ Flip V</button>
+            </div>
+            <input type="range" id="ie-rotate" min="-180" max="180" step="1" value="${edits.rotate || 0}" oninput="SocialStudio.modules.imageEditor._slider('rotate', parseFloat(this.value))" style="width:100%" title="Fine rotation (straighten)">
 
-            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Adjust</div>
-            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Brightness <span id="ie-b-val" style="float:right;color:#10b981">${edits.brightness||0}</span>
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Light</div>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Brightness <span id="ie-val-brightness" style="float:right;color:#10b981">${edits.brightness||0}</span>
               <input type="range" id="ie-brightness" min="-1" max="1" step="0.05" value="${edits.brightness||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('brightness', parseFloat(this.value))">
             </label>
-            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Contrast <span id="ie-c-val" style="float:right;color:#10b981">${edits.contrast||0}</span>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Contrast <span id="ie-val-contrast" style="float:right;color:#10b981">${edits.contrast||0}</span>
               <input type="range" id="ie-contrast" min="-1" max="1" step="0.05" value="${edits.contrast||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('contrast', parseFloat(this.value))">
             </label>
-            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Saturation <span id="ie-s-val" style="float:right;color:#10b981">${edits.saturation||0}</span>
+
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Color</div>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Saturation <span id="ie-val-saturation" style="float:right;color:#10b981">${edits.saturation||0}</span>
               <input type="range" id="ie-saturation" min="-1" max="1" step="0.05" value="${edits.saturation||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('saturation', parseFloat(this.value))">
+            </label>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Warmth <span id="ie-val-temperature" style="float:right;color:#10b981">${edits.temperature||0}</span>
+              <input type="range" id="ie-temperature" min="-1" max="1" step="0.05" value="${edits.temperature||0}" style="width:100%" title="Cool ← → Warm" oninput="SocialStudio.modules.imageEditor._slider('temperature', parseFloat(this.value))">
+            </label>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Hue <span id="ie-val-hue" style="float:right;color:#10b981">${edits.hue||0}</span>
+              <input type="range" id="ie-hue" min="-180" max="180" step="1" value="${edits.hue||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('hue', parseFloat(this.value))">
+            </label>
+
+            <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Detail</div>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Sharpness <span id="ie-val-sharpen" style="float:right;color:#10b981">${edits.sharpen||0}</span>
+              <input type="range" id="ie-sharpen" min="-1" max="1" step="0.05" value="${edits.sharpen||0}" style="width:100%" title="Soften ← → Sharpen" oninput="SocialStudio.modules.imageEditor._slider('sharpen', parseFloat(this.value))">
+            </label>
+            <label style="font-size:11px;color:#aaa;display:block;margin-bottom:6px">Vignette <span id="ie-val-vignette" style="float:right;color:#10b981">${edits.vignette||0}</span>
+              <input type="range" id="ie-vignette" min="0" max="1" step="0.05" value="${edits.vignette||0}" style="width:100%" oninput="SocialStudio.modules.imageEditor._slider('vignette', parseFloat(this.value))">
             </label>
 
             <div style="font-weight:700;font-size:12px;color:#aaa;margin:14px 0 6px">Filter preset</div>
@@ -25445,16 +25592,50 @@ SocialStudio.modules.imageEditor = (function(){
     if (info) {
       info.textContent = crop ? `crop: ${crop.w}x${crop.h} +${crop.x}+${crop.y}` : 'no crop';
     }
-    ['brightness','contrast','saturation'].forEach(k => {
-      const el = document.getElementById('ie-' + k[0] + '-val');
-      if (el) el.textContent = (_state.edits[k] || 0).toFixed(2);
+    ['brightness','contrast','saturation','temperature','hue','sharpen','vignette'].forEach(k => {
+      const el = document.getElementById('ie-val-' + k);
+      if (el) el.textContent = k === 'hue'
+        ? String(Math.round(_state.edits[k] || 0)) + '°'
+        : (_state.edits[k] || 0).toFixed(2);
     });
+    ['h','v'].forEach(axis => {
+      const btn = document.getElementById('ie-flip-' + axis);
+      if (btn) {
+        const on = !!_state.edits['flip_' + axis];
+        btn.style.background = on ? '#2a2a4a' : '';
+        btn.style.color = on ? '#fff' : '';
+      }
+    });
+    const vig = document.getElementById('ie-vig-overlay');
+    if (vig) {
+      const v = _state.edits.vignette || 0;
+      if (v > 0.001) {
+        const rect = img.getBoundingClientRect();
+        const parentRect = img.parentElement.getBoundingClientRect();
+        vig.style.display = 'block';
+        vig.style.left = (rect.left - parentRect.left) + 'px';
+        vig.style.top = (rect.top - parentRect.top) + 'px';
+        vig.style.width = rect.width + 'px';
+        vig.style.height = rect.height + 'px';
+        vig.style.boxShadow = 'inset 0 0 ' + Math.round(v * 120) + 'px rgba(0,0,0,' + (v * 0.85).toFixed(2) + ')';
+      } else {
+        vig.style.display = 'none';
+      }
+    }
   }
 
   function _slider(key, value) {
     if (!_state) return;
     if (Math.abs(value) < 0.001) delete _state.edits[key];
     else _state.edits[key] = value;
+    _applyPreview();
+  }
+
+  function flip(axis) {
+    if (!_state) return;
+    const key = 'flip_' + axis;
+    if (_state.edits[key]) delete _state.edits[key];
+    else _state.edits[key] = true;
     _applyPreview();
   }
 
@@ -25540,7 +25721,7 @@ SocialStudio.modules.imageEditor = (function(){
     }
   }
 
-  return { open, save, revert, rot, _onPreviewLoad, _slider, _pickFilter, _pickAspect, _clearCrop };
+  return { open, save, revert, rot, flip, _onPreviewLoad, _slider, _pickFilter, _pickAspect, _clearCrop };
 })();
 
 SocialStudio.modules.recorder = (function(){
