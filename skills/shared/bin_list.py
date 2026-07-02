@@ -20,11 +20,37 @@ sys.path.insert(0, os.path.join(BASE_DIR, "dashboard"))
 
 args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 
+def _remote_fallback():
+    """The bin DB lives on baza; on other hosts (phantom) read it over the
+    dashboard API instead."""
+    import urllib.parse
+    import urllib.request
+    base = os.environ.get("BAZA_DASHBOARD_URL", "http://localhost:8888")
+    params = {"limit": int(args.get("limit", 25))}
+    if args.get("q"):
+        params["q"] = args["q"]
+    if args.get("kind"):
+        params["kind"] = args["kind"]
+    url = base + "/api/bin/list?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            print(r.read().decode())
+    except Exception as e:
+        print(json.dumps({"error": f"bin unavailable locally and dashboard unreachable: {e}"}))
+        sys.exit(1)
+
+
+# Local read needs both the module and the DB file (baza only); anything
+# else — e.g. phantom's bootstrapped tree — goes through the dashboard API.
 try:
     import bin_store
-except ImportError as e:
-    print(json.dumps({"error": f"bin_store unavailable: {e}"}))
-    sys.exit(1)
+    _local_ok = os.path.exists(bin_store.bin_db_path())
+except ImportError:
+    _local_ok = False
+
+if not _local_ok:
+    _remote_fallback()
+    sys.exit(0)
 
 items = [
     bin_store.to_public(i)
