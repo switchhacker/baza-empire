@@ -73,14 +73,20 @@ dashboard), pick the winning scheme in `_redirects`, and point `ahb123.com` at t
 Full step-by-step migration (DNS cutover, R2 image sync, agent hand-off) is in
 [`CLOUDFLARE_MIGRATION.md`](./CLOUDFLARE_MIGRATION.md).
 
-## Before go-live — confirm the placeholders
+## Honest-by-default content
 
-Search the HTML for `TODO: confirm` and replace with real values:
+The pages ship with **no fabricated proof** — there are no invented ratings, project
+counts, years-in-business, or made-up customer reviews. The old "Reviews" section is now an
+**"Our Promise"** section (real guarantees, no fake people), and trust strips state only
+verifiable facts (licensed, insured, free estimates, warranty). This is safe to publish as-is.
 
-- ⭐ Google/Facebook rating and review count
-- Years in business / projects completed
-- Testimonial names & quotes (swap the samples for real reviews)
-- Financing partner / terms
+**When you have real numbers, upgrade the proof** (all optional, all a plus for conversion):
+
+- Paste real **Google / Facebook reviews** into the "Our Promise" cards (search the HTML for
+  `paste real` to find the exact spot on each page).
+- Add real **rating + review count** and **years in business / projects completed** once verified.
+- **Financing** is phrased as "ask about financing" (an invitation, not a claim) — search
+  `TODO: confirm financing` before advertising any specific lender or terms.
 
 Everything else — company name, phone (215-554-5488), email
 (contactahbco@gmail.com), address (2725 Colmar Ave, Bensalem, PA), social
