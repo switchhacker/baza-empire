@@ -237,8 +237,15 @@ async def send_html(bot, chat_id, text, already_html: bool = False, **kwargs):
 
 
 def post_html(token: str, chat_id, text: str, already_html: bool = False,
-              disable_web_page_preview: bool = True, timeout: int = 15) -> bool:
-    """Sync sender for cron scripts / skills: convert, chunk, send, fall back."""
+              disable_web_page_preview: bool = True, timeout: int = 15,
+              reply_markup: dict | None = None) -> bool:
+    """Sync sender for cron scripts / skills: convert, chunk, send, fall back.
+
+    reply_markup (e.g. an inline_keyboard dict), when given, is attached
+    only to the FINAL chunk's sendMessage payload -- both the initial HTML
+    attempt and its plain-text fallback -- so a multi-chunk message's
+    buttons land on the last bubble the user sees, not an earlier one.
+    """
     if not token or not chat_id:
         logger.warning("telegram_fmt.post_html: missing token/chat_id")
         return False
@@ -246,23 +253,31 @@ def post_html(token: str, chat_id, text: str, already_html: bool = False,
     html_text = text if already_html else md_to_html(text)
     chunks = chunk_html(html_text)
     ok_all = True
+    last_idx = len(chunks) - 1
     for i, chunk in enumerate(chunks):
         if not chunk.strip():
             continue
+        is_last = i == last_idx
         try:
-            r = requests.post(url, json={
+            payload = {
                 "chat_id": chat_id, "text": chunk, "parse_mode": "HTML",
                 "disable_web_page_preview": disable_web_page_preview,
-            }, timeout=timeout)
+            }
+            if reply_markup is not None and is_last:
+                payload["reply_markup"] = reply_markup
+            r = requests.post(url, json=payload, timeout=timeout)
             if not r.ok:
                 logger.warning(
                     "telegram_fmt: HTML send failed (%s), plain fallback",
                     getattr(r, "status_code", "?"),
                 )
-                r = requests.post(url, json={
+                fallback_payload = {
                     "chat_id": chat_id, "text": html_to_plain(chunk),
                     "disable_web_page_preview": disable_web_page_preview,
-                }, timeout=timeout)
+                }
+                if reply_markup is not None and is_last:
+                    fallback_payload["reply_markup"] = reply_markup
+                r = requests.post(url, json=fallback_payload, timeout=timeout)
             ok_all = ok_all and r.ok
         except Exception as e:
             logger.error("telegram_fmt.post_html error: %s", e)

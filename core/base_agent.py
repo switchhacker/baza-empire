@@ -32,7 +32,7 @@ _PROMPT_CACHE_TTL = 120  # 2 minutes
 
 import httpx
 from telegram import Update, Bot
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.constants import ChatAction
 
 from core.ollama_client import chat_stream_pooled, chat_stream
@@ -52,6 +52,16 @@ AUTO_SUMMARIZE_AFTER = 15
 
 # Max history messages to feed the LLM (keep context window manageable)
 MAX_HISTORY = 20
+
+# Cron alert inline-button actions (core/base_agent.py._on_cron_callback) ->
+# (suffix appended to the alert text, answer() text on success). Module
+# level (not a class attribute) so the handler works against any self with
+# an AGENT_ID/tasks pair, not just a real BaseAgent instance.
+CRON_CALLBACK_ACTIONS = {
+    "ack": "✓ acknowledged",
+    "snooze": "😴 snoozed 24h",
+    "task": "➕ task created",
+}
 
 
 class BaseAgent(ContextMixin):
@@ -1939,6 +1949,71 @@ class BaseAgent(ContextMixin):
         from core.telegram_fmt import send_html
         await send_html(bot, chat_id, text)
 
+    # ── Cron alert buttons (Ack / Snooze / Task) ────────────────────────────────
+
+    async def _on_cron_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle a tap on a cron alert's inline Ack / Snooze / Task button.
+
+        callback_data is "cron|<action>|<row_id>" (built by
+        agents/cron_helpers.py send_alert). This handler must never let an
+        exception escape -- a bad/garbled callback or a DB hiccup degrades to
+        query.answer("failed: ...") instead of crashing the bot's update
+        loop. query.answer() is always called exactly once so Telegram
+        clears the button's loading spinner either way.
+        """
+        query = getattr(update, "callback_query", None)
+        if query is None:
+            return
+        try:
+            data = query.data or ""
+            parts = data.split("|")
+            if len(parts) != 3 or parts[0] != "cron" or parts[1] not in CRON_CALLBACK_ACTIONS:
+                await query.answer(f"failed: bad callback data {data!r}")
+                return
+
+            _, action, row_id_s = parts
+            try:
+                row_id = int(row_id_s)
+            except ValueError:
+                await query.answer(f"failed: bad row id {row_id_s!r}")
+                return
+
+            try:
+                from core import cron_health_db
+                if action == "ack":
+                    cron_health_db.alert_ack(row_id)
+                elif action == "snooze":
+                    cron_health_db.alert_snooze(row_id, 24)
+                elif action == "task":
+                    title = "cron alert"
+                    row = cron_health_db.alert_get(row_id)
+                    if row is not None and row["meta"]:
+                        try:
+                            meta = json.loads(row["meta"])
+                            title = meta.get("title") or title
+                        except Exception:
+                            pass
+                    self.tasks.add("shared", title, priority="medium")
+            except Exception as e:
+                logger.error(f"[{self.AGENT_ID}] cron callback {action} (row {row_id}) failed: {e}")
+                await query.answer(f"failed: {e}")
+                return
+
+            suffix = "\n\n" + CRON_CALLBACK_ACTIONS[action]
+            try:
+                old_text = getattr(query.message, "text", "") or ""
+                await query.edit_message_text(old_text + suffix)
+            except Exception as e:
+                logger.warning(f"[{self.AGENT_ID}] cron callback edit_message_text failed: {e}")
+
+            await query.answer(CRON_CALLBACK_ACTIONS[action])
+        except Exception as e:
+            logger.error(f"[{self.AGENT_ID}] cron callback handler crashed: {e}")
+            try:
+                await query.answer(f"failed: {e}")
+            except Exception:
+                pass
+
     # ── Bot Runner ────────────────────────────────────────────────────────────
 
     async def run(self):
@@ -1953,6 +2028,9 @@ class BaseAgent(ContextMixin):
             filters.PHOTO | filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE,
             self.handle_attachment
         ))
+        # Inline Ack / Snooze / Task buttons on cron alerts (agents/cron_helpers.py
+        # send_alert). callback_data is "cron|<action>|<row_id>".
+        app.add_handler(CallbackQueryHandler(self._on_cron_callback, pattern=r"^cron\|"))
 
         logger.info(f"[{self.AGENT_ID}] Starting Telegram bot...")
 
