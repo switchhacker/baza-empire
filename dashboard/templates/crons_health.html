@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baza Empire — Cron Health</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#07070f;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+    a{color:inherit;text-decoration:none}
+    .nav{background:#0d0d1e;border-bottom:1px solid #1a1a3a;padding:0 32px;display:flex;align-items:center;position:sticky;top:0;z-index:100;flex-wrap:nowrap}
+    .nav-brand{display:flex;align-items:center;gap:10px;padding:18px 24px 18px 0;border-right:1px solid #1a1a3a;margin-right:8px;flex-shrink:0}
+    .nav-brand h1{font-size:18px;font-weight:800;color:#e94560;letter-spacing:2px}
+    .nav-link{padding:20px 18px;font-size:13px;font-weight:600;color:#666;border-bottom:3px solid transparent;white-space:nowrap}
+    .nav-link:hover,.nav-link.active{color:#e0e0e0;border-bottom-color:#e94560}
+    .container{max-width:1400px;margin:0 auto;padding:28px 32px}
+
+    .page-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:20px;flex-wrap:wrap}
+    .page-title{font-size:22px;font-weight:800;color:#fff;display:flex;align-items:center;gap:12px}
+    .crumb{font-size:12px;color:#555;margin-bottom:22px}
+    .crumb a{color:#7c3aed}
+    .generated{font-size:11px;color:#444;font-family:monospace}
+
+    .card{background:#0e0e1e;border:1px solid #1a1a2e;border-radius:12px;margin-bottom:22px;overflow:hidden}
+    .card-head{padding:16px 22px;border-bottom:1px solid #111;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    .card-title{font-size:14px;font-weight:700;color:#fff}
+    .card-desc{font-size:12px;color:#555;margin-top:2px}
+    .card-body{padding:0}
+
+    .banner{padding:12px 22px;font-size:12px;color:#888;background:#0a0a16}
+    .banner.warn{background:#2a230a;color:#d0a000}
+
+    table{width:100%;border-collapse:collapse}
+    thead th{text-align:left;font-size:10px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:1px;padding:10px 14px;border-bottom:1px solid #1a1a2e;white-space:nowrap}
+    tbody td{padding:10px 14px;font-size:12px;color:#ccc;border-bottom:1px solid #101020;vertical-align:top}
+    tbody tr:last-child td{border-bottom:none}
+    tbody tr:hover{background:#0a0a16}
+    .mono{font-family:monospace}
+    .muted{color:#444}
+    .table-scroll{overflow-x:auto}
+
+    .pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700}
+    .pill.on{background:#0a2a1a;color:#00d084}
+    .pill.off{background:#111;color:#666}
+    .status-ok{color:#00d084;font-weight:700}
+    .status-error{color:#ff6666;font-weight:700}
+    .status-timeout{color:#ffaa00;font-weight:700}
+    .status-none{color:#444}
+
+    .err-tail{font-family:monospace;font-size:11px;color:#ff8888;background:#1a0808;border:1px solid #3a1010;border-radius:5px;padding:5px 8px;max-width:360px;overflow-wrap:anywhere;display:inline-block}
+    .empty-row td{text-align:center;color:#333;padding:24px;font-size:12px}
+  </style>
+</head>
+<body>
+
+{% set nav_active = 'cronhealth' %}
+{% include "_nav.html" %}
+
+<div class="container">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">&#128200; Cron Health</div>
+      <div class="crumb"><a href="/crons">&#9200;&#65039; Cron Hub</a> &rarr; Health (read-only)</div>
+    </div>
+    <div class="generated">generated {{ generated_at }} &middot; <a href="/api/crons/status" style="color:#7c3aed">JSON</a></div>
+  </div>
+
+  <!-- ── Table 1: declared crons (config/agents.yaml) joined with heartbeat ── -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Declared Crons</div>
+        <div class="card-desc">config/agents.yaml scheduled_tasks, joined with the last recorded run and the next fire time.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Agent</th><th>Name</th><th>Schedule</th><th>Enabled</th>
+            <th>Last Run</th><th>Duration</th><th>Error Tail</th><th>Next Fire</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in declared %}
+          <tr>
+            <td class="mono">{{ d.agent }}</td>
+            <td>{{ d.name }}</td>
+            <td class="mono">{{ d.schedule }}</td>
+            <td>{% if d.enabled %}<span class="pill on">ON</span>{% else %}<span class="pill off">OFF</span>{% endif %}</td>
+            {% if d.last_run %}
+            <td>
+              <span class="status-{{ d.last_run.status }}">{{ d.last_run.status_icon }} {{ d.last_run.status }}</span><br>
+              <span class="mono muted">{{ d.last_run.started_at }}</span>
+            </td>
+            <td class="mono">{% if d.last_run.duration_s is not none %}{{ '%.1f'|format(d.last_run.duration_s) }}s{% else %}&mdash;{% endif %}</td>
+            <td>{% if d.last_run.error_tail %}<span class="err-tail">{{ d.last_run.error_tail }}</span>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+            {% else %}
+            <td class="status-none">never run</td>
+            <td class="muted">&mdash;</td>
+            <td class="muted">&mdash;</td>
+            {% endif %}
+            <td class="mono">{{ d.next_fire or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr class="empty-row"><td colspan="8">No scheduled_tasks declared in config/agents.yaml.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Table 2: systemd baza-* timers ── -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">systemd Timers</div>
+        <div class="card-desc">systemctl list-timers 'baza-*' --all --no-pager</div>
+      </div>
+    </div>
+    {% if not systemd_timers.available %}
+    <div class="banner warn">systemd timers unavailable{% if systemd_timers.error %}: {{ systemd_timers.error }}{% endif %}</div>
+    {% endif %}
+    <div class="card-body">
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Unit</th><th>Activates</th><th>Next</th><th>Left</th><th>Last</th><th>Passed</th></tr>
+        </thead>
+        <tbody>
+          {% for t in systemd_timers.timers %}
+          <tr>
+            <td class="mono">{{ t.unit }}</td>
+            <td class="mono">{{ t.activates }}</td>
+            <td class="mono">{{ t.next }}</td>
+            <td class="mono">{{ t.left }}</td>
+            <td class="mono">{{ t.last }}</td>
+            <td class="mono">{{ t.passed }}</td>
+          </tr>
+          {% else %}
+          <tr class="empty-row"><td colspan="6">{% if systemd_timers.available %}No baza-* timers found.{% else %}unavailable{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Table 3: last 50 cron_runs ── -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Recent Runs</div>
+        <div class="card-desc">Last {{ recent_runs|length }} recorded runs (cron_health.db, newest first).</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Cron</th><th>Started</th><th>Finished</th><th>Status</th><th>Duration</th><th>Error Tail</th><th>Host</th></tr>
+        </thead>
+        <tbody>
+          {% for r in recent_runs %}
+          <tr>
+            <td class="mono">{{ r.id }}</td>
+            <td>{{ r.cron_name }}</td>
+            <td class="mono">{{ r.started_at }}</td>
+            <td class="mono">{{ r.finished_at or '—' }}</td>
+            <td><span class="status-{{ r.status or 'none' }}">{{ r.status_icon }} {{ r.status or 'running' }}</span></td>
+            <td class="mono">{% if r.duration_s is not none %}{{ '%.1f'|format(r.duration_s) }}s{% else %}&mdash;{% endif %}</td>
+            <td>{% if r.error_tail %}<span class="err-tail">{{ r.error_tail }}</span>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+            <td class="mono">{{ r.host }}</td>
+          </tr>
+          {% else %}
+          <tr class="empty-row"><td colspan="8">No recorded runs yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
