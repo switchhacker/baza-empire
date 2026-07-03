@@ -9,8 +9,20 @@ except ImportError:
 network_bp = Blueprint("network", __name__)
 
 
+_ROUTER_SEED = [
+    ("router.model", "Fios G3100", ""),
+    ("router.admin", "http://192.168.1.1", ""),
+    ("router.reservation", "enp6s0 f0:2f:74:1b:aa:e9 → 192.168.1.68", ""),
+    ("router.port_forward", "443,80 → 192.168.1.68", "verify: https://nova.ahb123.com/health"),
+]
+
+
 def init_network():
     network_db.ensure_tables()
+    # Seed manual router facts only if the table is empty
+    if not network_db.facts_list():
+        for key, value, note in _ROUTER_SEED:
+            network_db.fact_set(key, value, note)
 
 
 @network_bp.route("/network")
@@ -177,6 +189,57 @@ def api_diag():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     return jsonify(result)
+
+
+@network_bp.route("/api/network/registry", methods=["GET"])
+def api_registry():
+    """Return settings_registry(status(), facts_list()) as {rows: [...]}."""
+    import os, re, glob as _glob
+    s = network_probe.status()
+    facts = network_db.facts_list()
+    # Collect relevant env vars from repo-root .env* files
+    env = {}
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _relevant = re.compile(r'^(BAZA_|NOVA_|CADDY_|SECRET|API_KEY|TOKEN)', re.IGNORECASE)
+    for env_file in sorted(_glob.glob(os.path.join(_repo_root, ".env*"))):
+        try:
+            with open(env_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    k = k.strip()
+                    if _relevant.match(k):
+                        env[k] = v.strip()
+        except Exception:
+            pass
+    rows = network_probe.settings_registry(s, facts, env or None)
+    return jsonify({"rows": rows})
+
+
+@network_bp.route("/api/network/facts", methods=["POST"])
+def api_facts_set():
+    """Create or update a manual_fact. Body: {key, value, note?}."""
+    body = request.get_json(force=True, silent=True) or {}
+    body = body if isinstance(body, dict) else {}
+    key = body.get("key", "")
+    value = body.get("value")
+    note = body.get("note", "")
+    if not key or not isinstance(key, str) or not key.strip():
+        return jsonify({"error": "key is required"}), 400
+    if value is None or not isinstance(value, str):
+        return jsonify({"error": "value is required and must be a string"}), 400
+    note = note if isinstance(note, str) else ""
+    network_db.fact_set(key.strip(), value, note)
+    return jsonify({"ok": True})
+
+
+@network_bp.route("/api/network/facts/<path:key>", methods=["DELETE"])
+def api_facts_delete(key):
+    """Delete a manual_fact by key."""
+    network_db.fact_delete(key)
+    return jsonify({"ok": True})
 
 
 @network_bp.route("/api/network/desec", methods=["POST"])

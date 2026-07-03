@@ -1253,7 +1253,7 @@
   <div class="panel" data-no-autosave style="margin-top:24px;border-color:#10b981">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
       <div>
-        <h3 style="color:#a7f3d0;margin:0">📋 Review &amp; Edit Recent Receipts</h3>
+        <h3 style="color:#a7f3d0;margin:0" data-help="receipts.correct">📋 Review &amp; Edit Recent Receipts</h3>
         <div style="font-size:11px;color:#666;margin-top:2px">Preview the image, edit any field inline — changes save as you stop typing</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -2021,7 +2021,7 @@
 <!-- Materials Catalog Modal -->
 <div class="modal-bg" id="materialsCatalogModal">
   <div class="modal" style="max-width:820px">
-    <h2>🧱 Materials Catalog</h2>
+    <h2 data-help="materials.import">🧱 Materials Catalog</h2>
     <div class="modal-sub">Local product catalog for Method 4 materials — vendor + product + unit price. Reference prices, editable anytime (receipt totals stay authoritative).</div>
     <div style="max-height:420px;overflow-y:auto;margin:12px 0">
       <table class="line-items-table" id="mc-table">
@@ -3489,14 +3489,14 @@
       <div class="page-sub">Make TikTok + Instagram content from your project media. Local AI. Presets. Auto-pilot.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn-secondary ss-subnav" data-sub="composer">Composer</button>
+      <button class="btn-secondary ss-subnav" data-sub="composer" data-help="social.publish">Composer</button>
       <button class="btn-secondary ss-subnav" data-sub="library">Library</button>
       <button class="btn-secondary ss-subnav" data-sub="scheduler">Scheduler</button>
       <button class="btn-secondary ss-subnav" data-sub="presets">Presets</button>
       <button class="btn-secondary ss-subnav" data-sub="autopilot">Auto-Pilot</button>
       <button class="btn-secondary ss-subnav" data-sub="inspo">💡 Inspo</button>
       <button class="btn-secondary ss-subnav" data-sub="stats">📊 Stats</button>
-      <button class="btn-secondary ss-subnav" data-sub="connect">🔗 Connect</button>
+      <button class="btn-secondary ss-subnav" data-sub="connect" data-help="social.connect_oauth">🔗 Connect</button>
       <button class="btn-secondary ss-subnav" data-sub="links">🌐 Links</button>
       <button class="btn-secondary" onclick="SocialStudio.openSettings()" title="Settings">⚙️</button>
     </div>
@@ -4656,7 +4656,7 @@
       <!-- Quotes / Estimator (has its own save flow) -->
       <div class="panel" style="border-color:#00d084" data-no-autosave>
         <div class="panel-header">
-          <h3 style="color:#00d084">💰 Quotes &amp; Estimator</h3>
+          <h3 style="color:#00d084" data-help="invoice.quote_convert">💰 Quotes &amp; Estimator</h3>
           <div style="display:flex;gap:6px">
             <button class="btn btn-sm btn-primary" onclick="pdToggleQuoteEstimator()" id="pd-quote-toggle-btn">+ Add Quote</button>
             <button class="btn btn-sm btn-secondary" onclick="pdAddManualQuote()">Manual Entry</button>
@@ -4921,7 +4921,7 @@
       <!-- Invoices & Billing — full InvoiceIT + Billing toolset, per project -->
       <div class="panel" style="border-color:#e94560" data-no-autosave>
         <div class="panel-header">
-          <h3 style="color:#f0a0b0">🧾 Invoices &amp; Billing</h3>
+          <h3 style="color:#f0a0b0" data-help="invoice.lifecycle">🧾 Invoices &amp; Billing</h3>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm btn-primary" onclick="pdNewInvoice()" title="Create a new invoice pre-linked to this project & client">+ New Invoice</button>
             <button class="btn btn-sm btn-secondary" onclick="invoiceFromProjectDetail()" title="Auto-generate an invoice from this project's value/phases">⚙ From Phases</button>

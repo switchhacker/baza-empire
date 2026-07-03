@@ -1,0 +1,154 @@
+{
+  "network.caddy_edit": {
+    "title": "Edit Caddyfile",
+    "steps": [
+      "Click '✏️ Edit Caddyfile' to open the editor drawer with the live config.",
+      "Make your changes in the textarea — Caddy syntax: <code>domain { directive ... }</code>.",
+      "Click 'Apply' — baza runs <code>caddy validate</code> automatically before touching anything.",
+      "On validation pass: a timestamped backup is created, then <code>caddy reload</code> fires. On failure, nothing changes and the error is shown inline."
+    ]
+  },
+  "network.wizard": {
+    "title": "Cloudflare migration wizard",
+    "steps": [
+      "Phases run top-to-bottom. 🟢 = baza runs it via button. 🔴 = you do it in a browser tab.",
+      "Phase 1 (🔴): add your domain to Cloudflare, get the two NS records it assigns.",
+      "Phase 2 (🟢): baza saves your Cloudflare API token and verifies zone ownership.",
+      "Phase 3 (🔴 — point of no return): update your registrar's NS records to Cloudflare's. DNS goes dark for up to 48h during propagation; reverting means flipping NS back.",
+      "Phase 4 (🟢): baza installs the Cloudflare tunnel and Access gate, then posts a final verify link."
+    ]
+  },
+  "network.desec_token": {
+    "title": "Set up deSEC API token",
+    "steps": [
+      "Log in at desec.io → Account → Tokens → create a token scoped to your domain (e.g. ahb123.com).",
+      "Copy the token string (shown only once on deSEC).",
+      "Paste it into the 'deSEC API Token' field here and click 'Save token'.",
+      "Token is saved to disk at mode 0600 — only baza can read it. The RRset table loads automatically once the token is accepted.",
+      "You can now edit A/AAAA/TXT records and point nova's A record to the current WAN IP with one click."
+    ]
+  },
+  "network.serve_toggle": {
+    "title": "Tailscale Serve toggle (dash / vision)",
+    "steps": [
+      "The 'dash' checkbox maps <code>https://baza.ts.net</code> → <code>http://localhost:8888</code> via Tailscale Serve.",
+      "WARNING: turning 'dash' serve OFF kills this very page if you're accessing baza over ts.net — you'll need LAN or another route to get back in.",
+      "The 'vision' checkbox maps port 8443 → :8889 (Fluid dev server). Safe to toggle independently.",
+      "Changes take effect immediately via <code>tailscale serve</code> — no reload needed."
+    ]
+  },
+  "network.ddns_timer": {
+    "title": "DDNS hourly timer",
+    "steps": [
+      "baza-ddns.service reads the current WAN IP (via external check) and pushes it to Cloud DNS (Google Cloud DNS zone).",
+      "Click '▶ Run DDNS now' to do a one-shot sync and confirm it works before enabling the timer.",
+      "Click '⏱ Enable hourly timer' to activate <code>baza-ddns.timer</code> (OnCalendar=hourly, RandomizedDelaySec=300). This is Serge's call — button is here but does not auto-fire.",
+      "To disable, click 'Disable timer' — the service remains installed but won't fire again until re-enabled."
+    ]
+  },
+  "network.diag": {
+    "title": "Network diagnostics",
+    "steps": [
+      "Select a tool: ping (ICMP reachability), traceroute (hop path), dig (DNS lookup), curl (HTTP headers only), or port check (TCP connect).",
+      "Enter the target hostname or IP. For 'dig' also choose the record type (A, AAAA, MX, TXT…). For 'port check' enter the port number.",
+      "Click '▶ Go' (or press Enter in the target field). All inputs are validated server-side — no raw shell injection.",
+      "Results stream into the output pane below. Long-running traceroutes time out at 30s."
+    ]
+  },
+  "invoice.lifecycle": {
+    "title": "Invoice lifecycle",
+    "steps": [
+      "Create the primary invoice (★) linked to the project — this sets the contract total and drives payment terms.",
+      "Record the deposit payment when the client pays it; the project status advances to In Progress automatically.",
+      "When work progresses, click '⚖ Balance Invoice' to generate the next payment invoice (contract total less payments already received). Never re-add 50/50 split lines manually — use payment terms presets instead.",
+      "Once all payments are received and the total is closed, mark the final invoice Paid. Status is informational only — Uncle Sam counts invoice.status=Paid for tax purposes."
+    ]
+  },
+  "invoice.quote_convert": {
+    "title": "Convert quote to invoice",
+    "steps": [
+      "Open the project detail and go to the 'Quotes & Estimator' panel. Build or select a quote using the estimator.",
+      "Click '📤 Push to New Invoice' (or the estimator's push button). If a primary invoice already exists you'll be asked to replace its line items or create a new invoice.",
+      "Review the generated invoice in the Invoice editor modal — adjust line items, due date, and client before sending."
+    ]
+  },
+  "materials.import": {
+    "title": "Materials catalog import",
+    "steps": [
+      "Click '🧱 Manage Catalog' in the Method 4 estimator to open the Materials Catalog modal.",
+      "To bulk-import: click '⬆ Import CSV' and select a CSV file (columns: Vendor, Name, Category, Unit, Unit $). Or add items one at a time using the row form at the bottom.",
+      "After importing, use '💲 Sync prices from receipts' to auto-update unit prices from your most recent matching receipts.",
+      "Back in the estimator, catalog items are available in the materials picker — type a product name to pull the pre-filled unit price."
+    ]
+  },
+  "receipts.correct": {
+    "title": "Correct a receipt",
+    "steps": [
+      "Find the receipt in the 'Review & Edit Recent Receipts' panel (inline editor) or open it from the receipt board.",
+      "Edit the vendor, category, or date fields inline — changes save automatically as you type. Receipt totals are authoritative and never auto-change; only vendor/category/date can be corrected.",
+      "Each correction is written to the corrections table and picked up by receipt_learn on the next run, which updates the vendor alias map so future OCR auto-fills the right vendor."
+    ]
+  },
+  "social.publish": {
+    "title": "Publish social content",
+    "steps": [
+      "Open the Composer sub-tab. In the Sources column, filter by project or search, then click thumbnails to add media to your Shot List.",
+      "In the Editor column, choose a platform (TikTok 9:16, IG Reel, etc.), write or Auto-write a caption and hashtags.",
+      "In the Copy panel, review and edit the final caption. Click '🚀 Publish' to post directly to a connected account, or '📋 Export' to download for manual upload."
+    ]
+  },
+  "social.connect_oauth": {
+    "title": "Connect a social account (OAuth)",
+    "steps": [
+      "Open the Connect sub-tab. Find the platform card (YouTube, LinkedIn, etc.).",
+      "If 'OAuth client not set' is shown, click '⚙ Add OAuth client' and paste your app's client credentials JSON from the developer portal. Add the redirect URI <code>http://localhost:8888/api/ahb/social/connections/oauth/callback</code> in the platform's app settings.",
+      "Once credentials are saved, click '＋ Connect account' — a browser tab opens for OAuth consent. Sign in and approve access.",
+      "The account appears in the card's connected list. It can now receive direct posts from the Composer."
+    ]
+  },
+  "email.add_account": {
+    "title": "Add a Gmail account",
+    "steps": [
+      "IMPORTANT first: if the Gmail address is new to your GCP project, go to Google Cloud Console → OAuth consent screen → Test users and add the address there. Skipping this causes a 403 access_denied error during OAuth.",
+      "Click '+ Add Gmail account' in the account switcher. Optionally enter a label, then click '🔐 Start'.",
+      "A consent URL appears — open it in a browser and sign in with the Gmail account. Approve access.",
+      "If the final redirect says 'can't connect to localhost' (expected when browsing from another machine), copy the full URL from the address bar and paste it into the field shown, then click '✅ Finish'. The account is now active."
+    ]
+  },
+  "cloud.import": {
+    "title": "Import files from external drive",
+    "steps": [
+      "Mount the drive on baza (e.g. <code>sudo mount /dev/sdX1 /mnt/usb</code>).",
+      "Run: <code>baza-import /mnt/usb \"Label\" --register</code>. Files are two-pass rsynced to <code>/mnt/empirepool/cloud/1/Imports/YYYY-MM-DD-Label/</code> and a sha256 manifest is generated.",
+      "The <code>--register</code> flag inserts each file into baza_cloud_files so it appears in the Imports view on this page.",
+      "Click 'Imports' in the sidebar to browse the imported files."
+    ]
+  },
+  "vault.use": {
+    "title": "Vault unlock / lock",
+    "steps": [
+      "Navigate to the Vault page (🔐 Vault in the nav). Enter your passphrase and click 'Unlock' to view private files.",
+      "Browse and work with the files. The vault holds Telegram-inbound media and any file you've locked from the Data Hub — all excluded from search and the public serve endpoint.",
+      "When done, click '🔒 Lock' in the toolbar to re-lock the gallery. Files are not deleted; the view is simply hidden until you unlock again.",
+      "This passphrase gate is separate from the encrypted <code>baza-vault</code> LUKS2 container. For that vault, <code>baza-vault unlock</code> / <code>lock</code> on baza mounts and closes it; in an emergency <code>baza-vault panic</code> force-unmounts and closes the container immediately — it does NOT erase anything, so your passphrase still unlocks it afterward."
+    ]
+  },
+  "bin.picker": {
+    "title": "Pick files from the Baza Bin",
+    "steps": [
+      "The Bin picker opens automatically when a feature needs a file from the Baza Bin bot (e.g. attaching to an email, adding to a social post).",
+      "Use the search box to filter by name or caption, or use the type selector (Images, Documents, Video…) to narrow results.",
+      "Click a thumbnail to select it (highlighted border). Multi-select is on by default — click multiple items if needed.",
+      "Click 'Use selected' to confirm. The file(s) are passed back to the calling feature."
+    ]
+  },
+  "hardware.swap": {
+    "title": "Hardware swap workflow",
+    "steps": [
+      "Before powering off: click '📸 Snapshot baseline now' on the Baseline & Verify tab. This records the current healthy state of all services, GPUs, and Ollama instances.",
+      "Perform the physical hardware swap, then reboot baza.",
+      "After reboot, open Hardware & Upgrades → Baseline & Verify and click '✅ Verify now'. The diff highlights anything that didn't come back (regressions shown in red).",
+      "If the dashboard is down after a swap, run <code>scripts/hw_verify.py</code> directly from a terminal — it works without the Flask server."
+    ]
+  }
+}

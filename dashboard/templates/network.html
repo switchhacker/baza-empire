@@ -130,7 +130,7 @@
   </div>
 
   <div class="card">
-    <div class="card-head"><div><div class="card-title">Tailscale</div><div class="card-desc">Mesh up/down, exit node, serve mappings.</div></div></div>
+    <div class="card-head"><div><div class="card-title" data-help="network.serve_toggle">Tailscale</div><div class="card-desc">Mesh up/down, exit node, serve mappings.</div></div></div>
     <div class="card-body" id="tsBox"><span class="muted">loading…</span></div>
   </div>
 
@@ -146,7 +146,7 @@
   <div class="card" id="desec-card">
     <div class="card-head">
       <div>
-        <div class="card-title">DNS Providers — deSEC</div>
+        <div class="card-title" data-help="network.desec_token">DNS Providers — deSEC</div>
         <div class="card-desc">nova.ahb123.com RRsets via deSEC API. Fix A-record drift here.</div>
       </div>
       <button class="btn secondary sm" onclick="desecRefresh()">&#8635; Reload RRsets</button>
@@ -184,7 +184,7 @@
   <div class="card" id="gcloud-dns-card">
     <div class="card-head">
       <div>
-        <div class="card-title">DNS Providers — Google Cloud DNS</div>
+        <div class="card-title" data-help="network.ddns_timer">DNS Providers — Google Cloud DNS</div>
         <div class="card-desc">baza-ddns.service syncs WAN IP to Cloud DNS. Enable the hourly timer below.</div>
       </div>
       <button class="btn secondary sm" onclick="refresh()">&#8635; Refresh</button>
@@ -244,7 +244,7 @@
   <div class="card" id="wizard-card">
     <div class="card-head">
       <div>
-        <div class="card-title">Cloudflare migration wizard</div>
+        <div class="card-title" data-help="network.wizard">Cloudflare migration wizard</div>
         <div class="card-desc">Link the dashboard to baza.ahb123.com via a Cloudflare Tunnel + Access gate. 🟢 baza runs its phases · 🔴 Serge does the browser phases.</div>
       </div>
       <button class="btn secondary sm" onclick="wizRefresh()">&#8635; Re-detect</button>
@@ -300,7 +300,7 @@
   <div class="card" id="diag-card">
     <div class="card-head">
       <div>
-        <div class="card-title">Diagnostics</div>
+        <div class="card-title" data-help="network.diag">Diagnostics</div>
         <div class="card-desc">Network probes — ping, traceroute, dig, curl headers, port check. All inputs validated server-side.</div>
       </div>
     </div>
@@ -359,7 +359,7 @@
   <div class="card">
     <div class="card-head">
       <div>
-        <div class="card-title">Caddy</div>
+        <div class="card-title" data-help="network.caddy_edit">Caddy</div>
         <div class="card-desc">Live reverse-proxy config for nova.ahb123.com. Apply runs validate→backup→reload.</div>
       </div>
       <button class="btn secondary sm" onclick="openCaddyEditor()">✏️ Edit Caddyfile</button>
@@ -372,6 +372,45 @@
       <div style="margin-top:14px">
         <div class="muted" style="margin-bottom:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px">Backups</div>
         <div id="caddyBackupsBox"><span class="muted">loading…</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= SETTINGS REGISTRY (Task 13) ================= -->
+  <div class="card" id="registry-card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Settings Registry</div>
+        <div class="card-desc">Every network setting baza knows — caddy, cloudflared, tailscale, ddns, env, router. Router facts are editable.</div>
+      </div>
+      <button class="btn secondary sm" onclick="registryRefresh()">&#8635; Refresh</button>
+    </div>
+    <div class="card-body" id="registryBody"><span class="muted">loading…</span></div>
+  </div>
+
+  <!-- add router fact inline form (body-level) -->
+  <div id="registryAddFactBg" style="display:none;position:fixed;inset:0;background:#0009;z-index:10000;align-items:center;justify-content:center">
+    <div style="background:#0b0b17;border:1px solid #1a1a3a;border-radius:14px;width:min(480px,96vw);display:flex;flex-direction:column;box-shadow:0 8px 40px #000c">
+      <div style="padding:16px 22px;border-bottom:1px solid #1a1a2e;display:flex;align-items:center;justify-content:space-between">
+        <div id="addFactTitle" style="font-size:15px;font-weight:800;color:#fff">&#9998; Router fact</div>
+        <button onclick="closeAddFactModal()" style="background:#15152a;border:none;color:#aaa;border-radius:6px;padding:5px 11px;font-size:15px;cursor:pointer">&#10005;</button>
+      </div>
+      <div style="padding:18px 22px;display:flex;flex-direction:column;gap:10px">
+        <div id="addFactErr" style="display:none;background:#2a0a0a;border:1px solid #dc2626;border-radius:8px;padding:10px 12px;font-size:12px;color:#ff6666"></div>
+        <label style="font-size:12px;color:#888">Key</label>
+        <input id="addFactKey" type="text" placeholder="router.something"
+          style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#ccc;outline:none" />
+        <label style="font-size:12px;color:#888">Value</label>
+        <input id="addFactValue" type="text"
+          style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#ccc;outline:none" />
+        <label style="font-size:12px;color:#888">Note (optional — use "verify: URL" for a verify button)</label>
+        <input id="addFactNote" type="text" placeholder="verify: https://…"
+          style="background:#070714;border:1px solid #1a1a2e;border-radius:6px;padding:8px 12px;font-size:13px;color:#ccc;outline:none" />
+      </div>
+      <div style="padding:14px 22px;border-top:1px solid #1a1a2e;display:flex;align-items:center;gap:10px">
+        <button class="btn sm" onclick="addFactSave()">&#10003; Save</button>
+        <button class="btn ghost sm" onclick="closeAddFactModal()">Cancel</button>
+        <span id="addFactStatus" class="muted" style="font-size:12px"></span>
       </div>
     </div>
   </div>
@@ -696,9 +735,9 @@ document.addEventListener('click', e => {
 /* ---------- caddy card ---------- */
 function renderCaddy(s){
   const caddy = s.caddy || {};
-  const state = caddy.state || caddy.active || '?';
+  const state = caddy.active ? 'active' : 'inactive';
   const sites = caddy.sites || [];
-  const stateClass = state === 'active' ? 'active' : (state === 'inactive' || state === 'failed' ? 'inactive' : 'other');
+  const stateClass = state === 'active' ? 'active' : 'inactive';
   document.getElementById('caddyStateSpan').innerHTML =
     `State: <span class="state ${esc(stateClass)}">${esc(state)}</span>`;
   const sitesEl = document.getElementById('caddySitesBox');
@@ -1331,10 +1370,196 @@ async function diagRun() {
 // init tool visibility state
 diagToolChange();
 
+/* ── Settings Registry (Task 13) ─────────────────────────────────────────── */
+
+let _REGISTRY_ROWS = [];
+
+const _GROUP_LABELS = {
+  caddy: '🔀 Caddy',
+  cloudflared: '☁️ cloudflared',
+  tailscale: '🔗 Tailscale',
+  ddns: '🔄 DDNS',
+  env: '🌿 Env',
+  router: '📶 Router',
+};
+
+const _GROUP_ORDER = ['caddy', 'cloudflared', 'tailscale', 'ddns', 'env', 'router'];
+
+async function registryRefresh(){
+  const box = document.getElementById('registryBody');
+  if(!box) return;
+  try {
+    const r = await fetch('/api/network/registry');
+    const j = await r.json();
+    _REGISTRY_ROWS = j.rows || [];
+    renderRegistry(_REGISTRY_ROWS);
+  } catch(e) {
+    if(box) box.innerHTML = `<span class="muted">registry fetch error: ${esc(String(e))}</span>`;
+  }
+}
+
+function renderRegistry(rows){
+  const box = document.getElementById('registryBody');
+  if(!box) return;
+  if(!rows || !rows.length){ box.innerHTML = '<span class="muted">no registry entries</span>'; return; }
+
+  // group rows preserving order
+  const byGroup = {};
+  for(const g of _GROUP_ORDER) byGroup[g] = [];
+  for(const row of rows){
+    if(!byGroup[row.group]) byGroup[row.group] = [];
+    byGroup[row.group].push(row);
+  }
+
+  let html = '';
+  for(const g of _GROUP_ORDER){
+    const gRows = byGroup[g];
+    if(!gRows || !gRows.length) continue;
+    const gLabel = _GROUP_LABELS[g] || g;
+
+    html += `<div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px">${esc(gLabel)}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>
+          <th style="text-align:left;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1a1a2e;width:200px">Key</th>
+          <th style="text-align:left;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1a1a2e">Value</th>
+          <th style="text-align:left;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1a1a2e;width:80px">Source</th>
+          <th style="padding:6px 10px;border-bottom:1px solid #1a1a2e;width:140px"></th>
+        </tr></thead>
+        <tbody>`;
+
+    for(const row of gRows){
+      const verifyUrl = (row.note || '').match(/verify:\s*(https?:\/\/\S+)/);
+      let ctrlHtml = '';
+      if(row.edit === true){
+        ctrlHtml += `<button class="btn ghost xs" onclick="openEditFact(${JSON.stringify(row.key)}, ${JSON.stringify(row.value)}, ${JSON.stringify(row.note||'')})">Edit</button>
+          <button class="btn ghost xs" style="color:#ff6666" onclick="deleteFact(${JSON.stringify(row.key)})">Delete</button>`;
+      } else if(typeof row.edit === 'string'){
+        ctrlHtml += `<span class="muted" style="font-size:11px">${esc(row.edit)}</span>`;
+      }
+      if(verifyUrl){
+        ctrlHtml += ` <button class="btn secondary xs" onclick="verifyFactUrl(${JSON.stringify(verifyUrl[1])}, this)">&#10003; Verify</button>`;
+      }
+
+      html += `<tr>
+        <td style="font-family:monospace;color:#9ad;padding:7px 10px;border-bottom:1px solid #0d0d1e;word-break:break-all">${esc(row.key)}</td>
+        <td style="font-family:monospace;color:#ccc;padding:7px 10px;border-bottom:1px solid #0d0d1e;word-break:break-all">${esc(row.value)}${row.note ? ` <span class="muted" style="font-size:10px">${esc(row.note)}</span>` : ''}</td>
+        <td style="color:#555;font-size:11px;padding:7px 10px;border-bottom:1px solid #0d0d1e">${esc(row.source||'')}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #0d0d1e;white-space:nowrap;text-align:right">${ctrlHtml}</td>
+      </tr>`;
+    }
+
+    html += `</tbody></table>`;
+    if(g === 'router'){
+      html += `<div style="margin-top:8px"><button class="btn ghost xs" onclick="openAddFact()">+ Add router fact</button></div>`;
+    }
+    html += `</div>`;
+  }
+
+  box.innerHTML = html;
+}
+
+async function verifyFactUrl(url, btn){
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch('/api/network/diag', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tool: 'curl', target: url, extra: {}})
+    });
+    const j = await r.json();
+    toast(`verify ${esc(url)}: ${j.ok ? 'ok HTTP '+esc(j.rc||'') : 'FAILED rc='+esc(j.rc||'')}`, !!j.ok);
+  } catch(e) {
+    toast('verify error: ' + e, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+function openEditFact(key, value, note){
+  document.getElementById('addFactKey').value = key;
+  document.getElementById('addFactValue').value = value;
+  document.getElementById('addFactNote').value = note || '';
+  document.getElementById('addFactErr').style.display = 'none';
+  document.getElementById('addFactStatus').textContent = '';
+  document.getElementById('addFactTitle').textContent = '✏ Edit router fact';
+  document.getElementById('registryAddFactBg').style.display = 'flex';
+}
+
+function closeAddFactModal(){
+  document.getElementById('registryAddFactBg').style.display = 'none';
+}
+
+// alias for openAddFact bg element
+function openAddFact(){
+  document.getElementById('addFactKey').value = 'router.';
+  document.getElementById('addFactValue').value = '';
+  document.getElementById('addFactNote').value = '';
+  document.getElementById('addFactErr').style.display = 'none';
+  document.getElementById('addFactStatus').textContent = '';
+  document.getElementById('addFactTitle').textContent = '+ Add router fact';
+  document.getElementById('registryAddFactBg').style.display = 'flex';
+}
+
+async function addFactSave(){
+  const key = document.getElementById('addFactKey').value.trim();
+  const value = document.getElementById('addFactValue').value;
+  const note = document.getElementById('addFactNote').value;
+  const errEl = document.getElementById('addFactErr');
+  const stEl = document.getElementById('addFactStatus');
+  errEl.style.display = 'none';
+  if(!key){ errEl.textContent = 'Key is required'; errEl.style.display='block'; return; }
+  if(!value && value !== '0'){ errEl.textContent = 'Value is required'; errEl.style.display='block'; return; }
+  stEl.textContent = 'saving…';
+  try {
+    const r = await fetch('/api/network/facts', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key, value, note})
+    });
+    const j = await r.json();
+    if(j.ok){
+      closeAddFactModal();
+      toast(`✓ fact ${esc(key)} saved`, true);
+      await registryRefresh();
+    } else {
+      errEl.textContent = j.error || 'save failed';
+      errEl.style.display = 'block';
+      stEl.textContent = '';
+    }
+  } catch(e) {
+    stEl.textContent = 'request failed: ' + e;
+  }
+}
+
+async function deleteFact(key){
+  if(!confirm('Delete fact ' + key + '?')) return;
+  try {
+    const r = await fetch('/api/network/facts/' + encodeURIComponent(key), {method: 'DELETE'});
+    const j = await r.json();
+    if(j.ok){
+      toast(`✓ fact ${esc(key)} deleted`, true);
+      await registryRefresh();
+    } else {
+      toast('delete failed: ' + esc(j.error || ''), false);
+    }
+  } catch(e) {
+    toast('delete error: ' + e, false);
+  }
+}
+
+document.getElementById('registryAddFactBg').addEventListener('click', function(e){
+  if(e.target === this) closeAddFactModal();
+});
+
 /* init */
 cfCheckToken().then(isSet => { if(isSet) cfRefresh(); });
 wizRefresh(); setInterval(wizRefresh, 30000);
 refresh(); setInterval(refresh, 15000);
+registryRefresh(); setInterval(registryRefresh, 30000);
 </script>
 </body>
 </html>

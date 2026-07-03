@@ -517,9 +517,9 @@ def caddy_apply(text: str, db_path=None) -> dict:
 # Strict input validation is the security boundary: target/url/count/port/rtype
 # are all validated with re.fullmatch / range checks before argv is built.
 
-_DIAG_TARGET_RE = re.compile(r"[A-Za-z0-9.\-]{1,253}")
+_DIAG_TARGET_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-]{0,252}")
 _DIAG_URL_RE = re.compile(
-    r"https?://[A-Za-z0-9.\-]+(?::\d+)?(/[A-Za-z0-9.\-_/?=&%]*)?"
+    r"https?://[A-Za-z0-9][A-Za-z0-9.\-]*(?::\d+)?(/[A-Za-z0-9.\-_/?=&%]*)?"
 )
 _DIAG_VALID_RTYPES = {"A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"}
 _DIAG_VALID_TOOLS = {"ping", "traceroute", "dig", "curl", "port"}
@@ -562,12 +562,12 @@ def run_diag(tool: str, target: str, extra: dict, db_path=None) -> dict:
             count = extra.get("count", 4)
             if not isinstance(count, int) or not (1 <= count <= 10):
                 raise ValueError(f"count must be int 1-10, got {count!r}")
-            argv = ["ping", "-c", str(count), "-W", "2", target]
+            argv = ["ping", "-c", str(count), "-W", "2", "--", target]
             audit_params = {"target": target, "count": count}
             timeout = 20
 
         elif tool == "traceroute":
-            argv = ["traceroute", "-w", "2", "-m", "20", target]
+            argv = ["traceroute", "-w", "2", "-m", "20", "--", target]
             audit_params = {"target": target}
             timeout = 45
 
@@ -585,6 +585,7 @@ def run_diag(tool: str, target: str, extra: dict, db_path=None) -> dict:
             port = extra.get("port")
             if not isinstance(port, int) or not (1 <= port <= 65535):
                 raise ValueError(f"port must be int 1-65535, got {port!r}")
+            # Note: nc (netcat) does not reliably support '--' across variants, relying on regex guard
             argv = ["nc", "-z", "-v", "-w", "3", target, str(port)]
             audit_params = {"target": target, "port": port}
             timeout = 20

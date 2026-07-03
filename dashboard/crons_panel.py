@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime
@@ -115,10 +116,35 @@ def _status_icon(status) -> str:
     return _STATUS_ICON.get(status, "—")  # em dash = "never run / unknown"
 
 
-def get_declared_with_health(now: datetime | None = None) -> list[dict]:
-    """Declared crons joined with core.cron_health_db.last_runs_by_cron() + next-fire."""
+def _safe_last_runs_by_cron() -> tuple[dict, str | None]:
+    """cron_health_db.last_runs_by_cron(), degrading to ({}, error) on
+    sqlite3.Error instead of raising.
+
+    Covers the fresh-deploy/restore case where dashboard/cron_health.db
+    exists on disk but core.cron_health_db.init() never ran against it (no
+    ``cron_runs`` table yet) -- register() below now calls init() itself,
+    but this read path must degrade independently too rather than trust
+    that init() always succeeded first.
+    """
+    try:
+        return cron_health_db.last_runs_by_cron(), None
+    except sqlite3.Error as e:
+        return {}, str(e)
+
+
+def _safe_recent_runs(limit: int) -> tuple[list, str | None]:
+    """cron_health_db.recent_runs(), degrading to ([], error) on sqlite3.Error."""
+    try:
+        return list(cron_health_db.recent_runs(limit=limit)), None
+    except sqlite3.Error as e:
+        return [], str(e)
+
+
+def _declared_with_health_and_error(
+    now: datetime | None = None,
+) -> tuple[list[dict], str | None]:
     declared = load_declared_crons()
-    last_runs = cron_health_db.last_runs_by_cron()
+    last_runs, err = _safe_last_runs_by_cron()
 
     rows = []
     for d in declared:
@@ -138,6 +164,16 @@ def get_declared_with_health(now: datetime | None = None) -> list[dict]:
         else:
             row["last_run"] = None
         rows.append(row)
+    return rows, err
+
+
+def get_declared_with_health(now: datetime | None = None) -> list[dict]:
+    """Declared crons joined with core.cron_health_db.last_runs_by_cron() + next-fire.
+
+    Degrades to last_run=None for every row (never raises) if the health DB
+    can't be read -- see _safe_last_runs_by_cron().
+    """
+    rows, _err = _declared_with_health_and_error(now=now)
     return rows
 
 
@@ -219,11 +255,12 @@ def get_systemd_timers() -> dict:
 # ── Combined payload ─────────────────────────────────────────────────────────
 
 def get_status_payload() -> dict:
-    declared = get_declared_with_health()
+    declared, last_runs_err = _declared_with_health_and_error()
     timers = get_systemd_timers()
+    recent_rows, recent_err = _safe_recent_runs(_RECENT_RUNS_LIMIT)
 
     recent = []
-    for r in cron_health_db.recent_runs(limit=_RECENT_RUNS_LIMIT):
+    for r in recent_rows:
         recent.append(
             {
                 "id": r["id"],
@@ -238,10 +275,17 @@ def get_status_payload() -> dict:
             }
         )
 
+    # Same "degrade with a visible marker" shape as systemd_timers above --
+    # lets the JSON API (and any future template update) tell "no runs yet"
+    # apart from "couldn't read cron_health.db".
+    db_error = last_runs_err or recent_err
+    health_db = {"available": db_error is None, "error": db_error}
+
     return {
         "declared": declared,
         "systemd_timers": timers,
         "recent_runs": recent,
+        "cron_health_db": health_db,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
 
@@ -260,4 +304,16 @@ def crons_status_api():
 
 
 def register(app) -> None:
+    # Mirrors the try/except init() pattern sibling blueprints use at
+    # register() time (e.g. dashboard/app.py's bin_store.init_bin_db()
+    # around bin_routes' registration): a fresh deploy/restore can leave
+    # dashboard/cron_health.db present on disk without its schema, and
+    # init() failing here (permissions, disk full, corrupt file, ...) must
+    # never take down the rest of the dashboard. The read paths above
+    # degrade gracefully on their own too, so a still-missing schema after
+    # this just means "no heartbeat data" instead of a 500.
+    try:
+        cron_health_db.init()
+    except Exception as e:
+        print(f"[crons_panel] cron_health_db.init() failed: {e}")
     app.register_blueprint(crons_panel_bp)

@@ -4,12 +4,14 @@
 
    Keys: agents, ahb123, datahub, chains, projects, approvals, pulse,
          infra, explore, comms, fluid, cloud, shell, settings,
-         crons, tasks, skills, journal, memory, vision, email, artifacts.
+         crons, cronhealth, tasks, skills, journal, memory, vision, email, artifacts.
 
    The styling classes (.nav, .nav-link, .nav-dropdown, .nav-submenu,
    .nav-brand, .nav-right) must already be defined in the host page's
    CSS. Every legacy template already includes these classes.
 #}
+<link rel="stylesheet" href="/static/css/help.css">
+<script defer src="/static/help.js"></script>
 {% set _act = nav_active|default('') %}
 <style>
   /* Canonical dropdown behavior — collapses submenus until hover/tap. Lives
@@ -34,6 +36,7 @@
     <a class="nav-link {% if _act == 'agents' %}active{% endif %}" href="/">&#129302; Agents</a>
     <div class="nav-submenu">
       <a href="/crons" class="{% if _act == 'crons' %}active{% endif %}">&#9200;&#65039; Crons</a>
+      <a href="/crons/health" class="{% if _act == 'cronhealth' %}active{% endif %}" title="Read-only cron health — declared crons, systemd timers, recent runs">&#128200; Cron Health</a>
       <a href="/tasks" class="{% if _act == 'tasks' %}active{% endif %}">&#128203; Tasks</a>
       <a href="/skills" class="{% if _act == 'skills' %}active{% endif %}">&#127919; Skills</a>
       <a href="/journal" class="{% if _act == 'journal' %}active{% endif %}">&#128221; Journal</a>

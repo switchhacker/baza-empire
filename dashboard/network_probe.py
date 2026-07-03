@@ -36,6 +36,12 @@ UNITS = [
     "openvpn.service",
 ]
 
+# PROBE_UNITS extends UNITS with the timer so probe_services() shows it on the
+# Network tab/registry, but UNITS stays unchanged so network_ops.py's svc
+# action whitelist never allows start/stop/restart on the timer (it has its
+# own ddns_timer_enable/disable actions).
+PROBE_UNITS = UNITS + ["baza-ddns.timer"]
+
 # nova A expectation uses "@WAN" sentinel — substituted at probe time
 EXPECTED_DNS = [
     ("ahb123.com", "A", ["198.49.23.144", "198.49.23.145", "198.185.159.144", "198.185.159.145"]),
@@ -198,9 +204,9 @@ def probe_tailscale():
 
 
 def probe_services():
-    """Return {unit: parse_unit_show()} for each unit in UNITS."""
+    """Return {unit: parse_unit_show()} for each unit in PROBE_UNITS."""
     result = {}
-    for unit in UNITS:
+    for unit in PROBE_UNITS:
         try:
             _, out, _ = _run(["systemctl", "show", unit,
                                "--property=ActiveState,SubState,ActiveEnterTimestamp"])
@@ -582,6 +588,142 @@ def build_edges(dns, wan_ip, caddy, cloudflared, listeners, tailscale):
     chain_ts = {"chain": "ts.net", "hops": ts_hops}
 
     return [chain_apex, chain_nova, chain_baza, chain_ts]
+
+
+# ───────────── settings registry (pure) ─────────────
+
+_SECRET_WORDS = re.compile(r'(SECRET|TOKEN|KEY|PASSWORD|PASS|PWD|CRED)', re.IGNORECASE)
+_URL_LIKE = re.compile(r'^https?://', re.IGNORECASE)
+# Bare host[:port][/path]: must have a dot (domain) or be localhost, then optional :port and /path
+_SAFE_HOST = re.compile(r'^(localhost|[A-Za-z0-9]([A-Za-z0-9.\-]*[A-Za-z0-9])?\.([A-Za-z0-9\-]+\.)*[A-Za-z0-9\-]+)(?::\d+)?(?:/[\w./\-]*)?$', re.IGNORECASE)
+
+
+def _mask_env_value(key, value):
+    """Mask env value unless it looks safe-by-default.
+
+    Safe (shown in full): URL-ish (matches ^https?://), bare host[:port][/path],
+    purely numeric (port), or boolean (true/false/on/off).
+    Always masked if key contains secret-word (belt and suspenders).
+    Everything else is masked to ***.
+    """
+    # Always mask if key looks like a secret
+    if _SECRET_WORDS.search(key):
+        return "***"
+
+    value_str = str(value) if value is not None else ""
+
+    # Safe patterns
+    if _URL_LIKE.match(value_str):  # https://... or http://...
+        return value_str
+    if _SAFE_HOST.match(value_str):  # localhost or domain.name[:port][/path]
+        return value_str
+    if value_str.isdigit():  # purely numeric (port)
+        return value_str
+    if value_str.lower() in ("true", "false", "on", "off", "yes", "no"):  # boolean
+        return value_str
+
+    # Default: mask everything else
+    return "***"
+
+
+def settings_registry(status, facts, env=None):
+    """Pure assembler: status dict + facts list + optional env dict → registry rows.
+
+    Each row: {group, key, value, source, edit}.
+    edit=True means the row is a manual_fact (editable via /api/network/facts).
+    edit=False means read-only.  edit=str is a hint string (e.g. "opens Caddy editor").
+    """
+    rows = []
+
+    # ── caddy ──
+    caddy = status.get("caddy") or {}
+    rows.append({
+        "group": "caddy", "key": "caddyfile",
+        "value": "/etc/caddy/Caddyfile" if caddy.get("active") else "/etc/caddy/Caddyfile (inactive)",
+        "source": "filesystem", "edit": "opens Caddy editor",
+    })
+    for site in caddy.get("sites") or []:
+        host = site.get("host", "")
+        bind = site.get("bind") or "(any)"
+        upstreams = ", ".join(site.get("upstreams") or [])
+        rows.append({
+            "group": "caddy", "key": f"site:{host}",
+            "value": f"bind={bind} → {upstreams}" if upstreams else f"bind={bind}",
+            "source": "Caddyfile", "edit": "opens Caddy editor",
+        })
+
+    # ── cloudflared ──
+    cf = status.get("cloudflared") or {}
+    if cf.get("config_exists"):
+        cfg_path = "~/.cloudflared/config.yml"
+    else:
+        cfg_path = "absent"
+    rows.append({
+        "group": "cloudflared", "key": "config",
+        "value": cfg_path,
+        "source": "filesystem", "edit": "opens cloudflared wizard",
+    })
+    rows.append({
+        "group": "cloudflared", "key": "unit_state",
+        "value": cf.get("unit_state") or "unknown",
+        "source": "systemd", "edit": False,
+    })
+
+    # ── tailscale ──
+    ts = status.get("tailscale") or {}
+    serves = ts.get("serves") or []
+    if serves:
+        for sv in serves:
+            rows.append({
+                "group": "tailscale", "key": f"serve:{sv.get('listen','')}",
+                "value": sv.get("target", ""),
+                "source": "tailscale serve status", "edit": False,
+            })
+    else:
+        rows.append({
+            "group": "tailscale", "key": "serve",
+            "value": "no mappings configured",
+            "source": "tailscale serve status", "edit": False,
+        })
+    self_ = ts.get("self") or {}
+    rows.append({
+        "group": "tailscale", "key": "exit_node",
+        "value": str(bool(self_.get("exit_node", False))),
+        "source": "tailscale status", "edit": False,
+    })
+
+    # ── ddns ──
+    services = status.get("services") or {}
+    for key_suffix, unit in [("service", "baza-ddns.service"), ("timer", "baza-ddns.timer")]:
+        svc = services.get(unit) or {}
+        rows.append({
+            "group": "ddns", "key": f"ddns.{key_suffix}",
+            "value": svc.get("active") or "unknown",
+            "source": "systemd", "edit": False,
+        })
+
+    # ── env ──
+    if env:
+        _RELEVANT = re.compile(r'^(BAZA_|NOVA_|CADDY_|SECRET|API_KEY|TOKEN)', re.IGNORECASE)
+        for k, v in env.items():
+            if _RELEVANT.match(k):
+                rows.append({
+                    "group": "env", "key": k,
+                    "value": _mask_env_value(k, str(v)),
+                    "source": ".env", "edit": False,
+                })
+
+    # ── router (manual_facts) ──
+    for fact in (facts or []):
+        rows.append({
+            "group": "router", "key": fact["key"],
+            "value": fact["value"],
+            "source": "manual_facts",
+            "edit": True,
+            "note": fact.get("note", ""),
+        })
+
+    return rows
 
 
 # ───────────── aggregator ─────────────

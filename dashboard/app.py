@@ -19397,6 +19397,16 @@ from dashboard.vision_routes import bp as vision_bp  # noqa: E402
 app.register_blueprint(vision_bp)
 
 
+# ── Cron Health panel (read-only; Task 10 of the cron-improvements plan) ────
+# Mounted at /crons/health — /crons + templates/crons.html are the pre-existing
+# mutable "Cron Hub" crontab editor; see dashboard/crons_panel.py docstring.
+try:
+    from dashboard.crons_panel import register as _register_crons_panel
+except ImportError:
+    from crons_panel import register as _register_crons_panel
+_register_crons_panel(app)
+
+
 @app.route("/datahub/private")
 def datahub_private_page():
     """Legacy private gallery — renders the unlock form when locked, the
