@@ -1,0 +1,8 @@
+[Unit]
+Description=baza-empire cron failure alert for %i
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/python /home/switchhacker/baza-empire/agent-framework-v3/scripts/cron_failure_alert.py %i
+EnvironmentFile=/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
