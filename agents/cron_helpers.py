@@ -18,11 +18,16 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(FRAMEWORK_DIR, "configs", "secrets.env"))
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_SIMON_BATELY", "")
-# Duke's bot token -- see send_alert()'s buttons routing below. Duke runs the
-# newer core/base_agent.py architecture (CallbackQueryHandler-capable);
-# Simon's default TELEGRAM_TOKEN above is the legacy core/agent.py bot and
-# can't answer inline-button callbacks.
-TELEGRAM_DUKE_HARMON = os.getenv("TELEGRAM_DUKE_HARMON", "")
+# Legacy (callback-incapable) bot tokens -- see send_alert()'s button
+# gating below. Claw and Phil are the only live bots still started via the
+# top-level `python agent.py --agent claw_batto|phil_hass` entrypoint
+# (MessageHandler only, no CallbackQueryHandler registered), so a Telegram
+# inline-keyboard tap on an alert sent through either of their bots would
+# never get answered. Every other live bot -- Simon included -- runs
+# core/base_agent.py's BaseAgent, which registers the CallbackQueryHandler
+# and IS callback-capable.
+TELEGRAM_CLAW_BATTO = os.getenv("TELEGRAM_CLAW_BATTO", "")
+TELEGRAM_PHIL_HASS = os.getenv("TELEGRAM_PHIL_HASS", "")
 SERGE_CHAT_ID = os.getenv("SERGE_CHAT_ID", "8551331144")
 OLLAMA_URL = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 DB_PATH = os.path.join(FRAMEWORK_DIR, "dashboard", "baza_projects.db")
