@@ -178,6 +178,78 @@ def test_error_tail_escaped(env):
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
 
 
+# ── Uninitialized health DB (regression, Fix round 1) ───────────────────────
+
+@pytest.fixture()
+def env_uninitialized_db(tmp_path, monkeypatch):
+    """Like `env`, but dashboard/cron_health.db points at a file that already
+    EXISTS on disk (zero bytes) and core.cron_health_db.init() is never
+    actually run against it -- the fresh-deploy/restore scenario where the DB
+    file is there but has no schema yet (no `cron_runs` table). init() is
+    monkeypatched to a no-op (rather than just skipping the call) so this
+    also exercises register()'s own try/except around init() -- register()
+    still calls it, it just doesn't create the schema, same as if init() had
+    silently failed.
+    """
+    db_path = tmp_path / "cron_health.db"
+    db_path.touch()  # exists, but empty -- no schema
+    monkeypatch.setenv("BAZA_CRON_HEALTH_DB", str(db_path))
+
+    if "core.cron_health_db" in sys.modules:
+        del sys.modules["core.cron_health_db"]
+    import core.cron_health_db as cron_health_db
+    monkeypatch.setattr(cron_health_db, "init", lambda: None)
+
+    if "crons_panel" in sys.modules:
+        del sys.modules["crons_panel"]
+    import crons_panel
+    importlib.reload(crons_panel)
+
+    agents_yaml = tmp_path / "agents.yaml"
+    agents_yaml.write_text(AGENTS_YAML_FIXTURE)
+    monkeypatch.setattr(crons_panel, "_agents_yaml_path", lambda: str(agents_yaml))
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout=SAMPLE_LIST_TIMERS, stderr="")
+
+    monkeypatch.setattr(crons_panel.subprocess, "run", fake_run)
+
+    app = Flask(
+        "t2",
+        template_folder=os.path.join(REPO_ROOT, "dashboard", "templates"),
+        static_folder=os.path.join(REPO_ROOT, "dashboard", "static"),
+    )
+    crons_panel.register(app)  # exercises register()'s try/except init() path
+    return app.test_client(), crons_panel
+
+
+def test_page_200_on_uninitialized_health_db(env_uninitialized_db):
+    """GET /crons/health must not 500 when cron_health.db exists without its
+    schema -- was an uncaught sqlite3.OperationalError('no such table:
+    cron_runs')."""
+    client, crons_panel = env_uninitialized_db
+    r = client.get("/crons/health")
+    assert r.status_code == 200
+    body = r.data.decode()
+    assert "infra_health" in body  # declared crons still render
+
+
+def test_api_status_200_on_uninitialized_health_db(env_uninitialized_db):
+    """GET /api/crons/status must not 500 when cron_health.db exists without
+    its schema; the payload should degrade gracefully instead."""
+    client, crons_panel = env_uninitialized_db
+    r = client.get("/api/crons/status")
+    assert r.status_code == 200
+    data = r.get_json()
+
+    assert data["recent_runs"] == []
+    infra = next(d for d in data["declared"] if d["name"] == "infra_health")
+    assert infra["last_run"] is None
+
+    assert data["cron_health_db"]["available"] is False
+    assert "cron_runs" in (data["cron_health_db"]["error"] or "")
+
+
 def test_error_tail_truncated_to_200(env):
     client, crons_panel, db = env
     run_id = db.record_run_start("infra_health")

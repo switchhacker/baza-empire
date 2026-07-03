@@ -574,14 +574,14 @@ def test_diag_bad_target_semicolon_raises():
 
 
 def test_diag_ping_argv(tmp_path, monkeypatch):
-    """ping builds correct argv with default count=4."""
+    """ping builds correct argv with default count=4 and '--' separator."""
     db = str(tmp_path / "n.db")
     network_db.ensure_tables(db)
     recorded = []
     monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "pong", "")))
     r = network_ops.run_diag("ping", "8.8.8.8", {}, db_path=db)
     assert r["ok"] is True
-    assert recorded[0] == ["ping", "-c", "4", "-W", "2", "8.8.8.8"]
+    assert recorded[0] == ["ping", "-c", "4", "-W", "2", "--", "8.8.8.8"]
 
 
 def test_diag_ping_custom_count(tmp_path, monkeypatch):
@@ -609,7 +609,7 @@ def test_diag_traceroute_argv(tmp_path, monkeypatch):
     recorded = []
     monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=45: (recorded.append(cmd) or (0, "", "")))
     network_ops.run_diag("traceroute", "ahb123.com", {}, db_path=db)
-    assert recorded[0] == ["traceroute", "-w", "2", "-m", "20", "ahb123.com"]
+    assert recorded[0] == ["traceroute", "-w", "2", "-m", "20", "--", "ahb123.com"]
 
 
 def test_diag_dig_argv(tmp_path, monkeypatch):
@@ -687,3 +687,69 @@ def test_diag_audited(tmp_path, monkeypatch):
     network_ops.run_diag("ping", "8.8.8.8", {"count": 2}, db_path=db)
     rows = network_db.recent_audit(db_path=db)
     assert rows[0]["action"] == "diag_ping"
+
+
+# ─── Task 12 Security: option injection prevention (leading-dash / leading-dot) ─
+
+def test_diag_target_leading_dash_rejected():
+    """target starting with '-' is rejected (option injection defense)."""
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("ping", "-fserver", {})
+
+
+def test_diag_target_leading_dot_rejected():
+    """target starting with '.' is rejected (path traversal defense)."""
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("ping", ".evil", {})
+
+
+def test_diag_dig_leading_dash_rejected():
+    """dig with leading-dash target is rejected."""
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("dig", "--exec=/bin/sh", {"rtype": "A"})
+
+
+def test_diag_port_leading_dash_rejected():
+    """port tool with leading-dash target is rejected."""
+    with pytest.raises(ValueError, match="invalid target"):
+        network_ops.run_diag("port", "-e", {"port": 80})
+
+
+def test_diag_curl_url_leading_dash_host_rejected():
+    """curl URL with leading-dash hostname is rejected."""
+    with pytest.raises(ValueError, match="url"):
+        network_ops.run_diag("curl", "http://-evil/x", {})
+
+
+def test_diag_curl_url_leading_dot_host_rejected():
+    """curl URL with leading-dot hostname is rejected."""
+    with pytest.raises(ValueError, match="url"):
+        network_ops.run_diag("curl", "http://.evil.com/x", {})
+
+
+def test_diag_ping_positive_case(tmp_path, monkeypatch):
+    """ping with valid hostname builds correct argv with '--' separator."""
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    recorded = []
+    monkeypatch.setattr(network_ops, "_run", lambda cmd, timeout=20: (recorded.append(cmd) or (0, "pong", "")))
+    r = network_ops.run_diag("ping", "ahb123.com", {}, db_path=db)
+    assert r["ok"] is True
+    # Verify '--' is present before target
+    assert recorded[0] == ["ping", "-c", "4", "-W", "2", "--", "ahb123.com"]
+
+
+# ── Final-review fix round: timer NOT in svc whitelist ────────────────────────
+
+def test_timer_not_in_svc_whitelist():
+    """baza-ddns.timer must NOT be in network_ops UNITS (svc action whitelist)."""
+    from network_probe import UNITS
+    assert "baza-ddns.timer" not in UNITS
+
+
+def test_svc_action_rejects_timer(tmp_path):
+    """run_action('svc', {unit: baza-ddns.timer, verb: stop}) raises ValueError."""
+    db = str(tmp_path / "n.db")
+    network_db.ensure_tables(db)
+    with pytest.raises(ValueError, match="not in whitelist"):
+        network_ops.run_action("svc", {"unit": "baza-ddns.timer", "verb": "stop"}, db_path=db)
