@@ -61,7 +61,8 @@ Think about: portfolio updates, client testimonials, social posts, SEO.
 {data}"""
     report = ollama_generate(MODEL, system, f"Daily brand & marketing review for {today()}")
     save_artifact("proj-ahb123", f"brand_monitor_{today()}.md", f"# Brand Monitor — {today()}\n\n{report}")
-    send_telegram(f"🎨 BRAND MONITOR — {today()}\n\n{report}", AGENT_TOKEN)
+    send_report("brand_monitor", f"🎨 BRAND MONITOR — {today()}\n\n{report}", priority="fyi", delta_key="brand_monitor", token=AGENT_TOKEN)
 
 if __name__ == "__main__":
-    main()
+    with cron_run("brand_monitor"):
+        main()

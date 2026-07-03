@@ -488,11 +488,12 @@ Be directive. You own the task board.
             summary_lines.append(f"  {a}")
         if len(all_actions) > 8:
             summary_lines.append(f"  ...+{len(all_actions)-8} more (see artifact)")
-        send_telegram("\n".join(summary_lines), AGENT_TOKEN)
+        send_report("project_tracker", "\n".join(summary_lines), priority="alert", token=AGENT_TOKEN)
     else:
-        send_telegram(f"📋 Duke — {now()}\nAll tasks on track. No actions needed.", AGENT_TOKEN)
+        send_report("project_tracker", f"📋 Duke — {now()}\nAll tasks on track. No actions needed.", priority="alert", token=AGENT_TOKEN)
     log.info(f"Done. Actions taken: {len(all_actions)}")
 
 
 if __name__ == "__main__":
-    main()
+    with cron_run("project_tracker"):
+        main()

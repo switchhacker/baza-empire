@@ -76,7 +76,8 @@ Be specific and actionable. What should AHBCO do differently this week?
 
     save_artifact("proj-research", f"market_watch_{today()}.md", f"# Market Watch — {today()}\n\n{report}")
     publish_event("scout_reeves", "research_complete", {"topic": "daily_market_watch", "summary": report[:200]})
-    send_telegram(f"🔍 MARKET WATCH — {today()}\n\n{report}\n\n💬 Was this sufficient? Reply with feedback or 'ok'.", AGENT_TOKEN)
+    send_report("market_watch", f"🔍 MARKET WATCH — {today()}\n\n{report}\n\n💬 Was this sufficient? Reply with feedback or 'ok'.", priority="fyi", delta_key="market_watch", token=AGENT_TOKEN)
 
 if __name__ == "__main__":
-    main()
+    with cron_run("market_watch"):
+        main()

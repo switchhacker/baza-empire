@@ -5,7 +5,7 @@ classifies new photos as AHB jobsite vs personal, imports work photos into ahb_p
 and sends Serge a Telegram summary."""
 import os, sys, json, logging
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.."))
-from agents.cron_helpers import send_telegram, save_artifact, log
+from agents.cron_helpers import send_telegram, save_artifact, log, cron_run, send_report
 from core.icloud_ingest import ingest_all, list_accounts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [CLAW-ICLOUD] %(message)s")
@@ -62,7 +62,7 @@ def main():
     has_changes = any(r.get("new_files", 0) > 0 or not r.get("ok") for r in results)
     if has_changes:
         try:
-            send_telegram(summary)
+            send_report("icloud_ingest", summary, priority="alert")
         except Exception as e:
             log.warning(f"telegram failed: {e}")
 
@@ -70,4 +70,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with cron_run("icloud_ingest"):
+        main()

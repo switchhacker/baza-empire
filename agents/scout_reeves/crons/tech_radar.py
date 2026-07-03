@@ -77,7 +77,8 @@ Be specific with recommendations. Include model names, tool names, links if know
 
     save_artifact("proj-research", f"tech_radar_{today()}.md", f"# Tech Radar — {today()}\n\n{report}")
     publish_event("scout_reeves", "research_complete", {"topic": "weekly_tech_radar", "summary": report[:200]})
-    send_telegram(f"📡 TECH RADAR — {today()}\n\n{report}\n\n💬 Was this sufficient? Reply with feedback or 'ok'.", AGENT_TOKEN)
+    send_report("tech_radar", f"📡 TECH RADAR — {today()}\n\n{report}\n\n💬 Was this sufficient? Reply with feedback or 'ok'.", priority="fyi", delta_key="tech_radar", token=AGENT_TOKEN)
 
 if __name__ == "__main__":
-    main()
+    with cron_run("tech_radar"):
+        main()

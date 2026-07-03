@@ -139,8 +139,9 @@ RULES:
 
     save_artifact("proj-ahb123", f"financial_review_{today()}.md", f"# Financial Review — {today()}\n\n{report}")
     publish_event("phil_hass", "report_generated", {"type": "financial_review", "summary": report[:200]})
-    send_telegram(f"💰 FINANCIAL REVIEW — {today()}\n\n{report}", AGENT_TOKEN)
+    send_report("financial_review", f"💰 FINANCIAL REVIEW — {today()}\n\n{report}", priority="alert", token=AGENT_TOKEN)
     log_activity("phil_hass", f"Phil completed daily financial review for {today()}", task_type="financial_review")
 
 if __name__ == "__main__":
-    main()
+    with cron_run("financial_review"):
+        main()

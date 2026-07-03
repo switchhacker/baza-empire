@@ -18,6 +18,11 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(FRAMEWORK_DIR, "configs", "secrets.env"))
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_SIMON_BATELY", "")
+# Duke's bot token -- see send_alert()'s buttons routing below. Duke runs the
+# newer core/base_agent.py architecture (CallbackQueryHandler-capable);
+# Simon's default TELEGRAM_TOKEN above is the legacy core/agent.py bot and
+# can't answer inline-button callbacks.
+TELEGRAM_DUKE_HARMON = os.getenv("TELEGRAM_DUKE_HARMON", "")
 SERGE_CHAT_ID = os.getenv("SERGE_CHAT_ID", "8551331144")
 OLLAMA_URL = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 DB_PATH = os.path.join(FRAMEWORK_DIR, "dashboard", "baza_projects.db")
@@ -295,25 +300,35 @@ def send_report(cron_name: str, message: str, priority: str = "fyi",
 def send_alert(cron_name: str, message: str, alert_key: str,
               renotify_hours: float | None = None, buttons: bool = True,
               token=None, chat_id=None) -> bool:
-    """Send a deduped alert.
+    """Send a deduped alert, optionally with inline Ack / Snooze / Task buttons.
 
     Dedup/renotify/ack/snooze state lives in cron_health_db's
     cron_alert_state, keyed by alert_key (via should_alert). The message's
-    first line is stashed in that row's meta as {"title": ...} for a later
-    task to surface on inline reply buttons. Sends via
-    core.telegram_fmt.post_html (not the send_telegram wrapper) so the
-    actual-delivery boolean can be returned to the caller.
+    first line is stashed in that row's meta as {"title": ...} -- used both
+    for dedup and as the default title if the Task button later creates a
+    task from this alert. Sends via core.telegram_fmt.post_html (not the
+    send_telegram wrapper) so the actual-delivery boolean can be returned to
+    the caller.
 
-    `buttons` is accepted for forward compatibility with a later task that
-    wires up inline Telegram buttons (ack/snooze) on alerts -- it has no
-    effect yet; alerts are sent with no reply_markup until then.
+    When `buttons` is True (the default) and should_alert returned a usable
+    row_id, the alert ships with an inline keyboard -- "✓ Ack" / "😴 24h" /
+    "➕ Task" -- each callback_data encoding "cron|<action>|<row_id>" for
+    core.base_agent.BaseAgent._on_cron_callback to handle. Only a
+    BaseAgent-backed bot can answer a Telegram callback_query; Simon runs the
+    legacy core/agent.py architecture and can't. So when buttons are
+    requested and no explicit `token` was passed, the alert routes through
+    Duke's bot (TELEGRAM_DUKE_HARMON) instead of Simon's default
+    TELEGRAM_TOKEN, falling back to TELEGRAM_TOKEN if TELEGRAM_DUKE_HARMON
+    isn't configured. Pass buttons=False, or an explicit token, to opt out
+    of this rerouting.
 
     Never raises. Returns True iff a message was actually sent just now.
     """
     try:
         title = message.splitlines()[0] if message else ""
+        row_id = None
         try:
-            send_now, _row_id = _chdb().should_alert(alert_key, renotify_hours, {"title": title})
+            send_now, row_id = _chdb().should_alert(alert_key, renotify_hours, {"title": title})
         except Exception as e:
             log.warning(f"cron_health_db.should_alert failed for {alert_key!r}: {e}")
             send_now = True  # fail open: prefer a possible dup over a dropped alert
@@ -322,11 +337,23 @@ def send_alert(cron_name: str, message: str, alert_key: str,
             log.info(f"send_alert: {cron_name!r}/{alert_key!r} deduped, not sending")
             return False
 
-        tok = token or TELEGRAM_TOKEN
+        reply_markup = None
+        if buttons and row_id is not None:
+            reply_markup = {
+                "inline_keyboard": [[
+                    {"text": "✓ Ack", "callback_data": f"cron|ack|{row_id}"},
+                    {"text": "😴 24h", "callback_data": f"cron|snooze|{row_id}"},
+                    {"text": "➕ Task", "callback_data": f"cron|task|{row_id}"},
+                ]]
+            }
+
+        tok = token
+        if tok is None:
+            tok = (TELEGRAM_DUKE_HARMON if buttons else None) or TELEGRAM_TOKEN
         cid = chat_id or SERGE_CHAT_ID
         try:
             from core.telegram_fmt import post_html
-            return bool(post_html(tok, cid, message))
+            return bool(post_html(tok, cid, message, reply_markup=reply_markup))
         except Exception as e:
             log.error(f"send_alert: telegram send failed for {cron_name!r}: {e}")
             return False

@@ -41,7 +41,8 @@ Prioritize by age — older leads need immediate action.
 {data}"""
     report = ollama_generate(MODEL, system, f"Lead follow-up report for {today()}")
     save_artifact("proj-ahb123", f"lead_followup_{today()}.md", f"# Lead Follow-up — {today()}\n\n{report}")
-    send_telegram(f"📞 LEAD FOLLOW-UP — {today()}\n\n{report}", AGENT_TOKEN)
+    send_report("lead_followup", f"📞 LEAD FOLLOW-UP — {today()}\n\n{report}", priority="alert", token=AGENT_TOKEN)
 
 if __name__ == "__main__":
-    main()
+    with cron_run("lead_followup"):
+        main()

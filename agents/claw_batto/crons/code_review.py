@@ -36,7 +36,8 @@ Max 20 lines.
     report = ollama_generate(MODEL, system, f"Daily code review for {today()}")
     save_artifact("proj-baza-empire", f"code_review_{today()}.md", f"# Code Review — {today()}\n\n{report}")
     publish_event("claw_batto", "report_generated", {"type": "code_review", "summary": report[:200]})
-    send_telegram(f"🔍 CODE REVIEW — {today()}\n\n{report}", AGENT_TOKEN)
+    send_report("code_review", f"🔍 CODE REVIEW — {today()}\n\n{report}", priority="fyi", delta_key="code_review", token=AGENT_TOKEN)
 
 if __name__ == "__main__":
-    main()
+    with cron_run("code_review"):
+        main()

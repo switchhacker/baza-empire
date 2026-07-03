@@ -52,8 +52,9 @@ Check: PA HIC license, insurance, workers comp, contractor agreements, tax deadl
 {data}"""
     report = ollama_generate("mistral-small:22b", system, f"Weekly compliance report for week of {today()}")
     save_artifact("proj-ahb123", f"compliance_{today()}.md", f"# Compliance Check — {today()}\n\n{report}")
-    send_telegram(f"⚖️ WEEKLY COMPLIANCE — {today()}\n\n{report}", AGENT_TOKEN)
+    send_report("compliance_check", f"⚖️ WEEKLY COMPLIANCE — {today()}\n\n{report}", priority="fyi", delta_key="compliance_check", token=AGENT_TOKEN)
     log_activity("phil_hass", f"Phil completed weekly compliance check for {today()}", task_type="compliance_check")
 
 if __name__ == "__main__":
-    main()
+    with cron_run("compliance_check"):
+        main()

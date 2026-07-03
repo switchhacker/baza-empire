@@ -97,8 +97,9 @@ LIVE DATA:
     })
 
     # Notify
-    send_telegram(f"🔧 INFRA HEALTH CHECK — {now()}\n\n{report}", AGENT_TOKEN)
+    send_report("infra_health", f"🔧 INFRA HEALTH CHECK — {now()}\n\n{report}", priority="alert", token=AGENT_TOKEN)
     log.info("Done.")
 
 if __name__ == "__main__":
-    main()
+    with cron_run("infra_health"):
+        main()

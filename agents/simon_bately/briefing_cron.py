@@ -5,7 +5,7 @@ Runs every 2 hours via cron. Pulls LIVE data on entire team state,
 project progress, blockers, weather — and tells Serge
 exactly where the empire stands and what Simon is commanding the team to do.
 """
-import os, re, sys, json, logging, sqlite3, subprocess, datetime, urllib.request
+import os, re, sys, json, glob, logging, sqlite3, subprocess, datetime, urllib.request
 from pathlib import Path
 
 FRAMEWORK_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(FRAMEWORK_DIR, "configs", "secrets.env"))
 
 from core.skills_engine import SkillsEngine
+from core.weather_sources import get_forecast
+from core.weather_rules import WIND_SUSTAINED_MPH
+from agents.cron_helpers import cron_run
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [SIMON] %(message)s")
 log = logging.getLogger(__name__)
@@ -40,7 +43,52 @@ AGENTS = [
     ("nova_sterling", "Nova",   "Client Chat"),
 ]
 
+ARTIFACTS_DIR = os.path.join(FRAMEWORK_DIR, "dashboard", "artifacts")
+IN_PROGRESS_STATUS = "In Progress"
+DUKE_TASK_ARTIFACT_GLOB = "proj-baza-empire/task_manager_*.md"
+TASK_EXCERPT_MAX_CHARS = 2000
+FYI_CAP = 10
+
 # ── Data collection ────────────────────────────────────────────────────────────
+
+def read_recent_artifact(project_dir_glob: str, max_age_h: float = 12.0) -> str | None:
+    """Newest file under dashboard/artifacts/ matching project_dir_glob (a
+    glob pattern relative to ARTIFACTS_DIR, e.g. "proj-baza-empire/task_manager_*.md"),
+    read and returned as text. None if nothing matches, the newest match's
+    mtime is older than max_age_h hours, or the file can't be read.
+
+    Pure-ish and testable: ARTIFACTS_DIR is a module global resolved fresh
+    on every call (monkeypatchable — same pattern core/claim_verifier.py
+    uses for its own ARTIFACTS_DIR); "now" is real wall-clock time, so
+    tests control freshness via each fixture file's mtime (os.utime)
+    rather than an injected clock. Never raises — any glob/stat/read
+    failure degrades to None, logged.
+    """
+    try:
+        pattern = os.path.join(ARTIFACTS_DIR, project_dir_glob)
+        matches = [p for p in glob.glob(pattern) if os.path.isfile(p) and not p.endswith(".meta")]
+        if not matches:
+            return None
+        newest = max(matches, key=os.path.getmtime)
+        age_h = (datetime.datetime.now().timestamp() - os.path.getmtime(newest)) / 3600.0
+        if age_h > max_age_h:
+            return None
+        with open(newest, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+    except Exception as e:
+        log.warning(f"read_recent_artifact({project_dir_glob!r}) failed: {e}")
+        return None
+
+
+def _biz_db_path() -> str | None:
+    """Resolve dashboard/baza_projects.db (or the framework-root fallback
+    copy), or None if neither exists. Shared by get_tasks_summary's
+    recompute fallback and main()'s per-site weather wiring."""
+    db_candidates = [
+        os.path.join(FRAMEWORK_DIR, "dashboard", "baza_projects.db"),
+        os.path.join(FRAMEWORK_DIR, "baza_projects.db"),
+    ]
+    return next((p for p in db_candidates if os.path.exists(p)), None)
 
 def get_service_status(agent_id: str) -> str:
     svc = f"baza-agent-{agent_id.replace('_','-')}"
@@ -59,12 +107,25 @@ def get_team_status() -> str:
     return "\n".join(lines)
 
 def get_tasks_summary() -> str:
-    """Fetch live tasks from local baza_projects.db SQLite."""
-    db_candidates = [
-        os.path.join(FRAMEWORK_DIR, "dashboard", "baza_projects.db"),
-        os.path.join(FRAMEWORK_DIR, "baza_projects.db"),
-    ]
-    db_path = next((p for p in db_candidates if os.path.exists(p)), None)
+    """Fetch live tasks from local baza_projects.db SQLite.
+
+    Prefers a fresh Duke project_tracker artifact (task_manager_*.md, every
+    4h — see config/agents.yaml — well within read_recent_artifact's 12h
+    default staleness window) over this recompute: project_tracker already
+    runs this exact tasks/projects query and narrates it, so redoing it
+    here on every briefing cycle is pure duplication when a recent run
+    exists. Falls back to the live recompute below whenever Duke's
+    artifact is missing or stale, so briefings never silently go dark on
+    task status if project_tracker itself is broken or running late.
+    """
+    fresh = read_recent_artifact(DUKE_TASK_ARTIFACT_GLOB)
+    if fresh:
+        excerpt = fresh.strip()
+        if len(excerpt) > TASK_EXCERPT_MAX_CHARS:
+            excerpt = excerpt[:TASK_EXCERPT_MAX_CHARS] + "\n… (truncated)"
+        return "TASK BOARD (from Duke's last project_tracker run):\n" + excerpt
+
+    db_path = _biz_db_path()
     if not db_path:
         return "TASKS: local DB not found"
 
@@ -201,6 +262,163 @@ def get_artifacts_summary() -> str:
         lines.append(f"  - {proj}/{fname} ({size//1024} KB, {agent or 'unknown'}, {ts})")
     return "\n".join(lines)
 
+# ── Per-jobsite weather (replaces the old hardcoded-Philadelphia block) ─────
+
+def _weather_site_label(row) -> str:
+    """Compact site name for a weather one-liner: project title if set,
+    else address, else a bare project-id fallback."""
+    title = (row["title"] or "").strip()
+    if title:
+        return title
+    address = (row["address"] or "").strip()
+    return address or f"project {row['id']}"
+
+
+def _philadelphia_fallback_weather() -> str:
+    """Literal pre-existing wttr.in-backed 'weather' skill call, kept as-is
+    for the case where there are zero geocoded active jobsites — simplest
+    correct fallback, unchanged behavior from before this task."""
+    try:
+        skills = SkillsEngine(FRAMEWORK_DIR)
+        r = skills.run("weather", {"location": "Philadelphia, PA"})
+        return r.get("output", "WEATHER: unavailable") if r.get("success") else "WEATHER: unavailable"
+    except Exception as e:
+        log.warning(f"Philadelphia fallback weather skill failed: {e}")
+        return "WEATHER: unavailable"
+
+
+def build_site_weather_section(conn) -> str:
+    """One compact line per distinct geocoded active-jobsite coordinate:
+    site name, today's hi/lo, precip probability, and a wind flag.
+
+    Active = ahb_projects.status == 'In Progress' with non-null
+    latitude/longitude (already-geocoded — this function never geocodes;
+    that's core.geocode.ensure_project_coords's job elsewhere). Coordinates
+    are deduped by (round(lat,2), round(lon,2)) before calling
+    get_forecast — the same dedupe pattern as
+    agents/duke_harmon/crons/weather_watch.py's fetch_cache, so sites
+    sharing a block only fetch once.
+
+    Falls back to the literal Philadelphia line when there are zero
+    geocoded active sites (including on a DB error — we can't tell either
+    way, so the safest degrade is the same fallback) — NOT when a forecast
+    fetch merely fails for one or some coordinates, which just drops that
+    line (logged) and keeps going with the rest.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id, title, address, latitude, longitude FROM ahb_projects "
+            "WHERE status = ? AND latitude IS NOT NULL AND longitude IS NOT NULL "
+            "ORDER BY id",
+            (IN_PROGRESS_STATUS,),
+        ).fetchall()
+    except Exception as e:
+        log.warning(f"build_site_weather_section: site query failed: {e}")
+        rows = []
+
+    if not rows:
+        return _philadelphia_fallback_weather()
+
+    coords = {}
+    order = []
+    for row in rows:
+        try:
+            lat, lon = float(row["latitude"]), float(row["longitude"])
+        except (TypeError, ValueError):
+            continue
+        key = (round(lat, 2), round(lon, 2))
+        if key not in coords:
+            coords[key] = []
+            order.append(key)
+        coords[key].append(_weather_site_label(row))
+
+    if not order:
+        return _philadelphia_fallback_weather()
+
+    lines = ["JOBSITE WEATHER:"]
+    for key in order:
+        lat, lon = key
+        try:
+            forecast = get_forecast(lat, lon)
+        except Exception as e:
+            log.warning(f"build_site_weather_section: get_forecast failed for {key}: {e}")
+            forecast = None
+
+        label = " / ".join(coords[key])
+        daily = (forecast or {}).get("daily") or []
+        today = daily[0] if daily else None
+        if not today:
+            lines.append(f"  ⚠️ {label}: forecast unavailable")
+            continue
+
+        hi, lo = today.get("high_f"), today.get("low_f")
+        precip = today.get("precip_prob_max")
+        wind = today.get("wind_mph")
+        hi_s = f"{hi:.0f}°" if isinstance(hi, (int, float)) else "?°"
+        lo_s = f"{lo:.0f}°" if isinstance(lo, (int, float)) else "?°"
+        precip_s = f"{precip:.0f}%" if isinstance(precip, (int, float)) else "?%"
+        wind_s = f"{wind:.0f}mph" if isinstance(wind, (int, float)) else "?mph"
+        wind_flag = " 💨" if isinstance(wind, (int, float)) and wind >= WIND_SUSTAINED_MPH else ""
+        lines.append(f"  🌤️ {label}: {hi_s}/{lo_s} · rain {precip_s} · wind {wind_s}{wind_flag}")
+
+    return "\n".join(lines)
+
+
+# ── Overnight FYI flush ──────────────────────────────────────────────────
+
+def _chdb():
+    """Deferred import of core.cron_health_db — mirrors agents.cron_helpers'
+    own _chdb() and this file's existing deferred core.* imports
+    (get_recent_activity, send_telegram). Resolved fresh from sys.modules
+    on every call so tests that reimport core.cron_health_db against a tmp
+    DB (BAZA_CRON_HEALTH_DB) are picked up without also needing to
+    reimport this module."""
+    from core import cron_health_db
+    return cron_health_db
+
+
+def build_fyi_section() -> tuple[str, list[int]]:
+    """Overnight/queued FYI flush: pulls cron_health_db's fyi_queue rows
+    that are now due for release (send_report() queues 'fyi'-priority
+    reports there during quiet hours instead of sending immediately) and
+    renders up to FYI_CAP as bullets ("+N more" beyond that).
+
+    Returns (section_text, pending_ids) and returns ("", []) when nothing's
+    pending. Consumption is deliberately NOT done here — this used to mark
+    every pending row consumed at read time, before the Telegram send, so a
+    failed send silently lost the queued FYIs forever. Now the caller
+    (main()) is responsible for calling cron_health_db.mark_fyis_consumed
+    (pending_ids) itself, and only once the send has actually succeeded, so
+    a failed send leaves these rows pending for the next cycle instead of
+    dropping them.
+
+    Exception-safe by design: any cron_health_db read failure (missing
+    table, locked DB, whatever) is caught, logged, and degrades to ("", [])
+    — a queue hiccup must never break the rest of the briefing.
+    """
+    try:
+        now_iso = datetime.datetime.now().isoformat(timespec="seconds")
+        rows = _chdb().pending_fyis(now_iso)
+        if not rows:
+            return "", []
+
+        shown = rows[:FYI_CAP]
+        lines = ["📥 Overnight FYIs"]
+        for row in shown:
+            msg = (row["message"] or "").strip()
+            msg = msg.splitlines()[0][:160] if msg else "(empty)"
+            lines.append(f"  • [{row['cron_name'] or '?'}] {msg}")
+        remaining = len(rows) - len(shown)
+        if remaining > 0:
+            lines.append(f"  …+{remaining} more")
+
+        pending_ids = [row["id"] for row in rows]
+        return "\n".join(lines), pending_ids
+    except Exception as e:
+        log.warning(f"build_fyi_section failed (cron_health_db error): {e}")
+        return "", []
+
+
 # ── LLM briefing ─────────────────────────────────────────────────────────────
 
 def build_dynamic_briefing(live_data: str, team_status: str, tasks: str,
@@ -330,66 +548,120 @@ def _strip_llm_tokens(text: str) -> str:
     text = re.sub(r'<\|[^|]*\|>', '', text)
     return text.strip()
 
-def send_telegram(text: str):
-    from core.telegram_fmt import post_html
+def send_telegram(text: str) -> bool:
+    """Send the final briefing to Serge, routed through
+    cron_helpers.send_report (Task 8 retrofit: every cron's outbound send
+    goes through send_report()/send_alert() instead of a bare Telegram
+    call). priority="alert" mirrors this function's previous behavior —
+    immediate, unconditional delivery regardless of quiet hours — since a
+    2-hour command briefing is not a queueable FYI. token/chat_id are
+    passed through explicitly so this always uses Simon's bot/Serge's chat
+    even though cron_helpers' own module-level defaults differ (Simon's
+    TELEGRAM_TOKEN here has a hardcoded fallback; cron_helpers' default is
+    empty unless TELEGRAM_SIMON_BATELY is set in its own environment).
+
+    _strip_llm_tokens is applied here, before handing off, so send_report
+    (and ultimately post_html) always receives already-cleaned text and
+    never sees leaked <think>/<tool_call>/<|...|> chat-template tokens.
+
+    Returns the bool cron_helpers.send_report reports back (True iff the
+    message was actually sent just now). main() gates FYI-queue
+    consumption on this return value so a failed send doesn't silently
+    lose queued FYIs.
+    """
+    from agents.cron_helpers import send_report
     text = _strip_llm_tokens(text)
-    ok = post_html(TELEGRAM_TOKEN, SERGE_CHAT_ID, text)
+    ok = send_report("team_briefing", text, priority="alert",
+                      token=TELEGRAM_TOKEN, chat_id=SERGE_CHAT_ID)
     if not ok:
-        print("[briefing] telegram send failed")
+        log.error("[briefing] telegram send failed")
+    return ok
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     log.info("Simon 2-hour command briefing starting...")
-    skills = SkillsEngine(FRAMEWORK_DIR)
+    with cron_run("team_briefing"):
+        skills = SkillsEngine(FRAMEWORK_DIR)
 
-    # Collect all live data in parallel where possible
-    sections = {}
+        # Collect all live data in parallel where possible
+        sections = {}
 
-    # Skills data
-    r = skills.run("weather", {"location":"Philadelphia, PA"})
-    sections["weather"] = r.get("output","WEATHER: unavailable") if r.get("success") else "WEATHER: unavailable"
+        # Per-jobsite weather — one line per distinct geocoded active site;
+        # falls back to the original Philadelphia-only skill call when
+        # there's no business DB or no geocoded active site to report on.
+        biz_db_path = _biz_db_path()
+        if biz_db_path:
+            weather_conn = sqlite3.connect(biz_db_path)
+            weather_conn.row_factory = sqlite3.Row
+            try:
+                sections["weather"] = build_site_weather_section(weather_conn)
+            finally:
+                weather_conn.close()
+        else:
+            sections["weather"] = _philadelphia_fallback_weather()
 
-    r = skills.run("news", {"category":"business"})
-    sections["news"] = r.get("output","NEWS: unavailable") if r.get("success") else "NEWS: unavailable"
+        r = skills.run("news", {"category":"business"})
+        sections["news"] = r.get("output","NEWS: unavailable") if r.get("success") else "NEWS: unavailable"
 
-    live_data = "\n\n".join([sections["weather"], sections["news"]])
+        live_data = "\n\n".join([sections["weather"], sections["news"]])
 
-    team_status  = get_team_status()
-    tasks        = get_tasks_summary()
-    activity     = get_recent_activity()
-    artifacts    = get_artifacts_summary()
+        team_status  = get_team_status()
+        tasks        = get_tasks_summary()
+        activity     = get_recent_activity()
+        artifacts    = get_artifacts_summary()
+        fyi_section, fyi_ids = build_fyi_section()
 
-    log.info("All data collected. Building briefing...")
-    briefing = build_dynamic_briefing(live_data, team_status, tasks, activity, artifacts)
-    if looks_non_english(briefing):
-        log.warning("Briefing drifted to non-English — retrying with explicit English-only instruction")
-        # Retry once by prepending a hard language lock to the live_data block
-        english_lock = "CRITICAL LANGUAGE INSTRUCTION — THIS OVERRIDES EVERYTHING: Respond in ENGLISH ONLY. Do not use Vietnamese, Chinese, Spanish, French, or any other language. English only.\n\n"
-        briefing = build_dynamic_briefing(english_lock + live_data, team_status, tasks, activity, artifacts)
+        log.info("All data collected. Building briefing...")
+        briefing = build_dynamic_briefing(live_data, team_status, tasks, activity, artifacts)
         if looks_non_english(briefing):
-            log.warning("Still non-English after retry — falling back to raw data snapshot")
-            briefing = (
-                "━━━━━━━━━━━━━━━━\n"
-                f"📊 Simon Briefing — {datetime.datetime.now().strftime('%A, %B %d %Y — %I:%M %p')}\n"
-                "━━━━━━━━━━━━━━━━\n"
-                "⚠️ LLM output language drifted — raw snapshot below.\n\n"
-                f"{team_status}\n\n{tasks}"
-            )
-    # Anti-hallucination post-check: tag any "completed/done/ready" claim
-    # that has no matching artifact in the last 2h with [unverified].
-    try:
-        from core.claim_verifier import annotate_unverified
-        briefing, report = annotate_unverified(briefing, hours=2)
-        if not report["verified"]:
-            log.warning(f"Briefing had {report['unbacked_count']} unverified claim(s) "
-                        f"(artifacts in window: {report['artifact_count']}); marked.")
-    except Exception as e:
-        log.warning(f"claim_verifier failed (briefing sent unverified): {e}")
+            log.warning("Briefing drifted to non-English — retrying with explicit English-only instruction")
+            # Retry once by prepending a hard language lock to the live_data block
+            english_lock = "CRITICAL LANGUAGE INSTRUCTION — THIS OVERRIDES EVERYTHING: Respond in ENGLISH ONLY. Do not use Vietnamese, Chinese, Spanish, French, or any other language. English only.\n\n"
+            briefing = build_dynamic_briefing(english_lock + live_data, team_status, tasks, activity, artifacts)
+            if looks_non_english(briefing):
+                log.warning("Still non-English after retry — falling back to raw data snapshot")
+                briefing = (
+                    "━━━━━━━━━━━━━━━━\n"
+                    f"📊 Simon Briefing — {datetime.datetime.now().strftime('%A, %B %d %Y — %I:%M %p')}\n"
+                    "━━━━━━━━━━━━━━━━\n"
+                    "⚠️ LLM output language drifted — raw snapshot below.\n\n"
+                    f"{team_status}\n\n{tasks}"
+                )
+        # Anti-hallucination post-check: tag any "completed/done/ready" claim
+        # that has no matching artifact in the last 2h with [unverified].
+        try:
+            from core.claim_verifier import annotate_unverified
+            briefing, report = annotate_unverified(briefing, hours=2)
+            if not report["verified"]:
+                log.warning(f"Briefing had {report['unbacked_count']} unverified claim(s) "
+                            f"(artifacts in window: {report['artifact_count']}); marked.")
+        except Exception as e:
+            log.warning(f"claim_verifier failed (briefing sent unverified): {e}")
 
-    log.info(f"Briefing built ({len(briefing)} chars). Sending to Serge...")
-    send_telegram(briefing)
-    log.info("Done.")
+        # Overnight FYI flush — appended verbatim (not fed through the LLM)
+        # so queued items reach Serge exactly as their owning cron wrote
+        # them, never paraphrased or dropped by the briefing synthesis.
+        if fyi_section:
+            briefing = f"{briefing}\n\n{fyi_section}"
+
+        log.info(f"Briefing built ({len(briefing)} chars). Sending to Serge...")
+        sent_ok = send_telegram(briefing)
+        if sent_ok:
+            # Only stamp the queued FYIs consumed once we know the send
+            # that carried them actually went out — a failed send must
+            # leave them pending so the next cycle re-flushes them instead
+            # of losing them silently.
+            if fyi_ids:
+                try:
+                    _chdb().mark_fyis_consumed(fyi_ids)
+                except Exception as e:
+                    log.warning(f"mark_fyis_consumed failed after successful send "
+                                f"({len(fyi_ids)} id(s) left pending, will retry next cycle): {e}")
+            log.info("Done.")
+        else:
+            log.error(f"Telegram send failed — briefing NOT delivered; "
+                       f"{len(fyi_ids)} queued FYI(s) left unconsumed for next cycle.")
 
 if __name__ == "__main__":
     main()

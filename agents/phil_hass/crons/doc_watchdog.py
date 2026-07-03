@@ -14,7 +14,7 @@ Runs daily at 7am via crontab.
 import os, sys, json, sqlite3, datetime, re, urllib.request, urllib.parse, logging
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.."))
-from agents.cron_helpers import send_telegram, save_artifact, log
+from agents.cron_helpers import send_telegram, save_artifact, log, cron_run, send_report
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [PHIL-WATCHDOG] %(message)s")
 
@@ -261,7 +261,7 @@ def main():
     msg_lines.insert(0, "<b>Phil's Daily Doc Watchdog</b>\n")
     body = "\n".join(msg_lines)
     try:
-        send_telegram(body)
+        send_report("doc_watchdog", body, priority="alert")
     except Exception as e:
         log.warning(f"telegram failed: {e}")
     try:
@@ -274,4 +274,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    with cron_run("doc_watchdog"):
+        main()
