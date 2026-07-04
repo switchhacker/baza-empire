@@ -37,11 +37,16 @@ def ch(monkeypatch):
 
 @pytest.fixture()
 def sent(monkeypatch, ch):
-    """Recorder standing in for cron_helpers.send_telegram."""
+    """Recorder standing in for cron_helpers.send_telegram. Returns True by
+    default (simulates a successful delivery) -- send_report now passes
+    send_telegram's real return value straight through, so callers relying
+    on a successful-send outcome (True) need the fake to actually report
+    one, same as the real post_html would on a real successful send."""
     calls = []
 
     def fake_send_telegram(message, token=None, chat_id=None):
         calls.append({"message": message, "token": token, "chat_id": chat_id})
+        return True
 
     monkeypatch.setattr(ch, "send_telegram", fake_send_telegram)
     return calls
@@ -185,7 +190,14 @@ def test_send_report_fyi_quiet_enqueues(ch, sent, monkeypatch):
     assert any(r["cron_name"] == "cronB" and r["message"] == "quiet body" for r in pending)
 
 
-def test_send_report_alert_always_sends(ch, sent, monkeypatch):
+def test_send_report_alert_sends_immediately_and_returns_outcome(ch, sent, monkeypatch):
+    """priority="alert" always sends immediately regardless of quiet hours
+    (unlike "fyi", which queues) -- but (Blocker B4 fix) the return value is
+    the real send_telegram outcome, not an unconditional True. Renamed from
+    test_send_report_alert_always_sends, which asserted the old hollow-True
+    behavior; that assertion was true only because it always faked a
+    successful send, not because send_report actually reported the real
+    result."""
     # Even during quiet hours, priority="alert" must send immediately.
     monkeypatch.setattr(ch, "in_quiet_hours", lambda *a, **k: True)
     result = ch.send_report("cronC", "alert body", priority="alert")
@@ -194,11 +206,31 @@ def test_send_report_alert_always_sends(ch, sent, monkeypatch):
     assert sent[0]["message"] == "alert body"
 
 
+def test_send_report_alert_returns_false_on_send_failure(ch, monkeypatch):
+    """The alert path must propagate a failed send as False, not swallow it
+    to True -- this is the actual bug Blocker B4 fixes: a caller gating on
+    send_report's return (e.g. briefing_cron's FYI-consumption gate) needs
+    to see the real outcome."""
+    monkeypatch.setattr(ch, "in_quiet_hours", lambda *a, **k: False)
+    monkeypatch.setattr(ch, "send_telegram", lambda *a, **k: False)
+    result = ch.send_report("cronC2", "alert body 2", priority="alert")
+    assert result is False
+
+
 def test_send_report_fyi_day_sends_now(ch, sent, monkeypatch):
     monkeypatch.setattr(ch, "in_quiet_hours", lambda *a, **k: False)
     result = ch.send_report("cronE", "daytime fyi", priority="fyi")
     assert result is True
     assert len(sent) == 1
+
+
+def test_send_report_fyi_day_returns_false_on_send_failure(ch, monkeypatch):
+    """Same real-outcome propagation as the alert path (Blocker B4), for the
+    fyi-outside-quiet-hours ("fyi day") send-now branch."""
+    monkeypatch.setattr(ch, "in_quiet_hours", lambda *a, **k: False)
+    monkeypatch.setattr(ch, "send_telegram", lambda *a, **k: False)
+    result = ch.send_report("cronE2", "daytime fyi 2", priority="fyi")
+    assert result is False
 
 
 def test_send_report_registry_failure_fails_open(ch, sent, monkeypatch):

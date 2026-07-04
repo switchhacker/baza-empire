@@ -184,6 +184,47 @@ def test_load_declared_crons_missing_file_returns_empty(cw, tmp_path):
     assert cw.load_declared_crons(str(missing)) == []
 
 
+def test_load_declared_crons_skips_sh_scripts(cw, tmp_path):
+    """A .sh-scripted cron (e.g. rotate_logs before its .py wrapper) can't
+    call cron_helpers.cron_run() to heartbeat -- it must never enter the
+    missed-schedule check at all, since there's no run history it could
+    ever satisfy."""
+    fixture = tmp_path / "agents.fixture.yaml"
+    fixture.write_text(
+        "agents:\n"
+        "  claw_batto:\n"
+        "    scheduled_tasks:\n"
+        "      - name: rotate_logs\n"
+        "        schedule: '0 3 * * 0'\n"
+        "        script: scripts/rotate_logs.sh\n"
+        "        enabled: true\n"
+        "      - name: infra_health\n"
+        "        schedule: '0 */4 * * *'\n"
+        "        script: agents/claw_batto/crons/infra_health.py\n"
+        "        enabled: true\n"
+    )
+    declared = cw.load_declared_crons(str(fixture))
+    names = {d["name"] for d in declared}
+    assert "rotate_logs" not in names
+    assert "infra_health" in names
+
+
+def test_load_declared_crons_missing_script_field_still_included(cw, tmp_path):
+    """No `script` field at all (older-style fixture entries) must not be
+    mistaken for a .sh script -- only an actual .sh suffix skips a task."""
+    fixture = tmp_path / "agents.fixture.yaml"
+    fixture.write_text(
+        "agents:\n"
+        "  fixture_agent:\n"
+        "    scheduled_tasks:\n"
+        "      - name: on_task\n"
+        "        schedule: '*/30 * * * *'\n"
+        "        enabled: true\n"
+    )
+    declared = cw.load_declared_crons(str(fixture))
+    assert {d["name"] for d in declared} == {"on_task"}
+
+
 # ── main(): alert dispatch + drift check wiring ─────────────────────────────
 
 def test_main_dispatches_alerts_and_drift(cw, monkeypatch):
@@ -268,3 +309,101 @@ def test_check_drift_zero_rc_is_clean(cw, monkeypatch):
     monkeypatch.setattr(cw.subprocess, "run", lambda *a, **k: _Proc())
     drifted, output = cw.check_drift()
     assert drifted is False
+
+
+# ── check_drift: target-aware (crontab vs systemd cutover) ─────────────────
+
+def test_check_drift_defaults_to_crontab_target(cw, monkeypatch, tmp_path):
+    """No baza-cron-*.timer units present under the systemd user dir -> the
+    crontab target is still live, so `--check` runs with no --target flag
+    (sync-agent-crons.py's own default)."""
+    monkeypatch.setenv("BAZA_SYSTEMD_USER_DIR", str(tmp_path))  # empty dir
+
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "in sync\n"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(cw.subprocess, "run", fake_run)
+    cw.check_drift()
+
+    assert "--target" not in captured["cmd"]
+
+
+def test_check_drift_switches_to_systemd_target_when_timers_present(cw, monkeypatch, tmp_path):
+    """Any baza-cron-*.timer unit under the systemd user dir means the
+    systemd cutover has happened -- check_drift() must run `--check --target
+    systemd` instead, or this goes permanently red once the managed crontab
+    lines are gone."""
+    (tmp_path / "baza-cron-infra-health.timer").write_text("[Timer]\n")
+    monkeypatch.setenv("BAZA_SYSTEMD_USER_DIR", str(tmp_path))
+
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "in sync\n"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(cw.subprocess, "run", fake_run)
+    cw.check_drift()
+
+    assert "--target" in captured["cmd"]
+    assert captured["cmd"][captured["cmd"].index("--target") + 1] == "systemd"
+
+
+def test_check_drift_ignores_non_timer_files(cw, monkeypatch, tmp_path):
+    """A baza-cron-*.service (no .timer) or an unrelated file must not count
+    as cutover evidence -- only an actual .timer unit does."""
+    (tmp_path / "baza-cron-infra-health.service").write_text("[Service]\n")
+    (tmp_path / "some-other-file.timer").write_text("[Timer]\n")
+    monkeypatch.setenv("BAZA_SYSTEMD_USER_DIR", str(tmp_path))
+
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "in sync\n"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(cw.subprocess, "run", fake_run)
+    cw.check_drift()
+
+    assert "--target" not in captured["cmd"]
+
+
+def test_check_drift_missing_systemd_dir_defaults_to_crontab(cw, monkeypatch, tmp_path):
+    """The systemd user dir not existing at all (fresh box, pre-cutover)
+    must not blow up -- just treat it as no cutover."""
+    nonexistent = tmp_path / "does" / "not" / "exist"
+    monkeypatch.setenv("BAZA_SYSTEMD_USER_DIR", str(nonexistent))
+
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = "in sync\n"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        return _Proc()
+
+    monkeypatch.setattr(cw.subprocess, "run", fake_run)
+    cw.check_drift()
+
+    assert "--target" not in captured["cmd"]

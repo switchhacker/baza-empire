@@ -52,7 +52,15 @@ def test_all_declared_crons_use_cron_run():
             src = f.read()
         if "cron_run(" not in src:
             failures.append(f"{agent_id}/{name} ({path}): missing cron_run(...) heartbeat wrap")
-        if "send_report(" not in src and "send_alert(" not in src:
+        if (
+            "send_report(" not in src
+            and "send_alert(" not in src
+            and "retrofit-exempt:" not in src
+        ):
+            # A cron may legitimately have no direct Telegram send (pure
+            # maintenance, or delivery via another mechanism like the
+            # suggest_action approval skill) -- but it must SAY so with a
+            # "# retrofit-exempt: <reason>" comment, not slip through.
             failures.append(f"{agent_id}/{name} ({path}): missing send_report(...)/send_alert(...) routed send")
 
     assert not failures, "cron retrofit gaps:\n" + "\n".join(failures)

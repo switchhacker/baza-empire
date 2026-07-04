@@ -361,13 +361,14 @@ def test_main_marks_fyis_consumed_only_after_successful_send(tmp_path, monkeypat
 def test_main_leaves_fyis_unconsumed_when_send_fails(tmp_path, monkeypatch):
     """Proves the fix: a failed send must NOT lose queued FYIs. Failure is
     simulated with a post_html recorder that returns False, routed through
-    a fake cron_helpers.send_report that (unlike the real, unmodified
-    cron_helpers.send_report's priority="alert" path -- see
-    tests/test_cron_helpers_routing.py::test_send_report_alert_always_sends,
-    which always returns True regardless of delivery outcome and is out of
-    scope for this fix) actually honors post_html's result, so this test
-    exercises main()'s own gating logic against a realistic "delivery
-    failed" signal."""
+    a fake cron_helpers.send_report that actually honors post_html's result
+    -- this test exercises main()'s own gating logic against a realistic
+    "delivery failed" signal, independent of cron_helpers.send_report's own
+    internals. (cron_helpers.send_report's priority="alert" path now also
+    honors the real send outcome itself -- see Blocker B4 /
+    tests/test_cron_helpers_routing.py::test_send_report_alert_returns_false_on_send_failure
+    -- so this fake is no longer covering for a real gap there, just kept
+    local/explicit so this test doesn't depend on that module's internals.)"""
     ch_db_path = tmp_path / "cron_health.db"
     monkeypatch.setenv("BAZA_CRON_HEALTH_DB", str(ch_db_path))
     sys.modules.pop("core.cron_health_db", None)

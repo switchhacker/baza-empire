@@ -2,19 +2,31 @@
 (✓ Ack / 😴 24h / ➕ Task) on cron alerts.
 
 Covers three pieces:
-  - core.telegram_fmt.post_html's new `reply_markup` kwarg -- attached to
-    the FINAL chunk's sendMessage payload only, on both the HTML attempt and
-    its plain-text fallback (tests/test_telegram_fmt.py's 49 tests cover the
-    rest of that module and must stay green untouched).
+  - core.telegram_fmt.post_html's `reply_markup` kwarg -- attached to the
+    FINAL NON-BLANK chunk's sendMessage payload only (chunk_html can emit a
+    trailing blank chunk that must never swallow the markup), on both the
+    HTML attempt and its plain-text fallback (tests/test_telegram_fmt.py's
+    49 tests cover the rest of that module and must stay green untouched).
   - agents.cron_helpers.send_alert building the inline_keyboard payload from
-    should_alert's row_id, and routing buttoned alerts through Duke's bot
-    token (core/base_agent.py's architecture) rather than Simon's legacy
-    core/agent.py token, since only a BaseAgent-backed bot can answer a
-    Telegram callback_query.
+    should_alert's row_id. send_alert never reroutes an alert to a different
+    bot -- the resolved token is the explicit `token` arg if given, else
+    TELEGRAM_TOKEN (Simon's default). Buttons are gated on that resolved
+    token instead: they're attached unless the token is one of the legacy
+    (callback-incapable) bot tokens -- non-empty TELEGRAM_CLAW_BATTO /
+    TELEGRAM_PHIL_HASS. Claw and Phil are the only live bots still started
+    via the top-level `python agent.py --agent claw_batto|phil_hass`
+    entrypoint (MessageHandler only, no CallbackQueryHandler registered), so
+    a button tap on an alert sent through either of their bots would never
+    get answered. Every other live bot -- Simon included -- runs
+    core/base_agent.py's BaseAgent, which registers the CallbackQueryHandler
+    and IS callback-capable. A legacy-token alert still reaches the same
+    chat, just without the keyboard.
   - core.base_agent.BaseAgent._on_cron_callback: parses "cron|<action>|<id>",
     dispatches ack/snooze/task, edits the alert message, always answers the
     callback query, and fails safe (query.answer("failed: ...")) on bad
-    input or a DB error -- never raising out of the handler.
+    input, an unknown/nonexistent row_id, or a DB error -- never raising out
+    of the handler. Repeated taps on an already-actioned message are
+    idempotent: no duplicate suffix, no duplicate task.
 """
 import asyncio
 import importlib
@@ -49,10 +61,12 @@ def chdb(monkeypatch):
 
 @pytest.fixture()
 def ch(monkeypatch, chdb):
-    """Fresh agents.cron_helpers pointed at the tmp cron_health DB, with
-    TELEGRAM_DUKE_HARMON pinned to a known fake token so routing assertions
-    are deterministic regardless of what's actually in configs/secrets.env."""
-    monkeypatch.setenv("TELEGRAM_DUKE_HARMON", "duke-fake-token")
+    """Fresh agents.cron_helpers pointed at the tmp cron_health DB, with the
+    legacy (callback-incapable) bot tokens pinned to known fake values so
+    button-gating assertions are deterministic regardless of what's actually
+    in configs/secrets.env."""
+    monkeypatch.setenv("TELEGRAM_CLAW_BATTO", "claw-fake-token")
+    monkeypatch.setenv("TELEGRAM_PHIL_HASS", "phil-fake-token")
     if "agents.cron_helpers" in sys.modules:
         del sys.modules["agents.cron_helpers"]
     return importlib.import_module("agents.cron_helpers")
@@ -173,9 +187,58 @@ def test_post_html_no_reply_markup_when_omitted(monkeypatch):
     assert "reply_markup" not in calls[0]
 
 
-# ── send_alert() button payload + Duke routing ──────────────────────────
+def test_post_html_reply_markup_skips_blank_trailing_chunk(monkeypatch):
+    """chunk_html can end a chunk list with a genuinely blank ("") trailing
+    chunk -- that chunk is skipped entirely by post_html's `continue` and
+    never reaches sendMessage, so reply_markup must land on the last
+    NON-blank chunk, not on whatever raw index happens to be len(chunks)-1
+    (which would silently drop the markup).
+
+    text below is engineered so chunk_html(..., limit=4000) actually
+    produces one: with no <pre> tags, reserve = len("</code></pre>") = 13,
+    so eff = limit - reserve = 3987. A short first line ("S"*15) plus a
+    second line of exactly `eff` chars plus a trailing newline pushes the
+    text past the 4000-char early-return threshold (so it really goes
+    through the line-splitting path) while landing the trailing blank
+    split-line in a chunk of its own -- verified below before trusting the
+    rest of the assertions.
+    """
+    from core import telegram_fmt as tf
+
+    eff = 3987
+    text = "S" * 15 + "\n" + "x" * eff + "\n"
+    assert len(text) > tf.MAX_LEN  # actually enters chunk_html's split path
+    raw_chunks = tf.chunk_html(text, limit=tf.MAX_LEN)
+    assert raw_chunks[-1] == ""  # sanity: this text really yields a blank trailing chunk
+    assert len(raw_chunks) == 3
+
+    calls = []
+
+    class Resp:
+        ok = True
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append(json)
+        return Resp()
+
+    monkeypatch.setattr(tf.requests, "post", fake_post)
+    monkeypatch.setattr(tf.time, "sleep", lambda s: None)
+
+    kb = {"inline_keyboard": [[{"text": "✓ Ack", "callback_data": "cron|ack|1"}]]}
+    ok = tf.post_html("TOK", "123", text, already_html=True, reply_markup=kb)
+
+    assert ok is True
+    assert len(calls) == 2  # the blank chunk never becomes a sendMessage call
+    assert "reply_markup" not in calls[0]
+    assert calls[1]["reply_markup"] == kb
+
+
+# ── send_alert() button payload + legacy-token gating ───────────────────
 
 def test_send_alert_button_payload(ch, monkeypatch):
+    """Default (Simon's) token is not a legacy bot -> alert gets the
+    inline_keyboard built from should_alert's row_id, sent unchanged (no
+    rerouting to a different bot)."""
     captured = {}
 
     def fake_post_html(token, chat_id, text, *args, **kwargs):
@@ -203,8 +266,9 @@ def test_send_alert_button_payload(ch, monkeypatch):
             {"text": "➕ Task", "callback_data": f"cron|task|{row_id}"},
         ]]
     }
-    # buttons=True (default) + no explicit token -> routed through Duke, not Simon.
-    assert captured["token"] == "duke-fake-token"
+    # buttons=True (default) + no explicit token -> Simon's own default token,
+    # unchanged -- no Duke (or any other) reroute.
+    assert captured["token"] == ch.TELEGRAM_TOKEN
 
 
 def test_send_alert_buttons_false_no_markup_default_token(ch, monkeypatch):
@@ -224,11 +288,15 @@ def test_send_alert_buttons_false_no_markup_default_token(ch, monkeypatch):
     assert captured["token"] == ch.TELEGRAM_TOKEN  # Simon's default, unchanged
 
 
-def test_send_alert_explicit_token_overrides_duke_routing(ch, monkeypatch):
+def test_send_alert_explicit_token_used_as_is(ch, monkeypatch):
+    """An explicit token is passed straight through to post_html -- send_alert
+    never reroutes -- and since it isn't a legacy token, it still gets
+    buttons."""
     captured = {}
 
     def fake_post_html(token, chat_id, text, *args, **kwargs):
         captured["token"] = token
+        captured["reply_markup"] = kwargs.get("reply_markup")
         return True
 
     import core.telegram_fmt as telegram_fmt
@@ -237,6 +305,95 @@ def test_send_alert_explicit_token_overrides_duke_routing(ch, monkeypatch):
     ch.send_alert("cronZ", "explicit token", alert_key="explicit_token_key",
                  token="some-other-token")
     assert captured["token"] == "some-other-token"
+    assert captured["reply_markup"] is not None
+
+
+def test_send_alert_duke_token_gets_buttons(ch, monkeypatch):
+    """Duke's bot token is not in the legacy set (only Claw/Phil are) -- an
+    alert explicitly sent through it still gets buttons, confirming there is
+    no more special-cased Duke rerouting/allowlisting either way."""
+    captured = {}
+
+    def fake_post_html(token, chat_id, text, *args, **kwargs):
+        captured["token"] = token
+        captured["reply_markup"] = kwargs.get("reply_markup")
+        return True
+
+    import core.telegram_fmt as telegram_fmt
+    monkeypatch.setattr(telegram_fmt, "post_html", fake_post_html)
+
+    ch.send_alert("cronDuke", "duke alert", alert_key="duke_key", token="duke-fake-token")
+    assert captured["token"] == "duke-fake-token"
+    assert captured["reply_markup"] is not None
+
+
+def test_send_alert_claw_token_suppresses_buttons(ch, monkeypatch):
+    """A legacy (callback-incapable) bot token -> the alert still reaches
+    the same chat, but with no inline keyboard, since nobody could answer a
+    tap on it."""
+    captured = {}
+
+    def fake_post_html(token, chat_id, text, *args, **kwargs):
+        captured["token"] = token
+        captured["chat_id"] = chat_id
+        captured["reply_markup"] = kwargs.get("reply_markup")
+        return True
+
+    import core.telegram_fmt as telegram_fmt
+    monkeypatch.setattr(telegram_fmt, "post_html", fake_post_html)
+
+    ch.send_alert("cronClaw", "legacy alert", alert_key="legacy_claw_key",
+                 token=ch.TELEGRAM_CLAW_BATTO)
+
+    assert captured["token"] == "claw-fake-token"
+    assert captured["reply_markup"] is None
+    assert captured["chat_id"] == ch.SERGE_CHAT_ID  # same chat, just no buttons
+
+
+def test_send_alert_phil_token_suppresses_buttons(ch, monkeypatch):
+    """Same as Claw, for Phil's legacy token."""
+    captured = {}
+
+    def fake_post_html(token, chat_id, text, *args, **kwargs):
+        captured["token"] = token
+        captured["reply_markup"] = kwargs.get("reply_markup")
+        return True
+
+    import core.telegram_fmt as telegram_fmt
+    monkeypatch.setattr(telegram_fmt, "post_html", fake_post_html)
+
+    ch.send_alert("cronPhil", "legacy alert", alert_key="legacy_phil_key",
+                 token=ch.TELEGRAM_PHIL_HASS)
+
+    assert captured["token"] == "phil-fake-token"
+    assert captured["reply_markup"] is None
+
+
+def test_send_alert_unset_legacy_env_does_not_suppress_buttons(monkeypatch, chdb):
+    """TELEGRAM_CLAW_BATTO / TELEGRAM_PHIL_HASS blank (unset) must never
+    accidentally match an equally-blank resolved token elsewhere -- an empty
+    env value must be excluded from the legacy set entirely, not treated as
+    a real legacy token."""
+    monkeypatch.setenv("TELEGRAM_CLAW_BATTO", "")
+    monkeypatch.setenv("TELEGRAM_PHIL_HASS", "")
+    if "agents.cron_helpers" in sys.modules:
+        del sys.modules["agents.cron_helpers"]
+    ch = importlib.import_module("agents.cron_helpers")
+    assert ch.TELEGRAM_CLAW_BATTO == ""
+    assert ch.TELEGRAM_PHIL_HASS == ""
+
+    captured = {}
+
+    def fake_post_html(token, chat_id, text, *args, **kwargs):
+        captured["token"] = token
+        captured["reply_markup"] = kwargs.get("reply_markup")
+        return True
+
+    import core.telegram_fmt as telegram_fmt
+    monkeypatch.setattr(telegram_fmt, "post_html", fake_post_html)
+
+    ch.send_alert("cronDefault", "default alert", alert_key="default_unset_key")
+    assert captured["reply_markup"] is not None
 
 
 # ── BaseAgent._on_cron_callback ──────────────────────────────────────────
@@ -379,3 +536,109 @@ def test_callback_no_callback_query_is_noop():
     agent = FakeAgent()
     update = SimpleNamespace(callback_query=None)
     asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, update, None))  # must not raise
+
+
+# ── BaseAgent._on_cron_callback: nonexistent row / idempotent repeats ────
+
+def test_callback_ack_nonexistent_row_answers_unknown_alert(chdb):
+    """alert_ack() is a blind UPDATE that "succeeds" (0 rows affected) even
+    against a row_id that no longer exists -- the handler must check
+    existence itself and answer 'failed: unknown alert' rather than a fake
+    success."""
+    from core import base_agent
+
+    agent = FakeAgent()
+    query = _make_query("cron|ack|999999")
+    update = _make_update(query)
+
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, update, None))
+
+    query.answer.assert_awaited_once_with("failed: unknown alert")
+    query.edit_message_text.assert_not_awaited()
+    assert chdb.alert_get(999999) is None
+
+
+def test_callback_snooze_nonexistent_row_answers_unknown_alert(chdb):
+    from core import base_agent
+
+    agent = FakeAgent()
+    query = _make_query("cron|snooze|999999")
+    update = _make_update(query)
+
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, update, None))
+
+    query.answer.assert_awaited_once_with("failed: unknown alert")
+    query.edit_message_text.assert_not_awaited()
+
+
+def test_callback_task_nonexistent_row_answers_unknown_alert(chdb):
+    from core import base_agent
+
+    agent = FakeAgent()
+    query = _make_query("cron|task|999999")
+    update = _make_update(query)
+
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, update, None))
+
+    query.answer.assert_awaited_once_with("failed: unknown alert")
+    query.edit_message_text.assert_not_awaited()
+    assert agent.tasks.calls == []  # no task created for a nonexistent alert
+
+
+def test_callback_repeated_ack_tap_is_idempotent(chdb):
+    """A second tap on a message that already carries the ack suffix (i.e.
+    Telegram echoing back the edit from the first tap) must not re-mutate
+    cron_alert_state or re-edit the message -- just re-answer success."""
+    from core import base_agent
+
+    _, row_id = chdb.should_alert("repeat_ack_key", None, {"title": "Disk full"})
+    agent = FakeAgent()
+
+    query1 = _make_query(f"cron|ack|{row_id}", message_text="Disk full")
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, _make_update(query1), None))
+    query1.edit_message_text.assert_awaited_once_with("Disk full\n\n✓ acknowledged")
+
+    query2 = _make_query(f"cron|ack|{row_id}", message_text="Disk full\n\n✓ acknowledged")
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, _make_update(query2), None))
+
+    query2.edit_message_text.assert_not_awaited()
+    query2.answer.assert_awaited_once()
+    assert not _answer_text(query2.answer.call_args).startswith("failed")
+
+
+def test_callback_repeated_task_tap_does_not_duplicate_task(chdb):
+    """A second tap on an already-actioned Task button must not create a
+    second task."""
+    from core import base_agent
+
+    _, row_id = chdb.should_alert("repeat_task_key", None, {"title": "GPU hot"})
+    agent = FakeAgent()
+
+    query1 = _make_query(f"cron|task|{row_id}", message_text="GPU hot")
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, _make_update(query1), None))
+    assert len(agent.tasks.calls) == 1
+
+    query2 = _make_query(f"cron|task|{row_id}", message_text="GPU hot\n\n➕ task created")
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, _make_update(query2), None))
+
+    assert len(agent.tasks.calls) == 1  # still just the one task
+    query2.edit_message_text.assert_not_awaited()
+    query2.answer.assert_awaited_once_with("➕ task created")
+
+
+def test_callback_repeated_snooze_tap_is_idempotent(chdb):
+    from core import base_agent
+
+    _, row_id = chdb.should_alert("repeat_snooze_key", None, {"title": "GPU hot"})
+    agent = FakeAgent()
+
+    query1 = _make_query(f"cron|snooze|{row_id}", message_text="GPU hot")
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, _make_update(query1), None))
+    first_snoozed_until = chdb.alert_get(row_id)["snoozed_until"]
+
+    query2 = _make_query(f"cron|snooze|{row_id}", message_text="GPU hot\n\n😴 snoozed 24h")
+    asyncio.run(base_agent.BaseAgent._on_cron_callback(agent, _make_update(query2), None))
+
+    query2.edit_message_text.assert_not_awaited()
+    # snoozed_until wasn't bumped again by the repeat tap.
+    assert chdb.alert_get(row_id)["snoozed_until"] == first_snoozed_until

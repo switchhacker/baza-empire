@@ -478,6 +478,45 @@ def test_main_all_clear_notification(env, posted, monkeypatch):
     assert "Heat Advisory" in all_clear_msgs[0]
 
 
+def test_main_all_clear_acked_not_resent_on_next_run(env, posted, monkeypatch):
+    """Regression (Blocker B3): _check_all_clear used to never ack the
+    cleared nws: row, and the all-clear alert_key is date-scoped -- so every
+    expired NWS alert re-sent "All clear" on every subsequent run, forever.
+    Two consecutive runs (same day) after the alert has expired must produce
+    exactly one all-clear total, not one per run."""
+    ww = env["ww"]
+    chdb = env["chdb"]
+    conn = _biz_conn(env)
+    insert_project(conn, "site-clear2", status="In Progress")
+    conn.close()
+
+    key = "weather:site-clear2:nws:Heat Advisory:2026-07-01"
+    chdb.should_alert(key, renotify_hours=24, meta={"title": "prior heat advisory"})
+    backdated = (NOW - datetime.timedelta(hours=8)).isoformat(timespec="seconds")
+    with chdb.connect() as c:
+        c.execute("UPDATE cron_alert_state SET last_seen = ? WHERE key = ?", (backdated, key))
+        c.commit()
+
+    forecast = _make_forecast(daily=[make_day(TODAY)], hourly=[])
+    monkeypatch.setattr(ww, "get_forecast", lambda lat, lon: forecast)
+    monkeypatch.setattr(ww, "get_active_alerts", lambda lat, lon: [])  # advisory has cleared
+    monkeypatch.setattr(ww, "get_weather_profile", lambda conn, site: {"exterior": True, "trades": []})
+
+    ww.main(now=NOW)
+    ww.main(now=NOW)
+
+    all_clear_msgs = [c["text"] for c in posted if "All clear" in c["text"]]
+    assert len(all_clear_msgs) == 1
+
+    # The originally-alerted row is now acked -- proves the fix, not just
+    # its symptom (no second send).
+    with chdb.connect() as c:
+        row = c.execute(
+            "SELECT acked_at FROM cron_alert_state WHERE key = ?", (key,)
+        ).fetchone()
+    assert row["acked_at"] is not None
+
+
 def test_main_no_sites_is_noop(env, posted):
     ww = env["ww"]
     # No projects inserted at all -- ahb_projects is empty.
