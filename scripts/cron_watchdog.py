@@ -14,9 +14,11 @@ fire schedule via croniter, and alerts through send_alert() when:
     alert-key dedup (renotify_hours=6) caps how often that nags.
   - "errors": the last 3 recorded runs all finished with status != "ok".
 
-Also shells out to `sync-agent-crons.py --check`; a nonzero exit means the
-crontab has drifted from what agents.yaml declares, alerted via a single
-`cronwd:drift` key (renotify_hours=24).
+Also shells out to `sync-agent-crons.py --check` (target-aware: crontab by
+default, `--target systemd` once the systemd cutover is detected -- see
+check_drift()); a nonzero exit means the cron target has drifted from what
+agents.yaml declares, alerted via a single `cronwd:drift` key
+(renotify_hours=24).
 
 Standalone `venv/bin/python` executable — imports agents/cron_helpers.py via
 the same FRAMEWORK_DIR sys.path pattern used by every other cron script
@@ -62,6 +64,14 @@ def load_declared_crons(agents_yaml_path: str = AGENTS_YAML) -> list[dict]:
     `name` is the *bare* task name (e.g. "infra_health") — the same name each
     cron script passes to `cron_run()`/`record_run_start()` — not the
     agent-prefixed name sync-agent-crons.py uses for crontab entry markers.
+
+    Tasks whose `script` is a bare shell script (.sh) are skipped entirely —
+    they can't import agents.cron_helpers.cron_run() to heartbeat into
+    cron_health.db, so there's no run history for the missed-schedule check
+    to ever compare against, and it would flag them "missed" forever. (See
+    scripts/rotate_logs.py for the .py-wrapper-around-the-.sh pattern that
+    fixes this properly for a given cron; this skip is the belt-and-braces
+    side for any cron declared straight against a .sh.)
     """
     if not os.path.isfile(agents_yaml_path):
         return []
@@ -74,6 +84,9 @@ def load_declared_crons(agents_yaml_path: str = AGENTS_YAML) -> list[dict]:
             continue
         for t in cfg.get("scheduled_tasks", []) or []:
             if not t.get("enabled", True):
+                continue
+            script = t.get("script") or ""
+            if script.endswith(".sh"):
                 continue
             declared.append({
                 "agent": agent_id,
@@ -147,15 +160,54 @@ def find_problems(declared: list[dict], runs: dict, now: datetime) -> list[dict]
     return problems
 
 
+def _systemd_user_dir() -> str:
+    """Same resolution sync-agent-crons.py uses for its own SYSTEMD_USER_DIR:
+    BAZA_SYSTEMD_USER_DIR env override (tests never touch the real dir),
+    else ~/.config/systemd/user."""
+    return os.environ.get("BAZA_SYSTEMD_USER_DIR") or os.path.expanduser(
+        "~/.config/systemd/user"
+    )
+
+
+def _systemd_cutover_active(systemd_dir: str = None) -> bool:
+    """True once the systemd cutover has actually happened -- i.e. the
+    systemd user dir contains at least one baza-cron-*.timer unit written by
+    `sync-agent-crons.py --apply --target systemd`.
+
+    Used by check_drift() to decide which target to check: while crontab is
+    still the live target, `--check` (default target=crontab) is correct.
+    Once units exist, the managed crontab lines are being (or have been)
+    removed, so checking against crontab would flag permanent drift -- this
+    makes the drift check follow the actual cutover instead of going
+    permanently red the day the crontab lines disappear.
+    """
+    d = systemd_dir if systemd_dir is not None else _systemd_user_dir()
+    if not os.path.isdir(d):
+        return False
+    try:
+        return any(
+            fname.startswith("baza-cron-") and fname.endswith(".timer")
+            for fname in os.listdir(d)
+        )
+    except OSError:
+        return False
+
+
 def check_drift() -> tuple[bool, str]:
-    """Run `sync-agent-crons.py --check`. Returns (drifted, combined_output).
+    """Run `sync-agent-crons.py --check`, target-aware: once the systemd
+    cutover is active (see _systemd_cutover_active), check `--target
+    systemd` instead of the crontab default. Returns (drifted,
+    combined_output).
 
     A nonzero return code (drift found, or the check itself couldn't run)
     counts as drifted.
     """
+    cmd = [sys.executable, SYNC_SCRIPT, "--check"]
+    if _systemd_cutover_active():
+        cmd += ["--target", "systemd"]
     try:
         proc = subprocess.run(
-            [sys.executable, SYNC_SCRIPT, "--check"],
+            cmd,
             cwd=FRAMEWORK_DIR,
             capture_output=True,
             text=True,
