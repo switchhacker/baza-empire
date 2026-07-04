@@ -1960,6 +1960,18 @@ class BaseAgent(ContextMixin):
         query.answer("failed: ...") instead of crashing the bot's update
         loop. query.answer() is always called exactly once so Telegram
         clears the button's loading spinner either way.
+
+        Hardening:
+          - alert_ack()/alert_snooze() are blind UPDATEs -- they "succeed"
+            (0 rows affected, no exception) even against a row_id that no
+            longer exists in cron_alert_state. So existence is checked
+            explicitly via cron_health_db.alert_get() before any mutation;
+            a missing row answers query.answer("failed: unknown alert")
+            instead of a fake success.
+          - A repeated tap on a message whose text already ends with this
+            action's suffix (i.e. it was already actioned) is treated as an
+            idempotent no-op: no second DB mutation, no second task, no
+            re-edit -- it just re-answers the same success text.
         """
         query = getattr(update, "callback_query", None)
         if query is None:
@@ -1978,16 +1990,30 @@ class BaseAgent(ContextMixin):
                 await query.answer(f"failed: bad row id {row_id_s!r}")
                 return
 
+            old_text = getattr(query.message, "text", "") or ""
+            suffix = "\n\n" + CRON_CALLBACK_ACTIONS[action]
+
             try:
                 from core import cron_health_db
+                row = cron_health_db.alert_get(row_id)
+                if row is None:
+                    await query.answer("failed: unknown alert")
+                    return
+
+                if old_text.endswith(suffix):
+                    # Already actioned by a previous tap -- idempotent
+                    # no-op: don't re-mutate cron_alert_state, don't create
+                    # a second task, don't re-edit the message.
+                    await query.answer(CRON_CALLBACK_ACTIONS[action])
+                    return
+
                 if action == "ack":
                     cron_health_db.alert_ack(row_id)
                 elif action == "snooze":
                     cron_health_db.alert_snooze(row_id, 24)
                 elif action == "task":
                     title = "cron alert"
-                    row = cron_health_db.alert_get(row_id)
-                    if row is not None and row["meta"]:
+                    if row["meta"]:
                         try:
                             meta = json.loads(row["meta"])
                             title = meta.get("title") or title
@@ -1999,9 +2025,7 @@ class BaseAgent(ContextMixin):
                 await query.answer(f"failed: {e}")
                 return
 
-            suffix = "\n\n" + CRON_CALLBACK_ACTIONS[action]
             try:
-                old_text = getattr(query.message, "text", "") or ""
                 await query.edit_message_text(old_text + suffix)
             except Exception as e:
                 logger.warning(f"[{self.AGENT_ID}] cron callback edit_message_text failed: {e}")

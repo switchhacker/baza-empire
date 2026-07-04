@@ -242,9 +242,13 @@ def post_html(token: str, chat_id, text: str, already_html: bool = False,
     """Sync sender for cron scripts / skills: convert, chunk, send, fall back.
 
     reply_markup (e.g. an inline_keyboard dict), when given, is attached
-    only to the FINAL chunk's sendMessage payload -- both the initial HTML
-    attempt and its plain-text fallback -- so a multi-chunk message's
-    buttons land on the last bubble the user sees, not an earlier one.
+    only to the FINAL non-blank chunk's sendMessage payload -- both the
+    initial HTML attempt and its plain-text fallback -- so a multi-chunk
+    message's buttons land on the last bubble the user actually sees, not an
+    earlier one and not a trailing blank chunk that chunk_html sometimes
+    produces (a blank chunk is skipped entirely by the `continue` below and
+    never reaches sendMessage, so keying "last" off the raw chunk index
+    would silently drop the markup).
     """
     if not token or not chat_id:
         logger.warning("telegram_fmt.post_html: missing token/chat_id")
@@ -253,11 +257,14 @@ def post_html(token: str, chat_id, text: str, already_html: bool = False,
     html_text = text if already_html else md_to_html(text)
     chunks = chunk_html(html_text)
     ok_all = True
-    last_idx = len(chunks) - 1
+    last_content_idx = -1
+    for idx, c in enumerate(chunks):
+        if c.strip():
+            last_content_idx = idx
     for i, chunk in enumerate(chunks):
         if not chunk.strip():
             continue
-        is_last = i == last_idx
+        is_last = i == last_content_idx
         try:
             payload = {
                 "chat_id": chat_id, "text": chunk, "parse_mode": "HTML",
