@@ -20,6 +20,31 @@ agents:
       name: icloud_ingest
       schedule: 0 */6 * * *
       script: agents/claw_batto/crons/icloud_ingest.py
+    - enabled: true
+      log: logs/claw_backup_verify.log
+      name: backup_verify
+      schedule: 30 4 * * 0
+      script: agents/claw_batto/crons/backup_verify.py
+    - enabled: true
+      log: logs/claw_zfs.log
+      name: zfs_health
+      schedule: 0 5 * * 0
+      script: agents/claw_batto/crons/zfs_health.py
+    - enabled: true
+      log: logs/claw_dns.log
+      name: dns_cert_watch
+      schedule: 20 */2 * * *
+      script: agents/claw_batto/crons/dns_cert_watch.py
+    - enabled: true
+      log: logs/claw_cronwd.log
+      name: cron_watchdog
+      schedule: '*/30 * * * *'
+      script: scripts/cron_watchdog.py
+    - enabled: true
+      log: logs/rotate.log
+      name: rotate_logs
+      schedule: 10 4 * * *
+      script: scripts/rotate_logs.py
     system_prompt: |
       == IDENTITY ==
       You are Claw Batto ("Claw"), senior engineer, DevOps, and Linux admin for the Baza Empire and AHBCO LLC. Speak in first person and stay in character; do not describe yourself as an AI or discuss the model behind you.
@@ -87,6 +112,16 @@ agents:
       name: deadline_enforcer
       schedule: 0 7 * * *
       script: agents/duke_harmon/crons/deadline_enforcer.py
+    - enabled: true
+      log: logs/duke_weather.log
+      name: weather_watch
+      schedule: 0 5-19/2 * * *
+      script: agents/duke_harmon/crons/weather_watch.py
+    - enabled: true
+      log: logs/duke_drive.log
+      name: drive_context
+      schedule: 15 6 * * 1-5
+      script: agents/duke_harmon/crons/drive_context.py
     system_prompt: |
       == IDENTITY ==
       You are Duke Harmon ("Duke"), project manager and deadline enforcer for Serge across AHBCO LLC and Baza Empire operations. Speak in first person and stay in character; do not describe yourself as an AI or discuss the model behind you.
@@ -229,6 +264,11 @@ agents:
       name: doc_watchdog
       schedule: 0 9 * * *
       script: agents/phil_hass/crons/doc_watchdog.py
+    - enabled: true
+      log: logs/phil_invoice_followup.log
+      name: invoice_followup
+      schedule: 30 8 * * *
+      script: agents/phil_hass/crons/invoice_followup.py
     system_prompt: |
       == IDENTITY ==
       You are Phil Hass ("Phil"), legal advisor, accountant, and compliance officer for AHBCO LLC and the Baza Empire. Speak in first person and stay in character; do not describe yourself as an AI or discuss the model behind you.
@@ -415,6 +455,11 @@ agents:
       name: tech_radar
       schedule: 0 6 * * 3
       script: agents/scout_reeves/crons/tech_radar.py
+    - enabled: true
+      log: logs/scout_prices.log
+      name: material_prices
+      schedule: 30 6 * * 1
+      script: agents/scout_reeves/crons/material_prices.py
     system_prompt: |
       == IDENTITY ==
       You are Scout Reeves ("Scout"), research and market-intelligence lead for the Baza Empire and AHBCO LLC. Speak in first person and stay in character; do not describe yourself as an AI or discuss the model behind you.
