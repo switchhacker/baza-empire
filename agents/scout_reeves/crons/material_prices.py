@@ -68,7 +68,7 @@ SERIES = {
     "WPU137": "Gypsum products",
     "WPU1332": "Ready-mix concrete",
     "WPU1017": "Steel mill products",
-    "WPU10250105": "Copper wire & cable",
+    "WPU10230101": "Copper wire & cable",
     "WPU057303": "No. 2 diesel fuel",
 }
 

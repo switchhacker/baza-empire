@@ -217,7 +217,17 @@ def _check_all_clear(project_id, site_label, active_events, when, token):
     among the site's currently active NWS alerts, treat it as cleared.
     One combined all-clear line per site per day, itself deduped via
     send_alert's own renotify window (24h) rather than a second bespoke
-    table -- no separate "active alert id set" column is introduced."""
+    table -- no separate "active alert id set" column is introduced.
+
+    Once the all-clear actually sends, every cleared row is acked via
+    chdb.alert_ack(row_id) -- otherwise these rows stay unacked+stale
+    forever (an expired NWS alert's event never comes back to re-bump
+    last_seen), so this same lookup would keep finding them on every future
+    run. Since the all-clear alert_key is date-scoped
+    (f"...allclear:{date_str}"), send_alert's own dedup never catches that
+    repeat -- it would fire a fresh "All clear" every single day forever.
+    Acking here is what makes a cleared alert clear exactly once.
+    """
     prefix = f"weather:{project_id}:nws:"
     cutoff = (when - datetime.timedelta(hours=ALL_CLEAR_STALE_HOURS)).isoformat(timespec="seconds")
     try:
@@ -227,7 +237,7 @@ def _check_all_clear(project_id, site_label, active_events, when, token):
         # contextlib.closing() so this connection is actually released.
         with closing(chdb.connect()) as conn:
             rows = conn.execute(
-                "SELECT key FROM cron_alert_state WHERE key LIKE ? "
+                "SELECT id, key FROM cron_alert_state WHERE key LIKE ? "
                 "AND acked_at IS NULL AND last_seen < ?",
                 (f"{prefix}%", cutoff),
             ).fetchall()
@@ -236,11 +246,13 @@ def _check_all_clear(project_id, site_label, active_events, when, token):
         return
 
     cleared = set()
+    cleared_row_ids = []
     for row in rows:
         rest = row["key"][len(prefix):]
         event, sep, _date = rest.rpartition(":")
         if sep and event and event not in active_events:
             cleared.add(event)
+            cleared_row_ids.append(row["id"])
 
     if not cleared:
         return
@@ -254,12 +266,18 @@ def _check_all_clear(project_id, site_label, active_events, when, token):
         f"✅ *All clear* — {site_label}\n"
         f"Previously active NWS alert(s) have ended:\n{lines}"
     )
-    send_alert(
+    sent = send_alert(
         CRON_NAME, message,
         alert_key=f"weather:{project_id}:allclear:{date_str}",
         renotify_hours=ALLCLEAR_RENOTIFY_HOURS,
         token=token,
     )
+    if sent:
+        for row_id in cleared_row_ids:
+            try:
+                chdb.alert_ack(row_id)
+            except Exception as e:
+                log.warning(f"all-clear ack failed for cron_alert_state row {row_id}: {e}")
 
 
 # ── main ──────────────────────────────────────────────────────────────

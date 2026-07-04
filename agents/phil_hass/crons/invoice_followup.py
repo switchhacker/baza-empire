@@ -249,6 +249,9 @@ def send_suggestion(args, agent_id=AGENT_ID, timeout=SUGGEST_ACTION_TIMEOUT):
 
 def main(now=None, dry_run=False):
     when = now or datetime.datetime.now()
+    # retrofit-exempt: delivery goes through the suggest_action approval skill
+    # (subprocess) and dedup via cron_health_db.should_alert directly -- there is
+    # deliberately no direct send_report/send_alert Telegram path in this cron.
     with cron_run(CRON_NAME):
         _run(when, dry_run=dry_run)
 

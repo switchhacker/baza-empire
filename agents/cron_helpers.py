@@ -74,18 +74,27 @@ def ollama_generate(model: str, system_prompt: str, user_prompt: str, max_tokens
         return f"(LLM unavailable: {e})"
 
 
-def send_telegram(message: str, token: str = None, chat_id: str = None):
-    """Send a Telegram message to Serge (markdown → rich HTML, auto-chunked)."""
+def send_telegram(message: str, token: str = None, chat_id: str = None) -> bool:
+    """Send a Telegram message to Serge (markdown → rich HTML, auto-chunked).
+
+    Returns post_html's own bool (True iff the message was actually
+    delivered) instead of swallowing it -- False when the token/chat_id
+    aren't configured, or when post_html itself raises. Callers that route
+    through this (e.g. send_report()) rely on this real outcome to gate
+    downstream side effects like marking queued FYIs consumed only after a
+    successful send.
+    """
     tok = token or TELEGRAM_TOKEN
     cid = chat_id or SERGE_CHAT_ID
     if not tok or not cid:
         log.warning("No Telegram token/chat_id configured")
-        return
+        return False
     try:
         from core.telegram_fmt import post_html
-        post_html(tok, cid, message)
+        return bool(post_html(tok, cid, message))
     except Exception as e:
         log.error(f"Telegram send failed: {e}")
+        return False
 
 
 def save_artifact(project_id: str, filename: str, content: str) -> str:
@@ -262,14 +271,19 @@ def send_report(cron_name: str, message: str, priority: str = "fyi",
 
     - delta_key set and the message body is unchanged since the last send
       (per cron_health_db.delta_changed) -> suppress, return False.
-    - priority == "alert" -> send immediately via send_telegram, return True.
+    - priority == "alert" -> send immediately via send_telegram, return
+      send_telegram's real outcome (True iff actually delivered).
     - priority == "fyi" (default) during quiet hours -> queue via
       cron_health_db.enqueue_fyi (release_after = next quiet-hours end),
       return False.
-    - priority == "fyi" outside quiet hours -> send immediately, return True.
+    - priority == "fyi" outside quiet hours -> send immediately, return
+      send_telegram's real outcome (True iff actually delivered).
 
     Never raises (mirrors send_telegram's swallow-and-log style). Returns
-    whether the message was sent right now (queueing/suppression -> False).
+    whether the message was actually delivered right now
+    (queueing/suppression -> False; a send attempt that fails -> False, not
+    a hollow True) -- consumers like briefing_cron's FYI-consumption gate
+    depend on this being a real outcome, not an unconditional True.
     """
     try:
         if delta_key:
@@ -283,8 +297,7 @@ def send_report(cron_name: str, message: str, priority: str = "fyi",
                 return False
 
         if priority == "alert":
-            send_telegram(message, token=token, chat_id=chat_id)
-            return True
+            return send_telegram(message, token=token, chat_id=chat_id)
 
         # priority == "fyi" (or any other value defaults to fyi routing)
         if in_quiet_hours():
@@ -295,8 +308,7 @@ def send_report(cron_name: str, message: str, priority: str = "fyi",
                 log.warning(f"cron_health_db.enqueue_fyi failed for {cron_name!r}: {e}")
             return False
 
-        send_telegram(message, token=token, chat_id=chat_id)
-        return True
+        return send_telegram(message, token=token, chat_id=chat_id)
     except Exception as e:
         log.error(f"send_report failed for {cron_name!r}: {e}")
         return False
@@ -315,17 +327,28 @@ def send_alert(cron_name: str, message: str, alert_key: str,
     send_telegram wrapper) so the actual-delivery boolean can be returned to
     the caller.
 
-    When `buttons` is True (the default) and should_alert returned a usable
-    row_id, the alert ships with an inline keyboard -- "✓ Ack" / "😴 24h" /
-    "➕ Task" -- each callback_data encoding "cron|<action>|<row_id>" for
-    core.base_agent.BaseAgent._on_cron_callback to handle. Only a
-    BaseAgent-backed bot can answer a Telegram callback_query; Simon runs the
-    legacy core/agent.py architecture and can't. So when buttons are
-    requested and no explicit `token` was passed, the alert routes through
-    Duke's bot (TELEGRAM_DUKE_HARMON) instead of Simon's default
-    TELEGRAM_TOKEN, falling back to TELEGRAM_TOKEN if TELEGRAM_DUKE_HARMON
-    isn't configured. Pass buttons=False, or an explicit token, to opt out
-    of this rerouting.
+    The resolved token is simply the explicit `token` arg if one was passed,
+    else TELEGRAM_TOKEN (Simon's default) -- send_alert never reroutes an
+    alert to a different bot based on `buttons`.
+
+    Buttons are gated on that resolved token instead. When `buttons` is True
+    (the default) and should_alert returned a usable row_id, the alert ships
+    with an inline keyboard -- "✓ Ack" / "😴 24h" / "➕ Task" -- each
+    callback_data encoding "cron|<action>|<row_id>" for
+    core.base_agent.BaseAgent._on_cron_callback to handle -- UNLESS the
+    resolved token is one of the legacy (callback-incapable) bot tokens:
+    TELEGRAM_CLAW_BATTO / TELEGRAM_PHIL_HASS. Claw and Phil are the only
+    live bots still started via the top-level
+    `python agent.py --agent claw_batto|phil_hass` entrypoint (MessageHandler
+    only, no CallbackQueryHandler registered), so a Telegram inline-keyboard
+    tap on an alert sent through either of their bots would never get
+    answered. Every other live bot -- Simon included -- runs
+    core/base_agent.py's BaseAgent, which registers the CallbackQueryHandler
+    and IS callback-capable, so it's safe to attach buttons there. A legacy
+    token still gets the alert -- same chat, just without the keyboard.
+    Only non-empty legacy-token env values count (an unset/blank
+    TELEGRAM_CLAW_BATTO or TELEGRAM_PHIL_HASS must never accidentally match
+    an equally-blank resolved token).
 
     Never raises. Returns True iff a message was actually sent just now.
     """
@@ -342,8 +365,12 @@ def send_alert(cron_name: str, message: str, alert_key: str,
             log.info(f"send_alert: {cron_name!r}/{alert_key!r} deduped, not sending")
             return False
 
+        tok = token or TELEGRAM_TOKEN
+        cid = chat_id or SERGE_CHAT_ID
+
+        legacy_tokens = {t for t in (TELEGRAM_CLAW_BATTO, TELEGRAM_PHIL_HASS) if t}
         reply_markup = None
-        if buttons and row_id is not None:
+        if buttons and row_id is not None and tok not in legacy_tokens:
             reply_markup = {
                 "inline_keyboard": [[
                     {"text": "✓ Ack", "callback_data": f"cron|ack|{row_id}"},
@@ -352,10 +379,6 @@ def send_alert(cron_name: str, message: str, alert_key: str,
                 ]]
             }
 
-        tok = token
-        if tok is None:
-            tok = (TELEGRAM_DUKE_HARMON if buttons else None) or TELEGRAM_TOKEN
-        cid = chat_id or SERGE_CHAT_ID
         try:
             from core.telegram_fmt import post_html
             return bool(post_html(tok, cid, message, reply_markup=reply_markup))
