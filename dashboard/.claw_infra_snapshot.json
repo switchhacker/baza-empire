@@ -11,7 +11,7 @@
     "baza-backup.service": "dead",
     "baza-bin-bot.service": "running",
     "baza-dashboard.service": "running",
-    "baza-ddns.service": "start",
+    "baza-ddns.service": "dead",
     "baza-email-fetch.service": "dead",
     "baza-email-summarize.service": "dead",
     "baza-image-indexer.service": "dead",
