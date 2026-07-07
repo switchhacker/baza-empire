@@ -86,6 +86,7 @@
     "systemd",
     "tests",
     "tools",
+    "voice_flow",
     "web"
   ]
 }
