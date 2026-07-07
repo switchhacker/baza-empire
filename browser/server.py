@@ -9,29 +9,43 @@ import html as _html
 import logging
 import os
 import re as _re
+import time
 
 from contextlib import asynccontextmanager
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 try:  # package import (tests) or flat import (uvicorn server:app from browser/)
     from browser import db
     from browser import crawler
+    from browser import extractor
     from browser.engine import Engine, UA
     from browser.page_to_md import page_to_md
 except ImportError:  # pragma: no cover
     import db
     import crawler
+    import extractor
     from engine import Engine, UA
     from page_to_md import page_to_md
+
+try:
+    from browser.sessions import SessionManager
+except ImportError:  # pragma: no cover
+    from sessions import SessionManager
+
+try:
+    from browser import gate
+except ImportError:  # pragma: no cover
+    import gate
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("phantom_browser")
 
 engine = Engine()
+sessions = SessionManager(engine)
 
 
 @asynccontextmanager
@@ -43,7 +57,22 @@ async def lifespan(app: FastAPI):
         job = db.get_job(jid)
         log.info("requeueing crawl job %s after restart", jid)
         _launch_crawl(jid, _json.loads(job["params"]))
+
+    async def _reaper():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                n = await sessions.reap_once()
+                if n:
+                    log.info("reaped %d idle sessions", n)
+                db.expire_stale(300)
+            except Exception:
+                log.exception("reaper iteration failed")
+
+    reaper_task = asyncio.create_task(_reaper())
     yield
+    reaper_task.cancel()
+    await sessions.close_all()
     await engine.stop()
 
 
@@ -116,10 +145,30 @@ class CrawlReq(BaseModel):
     ignore_robots: bool = False
 
 
+class ExtractReq(BaseModel):
+    json_schema: dict = Field(alias="schema")
+    url: str | None = None
+    urls: list[str] | None = None
+    content: str | None = None
+    prompt: str | None = None
+    model: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+# Background crawl tasks must be held onto — asyncio only keeps a weak
+# reference to a task, so a fire-and-forget create_task() can be garbage
+# collected mid-run. Standard pattern: track in a module-level set, release
+# via a done-callback.
+_crawl_tasks: set = set()
+
+
 def _launch_crawl(job_id: int, params: dict) -> None:
     async def scrape_fn(url, max_chars=3000, **kw):
         return await do_scrape(url, max_chars=max_chars)
-    asyncio.create_task(crawler.run_crawl(job_id, scrape_fn, params))
+    t = asyncio.create_task(crawler.run_crawl(job_id, scrape_fn, params))
+    _crawl_tasks.add(t)
+    t.add_done_callback(_crawl_tasks.discard)
 
 
 @app.post("/crawl")
@@ -229,3 +278,195 @@ async def map_url(req: MapReq):
                 "urls": urls, "source": source}
     except Exception as e:
         return {"success": False, "url": req.url, "error": f"{type(e).__name__}: {e}"}
+
+
+EXTRACT_CONTENT_BUDGET = 24000  # must match extractor.extract's content[:24000] cap
+
+
+@app.post("/extract")
+async def extract_route(req: ExtractReq):
+    try:
+        sources: list[str] = []
+        content = req.content or ""
+        urls = req.urls or ([req.url] if req.url else [])
+        for u in urls[:5]:
+            # A source is only honest if its content actually made it into
+            # the window extractor.extract() will see. Once the budget is
+            # exhausted, stop scraping/appending entirely rather than
+            # listing URLs whose text got truncated away.
+            if len(content) >= EXTRACT_CONTENT_BUDGET:
+                break
+            page = await do_scrape(u, max_chars=8000)
+            if page.get("success"):
+                chunk = f"\n\n=== {u} ===\n{page['markdown']}"
+                remaining = EXTRACT_CONTENT_BUDGET - len(content)
+                content += chunk[:remaining]
+                sources.append(u)
+        if not content.strip():
+            return {"success": False, "error": "no content: pass url, urls or content"}
+        out = await extractor.extract(content, req.json_schema, req.prompt, req.model)
+        out["sources"] = sources
+        return out
+    except Exception as e:
+        return {"success": False, "error": f"{type(e).__name__}: {e}"}
+
+
+class SessionCreateReq(BaseModel):
+    profile: str | None = None
+
+
+class ActReq(BaseModel):
+    url: str | None = None
+    index: int | None = None
+    text: str | None = None
+    key: str | None = None
+    dy: int | None = None
+    max_chars: int = 6000
+    approval_id: int | None = None
+
+
+def _no_session(sid):
+    return {"success": False, "error": f"unknown or expired session '{sid}'",
+            "hint": "create a new session"}
+
+
+@app.post("/session")
+async def session_create(req: SessionCreateReq):
+    try:
+        sid = await sessions.create(profile=req.profile)
+        return {"success": True, "session_id": sid, "profile": req.profile}
+    except (ValueError, RuntimeError) as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.delete("/session/{sid}")
+async def session_close(sid: str):
+    await sessions.close(sid)
+    return {"success": True}
+
+
+@app.post("/session/{sid}/goto")
+async def session_goto(sid: str, req: ActReq):
+    try:
+        return await sessions.act(sid, "goto", url=req.url)
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/read")
+async def session_read(sid: str, req: ActReq):
+    try:
+        return await sessions.read(sid, max_chars=req.max_chars)
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/click")
+async def session_click(sid: str, req: ActReq):
+    if req.index is None:
+        return {"success": False, "error": "missing required field: index",
+                "hint": "call read to get element indexes"}
+    try:
+        s = sessions.get(sid)
+        if s.profile:
+            el = await sessions.element_info(sid, req.index)
+            if gate.is_gated_click(el):
+                desc = (f"Agent wants to CLICK [{req.index}] "
+                        f"{(el or {}).get('tag', '?')} “{(el or {}).get('text', '?')}” "
+                        f"in logged-in profile '{s.profile}' (session {sid}).")
+                return await gate.request_approval(sid, {"op": "click", "index": req.index}, desc)
+        return await sessions.act(sid, "click", index=req.index)
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/type")
+async def session_type(sid: str, req: ActReq):
+    try:
+        return await sessions.act(sid, "type", index=req.index, text=req.text or "")
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/press")
+async def session_press(sid: str, req: ActReq):
+    key = req.key or "Enter"
+    try:
+        s = sessions.get(sid)
+        if s.profile:
+            active = await sessions.active_element(sid)
+            if gate.is_gated_press(key, active):
+                desc = (f"Agent wants to PRESS {key} on "
+                        f"“{(active or {}).get('text', '?')}” (POST form) "
+                        f"in logged-in profile '{s.profile}' (session {sid}).")
+                return await gate.request_approval(sid, {"op": "press", "key": key}, desc)
+        return await sessions.act(sid, "press", key=key)
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/scroll")
+async def session_scroll(sid: str, req: ActReq):
+    try:
+        return await sessions.act(sid, "scroll", dy=req.dy or 800)
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/back")
+async def session_back(sid: str, req: ActReq):
+    try:
+        return await sessions.act(sid, "back")
+    except KeyError:
+        return _no_session(sid)
+
+
+@app.post("/session/{sid}/screenshot")
+async def session_screenshot(sid: str, req: ActReq):
+    try:
+        return await sessions.act(sid, "screenshot")
+    except KeyError:
+        return _no_session(sid)
+
+
+import json as _json2
+from fastapi.responses import HTMLResponse
+
+
+@app.get("/approvals/{aid}")
+async def approval_status(aid: int):
+    a = db.get_approval(aid)
+    if not a:
+        return {"success": False, "error": f"no approval {aid}"}
+    return {"success": True, "status": a["status"]}
+
+
+@app.get("/approvals/{aid}/decide")
+async def approval_decide(aid: int, tok: str, d: str):
+    a = db.get_approval(aid)
+    if not a:
+        return HTMLResponse("<h2>Unknown approval.</h2>", status_code=404)
+    if tok != a["token"]:
+        return HTMLResponse("<h2>Bad token.</h2>", status_code=403)
+    if a["status"] != "pending":
+        return HTMLResponse(f"<h2>Already {a['status']}.</h2>")
+    # Deadline enforced here too, not just by the 60s reaper sweep (db.expire_stale):
+    # a decision landing between the 300s mark and the next sweep tick must not
+    # execute. Status string matches expire_stale's so a stale row always reads
+    # the same regardless of which path caught it.
+    if time.time() - a["created_at"] > 300:
+        db.decide_approval(aid, "expired")
+        return HTMLResponse("<h2>⏰ Expired — 5 min silence window passed.</h2>")
+    if d != "approve":
+        db.decide_approval(aid, "denied")
+        return HTMLResponse("<h2>❌ Denied.</h2>")
+    db.decide_approval(aid, "approved")
+    action = _json2.loads(a["action"])
+    try:
+        result = await sessions.act(a["session_id"], action.pop("op"), **action)
+        db.decide_approval(aid, "executed" if result.get("success") else "error")
+        return HTMLResponse(f"<h2>✅ Approved — action executed.</h2>"
+                            f"<p>Now at: {result.get('url', '?')}</p>")
+    except KeyError:
+        db.decide_approval(aid, "error")
+        return HTMLResponse("<h2>⚠️ Approved, but the session already expired.</h2>")
