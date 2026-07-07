@@ -165,7 +165,8 @@ class BaseAgent(ContextMixin):
         prompt += (
             "\n\n== WEB TOOLS ==\n"
             "##SKILL:web_search{\"query\": \"...\", \"n\": 5}## → Ollama web search, returns title/url/snippet results\n"
-            "##SKILL:web_fetch{\"url\": \"...\", \"max_chars\": 8000}## → fetch full page content via Ollama\n"
+            "##SKILL:web_fetch{\"url\": \"...\", \"max_chars\": 8000}## → fetch rendered page content (Phantom Browser)\n"
+            "##SKILL:browse{\"action\": \"goto\", \"url\": \"...\"}## → interactive browser session (then read/click/type by index)\n"
             "##SKILL:scrape_page{\"url\": \"...\", \"max_chars\": 4000}## → lightweight HTML scrape (no API key needed)\n"
             "Workflow: use web_search to find URLs, then web_fetch or scrape_page to read them.\n"
             "Always cite URLs when using web data.\n"
