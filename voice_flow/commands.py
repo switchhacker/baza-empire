@@ -5,6 +5,19 @@ from dataclasses import dataclass
 
 AGENT_NAMES = ["specter", "simon", "claw", "phil", "sam", "rex", "duke", "scout", "nova"]
 
+# Spoken short names → full Fluid agent ids (config/agents.yaml roster).
+AGENT_ID_BY_NAME = {
+    "specter": "specter_voss",
+    "simon": "simon_bately",
+    "claw": "claw_batto",
+    "phil": "phil_hass",
+    "sam": "sam_axe",
+    "rex": "rex_valor",
+    "duke": "duke_harmon",
+    "scout": "scout_reeves",
+    "nova": "nova_sterling",
+}
+
 
 @dataclass(frozen=True)
 class Command:

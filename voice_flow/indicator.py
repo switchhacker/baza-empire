@@ -33,12 +33,20 @@ class Indicator:
             log.debug("chime failed: %s", e)
 
     def start(self) -> None:
+        """Best-effort tray icon. Any failure logs and runs headless."""
         try:
-            import pystray  # noqa: F401
-            # Tray is optional polish; if the environment lacks a status area,
-            # the daemon still runs headless. Left minimal by design.
-        except Exception as e:  # noqa: BLE001
+            import pystray
+            from PIL import Image, ImageDraw
+            img = Image.new("RGBA", (32, 32), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            draw.ellipse((6, 6, 26, 26), fill=(80, 170, 255, 255))
+            icon = pystray.Icon("baza-flow", img,
+                                title=f"Baza Flow {_GLYPH['idle']}")
+            icon.run_detached()
+            self._tray = icon
+        except Exception as e:  # noqa: BLE001 — tray is optional polish
             log.info("tray unavailable, running headless: %s", e)
+            self._tray = None
 
 
 def _tone_path(freq: int) -> str:

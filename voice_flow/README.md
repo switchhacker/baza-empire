@@ -4,8 +4,18 @@ Handy-style push-to-talk dictation + two-way agent voice comms, fully local.
 
 ## Install / run
     cd ~/baza-empire/agent-framework-v3
+    sudo apt install -y libportaudio2   # PortAudio system lib for mic capture
     venv/bin/pip install sounddevice pynput pystray watchdog
     venv/bin/python -m voice_flow.daemon        # foreground test run
+
+Pinned versions for all voice_flow deps live in `requirements.txt`
+(faster-whisper, sounddevice, soundfile, pynput, pystray, watchdog, numpy).
+
+## Config hot-reload
+`config.yaml` is polled every 2s: hot-reload applies to **per-utterance
+settings only** (speak_reply, type_reply, flow/injection options, commands).
+Hotkey bindings and the STT model are read once at startup — changing them
+needs a service restart (`systemctl --user restart baza-flow`).
 
 ## Hotkeys (config.yaml)
 - Ctrl+Space        raw dictation → types into focused window

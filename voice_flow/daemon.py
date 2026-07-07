@@ -1,8 +1,11 @@
 """Baza Flow daemon: mode state machine + utterance handling."""
 from __future__ import annotations
+import concurrent.futures
 import logging
+import threading
+import time
 
-from voice_flow.commands import match_command, AGENT_NAMES
+from voice_flow.commands import match_command, AGENT_NAMES, AGENT_ID_BY_NAME
 
 log = logging.getLogger("voice_flow.daemon")
 
@@ -21,24 +24,47 @@ class Daemon:
         self._recorder = None
         self._last_injected = 0
         self.active_dictation_mode = "raw"
+        self._pending_agent = None  # short name set by "send to <agent>"
+        self._busy = False          # a transcribe→handle job is in flight
+        self._last_future = None    # last submitted job (tests / draining)
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="baza-flow-utterance")
 
-    # --- hotkey callbacks (wired in main()) ---
+    # --- hotkey callbacks (wired in main(); run on the pynput thread) ---
     def on_press(self, mode: str) -> None:
         if mode == "cancel":
             self._abort(); return
+        if self._busy:
+            log.info("utterance in flight; ignoring new capture")
+            return
         self._set_state("listening")
         self._recorder = self.recorder_factory()
         self._recorder.start()
+        if self.indicator is not None:
+            self.indicator.chime("start")
 
     def on_release(self, mode: str) -> None:
         if mode == "cancel" or self._recorder is None:
             return
         wav = self._recorder.stop()
         self._recorder = None
+        if self.indicator is not None:
+            self.indicator.chime("stop")
         self._set_state("thinking")
+        # Heavy work runs OFF the pynput listener thread; never block it.
+        self._busy = True
+        self._last_future = self._executor.submit(self._process, mode, wav)
+
+    def _process(self, mode: str, wav: str) -> None:
+        """Executor job: transcribe + handle. NEVER lets an exception escape."""
         try:
             self.handle_utterance(mode, wav)
+        except Exception:  # noqa: BLE001 — the daemon must survive any turn
+            log.exception("utterance handling failed")
+            if self.indicator is not None:
+                self.indicator.chime("error")
         finally:
+            self._busy = False
             self._set_state("idle")
 
     def _abort(self) -> None:
@@ -61,6 +87,12 @@ class Daemon:
             if cmd is not None:
                 self._run_command(cmd)
                 return ""
+        if self._pending_agent is not None:
+            # "send to <agent>" targeted THIS utterance at that agent.
+            full = AGENT_ID_BY_NAME.get(self._pending_agent, self._pending_agent)
+            self._pending_agent = None
+            if self.agent_client is not None:
+                return self._do_agent(text, agent_id=full)
         effective = self.active_dictation_mode if mode in ("raw", "flow") else mode
         if effective == "agent" and self.agent_client is not None:
             return self._do_agent(text)
@@ -87,8 +119,8 @@ class Daemon:
         elif cmd.action == "stop":
             self._abort()
 
-    def _do_agent(self, text: str) -> str:
-        reply = self.agent_client.ask(text)
+    def _do_agent(self, text: str, agent_id: str | None = None) -> str:
+        reply = self.agent_client.ask(text, agent_id=agent_id)
         if self.cfg.agent.get("speak_reply", True):
             self.agent_client.speak(reply.text, reply.agent_id)
         if self.cfg.agent.get("type_reply", False):
@@ -137,6 +169,20 @@ def main():
     config = load_config()
     daemon = build_daemon(config)
     daemon.indicator.start()
+
+    def _reload_loop():
+        # Hot-reload per-utterance settings (speak_reply, type_reply, flow, …).
+        # Hotkey bindings and the STT model are read once at startup and
+        # still need a service restart (documented in README).
+        while True:
+            time.sleep(2)
+            try:
+                config.reload_if_changed()
+            except Exception:  # noqa: BLE001
+                log.exception("config hot-reload failed")
+
+    threading.Thread(target=_reload_loop, daemon=True,
+                     name="baza-flow-config-reload").start()
     bindings = {
         config.hotkeys.get("raw", "ctrl+space"): "raw",
         config.hotkeys.get("flow", "ctrl+shift+space"): "flow",
