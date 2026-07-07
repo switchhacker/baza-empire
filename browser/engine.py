@@ -1,7 +1,6 @@
 """Playwright lifecycle: one shared headless Chromium, contexts capped by a
 semaphore, per-domain politeness delay, auto-relaunch if Chromium dies."""
 import asyncio
-import os
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,13 +13,6 @@ UA = (
 )
 _FRAMEWORK_DIR = Path(__file__).resolve().parent.parent
 SCREENSHOT_DIR = _FRAMEWORK_DIR / "dashboard" / "artifacts" / "browser"
-
-
-def profiles_dir() -> Path:
-    return Path(
-        os.environ.get("PB_PROFILES_DIR")
-        or str(Path(__file__).resolve().parent / "profiles")
-    )
 
 
 class Engine:
@@ -81,11 +73,8 @@ class Engine:
                 await asyncio.sleep(wait)
             self._last_hit[host] = time.monotonic()
 
-    async def new_context(self, profile: str | None = None):
-        """Return a caller-owned browser context.
-
-        Plain contexts come from the shared browser. Profile sessions get a
-        persistent context (their own Chromium) rooted at profiles/<name>.
+    async def new_context(self):
+        """Return a caller-owned, anonymous browser context.
 
         This context is NOT tracked by Engine and is NOT counted against the
         render() semaphore (max_contexts) — that cap only bounds render()'s
@@ -97,17 +86,9 @@ class Engine:
         hold contexts for minutes at a time.
 
         The caller owns the returned context and is responsible for closing
-        it (and any pages/persistent browser it spawns) when done — Engine.
-        stop() does not close contexts created here.
+        it when done — Engine.stop() does not close contexts created here.
         """
         await self._ensure_browser()
-        if profile:
-            pdir = profiles_dir() / profile
-            if not pdir.is_dir():
-                raise ValueError(f"unknown profile '{profile}' — seed it with browser/login_helper.py")
-            return await self._pw.chromium.launch_persistent_context(
-                str(pdir), headless=True, user_agent=UA
-            )
         return await self._browser.new_context(user_agent=UA)
 
     async def render(self, url: str, wait_ms: int = 0, screenshot: bool = False) -> dict:

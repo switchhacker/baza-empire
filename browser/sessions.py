@@ -11,11 +11,9 @@ from playwright.async_api import Error as PWError
 try:
     from browser.engine import SCREENSHOT_DIR
     from browser.page_to_md import page_to_md
-    from browser import db
 except ImportError:  # pragma: no cover
     from engine import SCREENSHOT_DIR
     from page_to_md import page_to_md
-    import db
 
 READ_JS = """() => {
   document.querySelectorAll('[data-pb-idx]').forEach(el => el.removeAttribute('data-pb-idx'));
@@ -59,28 +57,14 @@ ACTIVE_ELEMENT_JS = """() => {
 
 
 class Session:
-    def __init__(self, sid: str, context, page, profile: str | None):
+    def __init__(self, sid: str, context, page):
         self.id = sid
         self.context = context
         self.page = page
-        self.profile = profile
         self.last_used = time.monotonic()
-        # Set while a write-gate approval is pending on this session (finding
-        # 2a, whole-branch review): freezes further mutating acts so the
-        # agent can't re-read/renavigate the page and drift the element the
-        # pending approval was described against while Serge is deciding.
-        self.pending_approval_id: int | None = None
 
     def touch(self):
         self.last_used = time.monotonic()
-
-
-# Ops that change page/navigation state. Frozen while a session has a pending
-# approval; read/screenshot/element_info are informational and stay allowed.
-# "back" is included (finding 2, round 2 review): it's a navigation op like
-# goto/click and must not be a bypass an agent can use between a gated
-# request and Serge's decision.
-MUTATING_OPS = {"goto", "click", "type", "press", "scroll", "back"}
 
 
 class SessionManager:
@@ -91,14 +75,14 @@ class SessionManager:
         self._sessions: dict[str, Session] = {}
         self._create_lock = asyncio.Lock()
 
-    async def create(self, profile: str | None = None) -> str:
+    async def create(self) -> str:
         async with self._create_lock:
             if len(self._sessions) >= self.max_sessions:
                 raise RuntimeError(f"max {self.max_sessions} sessions; close one first")
-            ctx = await self.engine.new_context(profile=profile)
+            ctx = await self.engine.new_context()
             page = ctx.pages[0] if getattr(ctx, "pages", None) else await ctx.new_page()
             sid = uuid.uuid4().hex[:12]
-            self._sessions[sid] = Session(sid, ctx, page, profile)
+            self._sessions[sid] = Session(sid, ctx, page)
             return sid
 
     def get(self, sid: str) -> Session:
@@ -128,56 +112,6 @@ class SessionManager:
             await self.close(sid)
         return len(stale)
 
-    def mark_pending_approval(self, sid: str, approval_id: int) -> None:
-        """Freeze sid: further mutating acts refuse until the approval is
-        decided (approve/deny/expire) and clear_pending_approval is called."""
-        self.get(sid).pending_approval_id = approval_id
-
-    def clear_pending_approval(self, sid: str, approval_id: int | None = None) -> None:
-        """Clear sid's freeze. If approval_id is given, only clear when it
-        matches the session's current marker — so deciding one approval can't
-        unfreeze a session whose live marker belongs to a still-pending second
-        approval (concurrent-gated-request race). Pass None to force-clear."""
-        try:
-            s = self.get(sid)
-        except KeyError:
-            return
-        if approval_id is not None and s.pending_approval_id != approval_id:
-            return
-        s.pending_approval_id = None
-
-    def pending_block(self, sid: str) -> dict | None:
-        """Structured refusal if sid has an unresolved approval, else None.
-
-        DB-authoritative and self-healing (finding 1, round 2 review): the
-        freeze only holds while the backing approval row is genuinely still
-        'pending' in the database. The 60s reaper's db.expire_stale(300)
-        sweep (the documented "silence = denied" default) flips a stale
-        approval to 'expired' directly in the DB — it has no idea which
-        session that approval belongs to, so it can't clear the session's
-        marker itself. If left unchecked, that marker would freeze the
-        session forever after any 5-minute silence, even though the
-        approval it was guarding is long since resolved.
-        So every time this is consulted, re-check the approval's live
-        status: if it's gone (unknown id) or no longer 'pending' — expired,
-        denied, approved, executed, error, anything terminal, decided by
-        ANY path (reaper sweep, a direct /approvals/{id}/decide hit, etc.) —
-        clear the stale marker here and let the caller through instead of
-        blocking on a decision that has already been made.
-        Raises KeyError for an unknown session id (callers already catch
-        that the same way they do for act())."""
-        s = self.get(sid)
-        pid = s.pending_approval_id
-        if pid is None:
-            return None
-        approval = db.get_approval(pid)
-        if approval is None or approval.get("status") != "pending":
-            self.clear_pending_approval(sid)
-            return None
-        return {"success": False,
-                "error": "approval pending; resolve it before acting",
-                "approval_id": pid}
-
     async def element_info(self, sid: str, index: int):
         s = self.get(sid)
         return await s.page.evaluate(ELEMENT_INFO_JS, int(index))
@@ -196,14 +130,6 @@ class SessionManager:
 
     async def act(self, sid: str, op: str, **kw) -> dict:
         s = self.get(sid)
-        if op in MUTATING_OPS:
-            # Routed through pending_block so the DB-authoritative self-heal
-            # (finding 1, round 2 review) applies uniformly here too, not
-            # just to the routes in server.py that call pending_block()
-            # directly before the gating decision.
-            blocked = self.pending_block(sid)
-            if blocked:
-                return blocked
         page = s.page
         try:
             if op == "goto":

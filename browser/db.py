@@ -1,5 +1,5 @@
-"""SQLite state for the Phantom Browser service (:8100): crawl jobs + pages,
-write-gate approvals, and the short-TTL page cache.
+"""SQLite state for the Phantom Browser service (:8100): crawl jobs + pages
+and the short-TTL page cache.
 
 DB lives at dashboard/phantom_browser.db (override: PHANTOM_BROWSER_DB env).
 House idiom (see core/cron_health_db.py): WAL, Row factory, 5s timeout,
@@ -35,16 +35,6 @@ CREATE TABLE IF NOT EXISTS crawl_pages (
   fetched_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_crawl_pages_job ON crawl_pages(job_id);
-CREATE TABLE IF NOT EXISTS approvals (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id  TEXT NOT NULL,
-  action      TEXT NOT NULL,
-  description TEXT NOT NULL,
-  token       TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'pending',
-  created_at  REAL NOT NULL,
-  decided_at  REAL
-);
 CREATE TABLE IF NOT EXISTS page_cache (
   url        TEXT PRIMARY KEY,
   fetched_at REAL NOT NULL,
@@ -139,44 +129,6 @@ def requeue_running() -> list[int]:
                 ids,
             )
         return ids
-
-
-# ── approvals (write gate) ────────────────────────────────────────────────
-
-def create_approval(session_id: str, action: dict, description: str, token: str) -> int:
-    with _conn() as c:
-        cur = c.execute(
-            "INSERT INTO approvals (session_id, action, description, token, created_at)"
-            " VALUES (?,?,?,?,?)",
-            (session_id, json.dumps(action), description, token, time.time()),
-        )
-        return cur.lastrowid
-
-
-def get_approval(approval_id: int):
-    with _conn() as c:
-        row = c.execute("SELECT * FROM approvals WHERE id=?", (approval_id,)).fetchone()
-        return dict(row) if row else None
-
-
-def decide_approval(approval_id: int, status: str) -> None:
-    with _conn() as c:
-        c.execute(
-            "UPDATE approvals SET status=?, decided_at=? WHERE id=?",
-            (status, time.time(), approval_id),
-        )
-
-
-def expire_stale(max_age: int = 300) -> int:
-    """Pending approvals older than max_age seconds become 'expired' (= denied).
-    Returns how many were expired."""
-    with _conn() as c:
-        cur = c.execute(
-            "UPDATE approvals SET status='expired', decided_at=? "
-            "WHERE status='pending' AND created_at < ?",
-            (time.time(), time.time() - max_age),
-        )
-        return cur.rowcount
 
 
 # ── page cache ────────────────────────────────────────────────────────────
