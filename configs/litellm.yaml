@@ -151,12 +151,12 @@ model_list:
   - model_name: local/llama3.1-8b
     litellm_params:
       model: ollama/llama3.1:8b
-      api_base: http://localhost:11435
+      api_base: http://localhost:11434
 
   - model_name: local/nemotron
     litellm_params:
       model: ollama/nemotron-3-nano:latest
-      api_base: http://localhost:11435
+      api_base: http://localhost:11434
 
   - model_name: local/glm-flash
     litellm_params:
@@ -172,7 +172,7 @@ model_list:
   - model_name: local/gemma3-4b
     litellm_params:
       model: ollama/gemma3:4b
-      api_base: http://localhost:11435
+      api_base: http://localhost:11434
 
   - model_name: local/gemma3-12b
     litellm_params:
@@ -187,7 +187,7 @@ model_list:
   - model_name: local/ministral3-3b
     litellm_params:
       model: ollama/ministral-3:3b
-      api_base: http://localhost:11435
+      api_base: http://localhost:11434
 
   - model_name: local/ministral3-8b
     litellm_params:
