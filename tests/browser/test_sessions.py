@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from browser import db
 from browser.engine import Engine
 from browser.sessions import SessionManager
 
@@ -127,8 +128,17 @@ def test_click_without_index_structured_error(tmp_path):
 
 
 class _FakeChromePage:
+    def __init__(self):
+        self.url = "https://example.com"
+
     async def evaluate(self, *a, **kw):
         return None
+
+    async def goto(self, url, **kw):
+        self.url = url
+
+    async def go_back(self, **kw):
+        pass
 
 
 class _FakeContext:
@@ -163,3 +173,153 @@ def test_max_sessions_concurrent_creates():
     assert len(mgr._sessions) <= 2
     errors = [r for r in results if isinstance(r, RuntimeError)]
     assert len(errors) >= 2
+
+
+# ── Finding 2a: pending-approval freeze (SessionManager-level) ─────────────
+#
+# pending_block()/act() are DB-authoritative (round 2 review, finding 1):
+# they look up the real approval row via db.get_approval(), not just the
+# in-memory marker. So every test below that exercises the freeze needs a
+# genuine 'pending' row backing the approval id — _pending_approval() makes
+# one in an isolated tmp DB (same PHANTOM_BROWSER_DB-env pattern as
+# test_server_gate.py's client fixture).
+
+def _pending_approval(monkeypatch, tmp_path, session_id: str) -> int:
+    monkeypatch.setenv("PHANTOM_BROWSER_DB", str(tmp_path / "pb.db"))
+    db.init()
+    return db.create_approval(session_id, {"op": "test"}, "test", "tok")
+
+
+def test_pending_approval_blocks_mutating_ops(tmp_path, monkeypatch):
+    """Once a session is marked with a pending approval, act() must refuse
+    goto/click/type/press/scroll without touching the page at all."""
+    async def go():
+        mgr = SessionManager(_FakeEngine())
+        sid = await mgr.create()
+        aid = _pending_approval(monkeypatch, tmp_path, sid)
+        mgr.mark_pending_approval(sid, aid)
+        return aid, await mgr.act(sid, "goto", url="https://example.com")
+
+    aid, result = asyncio.run(go())
+    assert result == {"success": False,
+                       "error": "approval pending; resolve it before acting",
+                       "approval_id": aid}
+
+
+def test_pending_block_helper_reports_and_clears(tmp_path, monkeypatch):
+    async def go():
+        mgr = SessionManager(_FakeEngine())
+        sid = await mgr.create()
+        before = mgr.pending_block(sid)
+        aid = _pending_approval(monkeypatch, tmp_path, sid)
+        mgr.mark_pending_approval(sid, aid)
+        during = mgr.pending_block(sid)
+        mgr.clear_pending_approval(sid)
+        after = mgr.pending_block(sid)
+        return aid, before, during, after
+
+    aid, before, during, after = asyncio.run(go())
+    assert before is None
+    assert during == {"success": False,
+                       "error": "approval pending; resolve it before acting",
+                       "approval_id": aid}
+    assert after is None
+
+
+def test_clear_pending_approval_unfreezes_session(tmp_path, monkeypatch):
+    async def go():
+        mgr = SessionManager(_FakeEngine())
+        sid = await mgr.create()
+        aid = _pending_approval(monkeypatch, tmp_path, sid)
+        mgr.mark_pending_approval(sid, aid)
+        blocked = await mgr.act(sid, "goto", url="https://example.com")
+        mgr.clear_pending_approval(sid)
+        return blocked, mgr.get(sid).pending_approval_id
+
+    blocked, pid = asyncio.run(go())
+    assert blocked["success"] is False
+    assert pid is None
+
+
+# ── Finding 1 (round 2 review): reaper-expiry self-heal ────────────────────
+
+def test_pending_block_self_heals_after_reaper_expiry(tmp_path, monkeypatch):
+    """The reaper's db.expire_stale(300) sweep (silence = denied) can flip a
+    pending approval straight to 'expired' with NO /approvals/{id}/decide
+    hit ever landing on this session — the reaper only knows about approval
+    rows, not sessions, so it can't clear the session's own marker. Once
+    the approval is no longer 'pending' in the DB, pending_block() (and
+    therefore act()) must notice on its own and self-heal the freeze rather
+    than bricking every future mutating op on the session forever."""
+    async def go():
+        mgr = SessionManager(_FakeEngine())
+        sid = await mgr.create()
+        aid = _pending_approval(monkeypatch, tmp_path, sid)
+        mgr.mark_pending_approval(sid, aid)
+
+        blocked = await mgr.act(sid, "goto", url="https://example.com")
+        db.expire_stale(0)  # reaper sweep; never touches session state directly
+        allowed = await mgr.act(sid, "goto", url="https://example.com")
+        return aid, blocked, allowed, mgr.get(sid).pending_approval_id
+
+    aid, blocked, allowed, pid_after = asyncio.run(go())
+    assert blocked == {"success": False,
+                        "error": "approval pending; resolve it before acting",
+                        "approval_id": aid}
+    assert allowed["success"] is True                   # no permanent brick
+    assert pid_after is None                             # marker self-cleared
+
+
+# ── Finding 2 (round 2 review): back is a mutating op too ──────────────────
+
+def test_back_is_frozen_by_pending_approval(tmp_path, monkeypatch):
+    """MUTATING_OPS must include 'back' so a pending approval freezes it
+    exactly like goto/click/type/press/scroll — otherwise 'back' is a
+    bypass an agent can use between a gated request and Serge's decision."""
+    async def go():
+        mgr = SessionManager(_FakeEngine())
+        sid = await mgr.create()
+        aid = _pending_approval(monkeypatch, tmp_path, sid)
+        mgr.mark_pending_approval(sid, aid)
+        return aid, await mgr.act(sid, "back")
+
+    aid, result = asyncio.run(go())
+    assert result == {"success": False,
+                       "error": "approval pending; resolve it before acting",
+                       "approval_id": aid}
+
+
+# ── Finding 3 (round 2 review): ELEMENT_INFO_JS surfaces href ──────────────
+
+@pytest.mark.integration
+def test_element_info_returns_href_for_anchor(tmp_path):
+    """server.py's click-gating decision needs the anchor's href to catch a
+    neutral-text link that navigates to a mutation URL (Playwright's
+    click-navigation never routes through goto/is_gated_goto on its own) —
+    ELEMENT_INFO_JS must surface it."""
+    url = make_pages(tmp_path)
+
+    async def go(mgr):
+        sid = await mgr.create()
+        await mgr.act(sid, "goto", url=url)
+        read1 = await mgr.read(sid)
+        link = next(e for e in read1["elements"] if "Next page" in e["text"])
+        return await mgr.element_info(sid, link["idx"])
+
+    info = asyncio.run(with_mgr(go))
+    assert info["href"].endswith("page2.html")
+
+
+@pytest.mark.integration
+def test_element_info_href_empty_for_non_anchor(tmp_path):
+    url = make_pages(tmp_path)
+
+    async def go(mgr):
+        sid = await mgr.create()
+        await mgr.act(sid, "goto", url=url)
+        read1 = await mgr.read(sid)
+        btn = next(e for e in read1["elements"] if "Send it" in e["text"])
+        return await mgr.element_info(sid, btn["idx"])
+
+    info = asyncio.run(with_mgr(go))
+    assert info["href"] == ""

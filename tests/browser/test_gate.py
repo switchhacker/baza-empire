@@ -1,4 +1,4 @@
-from browser.gate import is_gated_click, is_gated_press
+from browser.gate import is_gated_click, is_gated_press, is_gated_goto
 
 
 def test_submit_button_gated():
@@ -36,3 +36,20 @@ def test_press_enter_in_get_form_free():
     assert not is_gated_press("Enter", active)      # search boxes stay free
     assert not is_gated_press("Enter", None)
     assert not is_gated_press("Tab", active)
+
+
+def test_goto_with_query_string_gated():
+    assert is_gated_goto("https://x.test/cart?action=delete")
+    assert is_gated_goto("https://mail.test/unsubscribe?token=abc")
+
+
+def test_goto_with_mutation_verb_no_query_gated():
+    assert is_gated_goto("https://x.test/cart/checkout/confirm")
+    assert is_gated_goto("https://x.test/account/delete")
+
+
+def test_goto_plain_navigation_not_gated():
+    assert not is_gated_goto("https://example.com")
+    assert not is_gated_goto("https://example.com/docs/page")
+    assert not is_gated_goto(None)
+    assert not is_gated_goto("")

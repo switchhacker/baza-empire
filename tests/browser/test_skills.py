@@ -122,3 +122,114 @@ def test_service_down_is_graceful():
     p = run_skill("web_scrape.py", {"url": "https://x.com"}, "http://localhost:9")
     out = json.loads(p.stdout)
     assert out["success"] is False and "phantom-browser" in out["hint"]
+
+
+def test_browse_approval_id_non_numeric():
+    """Non-numeric approval_id should NOT crash — must return valid JSON."""
+    srv, base = _start_stub()
+    try:
+        p = run_skill("browse.py", {"action": "approval_status", "approval_id": "abc"}, base)
+        assert p.returncode == 0, f"subprocess failed: stderr={p.stderr}"
+        out = json.loads(p.stdout)  # Must parse as JSON — NO traceback
+        assert out["success"] is False
+    finally:
+        srv.shutdown()
+
+
+def test_browse_max_chars_non_numeric():
+    """Non-numeric max_chars should NOT crash — must return valid JSON."""
+    srv, base = _start_stub()
+    try:
+        p = run_skill("browse.py",
+                      {"action": "read", "session_id": "abc123", "max_chars": "nope"}, base)
+        assert p.returncode == 0, f"subprocess failed: stderr={p.stderr}"
+        out = json.loads(p.stdout)  # Must parse as JSON
+        assert "session_id" in out
+    finally:
+        srv.shutdown()
+
+
+def test_web_scrape_max_chars_non_numeric():
+    """Non-numeric max_chars should NOT crash — must return valid JSON."""
+    srv, base = _start_stub()
+    try:
+        p = run_skill("web_scrape.py", {"url": "https://s.test/", "max_chars": "nope"}, base)
+        assert p.returncode == 0, f"subprocess failed: stderr={p.stderr}"
+        out = json.loads(p.stdout)  # Must parse as JSON
+        # May succeed or fail, but stdout must be valid JSON
+        assert isinstance(out, dict)
+    finally:
+        srv.shutdown()
+
+
+def test_web_scrape_wait_ms_non_numeric():
+    """Non-numeric wait_ms should NOT crash — must return valid JSON."""
+    srv, base = _start_stub()
+    try:
+        p = run_skill("web_scrape.py", {"url": "https://s.test/", "wait_ms": "not_a_number"}, base)
+        assert p.returncode == 0, f"subprocess failed: stderr={p.stderr}"
+        out = json.loads(p.stdout)  # Must parse as JSON
+        assert isinstance(out, dict)
+    finally:
+        srv.shutdown()
+
+
+def test_web_map_limit_non_numeric():
+    """Non-numeric limit should NOT crash — must return valid JSON."""
+    srv, base = _start_stub()
+    try:
+        p = run_skill("web_map.py", {"url": "https://s.test/", "limit": "nope"}, base)
+        assert p.returncode == 0, f"subprocess failed: stderr={p.stderr}"
+        out = json.loads(p.stdout)  # Must parse as JSON
+        # May succeed or fail, but stdout must be valid JSON
+        assert isinstance(out, dict)
+    finally:
+        srv.shutdown()
+
+
+def test_browse_invalid_skill_args_json():
+    """Invalid SKILL_ARGS JSON should emit valid JSON error — NOT plain text."""
+    srv, base = _start_stub()
+    try:
+        env = dict(os.environ)
+        env["SKILL_ARGS"] = "{not valid json"
+        env["PHANTOM_BROWSER_URL"] = base
+        p = subprocess.run([sys.executable, os.path.join(SKILLS, "browse.py")],
+                          capture_output=True, text=True, env=env, timeout=30)
+        assert p.returncode == 1
+        out = json.loads(p.stdout)  # Must parse as JSON — NOT plain string
+        assert out["success"] is False and "invalid" in out["error"].lower()
+    finally:
+        srv.shutdown()
+
+
+def test_web_scrape_invalid_skill_args_json():
+    """Invalid SKILL_ARGS JSON should emit valid JSON error — NOT plain text."""
+    srv, base = _start_stub()
+    try:
+        env = dict(os.environ)
+        env["SKILL_ARGS"] = "{malformed"
+        env["PHANTOM_BROWSER_URL"] = base
+        p = subprocess.run([sys.executable, os.path.join(SKILLS, "web_scrape.py")],
+                          capture_output=True, text=True, env=env, timeout=30)
+        assert p.returncode == 1
+        out = json.loads(p.stdout)  # Must parse as JSON
+        assert out["success"] is False
+    finally:
+        srv.shutdown()
+
+
+def test_web_map_invalid_skill_args_json():
+    """Invalid SKILL_ARGS JSON should emit valid JSON error — NOT plain text."""
+    srv, base = _start_stub()
+    try:
+        env = dict(os.environ)
+        env["SKILL_ARGS"] = "{bad json"
+        env["PHANTOM_BROWSER_URL"] = base
+        p = subprocess.run([sys.executable, os.path.join(SKILLS, "web_map.py")],
+                          capture_output=True, text=True, env=env, timeout=30)
+        assert p.returncode == 1
+        out = json.loads(p.stdout)  # Must parse as JSON
+        assert out["success"] is False
+    finally:
+        srv.shutdown()
