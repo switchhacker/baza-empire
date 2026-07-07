@@ -441,7 +441,7 @@ agents:
     telegram_token_env: TELEGRAM_SAM_AXE
   scout_reeves:
     company_title: Director of Research & Market Intelligence
-    model: nemotron-cascade-2:30b
+    model: gemma4:12b-it-qat  # 2026-07-07: was nemotron-cascade-2:30b (24GB, zero loads in 14d — CPU-only fit); consolidated onto the fleet model
     name: Scout Reeves
     role: Research & Market Intelligence Agent — Baza Empire
     scheduled_tasks:
