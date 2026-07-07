@@ -20,7 +20,7 @@
     "baza-scaffold-runner.service": "dead",
     "baza-sd-webui.service": "running",
     "baza-task-runner.service": "dead",
-    "baza-tool-server.service": "running",
+    "baza-tool-server.service": "stop-sigterm",
     "baza-vision-indexer.service": "dead",
     "baza-vision-seed-fulfill.service": "dead",
     "baza-vision-seed-scan.service": "dead",
