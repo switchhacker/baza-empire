@@ -42,7 +42,10 @@ def client(tmp_path, monkeypatch):
                     "approval_id": pid}
         def mark_pending_approval(self, sid, approval_id):
             self._pending[sid] = approval_id
-        def clear_pending_approval(self, sid):
+        def clear_pending_approval(self, sid, approval_id=None):
+            # mirror production: aid-bound clear (only clear a matching marker)
+            if approval_id is not None and self._pending.get(sid) != approval_id:
+                return
             self._pending.pop(sid, None)
         async def element_info(self, sid, index):
             return dict(self._element_info)

@@ -323,3 +323,24 @@ def test_element_info_href_empty_for_non_anchor(tmp_path):
 
     info = asyncio.run(with_mgr(go))
     assert info["href"] == ""
+
+
+def test_clear_pending_approval_is_aid_bound(tmp_path, monkeypatch):
+    """Deciding approval aid1 must NOT unfreeze a session whose live marker
+    belongs to a still-pending aid2 (concurrent-gated-request race)."""
+    monkeypatch.setenv("PHANTOM_BROWSER_DB", str(tmp_path / "pb.db"))
+    from browser.sessions import SessionManager
+
+    class _S:
+        def __init__(self): self.pending_approval_id = None
+        def touch(self): pass
+    mgr = SessionManager.__new__(SessionManager)
+    mgr._sessions = {"s1": _S()}
+    mgr.mark_pending_approval("s1", 2)          # live marker = aid2
+    mgr.clear_pending_approval("s1", 1)         # decide aid1 → must NOT clear
+    assert mgr._sessions["s1"].pending_approval_id == 2
+    mgr.clear_pending_approval("s1", 2)         # decide aid2 → clears
+    assert mgr._sessions["s1"].pending_approval_id is None
+    mgr.mark_pending_approval("s1", 5)
+    mgr.clear_pending_approval("s1")            # force-clear (self-heal path)
+    assert mgr._sessions["s1"].pending_approval_id is None
