@@ -8,6 +8,7 @@ scaffold:
   pinned_core:              # always-on skills (injected every request when enabled)
     - artifact_save
     - web_search
+    - web_scrape
     - ahb123_query
     - skill_search
     - call_tool
