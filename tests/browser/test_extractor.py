@@ -109,3 +109,12 @@ def test_extract_schema_invalid_json_both_attempts_fails(monkeypatch):
 def test_validate_rejects_root_null():
     errs = validate(None, {"type": "object", "required": ["vendor"]})
     assert errs and "null" in errs[0]
+
+
+def test_extract_refuses_cloud_model():
+    import asyncio
+    from browser.extractor import extract
+    r = asyncio.run(extract("some content",
+                            {"type": "object", "properties": {"x": {"type": "string"}}},
+                            model="gemma3:27b-cloud"))
+    assert r["success"] is False and "cloud" in r["error"].lower()
