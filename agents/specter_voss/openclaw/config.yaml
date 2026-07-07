@@ -78,10 +78,11 @@ tools:
     engine: "searxng"
     url: "http://localhost:8080/search"
 
-  # Browser automation
+  # Browser automation — Phantom Browser service on baza (Tailscale)
   browser:
     enabled: true
-    engine: "browser-use"
+    engine: "phantom-browser"
+    url: "http://100.127.118.103:8100"
     headless: true
 
   # Email management
