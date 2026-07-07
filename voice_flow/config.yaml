@@ -1,0 +1,32 @@
+hotkeys:
+  raw: "ctrl+space"
+  flow: "ctrl+shift+space"
+  agent: "ctrl+alt+space"
+  cancel: "esc"
+  mode: "hold"            # hold | toggle
+stt:
+  model: "base"
+  compute_type: "int8"
+  device: "cpu"
+  fluid_stt_fallback: "http://127.0.0.1:8889/api/fluid/stt"
+flow:
+  ollama_url: "http://127.0.0.1:11434/api/generate"
+  model: "gemma4:12b-it-qat"
+  temperature: 0
+  system_prompt: |
+    Rewrite the dictated text with correct punctuation, capitalization and
+    paragraphing. Remove filler words (um, uh, like). Preserve meaning and
+    wording. Output only the cleaned text, nothing else.
+agent:
+  fluid_url: "http://127.0.0.1:8889"
+  default_agent: "specter_voss"
+  speak_reply: true
+  type_reply: false
+audio:
+  input_device: null
+  samplerate: 16000
+  chimes: true
+injection:
+  method: "paste"          # paste | type
+commands:
+  enabled: true
