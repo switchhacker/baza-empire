@@ -28,6 +28,7 @@ CRITICAL_SERVICES=(
     baza-tool-server.service
     baza-litellm.service
     postgresql.service
+    baza-phantom-browser.service
 )
 
 NOW=$(date +%s)

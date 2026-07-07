@@ -45,7 +45,7 @@ WATCHED_EXT = {
 
 SKIP_DIRS = {
     ".git", "venv", "__pycache__", "node_modules", "artifacts",
-    "logs", "backups", ".private-inbound", ".pytest_cache",
+    "logs", "backups", ".private-inbound", ".pytest_cache", "profiles",
 }
 SKIP_FILES_RX = re.compile(
     r"(\.db|\.log|\.pyc|\.pyo|\.sqlite|\.sqlite-journal|\.swp|"
