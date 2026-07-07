@@ -58,6 +58,14 @@ def _sweep_outbox(max_age=6 * 3600):
                 pass
     except FileNotFoundError:
         pass
+    try:
+        shares = os.path.join(ARTIFACTS_DIR, "_email-shares")
+        for name in os.listdir(shares):
+            p = os.path.join(shares, name)
+            if os.path.isdir(p) and now - os.path.getmtime(p) > 30 * 86400:
+                shutil.rmtree(p, ignore_errors=True)
+    except FileNotFoundError:
+        pass
 
 
 os.makedirs(OUTBOX_DIR, exist_ok=True)
@@ -1283,6 +1291,139 @@ def api_attachment_from_bin():
         return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
     mime = mimetypes.guess_type(safe)[0] or "application/octet-stream"
     return jsonify({"ok": True, "token": token, "filename": safe, "size": size, "mime": mime})
+
+
+def _artifact_abs(rel: str) -> Optional[str]:
+    """Resolve an artifacts-relative path with traversal + privacy guards."""
+    base = os.path.realpath(ARTIFACTS_DIR)
+    full = os.path.realpath(os.path.join(base, rel or ""))
+    if not full.startswith(base + os.sep):
+        return None
+    if any(seg in _DENY_ARTIFACT_DIRS for seg in full[len(base) + 1:].split(os.sep)):
+        return None
+    if not os.path.isfile(full):
+        return None
+    return full
+
+
+def _materialize_attachment(msg_id: str, att_id: str, name: str,
+                            account_id: Optional[str]) -> str:
+    """Download a Gmail attachment into artifacts/_email-shares/ so the
+    share_service roots can serve it. Returns the artifact-relative path."""
+    svc = _gmail(account_id)
+    att = svc.users().messages().attachments().get(
+        userId="me", messageId=msg_id, id=att_id).execute()
+    data = base64.urlsafe_b64decode(att.get("data", ""))
+    if len(data) > _MAX_ATTACH_BYTES:
+        raise ValueError("attachment exceeds the 25 MB limit")
+    safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(name or "attachment"))[:160] or "attachment"
+    rel = os.path.join("_email-shares", uuid.uuid4().hex, safe)
+    dest = os.path.join(ARTIFACTS_DIR, rel)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "wb") as fh:
+        fh.write(data)
+    return rel.replace(os.sep, "/")
+
+
+@email_bp.route("/api/email2/attachment/share", methods=["POST"])
+def api_attachment_share():
+    """Share an email attachment (or agent file) via link / telegram / email.
+
+    Body: {via, msg_id?, att_id?, name?, rel?, to?, note?, account?}
+      via=link     -> {ok, url, token, expires_at}
+      via=telegram -> share_service.share_telegram result
+      via=email    -> share_service.share_email result (requires `to`)
+    """
+    try:
+        import share_service
+    except ImportError:
+        from dashboard import share_service  # type: ignore
+    body = request.get_json(silent=True) or {}
+    via = (body.get("via") or "").strip()
+    if via not in ("link", "telegram", "email"):
+        return jsonify({"ok": False, "error": f"unknown via: {via}"}), 400
+    note = body.get("note") or ""
+    try:
+        if body.get("rel"):
+            _rel_abs = _artifact_abs(body["rel"])
+            if _rel_abs is None:
+                return jsonify({"ok": False, "error": "file not found or not shareable"}), 404
+            if os.path.getsize(_rel_abs) > _MAX_ATTACH_BYTES:
+                return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
+            rel = body["rel"]
+        else:
+            if not body.get("msg_id") or not body.get("att_id"):
+                return jsonify({"ok": False, "error": "msg_id and att_id (or rel) required"}), 400
+            rel = _materialize_attachment(body["msg_id"], body["att_id"],
+                                          body.get("name") or "attachment",
+                                          body.get("account") or None)
+        if via == "link":
+            out = share_service.create_link("artifact", rel)
+            return jsonify({"ok": True, **out})
+        if via == "telegram":
+            out = share_service.share_telegram("artifact", rel, caption=note)
+        else:
+            if not (body.get("to") or "").strip():
+                return jsonify({"ok": False, "error": "missing 'to' address"}), 400
+            out = share_service.share_email("artifact", rel, body["to"],
+                                            body.get("subject") or "", note)
+        return (jsonify(out), 200) if out.get("ok") else (jsonify(out), 400)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except FileNotFoundError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@email_bp.route("/api/email2/attachments/restage", methods=["POST"])
+def api_attachment_restage():
+    """Copy a Gmail attachment or agent file into the send-outbox staging so it
+    can be attached to a new message (Forward-a-file).
+
+    Body: {msg_id, att_id, name?, account?} or {rel}.
+    Returns the same shape as /attachments/upload: {ok, token, filename, size, mime}.
+    """
+    import mimetypes, shutil
+    body = request.get_json(silent=True) or {}
+    try:
+        if body.get("rel"):
+            src = _artifact_abs(body["rel"])
+            if src is None:
+                return jsonify({"ok": False, "error": "file not found"}), 404
+            if os.path.getsize(src) > _MAX_ATTACH_BYTES:
+                return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
+            safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(src))[:160] or "file"
+            token = uuid.uuid4().hex
+            d = os.path.join(OUTBOX_DIR, token)
+            os.makedirs(d, exist_ok=True)
+            dest = os.path.join(d, safe)
+            shutil.copy2(src, dest)
+        else:
+            if not body.get("msg_id") or not body.get("att_id"):
+                return jsonify({"ok": False, "error": "msg_id and att_id (or rel) required"}), 400
+            svc = _gmail(body.get("account") or None)
+            att = svc.users().messages().attachments().get(
+                userId="me", messageId=body["msg_id"], id=body["att_id"]).execute()
+            data = base64.urlsafe_b64decode(att.get("data", ""))
+            if len(data) > _MAX_ATTACH_BYTES:
+                return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
+            safe = re.sub(r'[^\w.\- ()]', "_",
+                          os.path.basename(body.get("name") or "attachment"))[:160] or "attachment"
+            token = uuid.uuid4().hex
+            d = os.path.join(OUTBOX_DIR, token)
+            os.makedirs(d, exist_ok=True)
+            dest = os.path.join(d, safe)
+            with open(dest, "wb") as fh:
+                fh.write(data)
+        size = os.path.getsize(dest)
+        mime = mimetypes.guess_type(safe)[0] or "application/octet-stream"
+        return jsonify({"ok": True, "token": token, "filename": safe,
+                        "size": size, "mime": mime})
+    except FileNotFoundError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @email_bp.route("/api/email2/sync", methods=["POST"])

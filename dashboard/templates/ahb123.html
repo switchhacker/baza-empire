@@ -25070,7 +25070,7 @@ SocialStudio.modules.gridpreview = (function(){
             const firstItem = SocialStudio.state.shotList[0];
             const id = typeof firstItem === 'object' ? (firstItem && firstItem.id) : firstItem;
             const src = SocialStudio.state.sources.find(s => s.id === id);
-            const url = src ? '/api/cloud/thumb/' + encodeURIComponent(src.sub_path) + '?size=300' : '';
+            const url = src ? '/api/ahb/social/media/thumb?size=300&path=' + encodeURIComponent(src.abs_path || src.sub_path || '') : '';
             return `<div style="aspect-ratio:1;background:#1a1a2e;border:2px solid #10b981;border-radius:4px;overflow:hidden"><img src="${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'"></div>`;
           }
           if (c.empty) {
@@ -25474,7 +25474,10 @@ SocialStudio.modules.imageEditor = (function(){
     m.className = 'modal-bg'; m.style.cssText = 'display:flex';
     document.body.appendChild(m);
     const close = () => document.body.removeChild(m);
-    const previewSrc = row.sub_path ? ('/api/cloud/media/serve/' + encodeURIComponent(row.sub_path)) : '';
+    // Composer sub_paths are absolute — the cloud segment routes 404 on them
+    // (see social_studio.py social_media_serve comment); use the social route.
+    const previewToken = row.abs_path || row.sub_path || '';
+    const previewSrc = previewToken ? ('/api/ahb/social/media/serve?path=' + encodeURIComponent(previewToken)) : '';
     m.innerHTML = `
       <div class="modal" style="max-width:860px;max-height:90vh;overflow-y:auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">

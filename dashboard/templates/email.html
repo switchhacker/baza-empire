@@ -123,7 +123,7 @@
     .reader-empty .big-icon{font-size:64px;opacity:.18}
     .reader-head{padding:18px 24px 14px;border-bottom:1px solid #14142a;display:flex;flex-direction:column;gap:8px}
     .reader-subject{font-size:20px;font-weight:800;color:#fff;line-height:1.3}
-    .reader-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 16px;background:#0a0a18;border-bottom:1px solid #14142a}
+    .reader-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 16px;background:#0a0a18;border-bottom:1px solid #14142a;position:sticky;top:0;z-index:5}
     .tool-btn{background:#13132a;border:1px solid #22224a;color:#aaa;padding:7px 11px;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .15s}
     .tool-btn:hover{border-color:#3a3a6a;color:#cfd2e8;background:#1a1a3a}
     .tool-btn.danger:hover{border-color:#e94560;color:#e94560}
@@ -138,6 +138,11 @@
     .ai-btn:hover{background:#1a0a3a;border-color:#a78bfa;color:#fff}
     .ai-btn:disabled{opacity:.5;cursor:wait}
     .ai-model-pick{margin-left:auto;background:#0a0a18;border:1px solid #22224a;color:#888;font-size:11px;padding:5px 8px;border-radius:6px;outline:none}
+    .ai-strip.collapsed{display:none}
+    .ai-toggle{background:none;border:none;color:#7c6ba8;font-size:11px;cursor:pointer;font-weight:700;margin-left:auto}
+    .msg-quick{display:flex;gap:4px;margin-left:10px;flex-shrink:0}
+    .msg-quick button{background:none;border:1px solid #22224a;border-radius:5px;color:#889;font-size:11px;cursor:pointer;padding:3px 7px}
+    .msg-quick button:hover{color:#cfd2e8;border-color:#3a3a6a}
 
     .messages{flex:1;overflow-y:auto;padding:12px 24px 24px}
     .msg-card{background:#0d0d1e;border:1px solid #14142a;border-radius:10px;margin-bottom:12px;overflow:hidden}
@@ -147,6 +152,9 @@
     .msg-date{font-size:11px;color:#555;white-space:nowrap;flex-shrink:0}
     .msg-body{padding:16px;font-size:13.5px;line-height:1.65;color:#cfd2e8;white-space:pre-wrap;word-wrap:break-word;max-height:none}
     .msg-card.collapsed .msg-body{display:none}
+    .msg-html-frame{width:100%;border:none;background:#fff;border-radius:6px;min-height:120px;display:block}
+    .msg-body-toggle{font-size:10.5px;color:#667;background:none;border:1px solid #22224a;border-radius:10px;padding:2px 8px;cursor:pointer;margin:8px 16px 0}
+    .msg-body-toggle:hover{color:#aab}
     .msg-attachments{padding:0 16px 14px;display:flex;flex-wrap:wrap;gap:8px}
     .msg-card.collapsed .msg-attachments{display:none}
     .att-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#10102a;border:1px solid #2a2a55;border-radius:16px;color:#a0c0ff;font-size:12px;text-decoration:none;max-width:280px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -155,6 +163,11 @@
     .att-chip-wrap{display:inline-flex;align-items:center;gap:2px}
     .att-save-btn{background:#10102a;border:1px solid #2a2a55;border-radius:14px;color:#a0c0ff;font-size:12px;padding:6px 9px;cursor:pointer;line-height:1}
     .att-save-btn:hover{border-color:#4a4a90;background:#16163a}
+    .att-actions{display:inline-flex;gap:4px}
+    .att-actions button{background:#10102a;border:1px solid #2a2a55;border-radius:14px;color:#a0c0ff;font-size:12px;padding:6px 9px;cursor:pointer;line-height:1}
+    .att-actions button:hover{border-color:#4a4a90;background:#16163a}
+    .thread-att-badge{font-size:10px;color:#8ab;background:#10102a;border:1px solid #22224a;border-radius:9px;padding:1px 6px;margin-right:6px;cursor:pointer}
+    .thread-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
     .msg-card.collapsed{opacity:.78}
     .msg-collapsed-snippet{padding:0 16px 12px;font-size:12px;color:#5a5e7a;display:none}
     .msg-card.collapsed .msg-collapsed-snippet{display:block}
@@ -260,7 +273,7 @@
       .reader{display:none}
       .mail-shell.show-reader .pane.list-pane{display:none}
       .mail-shell.show-reader .reader{display:flex}
-      .mail-shell.show-reader{grid-template-columns:1fr}
+      .mail-shell.show-reader{grid-template-columns:200px 1fr}
       .back-btn{display:flex;align-items:center}
     }
     @media(max-width:700px){
@@ -268,6 +281,8 @@
       .sidebar{display:none}
       .mail-shell.show-sidebar .sidebar{display:flex;position:fixed;top:52px;left:0;bottom:0;width:240px;z-index:90}
       .mail-shell.show-reader .list-pane{display:none}
+      .mail-shell.show-reader{grid-template-columns:1fr}
+      .mail-shell.show-reader .sidebar{display:none}
       .nav{padding:0 14px}
     }
 
@@ -349,7 +364,7 @@
         </div>
       </div>
       <div class="reader-toolbar" id="readerToolbar"></div>
-      <div class="ai-strip">
+      <div class="ai-strip" id="aiStrip">
         <span class="ai-label">⚡ AI</span>
         <button class="ai-btn" id="aiSummarize" onclick="aiAction('summarize')">📝 Summarize</button>
         <button class="ai-btn" onclick="aiAction('extract')">🎯 Action items</button>
@@ -592,11 +607,34 @@
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#ccd;cursor:pointer">
         <input type="checkbox" id="saveAttCloud"> Also add to the Cloud library
       </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#ccd;cursor:pointer">
+        <input type="checkbox" id="saveAttDesktop"> Save to baza Desktop folder
+      </label>
       <div id="saveAttMsg" style="font-size:12px;min-height:16px;color:#8b8"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px">
         <button class="cancel-btn" onclick="closeSaveAttachment()">Cancel</button>
         <button class="send-btn" id="saveAttBtn" onclick="submitSaveAttachment()">💾 Save</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Share attachment -->
+<div class="att-prev-bg" id="attShareBg" onclick="if(event.target===this)closeAttShare()">
+  <div class="att-prev-card" style="max-width:440px">
+    <div class="att-prev-head">
+      <span>📤 Share file</span>
+      <button class="modal-close" onclick="closeAttShare()">×</button>
+    </div>
+    <div style="padding:18px 20px;display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:13px;color:#aab;word-break:break-all" id="attShareName">file</div>
+      <button class="send-btn" onclick="submitAttShare('telegram')">📨 Send to Telegram</button>
+      <button class="send-btn" onclick="submitAttShare('link')">🔗 Copy 7-day link</button>
+      <div style="display:flex;gap:8px">
+        <input id="attShareTo" placeholder="email@address…" style="flex:1;background:#0a0a18;border:1px solid #2a2a4a;border-radius:6px;padding:9px;color:#e0e0e0;font-size:13px">
+        <button class="send-btn" onclick="submitAttShare('email')">✉️ Email</button>
+      </div>
+      <div id="attShareMsg" style="font-size:12px;min-height:16px;color:#8b8"></div>
     </div>
   </div>
 </div>
@@ -656,6 +694,7 @@ const state = {
   currentThread: null,    // {thread_id, messages:[...]}
   models: [],
   pageToken: null,
+  attView: false,
 };
 
 // ── Utils ────────────────────────────────────────────────────────────────
@@ -699,17 +738,20 @@ async function loadLabels(){
   if(data.error){ document.getElementById('labelList').innerHTML = '<div style="padding:16px;color:#e94560;font-size:11px">⚠ '+esc(data.error)+'</div>'; return; }
   const el = document.getElementById('labelList');
   const part = arr => arr.map(l => `
-    <div class="label-item ${l.id===state.label?'active':''}" onclick="pickLabel('${l.id}','${esc(l.name)}')">
+    <div class="label-item ${!state.attView && l.id===state.label?'active':''}" onclick="pickLabel('${l.id}','${esc(l.name)}')">
       <div class="label-emoji">${l.emoji||'🏷️'}</div>
       <div class="label-name">${esc(l.name)}</div>
       ${l.unread>0?`<div class="label-count">${l.unread}</div>`:''}
     </div>`).join('');
   let html = '<div class="label-group-title">Mailboxes</div>' + part(data.system||[]);
+  html += `<div class="label-item ${state.attView?'active':''}" onclick="openAttachmentsView()">
+    <div class="label-emoji">📎</div><div class="label-name">Attachments</div></div>`;
   if((data.user||[]).length && !state.activeAccount?.all){ html += '<div class="label-group-title">Labels</div>' + part(data.user); }
   el.innerHTML = html;
 }
 
 function pickLabel(id, name){
+  state.attView = false;
   state.label = id;
   state.query = '';
   document.getElementById('searchInput').value = '';
@@ -761,16 +803,32 @@ function renderThreads(){
     const badge = state.activeAccount?.all && t.account_email
       ? `<span class="acct-badge" style="font-size:9px;padding:1px 5px;border-radius:8px;background:#13132a;color:#7a7ea0;margin-left:6px">${esc(t.account_email.split('@')[0])}</span>`
       : '';
+    const attCount = (t.attachments||[]).filter(a=>!a.inline).length;
+    const attBadge = (t.has_attachments && attCount)
+      ? `<span class="thread-att-badge" onclick="event.stopPropagation();toggleThreadAtts('${t.thread_id}')">📎 ${attCount}</span>`
+      : (t.has_attachments ? '<span class="thread-att-badge">📎</span>' : '');
     return `<div class="thread-item ${t.is_unread?'unread':''} ${t.thread_id===state.currentThreadId?'active':''}" onclick="openThread('${t.thread_id}')">
       <div class="thread-row1">
         <div class="thread-from">${star}${esc(fromDisp)}${badge}</div>
-        <div class="thread-time">${fmtTime(t.received_at)}</div>
+        <div class="thread-time">${attBadge}${fmtTime(t.received_at)}</div>
       </div>
       <div class="thread-subject">${esc(t.subject||'(no subject)')}</div>
       <div class="thread-snippet">${esc((t.snippet||'').slice(0,180))}</div>
       ${cat ? `<div class="thread-meta-row">${cat}</div>` : ''}
+      ${attCount ? `<div class="thread-atts" id="tatts-${t.thread_id}" style="display:none" onclick="event.stopPropagation()">
+        ${(t.attachments||[]).filter(a=>!a.inline).map(a=>{
+          const ctx = {msg_id: a.gmail_id, att_id: a.attachment_id, name: a.filename, mime: a.mime||'', account: (a.account_id || threadAccount(t.thread_id))};
+          const base = attDownloadBase(ctx);
+          return `<span class="att-chip-wrap"><a class="att-chip att-preview-link" href="#" data-base="${escAttr(base)}" data-name="${escAttr(a.filename)}" data-mime="${escAttr(a.mime||'')}">📎 ${esc(a.filename)}</a>${attActionsHtml(ctx)}</span>`;
+        }).join('')}
+      </div>` : ''}
     </div>`;
   }).join('');
+}
+
+function toggleThreadAtts(tid){
+  const el = document.getElementById('tatts-' + tid);
+  if(el) el.style.display = el.style.display==='none' ? 'flex' : 'none';
 }
 
 function setFilter(f, el){
@@ -782,6 +840,7 @@ function setFilter(f, el){
 
 // ── Reader ───────────────────────────────────────────────────────────────
 async function openThread(tid){
+  state.attView = false;
   state.currentThreadId = tid;
   document.getElementById('mailShell').classList.add('show-reader');
   document.querySelectorAll('.thread-item').forEach(t => t.classList.remove('active'));
@@ -829,6 +888,9 @@ function renderThread(){
     <button class="tool-btn" onclick="modifyAction('unread')">●  Mark unread</button>
     <div class="tool-divider"></div>
     <button class="tool-btn" onclick="printThread()" title="Print this email to the HP Smart Tank">🖨 Print</button>
+    <button class="tool-btn" onclick="expandAllMsgs()" title="Expand every message in this thread">⤢ Expand all</button>
+    <button class="tool-btn" onclick="collapseAllMsgs()" title="Collapse all but the latest message">⤡ Collapse</button>
+    <button class="tool-btn ai" onclick="toggleAiStrip()" title="Show / hide AI helpers">⚡ AI</button>
   `;
 
   // Messages: collapse all but the last
@@ -841,9 +903,13 @@ function renderThread(){
           <div class="msg-to">to ${esc(m.to)}${m.cc?' • cc '+esc(m.cc):''}</div>
         </div>
         <div class="msg-date">${esc(m.date)}</div>
+        <div class="msg-quick">
+          <button title="Reply" onclick="event.stopPropagation();openReplyDraft('professional')">↩</button>
+          <button title="Forward this message" onclick="event.stopPropagation();forwardThread()">→</button>
+        </div>
       </div>
       <div class="msg-collapsed-snippet">${esc((m.body||'').slice(0,160))}…</div>
-      <div class="msg-body">${esc(m.body || '(empty body)')}</div>
+      ${renderMsgBody(m)}
       ${renderAttachments(m)}
     </div>`;
   }).join('');
@@ -858,6 +924,45 @@ function toggleMsg(gid){
   if(el) el.classList.toggle('collapsed');
 }
 
+const _bodyMode = {};   // gmail_id -> 'html' | 'text'
+function bodyModeFor(m){ return _bodyMode[m.gmail_id] || (m.html ? 'html' : 'text'); }
+function toggleBodyMode(gid){
+  const m = (state.currentThread?.messages||[]).find(x=>x.gmail_id===gid);
+  if(!m) return;
+  _bodyMode[gid] = bodyModeFor(m)==='html' ? 'text' : 'html';
+  renderThread();
+}
+function fitHtmlFrame(f){
+  try{ f.style.height = Math.min(f.contentDocument.documentElement.scrollHeight + 24, 20000) + 'px'; }
+  catch(e){ f.style.height = '70vh'; }
+}
+function renderMsgBody(m){
+  const acc = threadAccount(state.currentThreadId);
+  if(bodyModeFor(m)==='html'){
+    const src = '/api/email2/message/' + encodeURIComponent(m.gmail_id) + '/html' +
+                (acc ? ('?account=' + encodeURIComponent(acc)) : '');
+    return `<button class="msg-body-toggle" onclick="event.stopPropagation();toggleBodyMode('${escAttr(m.gmail_id)}')">📄 View as plain text</button>
+      <div style="padding:10px 16px 16px"><iframe class="msg-html-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        src="${escAttr(src)}" onload="fitHtmlFrame(this)" onerror="toggleBodyMode('${escAttr(m.gmail_id)}')"></iframe></div>`;
+  }
+  const tgl = m.html ? `<button class="msg-body-toggle" onclick="event.stopPropagation();toggleBodyMode('${escAttr(m.gmail_id)}')">🎨 View formatted (HTML)</button>` : '';
+  return tgl + `<div class="msg-body">${esc(m.body || '(empty body)')}</div>`;
+}
+
+function expandAllMsgs(){
+  document.querySelectorAll('#messagesScroll .msg-card.collapsed').forEach(c=>c.classList.remove('collapsed'));
+}
+function collapseAllMsgs(){
+  const cards = document.querySelectorAll('#messagesScroll .msg-card');
+  cards.forEach((c,i)=>{ if(i < cards.length-1) c.classList.add('collapsed'); }); // keep the latest open
+}
+function toggleAiStrip(){
+  const s = document.getElementById('aiStrip');
+  s.classList.toggle('collapsed');
+  try{ localStorage.setItem('email_ai_strip', s.classList.contains('collapsed')?'0':'1'); }catch(e){}
+}
+(function(){ try{ if(localStorage.getItem('email_ai_strip')==='0') document.getElementById('aiStrip').classList.add('collapsed'); }catch(e){} })();
+
 function fmtSize(b){
   if(!b) return '';
   if(b < 1024) return b + ' B';
@@ -865,23 +970,53 @@ function fmtSize(b){
   return (b/1048576).toFixed(1) + ' MB';
 }
 
+function attActionsHtml(ctx){
+  // ctx: {msg_id, att_id, name, mime, rel} — rel set for agent files instead of msg/att ids
+  const j = escAttr(JSON.stringify(ctx));
+  return `<span class="att-actions">
+    <button title="Save to project / cloud / Desktop" onclick='event.stopPropagation();attSave(${j})'>💾</button>
+    <button title="Share (Telegram / link / email)" onclick='event.stopPropagation();attShare(${j})'>📤</button>
+    <button title="Forward as new email" onclick='event.stopPropagation();attForward(${j})'>↪</button>
+  </span>`;
+}
+
+// Resolve the Gmail account a given attachment ctx belongs to. Never returns
+// 'ALL' — in All-inboxes mode with no per-ctx account we fall back to ''
+// (server infers from msg/att ids) rather than sending an unresolvable value.
+function ctxAccount(ctx){
+  if(ctx && ctx.account) return ctx.account;
+  return (state.activeAccount && !state.activeAccount.all) ? state.activeAccount.id : '';
+}
+
+function attDownloadBase(ctx){
+  // Gmail contexts only (ctx has msg_id/att_id). Agent files (ctx.rel) have no
+  // direct download URL — their chips omit ⬇/preview and use Share/Forward instead.
+  const _a = ctxAccount(ctx); const acc = _a ? '&account=' + encodeURIComponent(_a) : '';
+  return '/api/email2/attachment/' + encodeURIComponent(ctx.msg_id) + '/' +
+         encodeURIComponent(ctx.att_id) + '?name=' + encodeURIComponent(ctx.name) +
+         '&mime=' + encodeURIComponent(ctx.mime||'') + acc;
+}
+
 function renderAttachments(m){
-  const atts = m.attachments || [];
-  if(!atts.length) return '';
-  const acc = state.activeAccount ? '&account=' + encodeURIComponent(state.activeAccount.id) : '';
-  return '<div class="msg-attachments">' + atts.map(a => {
-    const base = '/api/email2/attachment/' + encodeURIComponent(m.gmail_id) + '/' +
-                encodeURIComponent(a.attachment_id) +
-                '?name=' + encodeURIComponent(a.filename) +
-                '&mime=' + encodeURIComponent(a.mime || '') + acc;
+  const atts = (m.attachments || []).filter(a => !a.inline);
+  const inline = (m.attachments || []).filter(a => a.inline);
+  if(!atts.length && !inline.length) return '';
+  const chip = a => {
+    const ctx = {msg_id: m.gmail_id, att_id: a.attachment_id, name: a.filename, mime: a.mime||'', account: threadAccount(state.currentThreadId)};
+    const base = attDownloadBase(ctx);
     return `<span class="att-chip-wrap">
       <a class="att-chip att-preview-link" href="#" title="${escAttr(a.filename)}"
-              data-base="${escAttr(base)}" data-name="${escAttr(a.filename)}" data-mime="${escAttr(a.mime||'')}">📎 ${esc(a.filename)}
-            <span class="att-size">${fmtSize(a.size)}</span></a>
-      <button class="att-save-btn" title="Save to a project / cloud"
-              onclick="openSaveAttachment('${escAttr(m.gmail_id)}','${escAttr(a.attachment_id)}','${escAttr(a.filename)}','${escAttr(a.mime||'')}')">💾</button>
+         data-base="${escAttr(base)}" data-name="${escAttr(a.filename)}" data-mime="${escAttr(a.mime||'')}">${a.inline?'🖼':'📎'} ${esc(a.filename)}
+         <span class="att-size">${fmtSize(a.size)}</span></a>
+      <a class="att-save-btn" title="Download" href="${escAttr(base)}">⬇</a>
+      ${attActionsHtml(ctx)}
     </span>`;
-  }).join('') + '</div>';
+  };
+  let html = '<div class="msg-attachments">' + atts.map(chip).join('');
+  if(inline.length){
+    html += `<span style="font-size:10.5px;color:#556;align-self:center">+ ${inline.length} embedded image${inline.length>1?'s':''}</span>`;
+  }
+  return html + '</div>';
 }
 
 function openAttachmentPreview(base, name, mime){
@@ -919,12 +1054,13 @@ async function printThread(){
 }
 
 // ── Save an incoming attachment to a project / cloud ────────────────────────
-let _saveAtt = null;   // {gmail_id, att_id, name, mime}
-async function openSaveAttachment(gmail_id, att_id, name, mime){
-  _saveAtt = {gmail_id, att_id, name, mime};
+let _saveAtt = null;   // {gmail_id, att_id, name, mime, account}
+async function openSaveAttachment(gmail_id, att_id, name, mime, account){
+  _saveAtt = {gmail_id, att_id, name, mime, account};
   document.getElementById('saveAttName').textContent = name;
   document.getElementById('saveAttMsg').textContent = '';
   document.getElementById('saveAttCloud').checked = false;
+  document.getElementById('saveAttDesktop').checked = false;
   document.getElementById('attSaveBg').classList.add('open');
   // Populate file types
   const typeSel = document.getElementById('saveAttType');
@@ -951,16 +1087,17 @@ async function submitSaveAttachment(){
   if(!_saveAtt) return;
   const project_id = document.getElementById('saveAttProject').value;
   const to_cloud = document.getElementById('saveAttCloud').checked;
-  if(!project_id && !to_cloud){ document.getElementById('saveAttMsg').style.color='#e88'; document.getElementById('saveAttMsg').textContent='Pick a project and/or the cloud library.'; return; }
+  const to_desktop = document.getElementById('saveAttDesktop').checked;
+  if(!project_id && !to_cloud && !to_desktop){ document.getElementById('saveAttMsg').style.color='#e88'; document.getElementById('saveAttMsg').textContent='Pick a project, cloud, and/or Desktop.'; return; }
   const btn = document.getElementById('saveAttBtn'); btn.disabled = true; btn.textContent = 'Saving…';
   try{
     const r = await api('/api/email2/attachment/save', {method:'POST', body:{
       msg_id:_saveAtt.gmail_id, att_id:_saveAtt.att_id, name:_saveAtt.name, mime:_saveAtt.mime,
-      project_id, file_type: document.getElementById('saveAttType').value, to_cloud,
-      account: state.activeAccount ? state.activeAccount.id : undefined
+      project_id, file_type: document.getElementById('saveAttType').value, to_cloud, to_desktop,
+      account: _saveAtt.account || undefined
     }});
     if(r && r.success){
-      const where = []; if(r.saved&&r.saved.project) where.push('project'); if(r.saved&&r.saved.cloud) where.push('cloud');
+      const where = []; if(r.saved&&r.saved.project) where.push('project'); if(r.saved&&r.saved.cloud) where.push('cloud'); if(r.saved&&r.saved.desktop) where.push('Desktop');
       document.getElementById('saveAttMsg').style.color='#8b8';
       document.getElementById('saveAttMsg').textContent='Saved to ' + (where.join(' + ')||'storage') + ' ✓';
       setTimeout(closeSaveAttachment, 900);
@@ -970,6 +1107,119 @@ async function submitSaveAttachment(){
     }
   }catch(e){ document.getElementById('saveAttMsg').style.color='#e88'; document.getElementById('saveAttMsg').textContent='Failed: '+e.message; }
   finally{ btn.disabled = false; btn.textContent = '💾 Save'; }
+}
+
+// ── Share an attachment (Telegram / link / email) ───────────────────────────
+let _shareCtx = null;
+function attShare(ctx){ _shareCtx = ctx; document.getElementById('attShareName').textContent = ctx.name; document.getElementById('attShareMsg').textContent=''; document.getElementById('attShareBg').classList.add('open'); }
+function closeAttShare(){ document.getElementById('attShareBg').classList.remove('open'); _shareCtx = null; }
+async function submitAttShare(via){
+  if(!_shareCtx) return;
+  const msg = document.getElementById('attShareMsg');
+  msg.style.color='#aab'; msg.textContent='Sharing…';
+  const body = {via, name:_shareCtx.name, mime:_shareCtx.mime,
+                account: ctxAccount(_shareCtx) || undefined};
+  if(_shareCtx.rel) body.rel = _shareCtx.rel;
+  else { body.msg_id = _shareCtx.msg_id; body.att_id = _shareCtx.att_id; }
+  if(via==='email'){
+    body.to = document.getElementById('attShareTo').value.trim();
+    if(!body.to){ msg.style.color='#e88'; msg.textContent='Enter an email address.'; return; }
+  }
+  try{
+    const r = await api('/api/email2/attachment/share', {method:'POST', body});
+    if(r.ok){
+      if(via==='link'){
+        try{ await navigator.clipboard.writeText(r.url); msg.textContent='Link copied ✓ ' + r.url; }
+        catch(e){ msg.textContent = r.url; }
+      } else { msg.style.color='#8b8'; msg.textContent = via==='telegram' ? 'Sent to Telegram ✓' : 'Emailed ✓'; setTimeout(closeAttShare, 900); }
+    } else { msg.style.color='#e88'; msg.textContent='Failed: ' + (r.error||'unknown'); }
+  }catch(e){ msg.style.color='#e88'; msg.textContent='Failed: '+e.message; }
+}
+
+function attSave(ctx){
+  if(ctx.rel){ toast('Agent files are already on baza — use Share or Forward.'); return; }
+  openSaveAttachment(ctx.msg_id, ctx.att_id, ctx.name, ctx.mime, ctxAccount(ctx));
+}
+
+async function attForward(ctx){
+  toast('Staging file…');
+  const body = ctx.rel ? {rel: ctx.rel}
+    : {msg_id: ctx.msg_id, att_id: ctx.att_id, name: ctx.name,
+       account: ctxAccount(ctx) || undefined};
+  try{
+    const r = await api('/api/email2/attachments/restage', {method:'POST', body});
+    if(!r.ok){ toast('Failed: ' + (r.error||'unknown'), true); return; }
+    openCompose({to:'', subject:'Fwd: ' + ctx.name, body:'', mode:'forward'});
+    _cmpAttachments.push({token:r.token, filename:r.filename, size:r.size});
+    renderCmpAttachments();
+  }catch(e){ toast('Failed: '+e.message, true); }
+}
+
+// ── Attachments sidebar view (email + agent files) ──────────────────────────
+async function openAttachmentsView(){
+  state.attView = true;
+  state.currentThreadId = null;
+  loadLabels();  // re-render sidebar so the 📎 Attachments item shows active (state.attView) and mailboxes de-highlight
+  document.getElementById('mailShell').classList.add('show-reader');
+  document.getElementById('listTitle').textContent = 'Attachments';
+  document.getElementById('readerEmpty').style.display = 'none';
+  const rc = document.getElementById('readerContent');
+  rc.style.display = 'flex';
+  document.getElementById('readerSubject').textContent = '📎 All attachments';
+  document.getElementById('readerToolbar').innerHTML = `
+    <button class="tool-btn ${!state.attTab||state.attTab==='email'?'primary':''}" onclick="setAttTab('email')">✉ Email files</button>
+    <button class="tool-btn ${state.attTab==='agent'?'primary':''}" onclick="setAttTab('agent')">🤖 Agent files</button>
+    <div class="tool-divider"></div>
+    <select id="attTypeSel" class="ai-model-pick" style="margin-left:0" onchange="loadAttView()">
+      <option value="">All types</option><option value="image">Images</option><option value="pdf">PDFs</option>
+      <option value="doc">Documents</option><option value="video">Video</option><option value="audio">Audio</option><option value="other">Other</option>
+    </select>
+    <input id="attSearch" placeholder="🔍 filter…" oninput="clearTimeout(window.__ath);window.__ath=setTimeout(loadAttView,300)"
+           style="background:#0a0a18;border:1px solid #22224a;border-radius:6px;padding:6px 9px;color:#e0e0e0;font-size:12px">
+    <button class="tool-btn" onclick="indexAttachments()" title="Scan recent inbox threads for attachments">🔄 Index recent</button>`;
+  loadAttView();
+}
+
+function setAttTab(t){ state.attTab = t; openAttachmentsView(); }
+
+async function loadAttView(){
+  const ms = document.getElementById('messagesScroll');
+  ms.innerHTML = '<div style="padding:30px;text-align:center;color:#333">Loading…</div>';
+  const q = encodeURIComponent(document.getElementById('attSearch')?.value || '');
+  if(state.attTab === 'agent'){
+    const data = await api('/api/email2/attachments/agent-files?q=' + q);
+    const files = data.files || [];
+    ms.innerHTML = files.length ? '<div class="msg-attachments" style="padding:10px 0">' + files.map(f=>{
+      const ctx = {rel: f.rel, name: f.name, mime: f.mime||''};
+      return `<span class="att-chip-wrap" title="${escAttr(f.rel)}">
+        <span class="att-chip">🤖 ${esc(f.name)} <span class="att-size">${fmtSize(f.size)}</span></span>
+        ${attActionsHtml(ctx)}</span>`;
+    }).join('') + '</div>'
+    : '<div style="padding:30px;color:#556">No agent files yet.</div>';
+    return;
+  }
+  const acc = state.activeAccount?.all ? 'ALL' : (state.activeAccount?.id || '');
+  const type = document.getElementById('attTypeSel')?.value || '';
+  const data = await api(`/api/email2/attachments/browse?limit=200&q=${q}&type=${encodeURIComponent(type)}${acc?('&account='+encodeURIComponent(acc)):''}`);
+  const atts = data.attachments || [];
+  ms.innerHTML = atts.length ? '<div class="msg-attachments" style="padding:10px 0">' + atts.map(a=>{
+    const ctx = {msg_id: a.gmail_id, att_id: a.attachment_id, name: a.filename, mime: a.mime||'', account: (a.account_id || '')};
+    const base = attDownloadBase(ctx);
+    return `<span class="att-chip-wrap" title="${escAttr(a.subject + ' — ' + a.from_addr)}">
+      <a class="att-chip att-preview-link" href="#" data-base="${escAttr(base)}" data-name="${escAttr(a.filename)}" data-mime="${escAttr(a.mime||'')}">📎 ${esc(a.filename)} <span class="att-size">${fmtSize(a.size)}</span></a>
+      <a class="att-save-btn" title="Download" href="${escAttr(base)}">⬇</a>
+      <button class="att-save-btn" title="Open email" onclick="state.attView=false;openThread('${escAttr(a.thread_id)}')">✉</button>
+      ${attActionsHtml(ctx)}</span>`;
+  }).join('') + `</div><div style="padding:8px;color:#556;font-size:11px">${data.total} attachment(s) in the local cache. Not seeing one? Hit 🔄 Index recent, or open its email once.</div>`
+  : '<div style="padding:30px;color:#556">No cached attachments yet — hit 🔄 Index recent to scan your inbox.</div>';
+}
+
+async function indexAttachments(){
+  toast('Indexing recent threads…');
+  const r = await api('/api/email2/attachments/index', {method:'POST', body:{max: 50,
+    account: state.activeAccount ? state.activeAccount.id : undefined}});
+  toast(r.ok ? `Indexed ${r.indexed} messages ✓` : ('Index failed: ' + (r.error||'unknown')), !r.ok);
+  if(r.ok) loadAttView();
 }
 
 // ── Modify actions ────────────────────────────────────────────────────────
