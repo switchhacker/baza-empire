@@ -32,7 +32,7 @@ from core.ollama_client import chat_stream           # noqa: E402
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-MODEL          = "deepseek-coder-v2:16b"     # reviewer stays on fast MoE coder; Claw BOT runs gemma4:26b-a4b-it-qat (agents.yaml)
+MODEL          = "gemma4:12b-it-qat"         # 2026-07-07: consolidated onto the fleet-wide 12B so ONE model stays resident on the 12GB card (was deepseek-coder-v2:16b — 3 big models rotating caused 96 loads/48h)
 FRAMEWORK      = ROOT
 VISION_DIR     = ROOT.parent / "agent-framework-v3-vision"
 HOME           = Path.home()
