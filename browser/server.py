@@ -348,6 +348,17 @@ async def session_close(sid: str):
 @app.post("/session/{sid}/goto")
 async def session_goto(sid: str, req: ActReq):
     try:
+        s = sessions.get(sid)
+        blocked = sessions.pending_block(sid)
+        if blocked:
+            return blocked
+        if s.profile and gate.is_gated_goto(req.url):
+            desc = (f"Agent wants to GO TO {req.url!r} "
+                    f"in logged-in profile '{s.profile}' (session {sid}).")
+            action = {"op": "goto", "url": req.url}
+            result = await gate.request_approval(sid, action, desc)
+            sessions.mark_pending_approval(sid, result["approval_id"])
+            return result
         return await sessions.act(sid, "goto", url=req.url)
     except KeyError:
         return _no_session(sid)
@@ -368,13 +379,35 @@ async def session_click(sid: str, req: ActReq):
                 "hint": "call read to get element indexes"}
     try:
         s = sessions.get(sid)
+        blocked = sessions.pending_block(sid)
+        if blocked:
+            return blocked
         if s.profile:
             el = await sessions.element_info(sid, req.index)
-            if gate.is_gated_click(el):
+            href = (el or {}).get("href") or None
+            # Finding 3 (round 2 review): a click that navigates via an <a>
+            # to a mutation URL (e.g. <a href="/unsubscribe?token=…">Manage
+            # preferences</a>) can carry neutral link text that the
+            # text/attr heuristic in is_gated_click misses entirely — and
+            # Playwright's click-navigation never routes through
+            # session_goto/is_gated_goto on its own. So the href has to be
+            # folded into the click-gating decision itself.
+            if gate.is_gated_click(el) or (href and gate.is_gated_goto(href)):
                 desc = (f"Agent wants to CLICK [{req.index}] "
-                        f"{(el or {}).get('tag', '?')} “{(el or {}).get('text', '?')}” "
-                        f"in logged-in profile '{s.profile}' (session {sid}).")
-                return await gate.request_approval(sid, {"op": "click", "index": req.index}, desc)
+                        f"{(el or {}).get('tag', '?')} “{(el or {}).get('text', '?')}”"
+                        + (f" → {href}" if href else "") +
+                        f" in logged-in profile '{s.profile}' (session {sid}).")
+                # Bind the approval to the element's identity (finding 2b),
+                # not just its index — data-pb-idx is reassigned 0..149 on
+                # every read, so index N alone can silently point at a
+                # different element by the time Serge approves. href is
+                # part of that identity now too (finding 3).
+                descriptor = {"tag": (el or {}).get("tag"), "text": (el or {}).get("text"),
+                              "href": href}
+                action = {"op": "click", "index": req.index, "descriptor": descriptor}
+                result = await gate.request_approval(sid, action, desc)
+                sessions.mark_pending_approval(sid, result["approval_id"])
+                return result
         return await sessions.act(sid, "click", index=req.index)
     except KeyError:
         return _no_session(sid)
@@ -393,13 +426,26 @@ async def session_press(sid: str, req: ActReq):
     key = req.key or "Enter"
     try:
         s = sessions.get(sid)
+        blocked = sessions.pending_block(sid)
+        if blocked:
+            return blocked
         if s.profile:
             active = await sessions.active_element(sid)
             if gate.is_gated_press(key, active):
                 desc = (f"Agent wants to PRESS {key} on "
                         f"“{(active or {}).get('text', '?')}” (POST form) "
                         f"in logged-in profile '{s.profile}' (session {sid}).")
-                return await gate.request_approval(sid, {"op": "press", "key": key}, desc)
+                # Finding 3 (round 2 review): press gets the same
+                # element-identity drift protection click already has
+                # (finding 2b) — capture {tag,text} of the active element
+                # at gate time and re-verify it at decide time before
+                # replaying the keypress.
+                descriptor = {"tag": (active or {}).get("tag"),
+                              "text": (active or {}).get("text")}
+                action = {"op": "press", "key": key, "descriptor": descriptor}
+                result = await gate.request_approval(sid, action, desc)
+                sessions.mark_pending_approval(sid, result["approval_id"])
+                return result
         return await sessions.act(sid, "press", key=key)
     except KeyError:
         return _no_session(sid)
@@ -449,6 +495,17 @@ async def approval_decide(aid: int, tok: str, d: str):
     if tok != a["token"]:
         return HTMLResponse("<h2>Bad token.</h2>", status_code=403)
     if a["status"] != "pending":
+        # Belt-and-suspenders (finding 1, round 2 review): this row can
+        # reach a terminal status without ever hitting the expiry/deny
+        # checks below in THIS request — e.g. the reaper's
+        # db.expire_stale(300) sweep flips it to 'expired' behind the
+        # scenes, with no browser hit on this route at all. Whatever
+        # decided it, the session's freeze marker must not outlive the
+        # approval it was guarding — sessions.pending_block() already
+        # self-heals this lazily too, but clearing it here means the very
+        # next act on the session doesn't even need to make that DB round
+        # trip to find out it's free again.
+        sessions.clear_pending_approval(a["session_id"])
         return HTMLResponse(f"<h2>Already {a['status']}.</h2>")
     # Deadline enforced here too, not just by the 60s reaper sweep (db.expire_stale):
     # a decision landing between the 300s mark and the next sweep tick must not
@@ -456,14 +513,72 @@ async def approval_decide(aid: int, tok: str, d: str):
     # the same regardless of which path caught it.
     if time.time() - a["created_at"] > 300:
         db.decide_approval(aid, "expired")
+        sessions.clear_pending_approval(a["session_id"])
         return HTMLResponse("<h2>⏰ Expired — 5 min silence window passed.</h2>")
     if d != "approve":
         db.decide_approval(aid, "denied")
+        sessions.clear_pending_approval(a["session_id"])
         return HTMLResponse("<h2>❌ Denied.</h2>")
-    db.decide_approval(aid, "approved")
+
     action = _json2.loads(a["action"])
+    op = action.pop("op")
+    descriptor = action.pop("descriptor", None)
+
+    # Finding 2b: the approval was described to Serge against a specific
+    # element (text + tag [+ href, finding 3]) at a specific data-pb-idx. If
+    # the agent re-read the page (or navigated) while the approval sat
+    # pending, that index may now belong to a completely different element
+    # — re-verify before replaying a click by index; refuse rather than act
+    # on a guess.
+    if op == "click" and descriptor is not None:
+        session_gone = False
+        try:
+            current = await sessions.element_info(a["session_id"], action.get("index"))
+        except KeyError:
+            session_gone = True
+            current = None
+        if not session_gone:
+            matches = bool(current) and \
+                (current.get("tag") or "") == (descriptor.get("tag") or "") and \
+                (current.get("text") or "") == (descriptor.get("text") or "") and \
+                (current.get("href") or "") == (descriptor.get("href") or "")
+            if not matches:
+                db.decide_approval(aid, "expired")
+                sessions.clear_pending_approval(a["session_id"])
+                return HTMLResponse(
+                    "<h2>⚠️ Element changed since approval; re-request.</h2>",
+                    status_code=409,
+                )
+
+    # Finding 3 (round 2 review): press gets the same drift check click has
+    # — the active element's {tag,text} is re-verified before replaying the
+    # keypress, since a changed focus/active element means the approval no
+    # longer describes what's actually about to happen.
+    if op == "press" and descriptor is not None:
+        session_gone = False
+        try:
+            current = await sessions.active_element(a["session_id"])
+        except KeyError:
+            session_gone = True
+            current = None
+        if not session_gone:
+            matches = bool(current) and \
+                (current.get("tag") or "") == (descriptor.get("tag") or "") and \
+                (current.get("text") or "") == (descriptor.get("text") or "")
+            if not matches:
+                db.decide_approval(aid, "expired")
+                sessions.clear_pending_approval(a["session_id"])
+                return HTMLResponse(
+                    "<h2>⚠️ Element changed since approval; re-request.</h2>",
+                    status_code=409,
+                )
+
+    db.decide_approval(aid, "approved")
+    # Unfreeze before replaying — act()'s own pending-approval guard would
+    # otherwise refuse this exact, already-approved action.
+    sessions.clear_pending_approval(a["session_id"])
     try:
-        result = await sessions.act(a["session_id"], action.pop("op"), **action)
+        result = await sessions.act(a["session_id"], op, **action)
         db.decide_approval(aid, "executed" if result.get("success") else "error")
         return HTMLResponse(f"<h2>✅ Approved — action executed.</h2>"
                             f"<p>Now at: {result.get('url', '?')}</p>")

@@ -8,6 +8,7 @@ import re
 import secrets
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 try:
     from browser import db
@@ -45,6 +46,20 @@ def is_gated_press(key: str, active: dict | None) -> bool:
     if not active:
         return False
     return bool(active.get("in_form")) and (active.get("form_method") or "") == "post"
+
+
+def is_gated_goto(url: str | None) -> bool:
+    """A profile-session navigation is gated when the destination carries a
+    query string (the classic GET-triggered mutation channel — ?action=delete,
+    ?unsubscribe=1, one-click "confirm"/"approve" links, etc.) or its url text
+    matches the same mutation-verb heuristic (GATED_RX) used for clicks.
+    Plain navigations (no query, no verb) stay ungated so ordinary browsing
+    in a profile session isn't disrupted."""
+    if not url:
+        return False
+    if urlparse(url).query:
+        return True
+    return bool(GATED_RX.search(url))
 
 
 def _send_telegram(msg: str) -> bool:
