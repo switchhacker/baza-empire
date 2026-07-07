@@ -158,3 +158,24 @@ def test_abort_clears_pending_agent():
     d._pending_agent = "specter"
     d._abort()
     assert d._pending_agent is None
+
+
+# --- Fix: _abort must not free the busy-gate while a _process job is in flight ---
+
+def test_abort_during_processing_does_not_free_busy():
+    d, tr, inj, rec, factory = _daemon()
+    d._recorder = None   # recorder already released
+    d._busy = True       # a _process job is still in flight on the worker
+    d._pending_agent = "specter"
+    d._abort()
+    assert d._busy is True          # gate NOT freed — the job's finally owns it
+    assert d._pending_agent is None
+
+
+def test_abort_while_recording_frees_busy():
+    d, tr, inj, rec, factory = _daemon()
+    d._recorder = MagicMock()
+    d._busy = True
+    d._abort()
+    assert d._busy is False
+    assert d._recorder is None

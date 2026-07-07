@@ -93,14 +93,21 @@ class Daemon:
             self._set_state("idle")
 
     def _abort(self) -> None:
-        if self._recorder is not None:
+        was_recording = self._recorder is not None
+        if was_recording:
             try:
                 self._recorder.abort()
             except Exception:  # noqa: BLE001 — protect the pynput thread
                 log.exception("recorder abort failed")
+                if self.indicator is not None:
+                    self.indicator.chime("error")
             self._recorder = None
         self._pending_agent = None  # cancel also drops any "send to <agent>" route
-        self._busy = False
+        if was_recording:
+            # Only free the gate if we held it via a recording. If a _process
+            # job is still in flight, its own finally clears _busy — clearing
+            # it here would allow overlapping captures.
+            self._busy = False
         self._set_state("idle")
 
     def _set_state(self, s: str) -> None:
@@ -201,9 +208,9 @@ def main():
     daemon.indicator.start()
 
     def _reload_loop():
-        # Hot-reload per-utterance settings (speak_reply, type_reply, flow, …).
-        # Hotkey bindings and the STT model are read once at startup and
-        # still need a service restart (documented in README).
+        # Live per-utterance settings (speak_reply/type_reply) update in
+        # place; hotkeys/STT/flow/injection/commands need a restart
+        # (documented in README).
         while True:
             time.sleep(2)
             try:
