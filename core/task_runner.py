@@ -84,6 +84,20 @@ LLM_RETRY_ON_TIMEOUT = os.getenv("BAZA_OLLAMA_RETRY_ON_TIMEOUT", "1") not in ("0
 # the agent can keep going. Cap exists to prevent runaway loops.
 MAX_TASK_ITERATIONS = int(os.getenv("BAZA_MAX_TASK_ITERATIONS", "3"))
 
+# Fallback model when agents.yaml has no entry. gemma4:12b-it-qat is what most
+# agents already run, so the fallback shares the resident model instead of
+# pulling a second ~9GB model onto the 12GB card.
+DEFAULT_MODEL = "gemma4:12b-it-qat"
+
+
+def _llm_options(*chunks: str, num_predict: int = 2000) -> dict:
+    """Request options with num_ctx sized to the prompt. Without an explicit
+    num_ctx, Ollama uses the model default (~4k) and silently truncates big
+    task prompts. Same formula as ollama_client.chat_stream, capped at 32k."""
+    chars = sum(len(c or "") for c in chunks)
+    num_ctx = min(32768, max(8192, chars // 3 + num_predict + 512))
+    return {"num_predict": num_predict, "temperature": 0.3, "num_ctx": num_ctx}
+
 
 # Ollama instance pool. 2026-06-11: NVIDIA 3070 (11435) removed — it's now the
 # dedicated Stable Diffusion image engine, so LLM stays on the AMD 6700 XT
@@ -239,7 +253,7 @@ def _run_skills_and_reformat(agent_id: str, task: dict, output: str,
     payload = {
         "model": model,
         "stream": False,
-        "options": {"num_predict": 2000, "temperature": 0.3},
+        "options": _llm_options(system, reformat_user),
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": reformat_user},
@@ -274,7 +288,7 @@ def _run_scaffold_loop(agent_id: str, task: dict, system: str, user_msg: str,
 
     def _llm(messages, system_prompt):
         payload = {"model": model, "stream": False,
-                   "options": {"num_predict": 2000, "temperature": 0.3},
+                   "options": _llm_options(system_prompt, *[m.get("content", "") for m in messages]),
                    "messages": [{"role": "system", "content": system_prompt}] + messages}
         r = requests.post(f"{target_url}/api/chat", json=payload, timeout=LLM_REQUEST_TIMEOUT)
         r.raise_for_status()
@@ -296,7 +310,7 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: 
     `prior_output` carries forward the previous iteration's response so the
     agent can pick up where it left off when iterating on TASK_IN_PROGRESS.
     """
-    model       = agent_cfg.get("model", "qwen2.5:14b")
+    model       = agent_cfg.get("model", DEFAULT_MODEL)
     agent_name  = agent_cfg.get("name", agent_id)
     system_base = agent_cfg.get("system_prompt", f"You are {agent_name}.")
 
@@ -343,7 +357,7 @@ def run_task_with_llm(agent_id: str, agent_cfg: dict, task: dict, prior_output: 
     payload = {
         "model": model,
         "stream": False,
-        "options": {"num_predict": 2000, "temperature": 0.3},
+        "options": _llm_options(system, user_msg),
         "messages": [
             {"role": "system",  "content": system},
             {"role": "user",    "content": user_msg},
@@ -692,7 +706,7 @@ def run_agent_tasks(agent_id: str, agent_cfg: dict, dry_run: bool = False, task_
             continue
 
         # Wait for any Ollama instance suitable for this agent's model
-        agent_model = (agent_cfg.get("model") or "qwen2.5:14b")
+        agent_model = (agent_cfg.get("model") or DEFAULT_MODEL)
         ollama_url = wait_for_ollama(max_wait=120, model=agent_model)
         if not ollama_url:
             logger.warning(f"  Skipping {task_title[:40]} — all Ollama instances busy")

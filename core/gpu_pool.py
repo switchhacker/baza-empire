@@ -1,8 +1,10 @@
 """
-GPU Pool — LLM inference slots (NVIDIA 3070 is NOT here — it's the dedicated
-Stable Diffusion image engine as of 2026-06-11):
+GPU Pool — LLM inference slots:
   - 11434  AMD RX 6700 XT   (Vulkan, 12GB) — primary Vulkan
-  - 11437  AMD RX 6700 XT   (Vulkan, 12GB) — secondary Vulkan (overflow)
+  - 11435  NVIDIA RTX 3070  (CUDA, budget-capped) — small models only; card is
+           shared with SD WebUI imaging (see NVIDIA_LLM_BUDGET_MB)
+  - 11437  AMD RX 6700 XT   (Vulkan, 12GB) — secondary Vulkan (overflow,
+           same physical card as 11434 — extra queue, not extra VRAM)
   - 11436  CPU + 64GB RAM   (no GPU)       — big-model fallback
 
 Agents acquire the BEST slot for their model (size + temperature + load
@@ -27,6 +29,25 @@ _OLLAMA_SIZE_CACHE_TS: float = 0.0
 _OLLAMA_SIZE_TTL = 300.0
 _FOOTPRINT_OVERHEAD_MB = 1500   # activation + KV cache (matches MODEL_FOOTPRINT_MB)
 
+# Per-instance liveness, cached so routing stays cheap. The CUDA instance
+# (ollama-cuda.service) is optional — if it's stopped, its slot must be
+# skipped rather than routed to a dead port.
+_INSTANCE_UP_CACHE: dict = {}
+_INSTANCE_UP_TTL = 30.0
+
+
+def _instance_up(url: str) -> bool:
+    now = time.time()
+    cached = _INSTANCE_UP_CACHE.get(url)
+    if cached and (now - cached[1]) < _INSTANCE_UP_TTL:
+        return cached[0]
+    try:
+        up = requests.get(f"{url}/api/version", timeout=1.5).ok
+    except Exception:
+        up = False
+    _INSTANCE_UP_CACHE[url] = (up, now)
+    return up
+
 
 # ── Backend definitions ───────────────────────────────────────────────────────
 AMD_URL     = "http://127.0.0.1:11434"
@@ -37,6 +58,12 @@ AMD2_URL    = "http://127.0.0.1:11437"
 # VRAM budgets (rough — used to decide which slot CAN host a given model)
 NVIDIA_VRAM_MB = 8192    # RTX 3070
 AMD_VRAM_MB    = 12288   # RX 6700 XT
+# The 3070 is shared with SD WebUI (--always-offload-from-vram, so it idles
+# near-empty but reclaims ~5-6GB during generation). Only let small models
+# (glm-ocr, minicpm — the receipt-OCR pair) route there, keeping the rest of
+# the card free for imaging bursts. Raise toward NVIDIA_VRAM_MB only if SD
+# WebUI is retired from the 3070.
+NVIDIA_LLM_BUDGET_MB = 4200
 
 # Approximate model footprint in MB at the quantization on disk.
 # Add a model here if you want explicit routing; otherwise the size is
@@ -143,22 +170,26 @@ class GPUSlot:
 # ── Pool ──────────────────────────────────────────────────────────────────────
 class GPUPool:
     def __init__(self):
-        # Image gen (SD WebUI) paused for hardware-upgrade window — NVIDIA
-        # joins the LLM pool. Routing prefers smallest GPU that fits, so
-        # small models (≤6GB) land on NVIDIA (CUDA, fastest) and big models
-        # (8–11GB) land on AMD (Vulkan, 12GB). CPU is last-resort for >12GB.
-        # 2026-06-11: SD WebUI is back on the NVIDIA 3070, so the NVIDIA CUDA
-        # slot is dropped and AMD2 (11437) restored — imaging owns the 3070,
-        # LLM stays on the AMD card + CPU. To revert (NVIDIA back into the LLM
-        # pool), restore the id=1 NVIDIA_URL/CUDA slot and stop baza-sd-webui.
+        # Routing prefers the smallest GPU that fits, so with the NVIDIA slot
+        # capped at NVIDIA_LLM_BUDGET_MB only small models (receipt-OCR pair:
+        # glm-ocr, minicpm-v4.6) land on the 3070 (CUDA, fastest) while
+        # everything 8-11GB stays on AMD (Vulkan, 12GB). CPU is last resort.
+        # 2026-07-07: NVIDIA slot re-added with a small budget — SD WebUI still
+        # owns the 3070 for imaging (--always-offload-from-vram keeps it empty
+        # when idle), but the card was sitting at 6% util while the AMD card
+        # thrashed through 96 model loads/48h. Requires ollama-cuda.service
+        # (:11435) to be running.
         self.slots = [
             GPUSlot(id=0, url=AMD_URL, name="AMD RX 6700 XT (Vulkan)",
                     backend="vulkan", vram_mb=AMD_VRAM_MB,
                     temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
-            GPUSlot(id=1, url=AMD2_URL, name="AMD RX 6700 XT (Vulkan) #2",
+            GPUSlot(id=1, url=NVIDIA_URL, name="NVIDIA RTX 3070 (CUDA, small models)",
+                    backend="cuda", vram_mb=NVIDIA_LLM_BUDGET_MB,
+                    temp_warn=NVIDIA_TEMP_WARN, temp_crit=NVIDIA_TEMP_CRIT),
+            GPUSlot(id=2, url=AMD2_URL, name="AMD RX 6700 XT (Vulkan) #2",
                     backend="vulkan", vram_mb=AMD_VRAM_MB,
                     temp_warn=AMD_TEMP_WARN, temp_crit=AMD_TEMP_CRIT),
-            GPUSlot(id=2, url=CPU_URL, name="CPU + 64GB RAM",
+            GPUSlot(id=3, url=CPU_URL, name="CPU + 64GB RAM",
                     backend="cpu",    vram_mb=0),
         ]
         self._lock = threading.Lock()
@@ -219,6 +250,10 @@ class GPUPool:
         for s in self.slots:
             if s.backend == "cpu":
                 capable.append(s)  # CPU always works
+                continue
+            # Skip slots whose Ollama instance isn't running (ollama-cuda
+            # is optional and may be stopped)
+            if not _instance_up(s.url):
                 continue
             # Refuse GPU above critical temp
             t = s.read_temp()
