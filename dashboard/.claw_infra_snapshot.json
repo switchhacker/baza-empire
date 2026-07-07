@@ -16,6 +16,7 @@
     "baza-email-summarize.service": "dead",
     "baza-image-indexer.service": "dead",
     "baza-litellm.service": "running",
+    "baza-phantom-browser.service": "running",
     "baza-route-watchdog.service": "dead",
     "baza-scaffold-runner.service": "dead",
     "baza-sd-webui.service": "running",

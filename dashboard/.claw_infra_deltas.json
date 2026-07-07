@@ -58,5 +58,9 @@
   {
     "ts": "2026-07-07T18:35:32+00:00",
     "change": "+ framework_dir: web"
+  },
+  {
+    "ts": "2026-07-07T20:35:36+00:00",
+    "change": "+ services: baza-phantom-browser.service"
   }
 ]
