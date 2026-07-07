@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-07-05 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 1 warn, 9 info)
-- 2026-07-05 Claw hourly digest — 6 new (0 bug, 0 regression, 0 security, 2 warn, 4 info)
-- 2026-07-05 Claw hourly digest — 1 new (0 bug, 0 regression, 0 security, 0 warn, 1 info)
-- 2026-07-05 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 0 warn, 2 info)
-- 2026-07-05 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 1 warn, 4 info)
-- 2026-07-05 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 1 warn, 1 info)
-- 2026-07-05 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 0 warn, 7 info)
-- 2026-07-05 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 3 warn, 2 info)
-- 2026-07-05 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
-- 2026-07-05 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
-- 2026-07-05 Van side wrap lowered into flat window band
-- 2026-07-05 Van side wrap reverted to prior placement
-- 2026-07-05 Claw hourly digest — 7 new (0 bug, 0 regression, 0 security, 1 warn, 6 info)
-- 2026-07-05 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 1 warn, 7 info)
-- 2026-07-05 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 0 warn, 4 info)
+- 2026-07-06 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
+- 2026-07-06 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-07-06 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 2 warn, 11 info)
+- 2026-07-06 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 2 warn, 9 info)
+- 2026-07-06 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
+- 2026-07-06 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 0 warn, 2 info)
+- 2026-07-06 Van side wrap dropped into panel band + print-ready transparents
+- 2026-07-06 Van side wrap — dropped further + enlarged
+- 2026-07-06 Van side wrap — +15% larger, +14px lower
+- 2026-07-06 Van side wrap — lowered another 25px
+- 2026-07-06 Van side wrap — back a tab, +6deg CW, +10% larger
+- 2026-07-06 Van rear wrap — enlarged
+- 2026-07-06 Van side wrap — CCW 3.5deg + lowered to trim line
+- 2026-07-06 Van side wrap — lowered a tad more (+10px)
+- 2026-07-06 Van wrap placement LOCKED + print transparents regenerated
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
