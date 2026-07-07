@@ -1,0 +1,188 @@
+<!--
+  PLAN YOUR PROJECT — paste into Squarespace Code Block on the /plan page.
+  Multi-step project intake. Submits to https://nova.ahb123.com/api/leads with source=plan_page.
+-->
+<div class="ahb-hero" style="padding:72px 24px 56px;">
+  <h1>Plan Your Project</h1>
+  <p>Tell us about your vision. We'll send a free, line-item estimate within 24 hours.</p>
+</div>
+
+<section style="padding:48px 24px;max-width:720px;margin:0 auto;">
+  <div id="planStepBar" style="display:flex;gap:8px;margin-bottom:32px;">
+    <div class="ahb-step-bar active" data-step="1" style="flex:1;height:4px;background:#C4884D;border-radius:2px;"></div>
+    <div class="ahb-step-bar" data-step="2" style="flex:1;height:4px;background:#E0E0E0;border-radius:2px;"></div>
+    <div class="ahb-step-bar" data-step="3" style="flex:1;height:4px;background:#E0E0E0;border-radius:2px;"></div>
+    <div class="ahb-step-bar" data-step="4" style="flex:1;height:4px;background:#E0E0E0;border-radius:2px;"></div>
+  </div>
+
+  <form id="ahbPlanForm" novalidate>
+
+    <div class="ahb-step" data-step="1" style="background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 16px rgba(10,38,64,.08);">
+      <div style="color:#8B8D8E;font-size:13px;margin-bottom:4px;font-family:Montserrat,sans-serif;letter-spacing:.08em;">STEP 1 OF 4</div>
+      <h2 style="color:#0A2640;font-size:24px;margin-bottom:4px;font-family:Montserrat,sans-serif;">What are you planning?</h2>
+      <p style="color:#8B8D8E;margin-bottom:24px;">Pick the type that fits best — we'll ask for more detail next.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label class="ahb-opt"><input type="radio" name="project_type" value="kitchen"><span>&#127859; Kitchen Remodel</span></label>
+        <label class="ahb-opt"><input type="radio" name="project_type" value="bathroom"><span>&#128703; Bathroom Renovation</span></label>
+        <label class="ahb-opt"><input type="radio" name="project_type" value="addition"><span>&#127970; Home Addition</span></label>
+        <label class="ahb-opt"><input type="radio" name="project_type" value="gutrehab"><span>&#128736; Full Gut Rehab</span></label>
+        <label class="ahb-opt"><input type="radio" name="project_type" value="newconstruction"><span>&#127969; New Construction</span></label>
+        <label class="ahb-opt"><input type="radio" name="project_type" value="other"><span>&#10067; Something Else</span></label>
+      </div>
+      <div style="text-align:right;margin-top:28px;">
+        <button type="button" class="ahb-next" data-next="2">Next →</button>
+      </div>
+    </div>
+
+    <div class="ahb-step" data-step="2" style="display:none;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 16px rgba(10,38,64,.08);">
+      <div style="color:#8B8D8E;font-size:13px;margin-bottom:4px;font-family:Montserrat,sans-serif;letter-spacing:.08em;">STEP 2 OF 4</div>
+      <h2 style="color:#0A2640;font-size:24px;margin-bottom:4px;font-family:Montserrat,sans-serif;">Budget &amp; timeline</h2>
+      <p style="color:#8B8D8E;margin-bottom:24px;">Rough is fine — we just need a ballpark to align the estimate.</p>
+      <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">Budget range</label>
+      <select name="budget_range" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;margin-bottom:20px;">
+        <option value="" disabled selected>Select a range</option>
+        <option value="under_10k">Under $10,000</option>
+        <option value="10k_25k">$10,000 – $25,000</option>
+        <option value="25k_50k">$25,000 – $50,000</option>
+        <option value="50k_100k">$50,000 – $100,000</option>
+        <option value="100k_plus">$100,000+</option>
+        <option value="not_sure">Not sure yet</option>
+      </select>
+      <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">When do you want to start?</label>
+      <select name="timeline" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+        <option value="" disabled selected>Select a timeline</option>
+        <option value="asap">As soon as possible (within 30 days)</option>
+        <option value="1_3_months">1–3 months</option>
+        <option value="3_6_months">3–6 months</option>
+        <option value="6_plus">6+ months</option>
+        <option value="exploring">Just exploring</option>
+      </select>
+      <div style="display:flex;justify-content:space-between;margin-top:28px;">
+        <button type="button" class="ahb-prev" data-prev="1">← Back</button>
+        <button type="button" class="ahb-next" data-next="3">Next →</button>
+      </div>
+    </div>
+
+    <div class="ahb-step" data-step="3" style="display:none;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 16px rgba(10,38,64,.08);">
+      <div style="color:#8B8D8E;font-size:13px;margin-bottom:4px;font-family:Montserrat,sans-serif;letter-spacing:.08em;">STEP 3 OF 4</div>
+      <h2 style="color:#0A2640;font-size:24px;margin-bottom:4px;font-family:Montserrat,sans-serif;">About your project</h2>
+      <p style="color:#8B8D8E;margin-bottom:24px;">The more detail the better — it helps us prepare a more accurate estimate.</p>
+      <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">Project address (optional)</label>
+      <input name="project_address" type="text" placeholder="123 Main St, Philadelphia, PA" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;margin-bottom:20px;">
+      <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">Tell us what you're hoping to do <span style="color:#E94560;">*</span></label>
+      <textarea name="project_details" required placeholder="Ex: Gut-renovate the second-floor bathroom, add a double vanity, walk-in shower, heated floors. Open to tile suggestions." style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;min-height:140px;"></textarea>
+      <div style="display:flex;justify-content:space-between;margin-top:28px;">
+        <button type="button" class="ahb-prev" data-prev="2">← Back</button>
+        <button type="button" class="ahb-next" data-next="4">Next →</button>
+      </div>
+    </div>
+
+    <div class="ahb-step" data-step="4" style="display:none;background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 16px rgba(10,38,64,.08);">
+      <div style="color:#8B8D8E;font-size:13px;margin-bottom:4px;font-family:Montserrat,sans-serif;letter-spacing:.08em;">STEP 4 OF 4</div>
+      <h2 style="color:#0A2640;font-size:24px;margin-bottom:4px;font-family:Montserrat,sans-serif;">How can we reach you?</h2>
+      <p style="color:#8B8D8E;margin-bottom:24px;">We'll send your estimate to email and schedule the visit by phone.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">Full name <span style="color:#E94560;">*</span></label>
+          <input name="full_name" type="text" required placeholder="John Smith" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">Email <span style="color:#E94560;">*</span></label>
+          <input name="email" type="email" required placeholder="john@example.com" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+        </div>
+      </div>
+      <div style="margin-bottom:24px;">
+        <label style="display:block;font-weight:600;color:#0A2640;margin-bottom:6px;">Phone <span style="color:#E94560;">*</span></label>
+        <input name="phone" type="tel" required id="planPhone" placeholder="(215) 555-0123" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <button type="button" class="ahb-prev" data-prev="3">← Back</button>
+        <button type="submit" id="planSubmit" style="font-family:Montserrat,sans-serif;font-weight:700;font-size:16px;color:#fff;background:#C4884D;border:none;border-radius:8px;padding:14px 32px;cursor:pointer;">Send My Project →</button>
+      </div>
+      <p style="text-align:center;font-size:12px;color:#8B8D8E;margin-top:20px;">Your information is private. No spam, no selling. Ever.</p>
+    </div>
+
+  </form>
+
+  <div id="planSuccess" style="display:none;text-align:center;padding:56px 24px;background:#fff;border-radius:12px;box-shadow:0 2px 16px rgba(10,38,64,.08);">
+    <div style="width:72px;height:72px;background:#00D084;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:#fff;font-size:36px;">&#10003;</div>
+    <h3 style="color:#0A2640;font-size:26px;margin-bottom:8px;font-family:Montserrat,sans-serif;">Got it! We'll be in touch.</h3>
+    <p style="color:#8B8D8E;font-size:15px;max-width:420px;margin:0 auto 24px;">A project consultant will reach out within one business day (faster if your timeline is urgent). In the meantime, feel free to browse our portfolio.</p>
+    <a href="/portfolio" class="ahb-cta-btn" style="display:inline-block;">View Our Work</a>
+  </div>
+</section>
+
+<style>
+  .ahb-opt { display:flex; align-items:center; padding:16px; border:2px solid #D1D5DB; border-radius:10px; cursor:pointer; transition:all .15s; background:#fff; }
+  .ahb-opt:hover { border-color:#C4884D; background:#FFFBF5; }
+  .ahb-opt input { margin-right:12px; accent-color:#C4884D; }
+  .ahb-opt:has(input:checked) { border-color:#C4884D; background:#FFFBF5; box-shadow:0 0 0 3px rgba(196,136,77,.1); }
+  .ahb-opt span { font-family:Montserrat,sans-serif; font-weight:600; color:#0A2640; font-size:14px; }
+  .ahb-prev, .ahb-next { font-family:Montserrat,sans-serif; font-weight:700; font-size:14px; padding:12px 24px; border-radius:8px; border:none; cursor:pointer; transition:all .15s; }
+  .ahb-prev { background:transparent; color:#8B8D8E; }
+  .ahb-prev:hover { color:#0A2640; }
+  .ahb-next { background:#0A2640; color:#fff; }
+  .ahb-next:hover { background:#C4884D; }
+</style>
+
+<script>
+(function(){
+  var form = document.getElementById('ahbPlanForm');
+  var steps = form.querySelectorAll('.ahb-step');
+  var bars = document.querySelectorAll('.ahb-step-bar');
+  var phone = document.getElementById('planPhone');
+  var submitBtn = document.getElementById('planSubmit');
+  var success = document.getElementById('planSuccess');
+
+  function goTo(n){
+    steps.forEach(function(s){ s.style.display = (parseInt(s.dataset.step)===n) ? 'block' : 'none'; });
+    bars.forEach(function(b){ b.style.background = (parseInt(b.dataset.step)<=n) ? '#C4884D' : '#E0E0E0'; });
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  form.querySelectorAll('.ahb-next').forEach(function(btn){
+    btn.addEventListener('click', function(){ goTo(parseInt(btn.dataset.next)); });
+  });
+  form.querySelectorAll('.ahb-prev').forEach(function(btn){
+    btn.addEventListener('click', function(){ goTo(parseInt(btn.dataset.prev)); });
+  });
+
+  phone.addEventListener('input', function(){
+    var d = this.value.replace(/\D/g, '');
+    if (d.length === 0) this.value = '';
+    else if (d.length <= 3) this.value = '(' + d;
+    else if (d.length <= 6) this.value = '(' + d.slice(0,3) + ') ' + d.slice(3);
+    else this.value = '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6,10);
+  });
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var fd = new FormData(form);
+    var data = {};
+    fd.forEach(function(v,k){ data[k] = (v||'').toString().trim(); });
+    if (!data.project_type || !data.project_details || data.project_details.length < 10 || !data.full_name || !data.email || !data.phone) {
+      alert('Please complete all required fields (marked *).');
+      return;
+    }
+    data.source = 'plan_page';
+    data.submitted_at = new Date().toISOString();
+    submitBtn.disabled = true; submitBtn.textContent = 'Sending...';
+    var NOVA_BASE = (document.querySelector('meta[name="nova-base"]') || {}).content || 'https://nova.ahb123.com';
+    fetch(NOVA_BASE + '/api/leads', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    })
+    .then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+    .then(showSuccess)
+    .catch(showSuccess)
+    .finally(function(){ submitBtn.disabled = false; submitBtn.textContent = 'Send My Project →'; });
+  });
+
+  function showSuccess(){
+    form.style.display = 'none';
+    document.getElementById('planStepBar').style.display = 'none';
+    success.style.display = 'block';
+    success.scrollIntoView({behavior:'smooth', block:'center'});
+  }
+})();
+</script>

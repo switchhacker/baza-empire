@@ -1,0 +1,194 @@
+/* ============================================
+   AHB123.com Custom CSS — Brand Overrides
+   All Home Building Co LLC
+   Paste into: Squarespace → Design → Custom CSS
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Open+Sans:wght@400;600&family=Roboto+Slab:wght@400&display=swap');
+
+:root {
+  --ahb-navy: #0A2640;
+  --ahb-white: #FFFFFF;
+  --ahb-oak: #C4884D;
+  --ahb-grey: #8B8D8E;
+  --ahb-red: #E94560;
+  --ahb-green: #00D084;
+  --ahb-blue: #4DA6FF;
+  --font-heading: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Open Sans', 'Segoe UI', Roboto, sans-serif;
+  --font-accent: 'Roboto Slab', Georgia, serif;
+}
+
+h1, h2, h3, h4, h5, h6,
+.header-title,
+.site-title a {
+  font-family: var(--font-heading) !important;
+  color: var(--ahb-navy) !important;
+  letter-spacing: -0.01em;
+}
+
+body, p, li, td, th, label, input, textarea, select {
+  font-family: var(--font-body) !important;
+  line-height: 1.6;
+}
+
+blockquote, .testimonial-text, .pull-quote {
+  font-family: var(--font-accent) !important;
+}
+
+.header-nav-item a {
+  font-family: var(--font-heading) !important;
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ahb-navy) !important;
+}
+
+.header-nav-item a:hover {
+  color: var(--ahb-oak) !important;
+}
+
+.header-actions .btn {
+  background-color: var(--ahb-oak) !important;
+  color: var(--ahb-white) !important;
+  font-family: var(--font-heading) !important;
+  font-weight: 700;
+  border-radius: 6px !important;
+  padding: 12px 24px !important;
+  text-transform: none;
+  transition: background-color 0.2s ease;
+}
+
+.header-actions .btn:hover {
+  background-color: var(--ahb-navy) !important;
+}
+
+.sqs-block-button-element {
+  background-color: var(--ahb-navy) !important;
+  color: var(--ahb-white) !important;
+  font-family: var(--font-heading) !important;
+  font-weight: 700 !important;
+  border-radius: 6px !important;
+  padding: 14px 32px !important;
+  transition: all 0.2s ease;
+}
+
+.sqs-block-button-element:hover {
+  background-color: var(--ahb-oak) !important;
+  transform: translateY(-1px);
+}
+
+.sqs-block-button-element--small {
+  background-color: transparent !important;
+  border: 2px solid var(--ahb-navy) !important;
+  color: var(--ahb-navy) !important;
+}
+
+.sqs-block-button-element--small:hover {
+  background-color: var(--ahb-navy) !important;
+  color: var(--ahb-white) !important;
+}
+
+a {
+  color: var(--ahb-oak);
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--ahb-navy);
+}
+
+.footer-block {
+  background-color: var(--ahb-navy) !important;
+}
+
+.footer-block * {
+  color: var(--ahb-white) !important;
+}
+
+.footer-block a:hover {
+  color: var(--ahb-oak) !important;
+}
+
+.form-wrapper input,
+.form-wrapper textarea,
+.form-wrapper select {
+  border: 2px solid #E0E0E0 !important;
+  border-radius: 6px !important;
+  padding: 12px 16px !important;
+  font-size: 16px !important;
+  transition: border-color 0.2s ease;
+}
+
+.form-wrapper input:focus,
+.form-wrapper textarea:focus,
+.form-wrapper select:focus {
+  border-color: var(--ahb-oak) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(196, 136, 77, 0.15) !important;
+}
+
+.gallery-grid .gallery-grid-item {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* AHB123 custom page sections (Code Block inner styling) */
+.ahb-hero {
+  background: linear-gradient(135deg, #0A2640 0%, #13314f 100%);
+  color: #fff;
+  padding: 96px 24px;
+  text-align: center;
+}
+.ahb-hero h1 { color: #fff !important; font-size: 48px; font-weight: 700; margin-bottom: 16px; }
+.ahb-hero p { font-size: 20px; color: rgba(255,255,255,.85); max-width: 640px; margin: 0 auto 28px; }
+.ahb-cta-btn {
+  display: inline-block; background: var(--ahb-oak); color: #fff !important;
+  padding: 16px 40px; border-radius: 8px; font-family: var(--font-heading);
+  font-weight: 700; text-decoration: none; transition: background .2s;
+}
+.ahb-cta-btn:hover { background: #a66d33; color: #fff !important; }
+
+.ahb-service-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px; padding: 64px 24px; max-width: 1200px; margin: 0 auto;
+}
+.ahb-service-card {
+  background: #fff; border: 1px solid #E5E7EB; border-radius: 12px;
+  padding: 32px 24px; text-align: left; transition: transform .2s, box-shadow .2s;
+}
+.ahb-service-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(10,38,64,.1); }
+.ahb-service-card h3 { font-size: 20px; margin-bottom: 12px; color: var(--ahb-navy) !important; }
+.ahb-service-card p { color: var(--ahb-grey); font-size: 15px; }
+
+.ahb-portfolio-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px; padding: 48px 24px; max-width: 1400px; margin: 0 auto;
+}
+.ahb-portfolio-item {
+  position: relative; aspect-ratio: 4/3; border-radius: 10px; overflow: hidden;
+  background: #f3f4f6;
+}
+.ahb-portfolio-item img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s; }
+.ahb-portfolio-item:hover img { transform: scale(1.05); }
+.ahb-portfolio-caption {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(to top, rgba(10,38,64,.9), transparent);
+  color: #fff; padding: 24px 16px 16px; font-family: var(--font-heading);
+  font-weight: 700; font-size: 14px; letter-spacing: .02em;
+}
+
+@media (max-width: 768px) {
+  h1 { font-size: 32px !important; }
+  h2 { font-size: 26px !important; }
+
+  .header-actions .btn {
+    padding: 10px 18px !important;
+    font-size: 14px !important;
+  }
+
+  .ahb-hero { padding: 64px 20px; }
+  .ahb-hero h1 { font-size: 34px; }
+  .ahb-hero p { font-size: 17px; }
+}

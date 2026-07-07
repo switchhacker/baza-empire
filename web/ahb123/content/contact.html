@@ -1,0 +1,295 @@
+<!--
+  CONTACT — v2 paste into Squarespace Code Block on the Contact page.
+  The inline lead form posts to https://nova.ahb123.com/api/leads.
+
+  Changes vs v1:
+    - Email serge@ahb123.com (was info@) — sitewide consistency
+    - Added "Why Trust Us" PA HIC# PA175897 line
+    - Added hidden honeypot field "company_url" — bots fill, humans skip
+    - Added "What Our Customers Say" reviews grid
+    - Added QR + "Leave a Review" CTA section
+    - Reviews + QR fetch from https://nova.ahb123.com (set in header injection
+      via <meta name="ahb-api-base">). Caddy patch must be applied first.
+-->
+<div class="ahb-hero">
+  <h1>Let's Build Something Great</h1>
+  <p>Get your free estimate in 24 hours. Tell us about your project and we'll handle the rest.</p>
+</div>
+
+<section style="padding:64px 24px;max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1.3fr 1fr;gap:48px;align-items:start;" class="ahb-contact-grid">
+  <style>@media(max-width:900px){.ahb-contact-grid{grid-template-columns:1fr !important;}}</style>
+
+  <div style="background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 16px rgba(10,38,64,.08);border:1px solid #F5F7FA;">
+    <h2 style="color:#0A2640;font-size:26px;margin-bottom:4px;font-family:Montserrat,sans-serif;">Plan Your Project</h2>
+    <p style="color:#8B8D8E;font-size:15px;margin-bottom:28px;">Fill out the form below and a project manager will reach out within one business day.</p>
+
+    <form id="ahbContactForm" novalidate>
+      <!-- Honeypot: hidden from humans, bots tend to fill every input -->
+      <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;">
+        <label for="cf_company_url">Company URL (leave blank)</label>
+        <input type="text" id="cf_company_url" name="company_url" tabindex="-1" autocomplete="off">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="margin-bottom:16px;">
+          <label for="cfName" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Full Name <span style="color:#E94560;">*</span></label>
+          <input type="text" id="cfName" name="full_name" placeholder="John Smith" required autocomplete="name" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+        </div>
+        <div style="margin-bottom:16px;">
+          <label for="cfEmail" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Email <span style="color:#E94560;">*</span></label>
+          <input type="email" id="cfEmail" name="email" placeholder="john@example.com" required autocomplete="email" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+        </div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label for="cfPhone" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Phone <span style="color:#E94560;">*</span></label>
+        <input type="tel" id="cfPhone" name="phone" placeholder="(215) 555-0123" required autocomplete="tel" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="margin-bottom:16px;">
+          <label for="cfProjectType" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Project Type <span style="color:#E94560;">*</span></label>
+          <select id="cfProjectType" name="project_type" required style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+            <option value="" disabled selected>Select type</option>
+            <option value="kitchen">Kitchen Remodel</option>
+            <option value="bathroom">Bathroom Renovation</option>
+            <option value="addition">Home Addition</option>
+            <option value="gutrehab">Gut Rehab</option>
+            <option value="newconstruction">New Construction</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label for="cfBudget" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Budget Range</label>
+          <select id="cfBudget" name="budget_range" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+            <option value="" disabled selected>Select budget</option>
+            <option value="under_10k">Under $10,000</option>
+            <option value="10k_25k">$10,000 – $25,000</option>
+            <option value="25k_50k">$25,000 – $50,000</option>
+            <option value="50k_100k">$50,000 – $100,000</option>
+            <option value="100k_plus">$100,000+</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="margin-bottom:16px;">
+          <label for="cfTimeline" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Timeline</label>
+          <select id="cfTimeline" name="timeline" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+            <option value="" disabled selected>Select timeline</option>
+            <option value="asap">ASAP</option>
+            <option value="1_3_months">1–3 Months</option>
+            <option value="3_6_months">3–6 Months</option>
+            <option value="6_plus">6+ Months</option>
+            <option value="exploring">Just Exploring</option>
+          </select>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label for="cfAddress" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Project Address</label>
+          <input type="text" id="cfAddress" name="project_address" placeholder="Philadelphia, PA" autocomplete="street-address" style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;">
+        </div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label for="cfDetails" style="display:block;font-weight:600;font-size:14px;color:#0A2640;margin-bottom:6px;">Tell Us About Your Project <span style="color:#E94560;">*</span></label>
+        <textarea id="cfDetails" name="project_details" placeholder="Describe what you want to build or renovate..." required style="width:100%;padding:12px 14px;font-size:15px;border:2px solid #D1D5DB;border-radius:8px;min-height:110px;"></textarea>
+      </div>
+      <button type="submit" id="cfSubmit" style="width:100%;font-family:Montserrat,sans-serif;font-weight:700;font-size:17px;color:#fff;background:#C4884D;border:none;border-radius:8px;padding:16px;cursor:pointer;">Get My Free Estimate</button>
+      <p style="text-align:center;font-size:12px;color:#8B8D8E;margin-top:12px;">Your information is private and will never be shared or sold.</p>
+    </form>
+    <div id="cfSuccess" style="display:none;text-align:center;padding:48px 20px;">
+      <div style="width:64px;height:64px;background:#00D084;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:#fff;font-size:32px;">&#10003;</div>
+      <h3 style="color:#0A2640;font-size:24px;margin-bottom:8px;font-family:Montserrat,sans-serif;">Thank You!</h3>
+      <p style="color:#8B8D8E;font-size:15px;max-width:360px;margin:0 auto;">We'll contact you within 24 hours to discuss your project and schedule a free consultation.</p>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:28px;">
+    <div style="background:#F5F7FA;border-radius:12px;padding:28px;">
+      <h3 style="color:#0A2640;font-family:Montserrat,sans-serif;font-size:18px;margin-bottom:16px;">Get in Touch</h3>
+      <div style="margin-bottom:14px;"><strong style="color:#0A2640;"><a href="tel:+18004846404" style="color:#0A2640;">(800) 484-6404</a></strong><br><small style="color:#8B8D8E;">Call or text anytime</small></div>
+      <div style="margin-bottom:14px;"><strong><a href="mailto:serge@ahb123.com" style="color:#0A2640;">serge@ahb123.com</a></strong><br><small style="color:#8B8D8E;">We reply within 24 hours</small></div>
+      <div style="margin-bottom:14px;"><strong style="color:#0A2640;">Office Hours</strong><br><small style="color:#8B8D8E;">Mon–Fri 8am–6pm<br>Sat 9am–2pm</small></div>
+      <div style="margin-bottom:14px;"><strong style="color:#0A2640;">Service Area</strong><br><small style="color:#8B8D8E;">Philadelphia, Montgomery, Delaware &amp; Bucks Counties</small></div>
+      <div><strong style="color:#0A2640;">PA HIC#</strong><br><small style="color:#8B8D8E;">PA175897 — Pennsylvania Home Improvement Contractor</small></div>
+    </div>
+    <div style="background:#F5F7FA;border-radius:12px;padding:28px;">
+      <h3 style="color:#0A2640;font-family:Montserrat,sans-serif;font-size:18px;margin-bottom:16px;">Why Trust Us</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="background:#fff;border:2px solid #F5F7FA;border-radius:8px;padding:12px 14px;font-family:Montserrat,sans-serif;font-size:13px;font-weight:700;color:#0A2640;">&#10003; PA Licensed</div>
+        <div style="background:#fff;border:2px solid #F5F7FA;border-radius:8px;padding:12px 14px;font-family:Montserrat,sans-serif;font-size:13px;font-weight:700;color:#0A2640;">&#10003; Insured</div>
+        <div style="background:#fff;border:2px solid #F5F7FA;border-radius:8px;padding:12px 14px;font-family:Montserrat,sans-serif;font-size:13px;font-weight:700;color:#0A2640;">&#10003; Bonded</div>
+        <div style="background:#fff;border:2px solid #F5F7FA;border-radius:8px;padding:12px 14px;font-family:Montserrat,sans-serif;font-size:13px;font-weight:700;color:#0A2640;">&#10003; 100% Local</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function(){
+  var form = document.getElementById('ahbContactForm');
+  var btn = document.getElementById('cfSubmit');
+  var success = document.getElementById('cfSuccess');
+  var phone = document.getElementById('cfPhone');
+
+  phone.addEventListener('input', function(){
+    var d = this.value.replace(/\D/g, '');
+    if (d.length === 0) this.value = '';
+    else if (d.length <= 3) this.value = '(' + d;
+    else if (d.length <= 6) this.value = '(' + d.slice(0,3) + ') ' + d.slice(3);
+    else this.value = '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6,10);
+  });
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    // Honeypot — drop silently if filled
+    if (form.company_url && form.company_url.value) { showSuccess(); return; }
+
+    var data = {
+      full_name: form.full_name.value.trim(),
+      email: form.email.value.trim(),
+      phone: form.phone.value.trim(),
+      project_type: form.project_type.value,
+      budget_range: form.budget_range.value,
+      timeline: form.timeline.value,
+      project_address: form.project_address.value.trim(),
+      project_details: form.project_details.value.trim(),
+      source: 'contact_page',
+      submitted_at: new Date().toISOString()
+    };
+    if (!data.full_name || !data.email || !data.phone || !data.project_type || data.project_details.length < 15) {
+      alert('Please fill out all required fields, and describe your project in at least 15 characters.');
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Sending...';
+    var NOVA_BASE = (document.querySelector('meta[name="nova-base"]') || {}).content || 'https://nova.ahb123.com';
+    fetch(NOVA_BASE + '/api/leads', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    })
+    .then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+    .then(showSuccess)
+    .catch(showSuccess)
+    .finally(function(){ btn.disabled = false; btn.textContent = 'Get My Free Estimate'; });
+  });
+  function showSuccess(){
+    form.style.display = 'none';
+    success.style.display = 'block';
+    success.scrollIntoView({behavior:'smooth', block:'center'});
+  }
+})();
+</script>
+
+<section style="background:#F5F7FA;padding:64px 24px;">
+  <h2 style="text-align:center;font-size:30px;color:#0A2640;margin-bottom:48px;font-family:Montserrat,sans-serif;">Why Choose All Home Building Co</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:32px;max-width:1000px;margin:0 auto;">
+    <div style="background:#fff;border-radius:12px;padding:32px 24px;text-align:center;box-shadow:0 2px 8px rgba(10,38,64,.04);"><div style="font-size:32px;margin-bottom:16px;">&#128737;</div><h3 style="font-family:Montserrat,sans-serif;color:#0A2640;font-size:18px;margin-bottom:10px;">Transparent Pricing</h3><p style="font-size:14px;color:#8B8D8E;">No hidden fees. No surprise change orders. Line-item estimates upfront.</p></div>
+    <div style="background:#fff;border-radius:12px;padding:32px 24px;text-align:center;box-shadow:0 2px 8px rgba(10,38,64,.04);"><div style="font-size:32px;margin-bottom:16px;">&#9200;</div><h3 style="font-family:Montserrat,sans-serif;color:#0A2640;font-size:18px;margin-bottom:10px;">On-Time Delivery</h3><p style="font-size:14px;color:#8B8D8E;">We set a schedule and hold ourselves to it. Regular updates at every stage.</p></div>
+    <div style="background:#fff;border-radius:12px;padding:32px 24px;text-align:center;box-shadow:0 2px 8px rgba(10,38,64,.04);"><div style="font-size:32px;margin-bottom:16px;">&#127968;</div><h3 style="font-family:Montserrat,sans-serif;color:#0A2640;font-size:18px;margin-bottom:10px;">Local Craftsmanship</h3><p style="font-size:14px;color:#8B8D8E;">Our team lives and works in the neighborhoods we build in. Every project is personal.</p></div>
+  </div>
+</section>
+
+<!-- ════════════ AHB123 LIVE REVIEWS + QR ════════════ -->
+<style>
+  .ahb-reviews-strip{background:#fff;padding:64px 24px;border-top:1px solid #E2E8F0}
+  .ahb-reviews-inner{max-width:1100px;margin:0 auto}
+  .ahb-reviews-head{text-align:center;margin-bottom:40px}
+  .ahb-reviews-head h2{font-family:'Roboto Slab',Georgia,serif;font-size:30px;color:#0A2640;margin:0 0 8px}
+  .ahb-reviews-head p{color:#8B8D8E;font-size:15px;margin:0}
+  .ahb-reviews-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:20px}
+  .ahb-review-card{background:#F5F7FA;border-radius:12px;padding:24px;box-shadow:0 2px 8px rgba(10,38,64,.04);border:1px solid #E2E8F0;display:flex;flex-direction:column;gap:10px;transition:transform .2s,box-shadow .2s}
+  .ahb-review-card:hover{transform:translateY(-3px);box-shadow:0 10px 26px rgba(10,38,64,.10)}
+  .ahb-review-stars{color:#C4884D;font-size:17px;letter-spacing:2px}
+  .ahb-review-text{color:#3a342b;font-size:15px;line-height:1.55;margin:0;flex:1}
+  .ahb-review-name{font-family:Montserrat,sans-serif;font-size:13px;font-weight:700;color:#0A2640;text-transform:uppercase;letter-spacing:1px}
+  .ahb-review-meta{font-size:12px;color:#8B8D8E}
+  .ahb-review-photo{width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:6px}
+  .ahb-review-empty{grid-column:1/-1;text-align:center;color:#8B8D8E;font-style:italic;padding:32px 0}
+
+  .ahb-qr-strip{background:#0A2640;color:#fff;padding:48px 24px;border-top:3px solid #C4884D}
+  .ahb-qr-strip-inner{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 1.4fr;gap:40px;align-items:center}
+  .ahb-qr-card{background:#fff;padding:24px;border-radius:14px;text-align:center;box-shadow:0 16px 40px rgba(0,0,0,.4)}
+  .ahb-qr-card img{width:200px;height:200px;display:block;margin:0 auto}
+  .ahb-qr-card .qr-cap{margin-top:12px;font-family:Montserrat,sans-serif;font-size:11px;font-weight:800;color:#0A2640;text-transform:uppercase;letter-spacing:1.5px}
+  .ahb-qr-text h3{font-family:'Roboto Slab',Georgia,serif;font-size:30px;line-height:1.2;margin:0 0 12px;color:#fff}
+  .ahb-qr-text p{font-size:16px;line-height:1.6;color:rgba(255,255,255,.78);margin:0 0 20px}
+  .ahb-qr-text .qr-cta{display:inline-flex;align-items:center;gap:8px;background:#C4884D;color:#0A2640;padding:14px 26px;border-radius:8px;text-decoration:none;font-family:Montserrat,sans-serif;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1.3px;transition:transform .2s,box-shadow .2s}
+  .ahb-qr-text .qr-cta:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(196,136,77,.4)}
+  .ahb-qr-rating-summary{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:rgba(255,255,255,.7);margin-top:16px}
+  .ahb-qr-rating-summary .stars{color:#C4884D;font-size:18px;letter-spacing:2px}
+  @media(max-width:760px){.ahb-qr-strip-inner{grid-template-columns:1fr;text-align:center}.ahb-qr-card{margin:0 auto;max-width:240px}}
+</style>
+
+<section class="ahb-reviews-strip" id="ahb-reviews-section">
+  <div class="ahb-reviews-inner">
+    <div class="ahb-reviews-head">
+      <h2>What Our Customers Say</h2>
+      <p id="ahb-reviews-summary">Loading reviews...</p>
+    </div>
+    <div class="ahb-reviews-grid" id="ahb-reviews-grid">
+      <div class="ahb-review-empty">Loading reviews...</div>
+    </div>
+  </div>
+</section>
+
+<section class="ahb-qr-strip">
+  <div class="ahb-qr-strip-inner">
+    <div class="ahb-qr-card">
+      <img id="ahb-review-qr" src="" alt="Scan to leave a review">
+      <div class="qr-cap">Scan to Review</div>
+    </div>
+    <div class="ahb-qr-text">
+      <h3>Loved working with us? Tell the world.</h3>
+      <p>Scan the QR with your phone or tap the button below to leave a quick review. Takes less than 60 seconds and helps other homeowners find us. We read every word.</p>
+      <a href="#" id="ahb-review-cta" class="qr-cta">&#9733; Leave a Review</a>
+      <div class="ahb-qr-rating-summary" id="ahb-rating-summary"></div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function(){
+  // API base from <meta name="ahb-api-base"> set in header injection.
+  // Falls back to nova.ahb123.com if missing.
+  var metaBase = (document.querySelector('meta[name="ahb-api-base"]') || {}).content;
+  var apiBase = metaBase || 'https://nova.ahb123.com';
+  var reviewUrl = apiBase + '/review';
+
+  document.getElementById('ahb-review-cta').href = reviewUrl;
+  document.getElementById('ahb-review-qr').src =
+    'https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=12&color=0A2640&bgcolor=ffffff&data=' +
+    encodeURIComponent(reviewUrl);
+
+  fetch(apiBase + '/api/reviews/published').then(function(r){return r.json();}).then(function(d){
+    var grid = document.getElementById('ahb-reviews-grid');
+    var summary = document.getElementById('ahb-reviews-summary');
+    var ratingLine = document.getElementById('ahb-rating-summary');
+    var reviews = (d && d.reviews) || [];
+    if (!reviews.length) {
+      grid.innerHTML = '<div class="ahb-review-empty">Be the first to leave a review &mdash; scan the QR code below!</div>';
+      summary.textContent = 'Real reviews from real customers';
+      return;
+    }
+    var stars = '';
+    var fullStars = Math.round(d.avg_stars);
+    for (var i=0; i<5; i++) stars += i < fullStars ? '★' : '☆';
+    summary.innerHTML = '<span style="color:#C4884D;font-size:18px">' + stars + '</span> &nbsp;<strong>' + d.avg_stars.toFixed(1) + '</strong> from <strong>' + d.count + '</strong> verified review' + (d.count === 1 ? '' : 's');
+    ratingLine.innerHTML = '<span class="stars">' + stars + '</span> <strong>' + d.avg_stars.toFixed(1) + '</strong> &middot; ' + d.count + ' review' + (d.count === 1 ? '' : 's');
+    grid.innerHTML = reviews.slice(0, 6).map(function(r){
+      var s = '';
+      for (var i=0; i<5; i++) s += i < r.stars ? '★' : '☆';
+      var photoHtml = (r.has_photo && r.photo) ? '<img class="ahb-review-photo" src="' + apiBase + '/api/reviews/photo/' + encodeURIComponent(r.photo) + '" alt="">' : '';
+      var safeText = (r.text || '').replace(/[<>]/g, '');
+      var safeName = (r.name || 'Anonymous').replace(/[<>]/g, '');
+      var safeProj = (r.project_type || '').replace(/[<>]/g, '');
+      return '<div class="ahb-review-card">' +
+        photoHtml +
+        '<div class="ahb-review-stars">' + s + '</div>' +
+        (safeText ? '<p class="ahb-review-text">"' + safeText + '"</p>' : '') +
+        '<div class="ahb-review-name">' + safeName + '</div>' +
+        '<div class="ahb-review-meta">' + (safeProj ? safeProj + ' &middot; ' : '') + (r.date || '') + '</div>' +
+        '</div>';
+    }).join('');
+  }).catch(function(){
+    document.getElementById('ahb-reviews-summary').textContent = 'Reviews unavailable right now';
+    document.getElementById('ahb-reviews-grid').innerHTML = '';
+  });
+})();
+</script>
+<!-- ════════════ END LIVE REVIEWS + QR ════════════ -->
