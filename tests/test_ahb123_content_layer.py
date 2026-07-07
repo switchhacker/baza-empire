@@ -34,3 +34,16 @@ def test_all_portfolio_images_exist_in_assets():
 def test_logo_and_brand_css_present():
     assert os.path.isfile(os.path.join(SRC, "assets", "s", "logo.png"))
     assert os.path.getsize(os.path.join(SRC, "assets", "css", "brand.css")) > 500
+
+def test_no_squarespace_cdn_refs_in_any_content():
+    """After migration, no content page may depend on the Squarespace CDN."""
+    for slug in SLUGS:
+        body = open(os.path.join(SRC, "content", f"{slug}.html")).read()
+        assert "squarespace-cdn.com" not in body, f"CDN ref left in {slug}"
+
+def test_services_uses_local_image_paths():
+    svc = open(os.path.join(SRC, "content", "services.html")).read()
+    for fn in ["01-modern-kitchen-fishtown.jpg", "04-gut-rehab-kensington.jpg",
+               "06-luxury-bath-center-city.jpg", "07-sunroom-ardmore.jpg",
+               "14-new-build-kitchen-bensalem.jpg"]:
+        assert f"/s/{fn}" in svc, f"missing local ref {fn}"
