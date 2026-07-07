@@ -6,16 +6,14 @@ SKILL_META = {
     "category": "web",
     "summary": "Interactive browser session: goto/read/click/type/press/scroll/back/screenshot/close.",
     "when_to_use": ("When a task needs real browsing — JS-heavy pages, walking search "
-                    "results, pagination, forms, logged-in sites. Start with "
+                    "results, pagination, forms. Start with "
                     "{\"action\":\"goto\",\"url\":...}; then {\"action\":\"read\"} to see the page "
                     "and its numbered elements; then act by index. Always pass back session_id."),
     "args": {
-        "action": "goto|read|click|type|press|scroll|back|screenshot|close|approval_status",
+        "action": "goto|read|click|type|press|scroll|back|screenshot|close",
         "session_id": "returned by the first goto — pass it on every later call",
         "url": "for goto", "index": "element index from read (for click/type)",
         "text": "for type", "key": "for press (default Enter)", "dy": "scroll pixels",
-        "profile": "optional logged-in profile name (write actions need Serge's approval)",
-        "approval_id": "for approval_status",
         "max_chars": "read: markdown size cap (default 6000)",
     },
 }
@@ -57,12 +55,10 @@ def call(method, path, payload=None):
 
 try:
     if action == "goto" and not sid:
-        sid = call("POST", "/session", {"profile": args.get("profile")})["session_id"]
+        sid = call("POST", "/session", {})["session_id"]
 
     if action == "close":
         out = call("DELETE", f"/session/{sid}")
-    elif action == "approval_status":
-        out = call("GET", f"/approvals/{_int(args.get('approval_id'), 0)}")
     elif action in ("goto", "read", "click", "type", "press", "scroll", "back",
                     "screenshot"):
         payload = {k: args.get(k) for k in ("url", "index", "text", "key", "dy")
@@ -73,7 +69,7 @@ try:
     else:
         out = {"success": False,
                "error": f"unknown action '{action}'",
-               "hint": "actions: goto/read/click/type/press/scroll/back/screenshot/close/approval_status"}
+               "hint": "actions: goto/read/click/type/press/scroll/back/screenshot/close"}
     out["session_id"] = sid
     print(json.dumps(out))
 except httpx.HTTPError as e:
