@@ -2,6 +2,8 @@
 from __future__ import annotations
 import logging
 
+from voice_flow.commands import match_command, AGENT_NAMES
+
 log = logging.getLogger("voice_flow.daemon")
 
 
@@ -54,13 +56,36 @@ class Daemon:
         text = (self.transcriber.transcribe(wav_path) or "").strip()
         if not text:
             return ""
-        # command interception happens in Task 6 (guarded by commands_enabled)
-        if mode == "agent" and self.agent_client is not None:
+        if self.commands_enabled:
+            cmd = match_command(text, AGENT_NAMES)
+            if cmd is not None:
+                self._run_command(cmd)
+                return ""
+        effective = self.active_dictation_mode if mode in ("raw", "flow") else mode
+        if effective == "agent" and self.agent_client is not None:
             return self._do_agent(text)
-        if mode == "flow" and self.flow_fn is not None:
+        if effective == "flow" and self.flow_fn is not None:
             text = self.flow_fn(text) or text
         self._last_injected = self.injector.inject(text)
         return text
+
+    def _run_command(self, cmd) -> None:
+        if cmd.action == "newline":
+            self.injector.press("Return")
+        elif cmd.action == "paragraph":
+            self.injector.press("Return"); self.injector.press("Return")
+        elif cmd.action == "scratch":
+            self.injector.delete_last(self._last_injected); self._last_injected = 0
+        elif cmd.action == "select_all":
+            self.injector.press("ctrl+a")
+        elif cmd.action == "undo":
+            self.injector.press("ctrl+z")
+        elif cmd.action == "set_mode":
+            self.active_dictation_mode = cmd.arg
+        elif cmd.action == "route":
+            self._pending_agent = cmd.arg
+        elif cmd.action == "stop":
+            self._abort()
 
     def _do_agent(self, text: str) -> str:
         reply = self.agent_client.ask(text)
