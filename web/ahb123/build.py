@@ -46,6 +46,10 @@ def _sitemap():
 
 def build_site(dist_dir):
     """Render all pages + copy assets into dist_dir. Returns sorted rel paths."""
+    # Guard: build_site rmtree's dist_dir, so refuse to target the source tree.
+    abs_dist = os.path.abspath(dist_dir)
+    if abs_dist == HERE or HERE.startswith(abs_dist + os.sep):
+        raise ValueError(f"refusing to build into source tree: {abs_dist}")
     if os.path.isdir(dist_dir):
         shutil.rmtree(dist_dir)
     os.makedirs(dist_dir)
