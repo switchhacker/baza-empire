@@ -7,7 +7,7 @@ from agents.cron_helpers import *
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [CLAW-CODE] %(message)s")
 
-MODEL = "mistral-small:22b"
+MODEL = "gemma4:12b-it-qat"  # 2026-07-07: was mistral-small:22b, which never fit the 12GB card (12.7GB projected → partial CPU offload every run)
 AGENT_TOKEN = os.getenv("TELEGRAM_CLAW_BATTO", TELEGRAM_TOKEN)
 
 def collect_data():

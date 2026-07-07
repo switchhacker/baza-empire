@@ -47,7 +47,10 @@ def ollama_generate(model: str, system_prompt: str, user_prompt: str, max_tokens
     """Run a non-streaming Ollama inference."""
     # Estimate context needed: ~1.3 tokens per word, plus output budget
     total_chars = len(system_prompt) + len(user_prompt)
-    needed_ctx = max(8192, int(total_chars / 3) + max_tokens + 512)
+    # Cap at 32k (same as ollama_client.chat_stream) — an uncapped ctx from a
+    # huge cron prompt can demand more VRAM than the card has and evict
+    # every other loaded model.
+    needed_ctx = min(32768, max(8192, int(total_chars / 3) + max_tokens + 512))
     payload = json.dumps({
         "model": model, "stream": False,
         "messages": [
