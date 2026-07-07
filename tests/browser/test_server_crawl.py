@@ -50,3 +50,25 @@ def test_crawl_get_without_content(client):
 
 def test_crawl_unknown_job(client):
     assert client.get("/crawl/99999").json()["success"] is False
+
+
+def test_crawl_background_task_is_tracked(client):
+    """Finding 1: the background crawl task must be retained (not just
+    fire-and-forget create_task) so it can't be garbage-collected mid-run,
+    and released once it completes."""
+    from browser import server
+
+    r = client.post("/crawl", json={"url": "https://c.test/", "max_pages": 1,
+                                    "ignore_robots": True})
+    jid = r.json()["job_id"]
+    assert len(server._crawl_tasks) >= 1  # launch retains a strong reference
+
+    for _ in range(50):  # poll until background task finishes
+        body = client.get(f"/crawl/{jid}").json()
+        if body["job"]["status"] in ("done", "error"):
+            break
+        time.sleep(0.1)
+    assert body["job"]["status"] == "done"
+
+    time.sleep(0.05)  # let the done-callback fire
+    assert all(t.done() for t in server._crawl_tasks)
