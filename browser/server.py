@@ -36,11 +36,6 @@ try:
 except ImportError:  # pragma: no cover
     from sessions import SessionManager
 
-try:
-    from browser import gate
-except ImportError:  # pragma: no cover
-    import gate
-
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("phantom_browser")
 
@@ -505,7 +500,7 @@ async def approval_decide(aid: int, tok: str, d: str):
         # self-heals this lazily too, but clearing it here means the very
         # next act on the session doesn't even need to make that DB round
         # trip to find out it's free again.
-        sessions.clear_pending_approval(a["session_id"])
+        sessions.clear_pending_approval(a["session_id"], aid)
         return HTMLResponse(f"<h2>Already {a['status']}.</h2>")
     # Deadline enforced here too, not just by the 60s reaper sweep (db.expire_stale):
     # a decision landing between the 300s mark and the next sweep tick must not
@@ -513,11 +508,11 @@ async def approval_decide(aid: int, tok: str, d: str):
     # the same regardless of which path caught it.
     if time.time() - a["created_at"] > 300:
         db.decide_approval(aid, "expired")
-        sessions.clear_pending_approval(a["session_id"])
+        sessions.clear_pending_approval(a["session_id"], aid)
         return HTMLResponse("<h2>⏰ Expired — 5 min silence window passed.</h2>")
     if d != "approve":
         db.decide_approval(aid, "denied")
-        sessions.clear_pending_approval(a["session_id"])
+        sessions.clear_pending_approval(a["session_id"], aid)
         return HTMLResponse("<h2>❌ Denied.</h2>")
 
     action = _json2.loads(a["action"])
@@ -544,7 +539,7 @@ async def approval_decide(aid: int, tok: str, d: str):
                 (current.get("href") or "") == (descriptor.get("href") or "")
             if not matches:
                 db.decide_approval(aid, "expired")
-                sessions.clear_pending_approval(a["session_id"])
+                sessions.clear_pending_approval(a["session_id"], aid)
                 return HTMLResponse(
                     "<h2>⚠️ Element changed since approval; re-request.</h2>",
                     status_code=409,
@@ -567,7 +562,7 @@ async def approval_decide(aid: int, tok: str, d: str):
                 (current.get("text") or "") == (descriptor.get("text") or "")
             if not matches:
                 db.decide_approval(aid, "expired")
-                sessions.clear_pending_approval(a["session_id"])
+                sessions.clear_pending_approval(a["session_id"], aid)
                 return HTMLResponse(
                     "<h2>⚠️ Element changed since approval; re-request.</h2>",
                     status_code=409,
@@ -576,7 +571,7 @@ async def approval_decide(aid: int, tok: str, d: str):
     db.decide_approval(aid, "approved")
     # Unfreeze before replaying — act()'s own pending-approval guard would
     # otherwise refuse this exact, already-approved action.
-    sessions.clear_pending_approval(a["session_id"])
+    sessions.clear_pending_approval(a["session_id"], aid)
     try:
         result = await sessions.act(a["session_id"], op, **action)
         db.decide_approval(aid, "executed" if result.get("success") else "error")

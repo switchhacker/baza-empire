@@ -133,11 +133,18 @@ class SessionManager:
         decided (approve/deny/expire) and clear_pending_approval is called."""
         self.get(sid).pending_approval_id = approval_id
 
-    def clear_pending_approval(self, sid: str) -> None:
+    def clear_pending_approval(self, sid: str, approval_id: int | None = None) -> None:
+        """Clear sid's freeze. If approval_id is given, only clear when it
+        matches the session's current marker — so deciding one approval can't
+        unfreeze a session whose live marker belongs to a still-pending second
+        approval (concurrent-gated-request race). Pass None to force-clear."""
         try:
-            self.get(sid).pending_approval_id = None
+            s = self.get(sid)
         except KeyError:
-            pass
+            return
+        if approval_id is not None and s.pending_approval_id != approval_id:
+            return
+        s.pending_approval_id = None
 
     def pending_block(self, sid: str) -> dict | None:
         """Structured refusal if sid has an unresolved approval, else None.
