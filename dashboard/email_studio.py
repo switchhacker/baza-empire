@@ -12,6 +12,7 @@ DB: dashboard/baza_projects.db, table `emails` (already populated by fetch_email
 from __future__ import annotations
 
 import base64
+import html as _htmlmod  # aliased: _sanitize_email_html uses a local var named `html`
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from email.mime.application import MIMEApplication
@@ -100,6 +102,8 @@ _EXTRA_COLUMNS = [
     ("last_synced", "TEXT"),
     ("history_id", "TEXT"),
     ("account_id", "TEXT"),
+    ("has_attachments", "INTEGER DEFAULT 0"),
+    ("attachments_json", "TEXT"),
 ]
 
 
@@ -459,24 +463,125 @@ def _headers_map(msg: dict) -> dict:
 
 
 def _collect_attachments(payload: dict) -> list[dict]:
-    """Walk a payload tree collecting real attachments (parts with a filename)."""
+    """Walk a payload tree collecting attachments.
+
+    Recurses into nested parts (including forwarded message/rfc822 subtrees)
+    and also collects inline content-id parts (embedded images), flagged
+    ``inline=True`` so the UI can distinguish them from real attachments.
+    """
     out: list[dict] = []
 
     def walk(p):
         fn = p.get("filename") or ""
         body = p.get("body") or {}
-        if fn and body.get("attachmentId"):
+        hdrs = {(h.get("name") or "").lower(): (h.get("value") or "")
+                for h in p.get("headers", []) or []}
+        cid = (hdrs.get("content-id") or "").strip("<> ")
+        disp = (hdrs.get("content-disposition") or "").lower()
+        if body.get("attachmentId") and (fn or cid):
+            mime = p.get("mimeType", "")
+            if not fn:
+                ext = (mime.split("/")[-1] or "bin") if "/" in mime else "bin"
+                fn = f"inline-{cid or 'part'}.{ext}"
             out.append({
                 "filename": fn,
-                "mime": p.get("mimeType", ""),
+                "mime": mime,
                 "size": int(body.get("size") or 0),
                 "attachment_id": body["attachmentId"],
+                "content_id": cid,
+                "inline": bool(cid) and "attachment" not in disp,
             })
         for sp in p.get("parts", []) or []:
             walk(sp)
 
     walk(payload or {})
     return out
+
+
+def _sanitize_email_html(html: str, cid_map: Optional[dict] = None) -> str:
+    """Best-effort stdlib sanitizer for rendering email HTML in a sandboxed,
+    script-less iframe. Removes active content; keeps formatting/styles."""
+    if not html:
+        return ""
+    # scripts (with content) and other active/embedding elements (tags only)
+    html = re.sub(r"(?is)<script\b[^>]*>.*?</script\s*>", "", html)
+    html = re.sub(r"(?is)<script\b[^>]*/?>", "", html)
+    html = re.sub(r"(?is)</?(?:object|embed|iframe|frame|frameset|applet|base|form|input|button|select|textarea|meta|link)\b[^>]*>", "", html)
+    # inline event handlers:  onload="..." / onclick='...' / onerror=x
+    # HTML5 also allows "/" as an attribute separator (e.g. <svg/onload=alert(1)>,
+    # <img/onerror=alert(1) src=x>), so a bare leading \s missed those. Match
+    # either whitespace or "/" immediately before the on* attribute name.
+    #
+    # The unquoted-value alternative is quote-context-blind: matched purely
+    # locally, "[\s/]on\w+\s*=" can also fire in the middle of a *different*,
+    # already-quoted attribute value or link text that merely contains
+    # "on<word>=" as a substring — a URL path/query segment like
+    # ".../on2=abc?online=1" or a title like "settings/onload=danger". The
+    # old `[^\s>]+` value class greedily crossed the enclosing quote,
+    # truncating the attribute and sometimes eating the closing tag. Simply
+    # excluding quote chars from the value class isn't enough by itself: it
+    # still lets the match start inside someone else's quoted value and
+    # truncate it at the first quote it hits. So the unquoted alternative is
+    # additionally required to end where HTML5 would really end an unquoted
+    # attribute value — at whitespace or ">" (a lookahead, not consumed) —
+    # not at a quote character. If ending at a quote is the only way to
+    # match, that's a sign the "match" is actually inside another attribute's
+    # quoted value, so the whole alternative fails there and nothing is
+    # stripped, leaving the benign markup (and its closing quote/tag) intact.
+    # A truly unquoted handler like <svg/onload=alert(1)> still strips, since
+    # its value is properly terminated by ">" (or whitespace, e.g.
+    # <img/onerror=alert(1) src=x>).
+    html = re.sub(
+        r"""(?is)[\s/]on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+(?=[\s>]|$))""",
+        "",
+        html,
+    )
+
+    # javascript:/vbscript: URLs in URL-bearing attributes. A literal-string
+    # match on "javascript:"/"vbscript:" is bypassable because browsers decode
+    # HTML entities before parsing the URL, and strip ASCII whitespace/control
+    # chars (\x00-\x20) from the scheme per the WHATWG URL spec — e.g.
+    # href="javascript&colon;alert(1)" or "java\tscript:alert(1)". Normalize
+    # each captured attribute value the same way before checking the scheme.
+    def _neutralize_url_attr(m: "re.Match[str]") -> str:
+        attr = m.group(1)
+        dq, sq, uq = m.group(3), m.group(4), m.group(5)
+        if dq is not None:
+            value, quote = dq, '"'
+        elif sq is not None:
+            value, quote = sq, "'"
+        else:
+            value, quote = uq, None
+        normalized = _htmlmod.unescape(value or "")
+        normalized = re.sub(r"[\x00-\x20]+", "", normalized).lower()
+        if normalized.startswith("javascript:") or normalized.startswith("vbscript:"):
+            return f'{attr}="#"' if quote else f"{attr}=#"
+        return m.group(0)
+
+    html = re.sub(
+        r"""(?is)\b(href|src|action|formaction|background|poster)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))""",
+        _neutralize_url_attr,
+        html,
+    )
+    # javascript:/vbscript: in CSS url() — same class of bypass as the URL
+    # attributes above (entity-encoded colon, embedded whitespace/control
+    # chars splitting the scheme), so apply the same normalize-then-check
+    # callback instead of a literal-substring match.
+    def _neutralize_css_url(m: "re.Match[str]") -> str:
+        inner = _htmlmod.unescape(m.group(1) or "")
+        inner = re.sub(r"[\x00-\x20]+", "", inner).lower()
+        if inner.startswith("javascript:") or inner.startswith("vbscript:"):
+            return "url(#)"
+        return m.group(0)
+
+    html = re.sub(r"(?is)url\(\s*['\"]?([^)]*)\)", _neutralize_css_url, html)
+    # cid: image rewrite to our inline attachment URLs
+    if cid_map:
+        def _cid(m):
+            url = cid_map.get(m.group(2).strip("<> "))
+            return (m.group(1) + url) if url else m.group(0)
+        html = re.sub(r"(?is)(src\s*=\s*[\"']?)cid:([^\"'>\s]+)", _cid, html)
+    return html
 
 
 # ── Ollama helper ─────────────────────────────────────────────────────────
@@ -529,12 +634,18 @@ def _hydrate_thread(svc, con, t, account_id, account_email):
     row = con.execute(
         """SELECT thread_id, subject, from_addr, to_addr, body_snippet,
                   received_at, labels, is_unread, is_starred, ai_summary,
-                  category, gmail_id
+                  category, gmail_id, has_attachments, attachments_json
            FROM emails WHERE thread_id=? ORDER BY received_at DESC LIMIT 1""",
         (tid,)
     ).fetchone()
     if row:
         d = dict(row)
+        try:
+            _atts = json.loads(d["attachments_json"]) if d["attachments_json"] else []
+        except Exception:
+            _atts = []
+        for _a in _atts:
+            _a.setdefault("gmail_id", d["gmail_id"])
         out = {
             "thread_id": tid,
             "subject": d["subject"] or "(no subject)",
@@ -546,6 +657,8 @@ def _hydrate_thread(svc, con, t, account_id, account_email):
             "is_starred": bool(d["is_starred"]),
             "ai_summary": d["ai_summary"] or "",
             "category": d["category"] or "",
+            "has_attachments": bool(d["has_attachments"]),
+            "attachments": _atts,
             "cached": True,
         }
     else:
@@ -568,6 +681,8 @@ def _hydrate_thread(svc, con, t, account_id, account_email):
             "is_starred": "STARRED" in labels,
             "ai_summary": "",
             "category": "",
+            "has_attachments": False,
+            "attachments": [],
             "cached": False,
         }
     out["account_id"] = account_id
@@ -687,6 +802,7 @@ def api_thread(tid: str):
                 hdrs = _headers_map(m)
                 plain, html = _decode_body(m.get("payload") or {})
                 labels = m.get("labelIds", []) or []
+                atts = _collect_attachments(m.get("payload") or {})
                 msgs.append({
                     "gmail_id": m["id"],
                     "thread_id": m.get("threadId", tid),
@@ -701,15 +817,15 @@ def api_thread(tid: str):
                     "is_unread": "UNREAD" in labels,
                     "is_starred": "STARRED" in labels,
                     "message_id_header": hdrs.get("Message-ID") or hdrs.get("Message-Id") or "",
-                    "attachments": _collect_attachments(m.get("payload") or {}),
+                    "attachments": atts,
                 })
                 # Refresh cache for this message
                 con.execute(
                     """INSERT INTO emails (id, gmail_id, thread_id, from_addr, to_addr,
                                             subject, body_snippet, full_body, received_at,
                                             status, priority, labels, is_unread, is_starred,
-                                            account_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?, ?)
+                                            account_id, has_attachments, attachments_json)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?, ?, ?, ?)
                        ON CONFLICT(gmail_id) DO UPDATE SET
                          thread_id=excluded.thread_id,
                          from_addr=excluded.from_addr, to_addr=excluded.to_addr,
@@ -718,12 +834,15 @@ def api_thread(tid: str):
                          labels=excluded.labels, is_unread=excluded.is_unread,
                          is_starred=excluded.is_starred,
                          account_id=COALESCE(excluded.account_id, account_id),
+                         has_attachments=excluded.has_attachments,
+                         attachments_json=excluded.attachments_json,
                          updated_at=datetime('now')""",
                     (str(uuid.uuid4()), m["id"], m.get("threadId", tid),
                      hdrs.get("From", ""), hdrs.get("To", ""), hdrs.get("Subject", ""),
                      m.get("snippet", ""), plain, hdrs.get("Date", ""),
                      ",".join(labels), 1 if "UNREAD" in labels else 0,
-                     1 if "STARRED" in labels else 0, acc_id)
+                     1 if "STARRED" in labels else 0, acc_id,
+                     1 if atts else 0, json.dumps(atts))
                 )
             con.commit()
         finally:
@@ -753,6 +872,43 @@ def api_attachment(msg_id: str, att_id: str):
         return Response(data, mimetype=mime, headers={
             "Content-Disposition": f'{disp}; filename="{safe_name}"',
             "Content-Length": str(len(data)),
+        })
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@email_bp.route("/api/email2/message/<msg_id>/html", methods=["GET"])
+def api_message_html(msg_id: str):
+    """Full sanitized HTML body of one message, for the reader's sandboxed iframe."""
+    from flask import Response
+    try:
+        acc = request.args.get("account") or ""
+        svc = _gmail(_req_account_id())
+        m = svc.users().messages().get(userId="me", id=msg_id, format="full").execute()
+        payload = m.get("payload") or {}
+        _plain, html = _decode_body(payload)
+        if not (html or "").strip():
+            return jsonify({"error": "no html part"}), 404
+        cid_map = {}
+        for a in _collect_attachments(payload):
+            if a.get("content_id") and a.get("attachment_id"):
+                cid_map[a["content_id"]] = (
+                    "/api/email2/attachment/" + urllib.parse.quote(m.get("id", msg_id))
+                    + "/" + urllib.parse.quote(a["attachment_id"])
+                    + "?inline=1&name=" + urllib.parse.quote(a.get("filename") or "inline")
+                    + "&mime=" + urllib.parse.quote(a.get("mime") or "")
+                    + (("&account=" + urllib.parse.quote(acc)) if acc else ""))
+        doc = ("<!doctype html><html><head><meta charset='utf-8'>"
+               "<base target='_blank'>"
+               "<style>body{margin:14px;font-family:system-ui,-apple-system,sans-serif;"
+               "background:#fff;color:#111;word-wrap:break-word;overflow-wrap:break-word}"
+               "img{max-width:100%;height:auto}table{max-width:100%}</style></head><body>"
+               + _sanitize_email_html(html, cid_map) + "</body></html>")
+        return Response(doc, mimetype="text/html", headers={
+            "Content-Security-Policy": "script-src 'none'; object-src 'none'; frame-src 'none'",
+            "X-Content-Type-Options": "nosniff",
         })
     except FileNotFoundError as e:
         return jsonify({"error": str(e)}), 503
@@ -936,6 +1092,148 @@ def api_attachment_upload():
         return jsonify({"ok": False, "error": "file exceeds the 25 MB limit"}), 400
     mime = mimetypes.guess_type(safe)[0] or "application/octet-stream"
     return jsonify({"ok": True, "token": token, "filename": safe, "size": size, "mime": mime})
+
+
+_DOC_EXTS = {"doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "csv", "txt", "md", "rtf"}
+
+
+def _att_type_bucket(mime: str, name: str) -> str:
+    mime = (mime or "").lower()
+    ext = os.path.splitext(name or "")[1].lstrip(".").lower()
+    if mime.startswith("image/") or ext in ("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "svg"):
+        return "image"
+    if mime == "application/pdf" or ext == "pdf":
+        return "pdf"
+    if mime.startswith("video/") or ext in ("mp4", "mov", "m4v", "webm", "avi"):
+        return "video"
+    if mime.startswith("audio/") or ext in ("mp3", "wav", "m4a", "ogg", "flac"):
+        return "audio"
+    if ext in _DOC_EXTS or "word" in mime or "excel" in mime or "spreadsheet" in mime \
+            or "presentation" in mime or mime.startswith("text/"):
+        return "doc"
+    return "other"
+
+
+@email_bp.route("/api/email2/attachments/browse", methods=["GET"])
+def api_attachments_browse():
+    """Browse cached attachments across all mailboxes/accounts. Local cache only."""
+    q = (request.args.get("q") or "").strip().lower()
+    ftype = (request.args.get("type") or "").strip().lower()
+    acc = (request.args.get("account") or "").strip()
+    limit = max(1, min(int(request.args.get("limit", 100) or 100), 500))
+    offset = max(0, int(request.args.get("offset", 0) or 0))
+    con = _conn()
+    try:
+        sql = ("SELECT gmail_id, thread_id, subject, from_addr, received_at, account_id, "
+               "attachments_json FROM emails WHERE has_attachments=1")
+        params: list = []
+        if acc and acc != "ALL":
+            sql += " AND account_id=?"
+            params.append(acc)
+        sql += " ORDER BY received_at DESC LIMIT 1000"
+        rows = con.execute(sql, params).fetchall()
+    finally:
+        con.close()
+    out = []
+    for r in rows:
+        try:
+            atts = json.loads(r["attachments_json"] or "[]")
+        except Exception:
+            atts = []
+        for a in atts:
+            if a.get("inline"):
+                continue
+            name = a.get("filename") or ""
+            hay = " ".join([name, r["subject"] or "", r["from_addr"] or ""]).lower()
+            if q and q not in hay:
+                continue
+            if ftype and _att_type_bucket(a.get("mime", ""), name) != ftype:
+                continue
+            out.append({
+                "gmail_id": r["gmail_id"], "thread_id": r["thread_id"],
+                "subject": r["subject"] or "", "from_addr": r["from_addr"] or "",
+                "received_at": r["received_at"] or "", "account_id": r["account_id"] or "",
+                "filename": name, "mime": a.get("mime", ""),
+                "size": a.get("size") or 0, "attachment_id": a.get("attachment_id", ""),
+            })
+    return jsonify({"attachments": out[offset:offset + limit], "total": len(out)})
+
+
+@email_bp.route("/api/email2/attachments/index", methods=["POST"])
+def api_attachments_index():
+    """Backfill attachments_json for recent threads (full-format fetch).
+    Body: {max?: int, label?: str}. Returns {ok, indexed}."""
+    body = request.get_json(silent=True) or {}
+    max_threads = max(1, min(int(body.get("max", 50) or 50), 200))
+    label = body.get("label") or "INBOX"
+    try:
+        acc = _pick_account(_req_account_id())
+        acc_id = acc["id"] if acc else None
+        svc = _gmail(acc_id)
+        resp = svc.users().threads().list(
+            userId="me", labelIds=[label], maxResults=max_threads).execute()
+        indexed = 0
+        con = _conn()
+        try:
+            for t in resp.get("threads", []) or []:
+                full = svc.users().threads().get(userId="me", id=t["id"], format="full").execute()
+                for m in full.get("messages", []) or []:
+                    atts = _collect_attachments(m.get("payload") or {})
+                    cur = con.execute("SELECT 1 FROM emails WHERE gmail_id=?", (m["id"],)).fetchone()
+                    if cur:
+                        con.execute(
+                            "UPDATE emails SET has_attachments=?, attachments_json=? WHERE gmail_id=?",
+                            (1 if atts else 0, json.dumps(atts), m["id"]))
+                    else:
+                        hdrs = _headers_map(m)
+                        con.execute(
+                            """INSERT INTO emails (id, gmail_id, thread_id, from_addr, subject,
+                                   body_snippet, received_at, status, priority, account_id,
+                                   has_attachments, attachments_json)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, 'new', 'normal', ?, ?, ?)""",
+                            (str(uuid.uuid4()), m["id"], m.get("threadId", t["id"]),
+                             hdrs.get("From", ""), hdrs.get("Subject", ""), m.get("snippet", ""),
+                             hdrs.get("Date", ""), acc_id, 1 if atts else 0, json.dumps(atts)))
+                    indexed += 1
+            con.commit()
+        finally:
+            con.close()
+        return jsonify({"ok": True, "indexed": indexed})
+    except FileNotFoundError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@email_bp.route("/api/email2/attachments/agent-files", methods=["GET"])
+def api_agent_files():
+    """List files produced by agents/scaffold runs under dashboard/artifacts/.
+    Privacy: .private-inbound and .vault_meta are never listed."""
+    import mimetypes
+    q = (request.args.get("q") or "").strip().lower()
+    base = os.path.realpath(ARTIFACTS_DIR)
+    files = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames if d not in _DENY_ARTIFACT_DIRS]
+        for fn in filenames:
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, base)
+            if any(seg in _DENY_ARTIFACT_DIRS for seg in rel.split(os.sep)):
+                continue
+            if q and q not in rel.lower():
+                continue
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            files.append({
+                "name": fn, "rel": rel.replace(os.sep, "/"),
+                "project_id": rel.split(os.sep)[0],
+                "size": st.st_size, "mtime": st.st_mtime,
+                "mime": mimetypes.guess_type(fn)[0] or "application/octet-stream",
+            })
+    files.sort(key=lambda f: f["mtime"], reverse=True)
+    return jsonify({"files": files[:500]})
 
 
 @email_bp.route("/api/email2/attachments/from-bin", methods=["POST"])

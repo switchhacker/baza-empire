@@ -48,7 +48,9 @@ def tmp_db(tmp_path):
             ai_summary TEXT,
             last_synced TEXT,
             history_id TEXT,
-            account_id TEXT
+            account_id TEXT,
+            has_attachments INTEGER DEFAULT 0,
+            attachments_json TEXT
         );
         CREATE VIRTUAL TABLE IF NOT EXISTS emails_fts USING fts5(
             gmail_id UNINDEXED, subject, from_addr, body,
