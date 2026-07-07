@@ -18,7 +18,7 @@ import sys
 try:
     args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 except json.JSONDecodeError as e:
-    print(f"web_extract: invalid SKILL_ARGS JSON: {e}")
+    print(json.dumps({"success": False, "error": f"invalid SKILL_ARGS JSON: {e}"}))
     sys.exit(1)
 
 import httpx

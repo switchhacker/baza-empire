@@ -18,10 +18,23 @@ import sys
 try:
     args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 except json.JSONDecodeError as e:
-    print(f"web_scrape: invalid SKILL_ARGS JSON: {e}")
+    print(json.dumps({"success": False, "error": f"invalid SKILL_ARGS JSON: {e}"}))
     sys.exit(1)
 
 import httpx
+
+
+def _int(v, default):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bool(v):
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
 
 BASE = os.environ.get("PHANTOM_BROWSER_URL", "http://localhost:8100")
 url = args.get("url", "")
@@ -32,9 +45,9 @@ if not url:
 try:
     r = httpx.post(f"{BASE}/scrape", json={
         "url": url,
-        "max_chars": int(args.get("max_chars", 8000)),
-        "wait_ms": int(args.get("wait_ms", 0)),
-        "screenshot": bool(args.get("screenshot", False)),
+        "max_chars": _int(args.get("max_chars"), 8000),
+        "wait_ms": _int(args.get("wait_ms"), 0),
+        "screenshot": _bool(args.get("screenshot")),
     }, timeout=90)
     r.raise_for_status()
     print(json.dumps(r.json()))

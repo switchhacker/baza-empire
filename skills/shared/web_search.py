@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
 Shared Skill: web_search
-Search the web using Ollama's Web Search API (requires OLLAMA_API_KEY).
-Falls back to DuckDuckGo HTML scraping if OLLAMA_API_KEY is not set.
+Search the web via the self-hosted SearXNG meta-search instance (SEARXNG_URL,
+primary, no API key). Falls back to DuckDuckGo HTML scraping if SearXNG is
+unreachable or returns nothing.
 
 Usage from agent:
     ##SKILL:web_search{"query": "PA HIC license renewal 2025", "n": 5}##
 
 CLI:
-    OLLAMA_API_KEY=<key> SKILL_ARGS='{"query":"PA HIC license renewal","n":5}' python web_search.py
-    SKILL_ARGS='{"query":"test","n":3}' python web_search.py  # DDG fallback
+    SKILL_ARGS='{"query":"test","n":3}' python web_search.py
 """
 import os, sys, json, urllib.request, urllib.parse, urllib.error, html, re
 
@@ -22,39 +22,25 @@ if not query:
     print(json.dumps({"success": False, "error": "query is required"}))
     sys.exit(1)
 
-# ── Ollama API Search ──────────────────────────────────────────────────────────
+# ── SearXNG (primary) ─────────────────────────────────────────────────────────
 
-try:
-    import ollama as _ollama_mod
-    _HAS_OLLAMA = True
-except ImportError:
-    _ollama_mod = None
-    _HAS_OLLAMA = False
-
-
-def ollama_search(query: str, max_results: int = 5) -> list:
-    """Use Ollama's web search API. Returns list of {title, url, snippet}."""
-    if not _HAS_OLLAMA:
-        return [{"error": "ollama module not installed in this interpreter"}]
+def searxng_search(query: str, max_results: int = 5) -> list:
+    """Primary: self-hosted SearXNG meta-search (local-first, no API key)."""
+    base = os.environ.get("SEARXNG_URL", "http://localhost:8181")
     try:
-        response = _ollama_mod.web_search(query, max_results=max_results)
-        results = []
-        for r in (response.results if hasattr(response, "results") else response.get("results", [])):
-            if hasattr(r, "title"):
-                results.append({
-                    "title":   r.title or "",
-                    "url":     r.url or "",
-                    "snippet": r.content or "",
-                })
-            else:
-                results.append({
-                    "title":   r.get("title", ""),
-                    "url":     r.get("url", ""),
-                    "snippet": r.get("content", ""),
-                })
-        return results
+        req = urllib.request.Request(
+            f"{base}/search?q={urllib.parse.quote(query)}&format=json",
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req, timeout=12) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        return [
+            {"title": x.get("title", ""), "url": x.get("url", ""),
+             "snippet": (x.get("content") or "")[:300]}
+            for x in data.get("results", [])[:max_results]
+        ]
     except Exception as e:
-        return [{"error": str(e)}]
+        return [{"error": f"searxng: {e}"}]
 
 # ── DuckDuckGo Fallback ────────────────────────────────────────────────────────
 
@@ -97,23 +83,14 @@ def ddg_search(query: str, max_results: int = 5) -> list:
 
 # ── Execute ────────────────────────────────────────────────────────────────────
 
-api_key = os.environ.get("OLLAMA_API_KEY", "")
-
-results = []
-source  = "duckduckgo"
-if api_key and _HAS_OLLAMA:
-    results = ollama_search(query, n)
-    source  = "ollama"
-    # If ollama returned only errors (or nothing), fall back to DDG silently
-    real = [r for r in results if not (len(r) == 1 and "error" in r)]
-    if not real:
-        results = ddg_search(query, n)
-        source  = "duckduckgo (ollama failed)"
-    else:
-        results = real
-else:
+results = searxng_search(query, n)
+source = "searxng"
+real = [r for r in results if not (len(r) == 1 and "error" in r)]
+if not real:
     results = ddg_search(query, n)
-    source  = "duckduckgo"
+    source = "duckduckgo (searxng down)"
+else:
+    results = real
 
 # Final scrub of error-only entries
 results = [r for r in results if not (len(r) == 1 and "error" in r)]

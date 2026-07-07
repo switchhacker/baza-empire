@@ -26,7 +26,7 @@ import sys
 try:
     args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 except json.JSONDecodeError as e:
-    print(f"browse: invalid SKILL_ARGS JSON: {e}")
+    print(json.dumps({"success": False, "error": f"invalid SKILL_ARGS JSON: {e}"}))
     sys.exit(1)
 
 import httpx
@@ -34,6 +34,19 @@ import httpx
 BASE = os.environ.get("PHANTOM_BROWSER_URL", "http://localhost:8100")
 action = args.get("action", "")
 sid = args.get("session_id", "")
+
+
+def _int(v, default):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bool(v):
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
 
 
 def call(method, path, payload=None):
@@ -49,13 +62,13 @@ try:
     if action == "close":
         out = call("DELETE", f"/session/{sid}")
     elif action == "approval_status":
-        out = call("GET", f"/approvals/{int(args.get('approval_id', 0))}")
+        out = call("GET", f"/approvals/{_int(args.get('approval_id'), 0)}")
     elif action in ("goto", "read", "click", "type", "press", "scroll", "back",
                     "screenshot"):
         payload = {k: args.get(k) for k in ("url", "index", "text", "key", "dy")
                    if args.get(k) is not None}
         if action == "read":
-            payload["max_chars"] = int(args.get("max_chars", 6000))
+            payload["max_chars"] = _int(args.get("max_chars"), 6000)
         out = call("POST", f"/session/{sid}/{action}", payload)
     else:
         out = {"success": False,

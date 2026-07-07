@@ -1,60 +1,76 @@
 #!/usr/bin/env python3
-"""
-Shared Skill: web_fetch
-Fetch a full web page and return its clean text content using Ollama's Web Fetch API.
-Requires OLLAMA_API_KEY.
+"""Fetch full page content. Now backed by the Phantom Browser service (:8100,
+real Chromium render); falls back to plain urllib. Kept because
+core/base_agent.py exposes self.web_fetch() and prompts reference it."""
+SKILL_META = {
+    "category": "web",
+    "summary": "Fetch a URL's full content (browser-rendered; urllib fallback).",
+    "when_to_use": "Legacy alias — prefer web_scrape for markdown + links.",
+    "args": {"url": "required", "max_chars": "default 8000",
+             "output": "text|json"},
+}
+import json
+import os
+import re
+import sys
+import urllib.request
 
-Usage from agent:
-    ##SKILL:web_fetch{"url": "https://www.phila.gov/permits/"}##
+try:
+    args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
+except json.JSONDecodeError as e:
+    print(f"web_fetch: invalid SKILL_ARGS JSON: {e}")
+    sys.exit(1)
 
-CLI:
-    OLLAMA_API_KEY=<key> SKILL_ARGS='{"url":"https://ollama.com","max_chars":4000}' python web_fetch.py
-"""
-import os, sys, json
-
-args      = json.loads(os.environ.get("SKILL_ARGS", "{}"))
-url       = args.get("url", "")
+url = args.get("url", "")
 max_chars = int(args.get("max_chars", 8000))
-output    = args.get("output", "text")   # "text" or "json"
+output = args.get("output", "text")
 
 if not url:
     print(json.dumps({"success": False, "error": "url is required"}))
     sys.exit(1)
 
-api_key = os.environ.get("OLLAMA_API_KEY", "")
-if not api_key:
-    print(json.dumps({"success": False, "error": "OLLAMA_API_KEY not set — web_fetch requires Ollama Pro"}))
-    sys.exit(1)
 
-try:
-    import ollama
-    response = ollama.web_fetch(url)
+def via_phantom_browser() -> dict | None:
+    try:
+        import httpx
+        r = httpx.post(
+            f"{os.environ.get('PHANTOM_BROWSER_URL', 'http://localhost:8100')}/scrape",
+            json={"url": url, "max_chars": max_chars}, timeout=90)
+        r.raise_for_status()
+        d = r.json()
+        if not d.get("success"):
+            return None
+        content = d.get("markdown", "")
+        return {"success": True, "url": url, "title": d.get("title", ""),
+                "content": content, "chars": len(content),
+                "links": d.get("links", [])}
+    except Exception:
+        return None
 
-    title   = response.title   if hasattr(response, "title")   else response.get("title", "")
-    content = response.content if hasattr(response, "content") else response.get("content", "")
-    links   = response.links   if hasattr(response, "links")   else response.get("links", [])
 
-    # Truncate content to max_chars
-    if len(content) > max_chars:
-        content = content[:max_chars] + f"\n... [truncated at {max_chars} chars]"
+def via_urllib() -> dict:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            html = r.read().decode("utf-8", "replace")
+        content = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
+        content = re.sub(r"(?s)<[^>]+>", " ", content)
+        content = re.sub(r"\s+", " ", content).strip()[:max_chars]
+        m = re.search(r"(?is)<title[^>]*>(.*?)</title>", html)
+        title = re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+        return {"success": True, "url": url, "title": title,
+                "content": content, "chars": len(content), "links": []}
+    except Exception as e:
+        return {"success": False, "url": url, "error": f"{type(e).__name__}: {e}"}
 
-    if output == "json":
-        print(json.dumps({
-            "success": True,
-            "url":     url,
-            "title":   title,
-            "content": content,
-            "links":   links[:20],   # cap links list
-        }))
-    else:
-        lines = [
-            f"PAGE: {title}",
-            f"URL: {url}",
-            "━━━━━━━━━━━━━━━━",
-            content,
-        ]
-        print("\n".join(lines))
 
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
+result = via_phantom_browser() or via_urllib()
+
+if output == "json":
+    print(json.dumps(result))
+elif result.get("success"):
+    print(f"PAGE: {result['title']}\nURL: {result['url']}\nCHARS: {result['chars']}\n"
+          + "-" * 40 + f"\n{result['content']}")
+else:
+    print(f"ERROR: {result.get('error')}", file=sys.stderr)
     sys.exit(1)

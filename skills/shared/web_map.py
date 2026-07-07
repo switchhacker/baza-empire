@@ -15,10 +15,17 @@ import sys
 try:
     args = json.loads(os.environ.get("SKILL_ARGS", "{}"))
 except json.JSONDecodeError as e:
-    print(f"web_map: invalid SKILL_ARGS JSON: {e}")
+    print(json.dumps({"success": False, "error": f"invalid SKILL_ARGS JSON: {e}"}))
     sys.exit(1)
 
 import httpx
+
+
+def _int(v, default):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
 
 BASE = os.environ.get("PHANTOM_BROWSER_URL", "http://localhost:8100")
 url = args.get("url", "")
@@ -27,7 +34,7 @@ if not url:
     sys.exit(1)
 
 try:
-    r = httpx.post(f"{BASE}/map", json={"url": url, "limit": int(args.get("limit", 200))},
+    r = httpx.post(f"{BASE}/map", json={"url": url, "limit": _int(args.get("limit"), 200)},
                    timeout=60)
     r.raise_for_status()
     print(json.dumps(r.json()))
