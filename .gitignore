@@ -42,3 +42,5 @@ dashboard/.backups/
 # Generated skill manifest (rebuilt by core.skill_registry --build)
 dashboard/skills_manifest.json
 dashboard/skills_manifest.db
+
+browser/profiles/
