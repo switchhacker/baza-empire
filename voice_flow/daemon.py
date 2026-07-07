@@ -38,22 +38,47 @@ class Daemon:
             log.info("utterance in flight; ignoring new capture")
             return
         self._set_state("listening")
-        self._recorder = self.recorder_factory()
-        self._recorder.start()
-        if self.indicator is not None:
-            self.indicator.chime("start")
+        # This runs ON the pynput listener thread: an escaping exception would
+        # kill the listener and deaden every hotkey. Never let one propagate.
+        try:
+            self._recorder = self.recorder_factory()
+            self._recorder.start()
+            if self.indicator is not None:
+                self.indicator.chime("start")
+        except Exception:  # noqa: BLE001 — protect the pynput thread
+            log.exception("recorder start failed")
+            if self.indicator is not None:
+                self.indicator.chime("error")
+            self._busy = False
+            self._recorder = None
+            self._set_state("idle")
+            return
 
     def on_release(self, mode: str) -> None:
         if mode == "cancel" or self._recorder is None:
             return
-        wav = self._recorder.stop()
+        try:
+            wav = self._recorder.stop()
+        except Exception:  # noqa: BLE001 — protect the pynput thread
+            log.exception("recorder stop failed")
+            if self.indicator is not None:
+                self.indicator.chime("error")
+            self._busy = False
+            self._recorder = None
+            self._set_state("idle")
+            return
         self._recorder = None
         if self.indicator is not None:
             self.indicator.chime("stop")
         self._set_state("thinking")
         # Heavy work runs OFF the pynput listener thread; never block it.
         self._busy = True
-        self._last_future = self._executor.submit(self._process, mode, wav)
+        try:
+            self._last_future = self._executor.submit(self._process, mode, wav)
+        except Exception:  # noqa: BLE001 — never leave _busy stuck True
+            log.exception("failed to submit utterance job")
+            self._busy = False
+            self._set_state("idle")
 
     def _process(self, mode: str, wav: str) -> None:
         """Executor job: transcribe + handle. NEVER lets an exception escape."""
@@ -69,8 +94,13 @@ class Daemon:
 
     def _abort(self) -> None:
         if self._recorder is not None:
-            self._recorder.abort()
+            try:
+                self._recorder.abort()
+            except Exception:  # noqa: BLE001 — protect the pynput thread
+                log.exception("recorder abort failed")
             self._recorder = None
+        self._pending_agent = None  # cancel also drops any "send to <agent>" route
+        self._busy = False
         self._set_state("idle")
 
     def _set_state(self, s: str) -> None:

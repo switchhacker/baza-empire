@@ -87,3 +87,74 @@ def test_indicator_start_creates_detached_tray_when_available():
     fake_pystray.Icon.assert_called_once()
     fake_pystray.Icon.return_value.run_detached.assert_called_once()
     assert ind._tray is fake_pystray.Icon.return_value
+
+
+# --- Fix 1: recorder errors on the pynput listener thread never propagate ---
+
+def test_on_press_recorder_failure_does_not_propagate():
+    ind = MagicMock()
+    d, tr, inj, rec, factory = _daemon(indicator=ind)
+    factory.side_effect = RuntimeError("mic busy")
+    d.on_press("raw")  # must not raise into pynput
+    ind.chime.assert_any_call("error")
+    assert d._busy is False
+    assert d._recorder is None
+    ind.set_state.assert_called_with("idle")
+
+
+def test_on_press_recorder_start_failure_does_not_propagate():
+    ind = MagicMock()
+    d, tr, inj, rec, factory = _daemon(indicator=ind)
+    rec.start.side_effect = RuntimeError("PortAudio error")
+    d.on_press("raw")  # must not raise into pynput
+    ind.chime.assert_any_call("error")
+    assert d._busy is False
+    assert d._recorder is None
+    ind.set_state.assert_called_with("idle")
+
+
+def test_on_release_recorder_stop_failure_does_not_propagate_or_submit():
+    ind = MagicMock()
+    d, tr, inj, rec, factory = _daemon(indicator=ind)
+    d.on_press("raw")
+    rec.stop.side_effect = RuntimeError("device unplugged")
+    d.on_release("raw")  # must not raise into pynput
+    ind.chime.assert_any_call("error")
+    assert d._busy is False
+    assert d._recorder is None
+    assert d._last_future is None  # no _process job was submitted
+    ind.set_state.assert_called_with("idle")
+    tr.transcribe.assert_not_called()
+
+
+def test_abort_recorder_failure_does_not_propagate():
+    ind = MagicMock()
+    d, tr, inj, rec, factory = _daemon(indicator=ind)
+    d.on_press("raw")
+    rec.abort.side_effect = RuntimeError("abort failed")
+    d._abort()  # must not raise into pynput
+    assert d._recorder is None
+    assert d._busy is False
+    ind.set_state.assert_called_with("idle")
+
+
+# --- Fix 3: a failed executor submit never leaves _busy stuck True ---
+
+def test_on_release_submit_failure_resets_busy():
+    ind = MagicMock()
+    d, tr, inj, rec, factory = _daemon(indicator=ind)
+    d.on_press("raw")
+    d._executor = MagicMock()
+    d._executor.submit.side_effect = RuntimeError("executor shut down")
+    d.on_release("raw")  # must not raise, must not stay busy
+    assert d._busy is False
+    ind.set_state.assert_called_with("idle")
+
+
+# --- Fix 4: cancel clears a pending "send to <agent>" route ---
+
+def test_abort_clears_pending_agent():
+    d, tr, inj, rec, factory = _daemon()
+    d._pending_agent = "specter"
+    d._abort()
+    assert d._pending_agent is None

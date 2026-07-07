@@ -12,10 +12,14 @@ Pinned versions for all voice_flow deps live in `requirements.txt`
 (faster-whisper, sounddevice, soundfile, pynput, pystray, watchdog, numpy).
 
 ## Config hot-reload
-`config.yaml` is polled every 2s: hot-reload applies to **per-utterance
-settings only** (speak_reply, type_reply, flow/injection options, commands).
-Hotkey bindings and the STT model are read once at startup — changing them
-needs a service restart (`systemctl --user restart baza-flow`).
+`config.yaml` is polled every 2s, but only settings read fresh on each
+utterance actually hot-reload.
+
+- **Live (no restart):** `agent.speak_reply`, `agent.type_reply`.
+- **Restart required:** hotkeys, STT model, flow model/prompt/URL,
+  injection method, `commands.enabled`, agent `fluid_url`/`default_agent`
+  — all baked in at daemon construction
+  (`systemctl --user restart baza-flow`).
 
 ## Hotkeys (config.yaml)
 - Ctrl+Space        raw dictation → types into focused window
