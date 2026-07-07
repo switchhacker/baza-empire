@@ -579,7 +579,7 @@ async def system_network():
 async def ollama_status():
     """All Ollama instances — loaded models, health."""
     instances = {}
-    for port, name in [(11434,"nvidia"), (11435,"amd"), (11436,"cpu")]:
+    for port, name in [(11434,"amd"), (11435,"nvidia"), (11436,"cpu"), (11437,"amd2")]:
         try:
             import urllib.request
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/ps", timeout=3) as r:
