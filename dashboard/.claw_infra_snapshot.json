@@ -84,6 +84,7 @@
     "skills",
     "systemd",
     "tests",
-    "tools"
+    "tools",
+    "web"
   ]
 }
