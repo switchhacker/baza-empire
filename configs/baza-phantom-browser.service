@@ -1,0 +1,18 @@
+[Unit]
+Description=Phantom Browser — AI web crawler service (:8100)
+After=network.target
+
+[Service]
+Type=simple
+User=switchhacker
+WorkingDirectory=/home/switchhacker/baza-empire/agent-framework-v3/browser
+Environment=PYTHONPATH=/home/switchhacker/baza-empire/agent-framework-v3
+EnvironmentFile=/home/switchhacker/baza-empire/agent-framework-v3/configs/secrets.env
+ExecStart=/home/switchhacker/baza-empire/agent-framework-v3/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8100
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
