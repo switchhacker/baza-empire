@@ -310,15 +310,16 @@ async def sam_scrape_web(req: ToolRequest):
         url = inp.get("url", "")
         if not url:
             raise ValueError("No URL provided")
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, follow_redirects=True,
-                                    headers={"User-Agent": "Mozilla/5.0"})
+        pb = os.environ.get("PHANTOM_BROWSER_URL", "http://localhost:8100")
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(f"{pb}/scrape",
+                                     json={"url": url, "max_chars": 5000})
             resp.raise_for_status()
-            # Strip HTML tags roughly
-            import re
-            text = re.sub(r'<[^>]+>', ' ', resp.text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            return {"url": url, "content": text[:5000], "length": len(text)}
+            data = resp.json()
+        if not data.get("success"):
+            raise ValueError(data.get("error", "scrape failed"))
+        return {"url": url, "content": data["markdown"],
+                "length": len(data["markdown"]), "title": data.get("title", "")}
 
     start = time.time()
     try:
@@ -338,20 +339,14 @@ async def sam_market_research(req: ToolRequest):
         query = inp.get("query", "")
         if not query:
             raise ValueError("No query provided")
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                "https://api.duckduckgo.com/",
-                params={"q": query, "format": "json", "no_html": 1},
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
+        pb = os.environ.get("PHANTOM_BROWSER_URL", "http://localhost:8100")
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(f"{pb}/search", json={"query": query, "n": 5})
+            resp.raise_for_status()
             data = resp.json()
-            results = []
-            if data.get("AbstractText"):
-                results.append({"title": data.get("Heading", ""), "summary": data["AbstractText"]})
-            for r in data.get("RelatedTopics", [])[:5]:
-                if "Text" in r:
-                    results.append({"title": r.get("Text", "")[:100], "url": r.get("FirstURL", "")})
-            return {"query": query, "results": results}
+        if not data.get("success"):
+            raise ValueError(data.get("error", "search failed"))
+        return {"query": query, "results": data["results"]}
 
     start = time.time()
     try:
