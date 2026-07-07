@@ -71,6 +71,7 @@
   "top_dirs": [
     "agents",
     "baza-web",
+    "browser",
     "config",
     "configs",
     "core",

@@ -39,6 +39,9 @@ _MAX_ATTACH_BYTES = 25 * 1024 * 1024
 _DENY_ARTIFACT_DIRS = (".private-inbound", ".vault_meta")
 EMAIL_PIPELINE_DIR = os.path.join(FRAMEWORK_DIR, "email-pipeline")
 OUTBOX_DIR = os.environ.get("EMAIL_OUTBOX_DIR") or os.path.join(EMAIL_PIPELINE_DIR, ".outbox_uploads")
+DESKTOP_SAVE_DIR = os.environ.get(
+    "EMAIL_DESKTOP_SAVE_DIR", "/home/switchhacker/Desktop/Email-Attachments"
+)
 
 
 def _sweep_outbox(max_age=6 * 3600):
@@ -985,8 +988,8 @@ def api_attachment_file_types():
 def api_attachment_save():
     """Save an incoming Gmail attachment to a project's files and/or the cloud library.
 
-    Body: {msg_id, att_id, name, mime, project_id?, file_type?, to_cloud?}
-    At least one of project_id (save to project files) or to_cloud must be set.
+    Body: {msg_id, att_id, name, mime, project_id?, file_type?, to_cloud?, to_desktop?}
+    At least one of project_id (save to project files), to_cloud, or to_desktop must be set.
     """
     body = request.get_json(silent=True) or {}
     msg_id = body.get("msg_id")
@@ -995,8 +998,9 @@ def api_attachment_save():
         return jsonify({"success": False, "error": "msg_id and att_id required"}), 400
     project_id = (body.get("project_id") or "").strip()
     to_cloud = bool(body.get("to_cloud"))
-    if not project_id and not to_cloud:
-        return jsonify({"success": False, "error": "pick a project and/or the cloud library"}), 400
+    to_desktop = bool(body.get("to_desktop"))
+    if not project_id and not to_cloud and not to_desktop:
+        return jsonify({"success": False, "error": "pick a project, the cloud library, and/or Desktop"}), 400
     file_type = (body.get("file_type") or "Other").strip()
     name = body.get("name") or "attachment"
     safe = re.sub(r'[^\w.\- ()]', "_", os.path.basename(name))[:160] or "attachment"
@@ -1065,6 +1069,20 @@ def api_attachment_save():
             saved["cloud"] = {"path": cdest}
         except Exception as e:
             saved["cloud_error"] = str(e)
+
+    # 3) Save to the Desktop folder (quick local grab)
+    if to_desktop:
+        try:
+            os.makedirs(DESKTOP_SAVE_DIR, exist_ok=True)
+            ddest = os.path.join(DESKTOP_SAVE_DIR, safe)
+            if os.path.exists(ddest):
+                stem, dot, e2 = safe.partition(".")
+                ddest = os.path.join(DESKTOP_SAVE_DIR, f"{stem}_{uuid.uuid4().hex[:6]}{dot}{e2}")
+            with open(ddest, "wb") as fh:
+                fh.write(data)
+            saved["desktop"] = {"path": ddest}
+        except Exception as e:
+            saved["desktop_error"] = str(e)
 
     return jsonify({"success": True, "saved": saved, "filename": safe})
 
