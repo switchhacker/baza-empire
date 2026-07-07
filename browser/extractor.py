@@ -48,7 +48,13 @@ def validate(data, schema, path="$") -> list[str]:
 async def extract(content: str, schema: dict, prompt: str | None = None,
                   model: str | None = None) -> dict:
     ollama = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-    model = model or os.environ.get("PB_EXTRACT_MODEL", "glm-4.7-flash")
+    model = model or os.environ.get("PB_EXTRACT_MODEL", "gemma4:12b-it-qat")
+    # Local-first HARD rule: Ollama proxies "-cloud"/":cloud" model tags to
+    # Anthropic/Google/etc. A caller-supplied model must never reach cloud.
+    if "cloud" in model.lower():
+        return {"success": False,
+                "error": f"cloud model '{model}' refused: /extract is local-only",
+                "model": model}
     system = (
         "Extract structured data from the provided web page content. "
         "Respond with JSON matching the requested schema exactly. "
