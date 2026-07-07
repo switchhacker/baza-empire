@@ -31,30 +31,6 @@ def test_requeue_running(tmp_path, monkeypatch):
     assert db.get_job(j2)["status"] == "pending"
 
 
-def test_approvals_lifecycle(tmp_path, monkeypatch):
-    monkeypatch.setenv("PHANTOM_BROWSER_DB", str(tmp_path / "pb.db"))
-    from browser import db
-    db.init()
-    aid = db.create_approval("sess1", {"op": "click", "index": 3}, "click Send", "tok123")
-    a = db.get_approval(aid)
-    assert a["status"] == "pending" and a["token"] == "tok123"
-    assert json.loads(a["action"])["index"] == 3
-    db.decide_approval(aid, "approved")
-    assert db.get_approval(aid)["status"] == "approved"
-    assert db.get_approval(aid)["decided_at"] is not None
-
-
-def test_expire_stale(tmp_path, monkeypatch):
-    monkeypatch.setenv("PHANTOM_BROWSER_DB", str(tmp_path / "pb.db"))
-    from browser import db
-    db.init()
-    aid = db.create_approval("s", {"op": "click", "index": 0}, "d", "t")
-    with db._conn() as c:
-        c.execute("UPDATE approvals SET created_at = created_at - 9999 WHERE id=?", (aid,))
-    assert db.expire_stale(max_age=300) == 1
-    assert db.get_approval(aid)["status"] == "expired"
-
-
 def test_cache_roundtrip_and_ttl(tmp_path, monkeypatch):
     monkeypatch.setenv("PHANTOM_BROWSER_DB", str(tmp_path / "pb.db"))
     from browser import db

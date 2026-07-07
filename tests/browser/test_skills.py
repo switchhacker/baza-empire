@@ -20,7 +20,7 @@ def run_skill(name, args, base_url):
 class Stub(http.server.BaseHTTPRequestHandler):
     """Fake :8100 — answers every POST with a canned JSON body per path."""
     responses = {
-        "/session": {"success": True, "session_id": "abc123", "profile": None},
+        "/session": {"success": True, "session_id": "abc123"},
         "/session/abc123/goto": {"success": True, "url": "https://s.test/"},
         "/session/abc123/read": {"success": True, "url": "https://s.test/",
                                  "title": "S", "markdown": "# S",
@@ -122,18 +122,6 @@ def test_service_down_is_graceful():
     p = run_skill("web_scrape.py", {"url": "https://x.com"}, "http://localhost:9")
     out = json.loads(p.stdout)
     assert out["success"] is False and "phantom-browser" in out["hint"]
-
-
-def test_browse_approval_id_non_numeric():
-    """Non-numeric approval_id should NOT crash — must return valid JSON."""
-    srv, base = _start_stub()
-    try:
-        p = run_skill("browse.py", {"action": "approval_status", "approval_id": "abc"}, base)
-        assert p.returncode == 0, f"subprocess failed: stderr={p.stderr}"
-        out = json.loads(p.stdout)  # Must parse as JSON — NO traceback
-        assert out["success"] is False
-    finally:
-        srv.shutdown()
 
 
 def test_browse_max_chars_non_numeric():

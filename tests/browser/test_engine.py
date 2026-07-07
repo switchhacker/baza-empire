@@ -2,12 +2,7 @@ import asyncio
 
 import pytest
 
-from browser.engine import Engine, profiles_dir
-
-
-def test_profiles_dir_env_override(monkeypatch, tmp_path):
-    monkeypatch.setenv("PB_PROFILES_DIR", str(tmp_path / "prof"))
-    assert str(profiles_dir()) == str(tmp_path / "prof")
+from browser.engine import Engine
 
 
 @pytest.mark.integration
@@ -27,20 +22,6 @@ def test_render_data_url():
     out = asyncio.run(go())
     assert "hello-engine" in out["html"]
     assert out["screenshot_path"] is None
-
-
-@pytest.mark.integration
-def test_unknown_profile_raises():
-    async def go():
-        eng = Engine()
-        await eng.start()
-        try:
-            with pytest.raises(ValueError):
-                await eng.new_context(profile="no-such-profile")
-        finally:
-            await eng.stop()
-
-    asyncio.run(go())
 
 
 def test_polite_wait_spaces_same_domain():
