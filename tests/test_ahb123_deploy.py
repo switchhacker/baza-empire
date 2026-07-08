@@ -23,6 +23,8 @@ def test_deploy_invokes_wrangler_and_parses_url():
     url = deploy.deploy("/tmp/dist", "ahb123", "TOK", runner=fake_runner)
     assert url == "https://abcd1234.ahb123.pages.dev"
     assert "pages" in calls["argv"] and "deploy" in calls["argv"]
+    # pin wrangler@3: unpinned wrangler resolves to v4+, which needs Node >= 22 (baza has 18)
+    assert "wrangler@3" in calls["argv"]
     assert "/tmp/dist" in calls["argv"]
     assert calls["env"].get("CLOUDFLARE_API_TOKEN") == "TOK"
 

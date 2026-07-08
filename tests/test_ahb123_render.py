@@ -33,7 +33,8 @@ def test_render_header_shows_company_name_next_to_logo():
     html = _render_home()
     header = html.split("</header>")[0].split("<header")[1]
     assert 'src="/s/logo.png"' in header
-    assert "All Home Building Co" in header
+    # visible text node (Squarespace site-title), not just the img alt attribute
+    assert ">All Home Building Co<" in header
 
 def test_render_has_no_ga_placeholder():
     assert "GA_MEASUREMENT_ID" not in _render_home()
