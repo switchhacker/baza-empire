@@ -8,8 +8,8 @@ Owner: Serge. Keep this tight — 1.5 KB target, 4 KB hard cap.
 Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 
 ## LIVE
-- ahb123.com — Squarespace + Caddy proxy → baza-tool-server (migrated 2026-04-23)
-- baza-dashboard — http://localhost:8888 (Flask, port 8888, all tabs active)
+- ahb123.com — Cloudflare Pages, source `web/ahb123/` in this repo; manage via `website_manage` skill (cutover 2026-07-08, Squarespace gone)
+- baza-dashboard — http://localhost:8888 (Flask); public at https://baza.ahb123.com via CF Tunnel + Access (Serge-only OTP)
 - baza cloud — private auth, family mode, fixed user_id=1 (Serge)
 - 9 agents — Simon Claw Phil Sam Rex Duke Scout Nova Specter
 - nova.ahb123.com — Nova client-facing chat
@@ -23,20 +23,11 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-07-07 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 2 warn, 6 info)
-- 2026-07-07 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 1 warn, 11 info)
-- 2026-07-07 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 2 warn, 8 info)
-- 2026-07-07 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 0 warn, 8 info)
-- 2026-07-07 Claw hourly digest — 13 new (1 bug, 0 regression, 0 security, 2 warn, 10 info)
-- 2026-07-07 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
-- 2026-07-07 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
-- 2026-07-07 Model-refresh research complete — plan written
-- 2026-07-07 Model refresh Phase 0+1 started (Serge approved)
-- 2026-07-07 Phase 0+1 COMPLETE — Ollama 0.30.7 → 0.31.1 live
-- 2026-07-07 LLM/Ollama optimization audit — system-level findings
-- 2026-07-07 LLM/Ollama audit — code-level findings + recommendations delivered
+- 2026-07-08 ahb123.com cutover to Cloudflare Pages DONE; baza.ahb123.com live behind CF Access
+- 2026-07-07 Claw hourly digests — 63 findings across 7 runs (1 bug, 0 regression, 0 security)
+- 2026-07-07 Model refresh COMPLETE — Ollama 0.30.7 → 0.31.1 live (Serge approved)
+- 2026-07-07 LLM/Ollama optimization audit — system + code findings delivered
 - 2026-07-07 Email preview/attachments improvement started
-- 2026-07-07 Claw hourly digest — 45 new (4 bug, 0 regression, 0 security, 10 warn, 31 info)
 - 2026-07-07 Phantom browser → AI web crawler kit — brainstorming started
 
 ## TOPIC: mining
@@ -46,12 +37,16 @@ across Simon, Claw, Phil, core, tools, dashboard. Skills `mining_earnings`,
 `mining_status`, etc. removed. Do NOT re-enable. Crypto reporting is gone too.
 
 ## TOPIC: ahb123
-LIVE since 2026-04-23. Migrated from old WordPress site to Squarespace bundle
-at `proj-ahb123/sq_bundle/`. Caddy reverse-proxies → baza-tool-server. Nova
-serves client-facing chat at nova.ahb123.com. AHB123 dashboard tab has:
-projects (35), invoices, estimates with Method 4 pricing, payroll, sticky pad
-notes, Memories cloud media browser. NOT "still on the old site". NOT "we
-should migrate". The migration is DONE.
+ahb123.com is a static site on Cloudflare Pages since 2026-07-08 (WordPress →
+Squarespace → CF Pages; Squarespace is DEAD, don't reference it). Source of
+truth: `web/ahb123/` (content/*.html + meta.json → build.py → dist/ →
+deploy.py via wrangler). Agents manage it with the `website_manage` skill
+(status/pages/read_page/edit_page/build/deploy — edit+deploy need Serge's
+approval) or the dashboard AHB123 → Web tab. Contact: contactahbco@gmail.com,
+(215) 554-5488. Nova serves client chat at nova.ahb123.com. The dashboard
+itself is public at baza.ahb123.com (CF Tunnel + Access, Serge-only). AHB123
+dashboard tab has: projects, invoices, estimates (Method 4 pricing), payroll,
+sticky notes, Memories cloud media browser.
 
 ## TOPIC: pulse
 The /empire-pulse dashboard tab (added 2026-05-11). Shows talk-vs-ship ratio
