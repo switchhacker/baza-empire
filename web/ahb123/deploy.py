@@ -17,7 +17,7 @@ def load_token(path=DEFAULT_TOKEN):
 def deploy(dist_dir, project, token, runner=subprocess.run):
     env = dict(os.environ)
     env["CLOUDFLARE_API_TOKEN"] = token
-    argv = ["npx", "--yes", "wrangler", "pages", "deploy", dist_dir,
+    argv = ["npx", "--yes", "wrangler@3", "pages", "deploy", dist_dir,
             f"--project-name={project}"]
     res = runner(argv, env=env, capture_output=True, text=True)
     if res.returncode != 0:

@@ -15,7 +15,7 @@ to **Pages:Edit**; save it: `echo TOKEN > web/ahb123/.cf_pages_token && chmod 60
 - [ ] Nova chat widget opens and replies
 - [ ] /plan multi-step form submits -> new ahb_clients row (source=plan_page) -> Rex Telegram alert
 - [ ] /contact reviews grid + QR load (served from nova.ahb123.com)
-- [ ] Footer shows: All Home Building Co LLC · Bensalem, PA 19020 · (800) 484-6404 · serge@ahb123.com · PA HIC# PA175897
+- [ ] Footer shows: All Home Building Co LLC · Bensalem, PA 19020 · (215) 554-5488 · contactahbco@gmail.com · PA HIC# PA175897
 - [ ] View-source JSON-LD passes Google Rich Results test
 
 ## Cutover (ONLY after nameserver migration shows zone "Active" in Cloudflare)

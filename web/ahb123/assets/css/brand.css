@@ -193,7 +193,9 @@ a:hover {
 
 /* --- migrated-site nav + footer (Navy #0A2640 / Oak #C4884D) --- */
 .ahb-nav{display:flex;align-items:center;justify-content:space-between;padding:14px 32px;background:#fff;border-bottom:1px solid #E5E7EB;position:sticky;top:0;z-index:100;}
+.ahb-nav-logo{display:flex;align-items:center;gap:12px;text-decoration:none;}
 .ahb-nav-logo img{display:block;}
+.ahb-nav-title{font-family:'Montserrat',sans-serif;font-weight:700;font-size:17px;color:#0A2640;letter-spacing:.02em;white-space:nowrap;}
 .ahb-nav-links{display:flex;gap:28px;align-items:center;font-family:'Montserrat',sans-serif;font-size:14px;text-transform:uppercase;letter-spacing:.05em;}
 .ahb-nav-links a{color:#0A2640;text-decoration:none;font-weight:600;}
 .ahb-nav-links a:hover{color:#C4884D;}
