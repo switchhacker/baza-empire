@@ -136,6 +136,7 @@ class Daemon:
         if effective == "flow" and self.flow_fn is not None:
             text = self.flow_fn(text) or text
         self._last_injected = self.injector.inject(text)
+        log.info("injected %d chars (mode=%s): %.80r", self._last_injected, effective, text)
         return text
 
     def _run_command(self, cmd) -> None:
