@@ -23,21 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-07-06 Claw hourly digest — 5 new (0 bug, 0 regression, 0 security, 2 warn, 3 info)
-- 2026-07-06 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
-- 2026-07-06 Claw hourly digest — 13 new (0 bug, 0 regression, 0 security, 2 warn, 11 info)
-- 2026-07-06 Claw hourly digest — 11 new (0 bug, 0 regression, 0 security, 2 warn, 9 info)
-- 2026-07-06 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 1 warn, 3 info)
-- 2026-07-06 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 0 warn, 2 info)
-- 2026-07-06 Van side wrap dropped into panel band + print-ready transparents
-- 2026-07-06 Van side wrap — dropped further + enlarged
-- 2026-07-06 Van side wrap — +15% larger, +14px lower
-- 2026-07-06 Van side wrap — lowered another 25px
-- 2026-07-06 Van side wrap — back a tab, +6deg CW, +10% larger
-- 2026-07-06 Van rear wrap — enlarged
-- 2026-07-06 Van side wrap — CCW 3.5deg + lowered to trim line
-- 2026-07-06 Van side wrap — lowered a tad more (+10px)
-- 2026-07-06 Van wrap placement LOCKED + print transparents regenerated
+- 2026-07-07 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 2 warn, 6 info)
+- 2026-07-07 Claw hourly digest — 12 new (0 bug, 0 regression, 0 security, 1 warn, 11 info)
+- 2026-07-07 Claw hourly digest — 10 new (0 bug, 0 regression, 0 security, 2 warn, 8 info)
+- 2026-07-07 Claw hourly digest — 8 new (0 bug, 0 regression, 0 security, 0 warn, 8 info)
+- 2026-07-07 Claw hourly digest — 13 new (1 bug, 0 regression, 0 security, 2 warn, 10 info)
+- 2026-07-07 Claw hourly digest — 9 new (0 bug, 0 regression, 0 security, 1 warn, 8 info)
+- 2026-07-07 Claw hourly digest — 3 new (0 bug, 0 regression, 0 security, 1 warn, 2 info)
+- 2026-07-07 Model-refresh research complete — plan written
+- 2026-07-07 Model refresh Phase 0+1 started (Serge approved)
+- 2026-07-07 Phase 0+1 COMPLETE — Ollama 0.30.7 → 0.31.1 live
+- 2026-07-07 LLM/Ollama optimization audit — system-level findings
+- 2026-07-07 LLM/Ollama audit — code-level findings + recommendations delivered
+- 2026-07-07 Email preview/attachments improvement started
+- 2026-07-07 Claw hourly digest — 45 new (4 bug, 0 regression, 0 security, 10 warn, 31 info)
+- 2026-07-07 Phantom browser → AI web crawler kit — brainstorming started
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
