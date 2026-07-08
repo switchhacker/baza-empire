@@ -63,3 +63,16 @@ def test_render_block_tool_entry_uses_call_tool():
     assert "call_tool" in block
     assert '"agent": "sam_axe"' in block
     assert '"tool": "generate-image"' in block
+
+
+def test_render_block_web_directive_when_web_skill_present():
+    sel = {"skills": [{"name": "web_search", "type": "skill", "summary": "s"}],
+           "categories": {}}
+    block = skill_selector.render_block(sel)
+    assert "WEB RESEARCH" in block and "web_search" in block
+
+
+def test_render_block_no_web_directive_without_web_skill():
+    sel = {"skills": [{"name": "artifact_save", "type": "skill", "summary": "s"}],
+           "categories": {}}
+    assert "WEB RESEARCH" not in skill_selector.render_block(sel)
