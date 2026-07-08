@@ -29,6 +29,13 @@ def test_deploy_invokes_wrangler_and_parses_url():
 def test_deploy_raises_on_nonzero():
     deploy = load("deploy")
     def fake_runner(argv, **kw):
-        return types.SimpleNamespace(returncode=1, stdout="auth error")
+        return types.SimpleNamespace(returncode=1, stdout="auth error", stderr="")
+    with pytest.raises(RuntimeError):
+        deploy.deploy("/tmp/dist", "ahb123", "TOK", runner=fake_runner)
+
+def test_deploy_raises_when_no_url_in_output():
+    deploy = load("deploy")
+    def fake_runner(argv, **kw):
+        return types.SimpleNamespace(returncode=0, stdout="Uploaded 58 files. Done.", stderr="")
     with pytest.raises(RuntimeError):
         deploy.deploy("/tmp/dist", "ahb123", "TOK", runner=fake_runner)

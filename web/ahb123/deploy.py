@@ -21,9 +21,11 @@ def deploy(dist_dir, project, token, runner=subprocess.run):
             f"--project-name={project}"]
     res = runner(argv, env=env, capture_output=True, text=True)
     if res.returncode != 0:
-        raise RuntimeError(f"wrangler deploy failed: {res.stdout}")
+        raise RuntimeError(f"wrangler deploy failed (rc={res.returncode}): {res.stdout}\n{res.stderr}")
     m = _URL_RE.search(res.stdout or "")
-    return m.group(0) if m else ""
+    if not m:
+        raise RuntimeError(f"wrangler deploy succeeded but no *.pages.dev URL found in output:\n{res.stdout}")
+    return m.group(0)
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
