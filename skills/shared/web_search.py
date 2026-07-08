@@ -11,6 +11,17 @@ Usage from agent:
 CLI:
     SKILL_ARGS='{"query":"test","n":3}' python web_search.py
 """
+SKILL_META = {
+    "category": "web",
+    "summary": "Search the web (local SearXNG, DuckDuckGo fallback) — ranked title/url/snippet results.",
+    "when_to_use": ("FIRST step for ANY request to search, find, look up, research, or answer a "
+                    "question about a company, competitor, price, or current fact you don't "
+                    "already know. Then web_scrape the best result URLs. Never use google.com "
+                    "directly — it blocks bots; this uses the local engine."),
+    "args": {"query": "search terms (required)",
+             "n": "number of results, default 5",
+             "output": '"text" or "json", default text'},
+}
 import os, sys, json, urllib.request, urllib.parse, urllib.error, html, re
 
 args   = json.loads(os.environ.get("SKILL_ARGS", "{}"))
