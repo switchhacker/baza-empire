@@ -62,5 +62,19 @@ def render_block(selection: dict) -> str:
         cat_str = ", ".join(f"{c}({n})" for c, n in sorted(cats.items()))
         lines.append(f"\nYou also have skills in: {cat_str}.")
         lines.append('Call ##SKILL:skill_search{"query":"..."}## to discover more skills mid-task.')
+    # Web-research routing: whenever the browser skills are in front of the LLM,
+    # tell it explicitly to USE them for lookup requests instead of answering
+    # from memory or (as coordinator personas tend to) dumping a status report.
+    _WEB = {"web_search", "web_scrape", "browse", "web_map", "web_extract", "crawl_site"}
+    if any(s.get("name") in _WEB for s in selection["skills"]):
+        lines.append(
+            '\nWEB RESEARCH: if this request asks you to search, find, look up, research, '
+            'check, or read something on the web — or asks about a company, competitor, price, '
+            "or current fact you don't already know — you MUST use the browser: call "
+            '##SKILL:web_search{"query":"...","n":5}## first, then '
+            '##SKILL:web_scrape{"url":"..."}## on the most relevant results, and answer ONLY '
+            'from what they return. Never answer web questions from memory, and never reply '
+            'with a status report instead of doing the search. Do not open google.com/search '
+            '— web_search already uses the local engine.')
     lines.append("== END RELEVANT SKILLS ==")
     return "\n".join(lines)
