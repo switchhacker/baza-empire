@@ -26,7 +26,8 @@ def test_images_and_css_copied():
 
 def test_sitemap_lists_six_canonical_urls():
     d = _build()
-    sm = open(os.path.join(d, "sitemap.xml")).read()
+    with open(os.path.join(d, "sitemap.xml")) as f:
+        sm = f.read()
     for url in ["https://ahb123.com/", "https://ahb123.com/services",
                 "https://ahb123.com/portfolio", "https://ahb123.com/about",
                 "https://ahb123.com/contact", "https://ahb123.com/plan"]:

@@ -53,10 +53,12 @@ def build_site(dist_dir):
     if os.path.isdir(dist_dir):
         shutil.rmtree(dist_dir)
     os.makedirs(dist_dir)
-    meta = json.load(open(os.path.join(HERE, "content", "meta.json"), encoding="utf-8"))
+    with open(os.path.join(HERE, "content", "meta.json"), encoding="utf-8") as f:
+        meta = json.load(f)
     written = []
     for slug in SLUGS:
-        body = open(os.path.join(HERE, "content", f"{slug}.html"), encoding="utf-8").read()
+        with open(os.path.join(HERE, "content", f"{slug}.html"), encoding="utf-8") as f:
+            body = f.read()
         html = render_page(slug, meta[slug], body)
         rel = _dist_relpath(slug)
         dest = os.path.join(dist_dir, rel)
@@ -82,7 +84,9 @@ def build_site(dist_dir):
     rels.sort()
     lines = []
     for rel in rels:
-        h = hashlib.sha256(open(os.path.join(dist_dir, rel), "rb").read()).hexdigest()
+        with open(os.path.join(dist_dir, rel), "rb") as f:
+            content = f.read()
+        h = hashlib.sha256(content).hexdigest()
         lines.append(f"{h}  {rel}")
     with open(os.path.join(dist_dir, "_manifest.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
