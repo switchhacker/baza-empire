@@ -16356,6 +16356,13 @@ except ImportError:
 _init_network()
 app.register_blueprint(_network_bp)
 
+# ── AHB123 Web tab (static site status + deploy) ─────────────────────────────
+try:
+    from dashboard.web_site_routes import web_bp as _ahb_web_bp
+except ImportError:
+    from web_site_routes import web_bp as _ahb_web_bp
+app.register_blueprint(_ahb_web_bp)
+
 # ── Scaffold (Live Build Tree) blueprint ─────────────────────────────────────
 try:
     from dashboard.scaffold import scaffold_bp

@@ -893,11 +893,36 @@
   <div class="sub-tab" data-tab="social" onclick="switchTab('social')"><span class="sub-tab-icon">📣</span> Social</div>
   <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
   <div class="sub-tab" data-tab="leads" onclick="switchTab('leads')"><span class="sub-tab-icon">🎯</span> Leads</div>
+  <div class="sub-tab" data-tab="web" onclick="switchTab('web')"><span class="sub-tab-icon">🌐</span> Web</div>
 </div>
 <!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
 <div class="leaf-nav" id="leaf-nav" style="display:none"></div>
 
 <div class="container">
+
+<!-- ===================== TAB: WEB (ahb123.com static site) ===================== -->
+<div class="tab-pane" id="tab-web">
+  <div class="page-header">
+    <div>
+      <h1>🌐 Website — ahb123.com</h1>
+      <p style="color:#888">Static site on Cloudflare Pages (web/ahb123/ · build.py → dist/ → wrangler)</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a href="https://ahb123.pages.dev" target="_blank" class="btn-secondary" style="text-decoration:none">Preview ↗</a>
+      <a href="https://ahb123.com" target="_blank" class="btn-secondary" style="text-decoration:none">Live ↗</a>
+      <button class="btn-primary" id="webDeployBtn" onclick="deployWeb()">🚀 Rebuild &amp; Deploy</button>
+    </div>
+  </div>
+  <div id="webStatusCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-bottom:18px;color:#888">Loading status…</div>
+  <div style="background:#0e0e1e;border:1px solid #2a2a4a;border-radius:10px;padding:14px 18px;font-size:13px;color:#aaa;line-height:1.7">
+    <strong style="color:#ccc">Cutover runbook</strong> — NS flipped to Cloudflare 2026-07-08.
+    Real domain switches from Squarespace to Pages when the custom domains
+    (<code>ahb123.com</code> + <code>www</code>) are added in Cloudflare Pages → project <code>ahb123</code>.
+    Squarespace stays paid as fallback until a few clean days, then cancel.
+    Full runbook: <code>web/ahb123/README.md</code>.
+  </div>
+  <div id="webDeployOut" style="margin-top:12px;font-family:monospace;font-size:13px;color:#9fcfff;white-space:pre-wrap"></div>
+</div>
 
 <!-- ===================== TAB: DASHBOARD ===================== -->
 <div class="tab-pane active" id="tab-dashboard">
@@ -5314,9 +5339,48 @@ function switchTab(tabName){
     photos: loadPhotos,
     docprep: loadDocPrep,
     reviews: loadReviews,
-    leads: () => AhbLeads.render()
+    leads: () => AhbLeads.render(),
+    web: loadWebTab
   };
   if(loaders[tabName]) loaders[tabName]();
+}
+
+/* ===================== WEB TAB (ahb123.com site) ===================== */
+async function loadWebTab(){
+  const box = document.getElementById('webStatusCards');
+  try{
+    const st = await (await fetch('/api/ahb/web/status')).json();
+    const card = (title, value, ok) => `
+      <div style="background:#12122a;border:1px solid ${ok===false?'#7a2a2a':ok?'#1f5c3d':'#2a2a4a'};border-radius:10px;padding:14px 16px">
+        <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.05em">${title}</div>
+        <div style="font-size:15px;color:${ok===false?'#ff8080':ok?'#7CFC9A':'#ddd'};margin-top:6px">${value}</div>
+      </div>`;
+    box.style.color='';
+    box.innerHTML =
+      card('Nameservers', st.ns_cloudflare ? 'Cloudflare ✓' : escHtml((st.ns||[]).join(', ')||'unresolved'), st.ns_cloudflare) +
+      card('Preview (*.pages.dev)', st.preview_ok ? 'Healthy ✓' : 'Unreachable', st.preview_ok) +
+      card('Real domain serves', st.apex_source==='pages' ? 'Cloudflare Pages ✓' : st.apex_source==='squarespace' ? 'Squarespace (pre-cutover)' : 'unknown', st.apex_source==='pages' ? true : undefined) +
+      card('Built files in dist/', String(st.dist_files||0), st.dist_files>0);
+  }catch(e){
+    box.innerHTML = '<span style="color:#ff8080">status failed: '+escHtml(String(e))+'</span>';
+  }
+}
+
+async function deployWeb(){
+  const btn = document.getElementById('webDeployBtn');
+  const out = document.getElementById('webDeployOut');
+  btn.disabled = true; btn.textContent = '⏳ Deploying…';
+  out.textContent = 'Rebuilding dist/ and pushing to Cloudflare Pages…';
+  try{
+    const r = await (await fetch('/api/ahb/web/deploy', {method:'POST'})).json();
+    out.textContent = r.ok ? ('Deployed: ' + r.url) : ('FAILED: ' + r.error);
+    if(r.ok) showToast('Site deployed', 'success');
+    loadWebTab();
+  }catch(e){
+    out.textContent = 'FAILED: ' + e;
+  }finally{
+    btn.disabled = false; btn.textContent = '🚀 Rebuild & Deploy';
+  }
 }
 
 /* ===================== UTILITIES ===================== */
