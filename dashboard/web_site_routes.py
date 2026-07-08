@@ -54,10 +54,11 @@ def site_status(ns=None, fetch=None):
         r = fetch(LIVE_URL + "/", timeout=10)
         if r.status_code in (200, 301, 308):
             server = (r.headers.get("server") or "").lower()
-            if "squarespace" in server or "squarespace" in r.text.lower():
-                apex_source = "squarespace"
-            elif "ahb-nav-title" in r.text:
+            # our own marker wins — page text may mention "squarespace" in prose
+            if "ahb-nav-title" in r.text:
                 apex_source = "pages"
+            elif "squarespace" in server or "squarespace" in r.text.lower():
+                apex_source = "squarespace"
     except Exception:
         pass
 
