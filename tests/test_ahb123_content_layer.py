@@ -19,10 +19,11 @@ def test_v2_legal_facts_present_and_no_stale_email():
     about = open(os.path.join(SRC, "content", "about.html")).read()
     contact = open(os.path.join(SRC, "content", "contact.html")).read()
     assert "PA175897" in about
-    assert "serge@ahb123.com" in contact
+    assert "contactahbco@gmail.com" in contact
     for slug in SLUGS:
         body = open(os.path.join(SRC, "content", f"{slug}.html")).read()
         assert "info@ahb123.com" not in body, f"stale email in {slug}"
+        assert "serge@ahb123.com" not in body, f"stale email in {slug}"
 
 def test_all_portfolio_images_exist_in_assets():
     portfolio = open(os.path.join(SRC, "content", "portfolio.html")).read()
