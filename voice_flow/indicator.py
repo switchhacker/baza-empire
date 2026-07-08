@@ -5,7 +5,9 @@ import subprocess
 
 log = logging.getLogger("voice_flow.indicator")
 
-_GLYPH = {"idle": "⚪", "listening": "🔴", "thinking": "🟡", "speaking": "🟢"}
+# ASCII-only labels: the pystray X backend encodes the tray title as latin-1,
+# so emoji glyphs raise UnicodeEncodeError and force headless mode.
+_GLYPH = {"idle": "[idle]", "listening": "[REC]", "thinking": "[...]", "speaking": "[speak]"}
 
 
 class Indicator:

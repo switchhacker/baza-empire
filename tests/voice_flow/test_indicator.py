@@ -1,5 +1,12 @@
 from unittest.mock import MagicMock
-from voice_flow.indicator import Indicator
+from voice_flow.indicator import Indicator, _GLYPH
+
+
+def test_glyphs_are_latin1_encodable():
+    # pystray's X backend encodes the tray title as latin-1; emoji glyphs
+    # raise UnicodeEncodeError and force headless mode. Keep labels ASCII-safe.
+    for state, glyph in _GLYPH.items():
+        f"Baza Flow {glyph}".encode("latin-1")  # must not raise
 
 
 def test_set_state_records_current_state():
