@@ -241,12 +241,21 @@
 
 <!-- OUR PROMISE (honest by default — paste real reviews here when ready) -->
 <section class="pad" style="padding-top:0"><div class="wrap">
-  <div class="shead"><div class="eyebrow">Our Promise</div><h2>Trusted across Bucks County</h2>
-    <p>Verified reviews coming soon — here's what you can count on today.</p></div>
-  <div class="quotes">
+  <div class="shead" id="reviewsHead"><div class="eyebrow">Our Promise</div><h2>Trusted across Bucks County</h2>
+    <p>Verified reviews from our customers, Thumbtack &amp; HomeAdvisor appear here — with what you can count on today.</p></div>
+  <div class="quotes" id="reviewQuotes">
     <div class="qc"><div class="st">🧾</div><p><b>Honest pricing.</b> Your written quote is exact — no surprise line items later.</p><b>No surprises</b><small>Transparent from day one</small></div>
     <div class="qc"><div class="st">🛡️</div><p><b>Licensed &amp; warrantied.</b> Fully licensed, insured PA contractor. Every job backed by our workmanship warranty.</p><b>Guaranteed work</b><small>We stand behind it</small></div>
     <div class="qc"><div class="st">🤝</div><p><b>One accountable team.</b> A single project manager owns your budget, timeline and quality end-to-end.</p><b>Real communication</b><small>Never left guessing</small></div>
+  </div>
+  <div style="margin-top:26px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px">
+    <img src="../assets/review-qr.svg" alt="Scan to leave All Home Building a review" style="width:120px;height:120px;background:#fff;padding:8px;border-radius:12px">
+    <div style="min-width:200px">
+      <div class="eyebrow">We'd Love Your Feedback</div>
+      <div style="font-size:20px;font-weight:900;margin:6px 0 4px">Worked with us? <span class="grad">Leave a review</span></div>
+      <p style="color:var(--mut);font-size:13.5px;margin-bottom:12px">Scan the code or tap below — it takes under a minute.</p>
+      <a class="btn btn-primary" style="width:auto;display:inline-flex" href="../review/index.html">⭐ Leave a Review →</a>
+    </div>
   </div>
 </div></section>
 
@@ -312,6 +321,23 @@
     show(4);
     fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
   }
+</script>
+<script>
+  // Load real reviews (first-party QR + Thumbtack/Angi); keep promise cards if none yet.
+  (function(){
+    function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+    function stars(r){r=Math.max(0,Math.min(5,Math.round(r||5)));return '★★★★★'.slice(0,r);}
+    fetch('/api/reviews').then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(!d||!d.reviews||!d.reviews.length)return;
+      var wrap=document.getElementById('reviewQuotes'),head=document.getElementById('reviewsHead');
+      if(head)head.innerHTML='<div class="eyebrow">Real Reviews</div><h2>Trusted across Bucks County</h2><p>Verified reviews from homeowners — collected here and on Thumbtack &amp; HomeAdvisor.</p>';
+      wrap.innerHTML=d.reviews.slice(0,6).map(function(v){
+        var loc=v.location?(' · '+esc(v.location)):'';
+        return '<div class="qc"><div class="st">'+stars(v.rating)+'</div><p>'+esc(v.text)+'</p>'+
+          '<b>'+esc(v.name)+'</b><small>'+esc(v.platform||'AHB123')+loc+'</small></div>';
+      }).join('');
+    }).catch(function(){});
+  })();
 </script>
 <script src="../assets/nova-chat.js" defer></script>
 </body>
