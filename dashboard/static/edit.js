@@ -163,7 +163,7 @@ function hidePanel() {
 }
 
 function saveOverride(kind, value) {
-  if (!selected) return Promise.resolve();
+  if (!selected) return Promise.resolve(false);
   return fetch(API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -171,7 +171,11 @@ function saveOverride(kind, value) {
       page: PAGE, selector: selectorFor(selected), kind: kind, value: value,
       fingerprint: fingerprintFor(selected)
     })
-  }).then(function () { return refresh(); }).catch(function () {});
+  }).then(function (r) {
+    if (!r.ok) throw new Error('save failed: ' + r.status);
+    return refresh();
+  }).then(function () { return true; })
+    .catch(function () { return false; });
 }
 
 /* ---------- inspector panel (Task 6) ---------- */
@@ -197,22 +201,22 @@ function existingStyle() {
   OVERRIDES.forEach(function (o) {
     if (o.kind === 'style' && o.selector === sel && o.value) found = o.value;
   });
-  return found;
+  return Object.assign({}, found);
 }
-function el(tag, attrs, text) {
+function mkEl(tag, attrs, text) {
   var e = document.createElement(tag);
   Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
   if (text !== undefined) e.textContent = text;
   return e;
 }
 function section(panel, label) {
-  var s = el('div', { 'class': 'bep-sec' });
-  s.appendChild(el('div', { 'class': 'bep-lbl' }, label));
+  var s = mkEl('div', { 'class': 'bep-sec' });
+  s.appendChild(mkEl('div', { 'class': 'bep-lbl' }, label));
   panel.appendChild(s);
   return s;
 }
-function btn(label, cls, fn) {
-  var b = el('button', { 'class': 'bep-btn' + (cls ? ' ' + cls : '') }, label);
+function mkBtn(label, cls, fn) {
+  var b = mkEl('button', { 'class': 'bep-btn' + (cls ? ' ' + cls : '') }, label);
   b.addEventListener('click', fn);
   return b;
 }
@@ -226,47 +230,49 @@ function buildInspector(panel) {
   var sel = selectorFor(selected);
 
   // head
-  var head = el('div', { 'class': 'bep-head' });
-  head.appendChild(el('span', { 'class': 'bep-title' }, '✏️ <' + selected.tagName.toLowerCase() + '>'));
-  var x = el('span', { 'class': 'bep-x', title: 'Close (element stays selected until Esc)' }, '✕');
+  var head = mkEl('div', { 'class': 'bep-head' });
+  head.appendChild(mkEl('span', { 'class': 'bep-title' }, '✏️ <' + selected.tagName.toLowerCase() + '>'));
+  var x = mkEl('span', { 'class': 'bep-x', title: 'Close (element stays selected until Esc)' }, '✕');
   x.addEventListener('click', hidePanel);
   head.appendChild(x);
   panel.appendChild(head);
 
   // selector info
   var info = section(panel, 'Element');
-  info.appendChild(el('div', { 'class': 'bep-sel' }, sel));
+  info.appendChild(mkEl('div', { 'class': 'bep-sel' }, sel));
 
   // text — inline contenteditable on the page itself
   if (selected.childElementCount === 0) {
     var st = section(panel, 'Text');
-    var ta = el('textarea', { rows: '3' });
+    var ta = mkEl('textarea', { rows: '3' });
     ta.value = (selected.textContent || '').trim();
     st.appendChild(ta);
-    st.appendChild(btn('Save text', 'primary', function () {
-      saveOverride('text', ta.value).then(function () { toast('✓ text saved'); });
+    st.appendChild(mkBtn('Save text', 'primary', function () {
+      saveOverride('text', ta.value).then(function (ok) { toast(ok ? '✓ text saved' : '✗ save failed'); });
     }));
-    st.appendChild(btn('Edit on page', '', function () {
-      selected.setAttribute('contenteditable', 'true');
-      selected.focus();
+    st.appendChild(mkBtn('Edit on page', '', function () {
+      var node = selected;
+      if (!node || node.getAttribute('contenteditable') === 'true') { if (node) node.focus(); return; }
+      node.setAttribute('contenteditable', 'true');
+      node.focus();
       var done = function () {
-        selected.removeAttribute('contenteditable');
-        selected.removeEventListener('blur', done);
-        ta.value = (selected.textContent || '').trim();
-        saveOverride('text', ta.value).then(function () { toast('✓ text saved'); });
+        node.removeAttribute('contenteditable');
+        node.removeEventListener('blur', done);
+        ta.value = (node.textContent || '').trim();
+        saveOverride('text', ta.value).then(function (ok) { toast(ok ? '✓ text saved' : '✗ save failed'); });
       };
-      selected.addEventListener('blur', done);
+      node.addEventListener('blur', done);
     }));
-    st.appendChild(el('div', { 'class': 'bep-note' }, 'Edit on page: type directly into the element, click away to save.'));
+    st.appendChild(mkEl('div', { 'class': 'bep-note' }, 'Edit on page: type directly into the element, click away to save.'));
   }
 
   // image
   if (selected.tagName === 'IMG') {
     var si = section(panel, 'Image');
-    var url = el('input', { type: 'text', placeholder: 'Image URL or /static/... path' });
+    var url = mkEl('input', { type: 'text', placeholder: 'Image URL or /static/... path' });
     url.value = selected.getAttribute('src') || '';
     si.appendChild(url);
-    var file = el('input', { type: 'file', accept: 'image/*' });
+    var file = mkEl('input', { type: 'file', accept: 'image/*' });
     si.appendChild(file);
     file.addEventListener('change', function () {
       if (!file.files.length) return;
@@ -277,21 +283,22 @@ function buildInspector(panel) {
         .then(function (j) {
           if (j.url) { url.value = j.url; toast('uploaded — hit Save image'); }
           else toast('✗ ' + (j.error || 'upload failed'));
-        });
+        })
+        .catch(function () { toast('✗ upload failed'); });
     });
-    si.appendChild(btn('Save image', 'primary', function () {
-      saveOverride('image', url.value).then(function () { toast('✓ image saved'); });
+    si.appendChild(mkBtn('Save image', 'primary', function () {
+      saveOverride('image', url.value).then(function (ok) { toast(ok ? '✓ image saved' : '✗ save failed'); });
     }));
   }
 
   // link
   if (selected.tagName === 'A') {
     var sl = section(panel, 'Link');
-    var href = el('input', { type: 'text' });
+    var href = mkEl('input', { type: 'text' });
     href.value = selected.getAttribute('href') || '';
     sl.appendChild(href);
-    sl.appendChild(btn('Save link', 'primary', function () {
-      saveOverride('link', href.value).then(function () { toast('✓ link saved'); });
+    sl.appendChild(mkBtn('Save link', 'primary', function () {
+      saveOverride('link', href.value).then(function (ok) { toast(ok ? '✓ link saved' : '✗ save failed'); });
     }));
   }
 
@@ -301,60 +308,71 @@ function buildInspector(panel) {
   var inputs = {};
   STYLE_FIELDS.forEach(function (f) {
     var prop = f[0], label = f[1], type = f[2];
-    var row = el('div', { 'class': 'bep-row' });
-    row.appendChild(el('label', {}, label));
+    var row = mkEl('div', { 'class': 'bep-row' });
+    row.appendChild(mkEl('label', {}, label));
     var inp;
+    var after = null;
     if (type === 'color') {
-      inp = el('input', { type: 'color' });
+      inp = mkEl('input', { type: 'color' });
       if (cur[prop]) inp.value = cur[prop];
+      after = mkBtn('✕', '', function () {
+        inp.dataset.cleared = '1';
+        inp.dataset.dirty = '1';
+      });
+      after.setAttribute('title', 'Clear this color (removes the property on Apply)');
     } else if (type === 'px') {
-      inp = el('input', { type: 'number', placeholder: 'px' });
-      if (cur[prop]) inp.value = parseInt(cur[prop], 10) || '';
+      inp = mkEl('input', { type: 'number', placeholder: 'px' });
+      var n = parseInt(cur[prop], 10);
+      if (!isNaN(n)) inp.value = n;
     } else if (type.indexOf('select:') === 0) {
-      inp = el('select');
-      inp.appendChild(el('option', { value: '' }, '—'));
+      inp = mkEl('select');
+      inp.appendChild(mkEl('option', { value: '' }, '—'));
       type.slice(7).split(',').forEach(function (o) {
-        var op = el('option', { value: o }, o);
+        var op = mkEl('option', { value: o }, o);
         if (cur[prop] === o) op.setAttribute('selected', '');
         inp.appendChild(op);
       });
     } else {
-      inp = el('input', { type: 'text', placeholder: 'e.g. 8px 12px' });
+      inp = mkEl('input', { type: 'text', placeholder: 'e.g. 8px 12px' });
       if (cur[prop]) inp.value = cur[prop];
     }
     inp.dataset.dirty = '';
-    inp.addEventListener('input', function () { inp.dataset.dirty = '1'; });
-    inp.addEventListener('change', function () { inp.dataset.dirty = '1'; });
+    inp.addEventListener('input', function () { inp.dataset.dirty = '1'; delete inp.dataset.cleared; });
+    inp.addEventListener('change', function () { inp.dataset.dirty = '1'; delete inp.dataset.cleared; });
     inputs[prop] = { inp: inp, type: type };
     row.appendChild(inp);
+    if (after) row.appendChild(after);
     ss.appendChild(row);
   });
-  ss.appendChild(btn('Apply style', 'primary', function () {
+  ss.appendChild(mkBtn('Apply style', 'primary', function () {
     var props = existingStyle();
     Object.keys(inputs).forEach(function (prop) {
       var rec = inputs[prop];
       if (!rec.inp.dataset.dirty) return;         // only send touched fields
+      if (rec.inp.dataset.cleared) { delete props[prop]; return; }
       var v = rec.inp.value;
       if (v === '' || v === null) { delete props[prop]; return; }
       props[prop] = (rec.type === 'px') ? v + 'px' : v;
     });
-    saveOverride('style', props).then(function () { toast('✓ style saved'); });
+    saveOverride('style', props).then(function (ok) { toast(ok ? '✓ style saved' : '✗ save failed'); });
   }));
-  ss.appendChild(el('div', { 'class': 'bep-note' }, 'Only fields you touched are saved. Clear a field to remove that property.'));
+  ss.appendChild(mkEl('div', { 'class': 'bep-note' }, 'Only fields you touched are saved. Clear a field to remove that property.'));
 
   // visibility + reset
   var sv = section(panel, 'Element actions');
-  sv.appendChild(btn('🙈 Hide element', '', function () {
-    saveOverride('hide', true).then(function () { toast('hidden — restore from /web history'); });
+  sv.appendChild(mkBtn('🙈 Hide element', '', function () {
+    saveOverride('hide', true).then(function (ok) { toast(ok ? 'hidden — restore from /web history' : '✗ save failed'); });
   }));
-  sv.appendChild(btn('↺ Reset element', 'danger', function () {
+  sv.appendChild(mkBtn('↺ Reset element', 'danger', function () {
     fetch(API + '/reset', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ page: PAGE, selector: sel })
-    }).then(function () { location.reload(); });
+    }).then(function (r) {
+      if (r.ok) location.reload(); else toast('✗ reset failed');
+    }).catch(function () { toast('✗ reset failed'); });
   }));
-  sv.appendChild(el('div', { 'class': 'bep-note' }, 'Reset element reverts every override on this selector and reloads. Full page history & revert: 🌐 Web tab.'));
+  sv.appendChild(mkEl('div', { 'class': 'bep-note' }, 'Reset element reverts every override on this selector and reloads. Full page history & revert: 🌐 Web tab.'));
 }
 
 /* ---------- wiring ---------- */
