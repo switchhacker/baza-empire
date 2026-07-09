@@ -23,12 +23,21 @@ Update LIVE/KILLED/TOPIC by hand. RECENT auto-syncs nightly from session-log.
 - mock databases in agent tests — burned us in a prior migration; use real PG.
 
 ## RECENT
-- 2026-07-08 ahb123.com cutover to Cloudflare Pages DONE; baza.ahb123.com live behind CF Access
-- 2026-07-07 Claw hourly digests — 63 findings across 7 runs (1 bug, 0 regression, 0 security)
-- 2026-07-07 Model refresh COMPLETE — Ollama 0.30.7 → 0.31.1 live (Serge approved)
-- 2026-07-07 LLM/Ollama optimization audit — system + code findings delivered
-- 2026-07-07 Email preview/attachments improvement started
-- 2026-07-07 Phantom browser → AI web crawler kit — brainstorming started
+- 2026-07-08 Claw hourly digest — 1 new (0 bug, 0 regression, 1 security, 0 warn, 0 info)
+- 2026-07-08 Claw hourly digest — 2 new (0 bug, 0 regression, 0 security, 0 warn, 2 info)
+- 2026-07-08 Claw hourly digest — 2 new (0 bug, 0 regression, 1 security, 0 warn, 1 info)
+- 2026-07-08 Claw hourly digest — 1 new (0 bug, 0 regression, 0 security, 0 warn, 1 info)
+- 2026-07-08 Claw hourly digest — 3 new (0 bug, 0 regression, 1 security, 0 warn, 2 info)
+- 2026-07-08 Booth capture not reaching QuickRF — board REBOOTING on press
+- 2026-07-08 ahb123.com static site — DEPLOYED to Cloudflare Pages (preview live)
+- 2026-07-08 Claw hourly digest — 0 new (0 bug, 0 regression, 0 security, 0 warn, 0 info)
+- 2026-07-08 Claw hourly digest — 4 new (0 bug, 0 regression, 0 security, 0 warn, 4 info)
+- 2026-07-08 ahb123.com cutover — pre-flight done, blocked on NS flip (Serge browser step)
+- 2026-07-08 ahb123.com NS flipped by Serge (11:47) — propagation watch started; 3 site fixes requested
+- 2026-07-08 Booth reboot-on-press — telemetry pins it to marginal power (brownout), captures DO reach queue
+- 2026-07-08 Booth brownout — firmware mitigations written + compiled clean, awaiting USB cable to flash
+- 2026-07-08 ahb123 site fixes deployed + new Web tab in AHB123 dashboard
+- 2026-07-08 Baza Flow fixed — paste was dead in terminals (ctrl+v vs ctrl+shift+v)
 
 ## TOPIC: mining
 KILLED 2026-05-10. nerdminer-monitor.service stopped + disabled. Full purge:
