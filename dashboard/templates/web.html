@@ -40,7 +40,133 @@
 <div class="container">
   <div class="page-title">🌐 Web</div>
   <div class="page-sub">Sites, status, and the Baza visual editor.</div>
-  <div class="card"><div class="card-body" id="web-root">Loading…</div></div>
+  <!-- Sites -->
+  <div class="card">
+    <div class="card-head"><div class="card-title">Sites</div></div>
+    <div class="card-body">
+      <div class="grid" id="site-cards">
+        <div class="card" style="margin:0"><div class="card-body">
+          <div style="font-weight:800;color:#fff;margin-bottom:6px">🏠 ahb123.com</div>
+          <div id="site-ahb" style="font-size:12px;color:#888">Checking…</div>
+          <div style="margin-top:10px" class="bep-note">
+            <a class="btn ghost sm" href="/ahb123?tab=web">Status &amp; deploy →</a>
+          </div>
+        </div></div>
+        <div class="card" style="margin:0"><div class="card-body">
+          <div style="font-weight:800;color:#fff;margin-bottom:6px">⚡ baza.ahb123.com</div>
+          <div style="font-size:12px;color:#888">This dashboard, via Cloudflare Tunnel + Access.<br>
+            Edit it live: toggle ✏️ on any page. <span class="pill ok">overrides</span></div>
+        </div></div>
+        <div class="card" style="margin:0"><div class="card-body">
+          <div style="font-weight:800;color:#fff;margin-bottom:6px">💬 nova.ahb123.com</div>
+          <div style="font-size:12px;color:#888">Nova chat (self-hosted, Caddy). Status only — not editable.</div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Baza Dash pages -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">Baza Dash pages — visual overrides</div>
+      <span style="font-size:11px;color:#555">✏️ opens the page in Edit Mode</span>
+    </div>
+    <div class="card-body"><div class="grid" id="page-cards">Loading…</div></div>
+  </div>
+
+  <!-- History drawer -->
+  <div class="card" id="hist-card" style="display:none">
+    <div class="card-head">
+      <div class="card-title" id="hist-title">History</div>
+      <button class="btn danger sm" id="hist-reset" onclick="resetPage()">↺ Reset page</button>
+    </div>
+    <div class="card-body" id="hist-body"></div>
+  </div>
+
+<script>
+const DASH_PAGES = [
+  ['/',          '🤖 Agents'],
+  ['/ahb123',    '🏢 AHB123'],
+  ['/email',     '📧 Email Studio'],
+  ['/datahub',   '📦 Data Hub'],
+  ['/projects',  '🏗️ Projects'],
+  ['/sticky',    '📌 Sticky'],
+  ['/cloud',     '☁️ Cloud'],
+  ['/network',   '🌐 Network'],
+  ['/infra',     '🛡️ Infra'],
+  ['/edge',      '📡 Edge'],
+  ['/crons',     '⏰ Crons'],
+  ['/settings',  '⚙️ Settings'],
+];
+let histPage = null;
+
+function escHtml(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function loadSiteCard(){
+  const box = document.getElementById('site-ahb');
+  try{
+    const st = await (await fetch('/api/ahb/web/status')).json();
+    box.innerHTML =
+      `NS: ${st.ns_cloudflare ? '<span class="pill ok">Cloudflare</span>' : '<span class="pill warn">'+escHtml((st.ns||[]).join(', ')||'unresolved')+'</span>'}<br>` +
+      `Apex: <span class="pill ${st.apex_source==='pages'?'ok':'warn'}">${escHtml(st.apex_source||'?')}</span> ` +
+      `Preview: <span class="pill ${st.preview_ok?'ok':'off'}">${st.preview_ok?'live':'down'}</span><br>` +
+      `<span style="color:#555">Visual source editor lands with phase B-iii.</span>`;
+  }catch(e){ box.textContent = 'status unavailable'; }
+}
+
+async function loadPageCards(){
+  let counts = {};
+  try{
+    const j = await (await fetch('/api/ui/overrides/summary')).json();
+    (j.pages||[]).forEach(p => counts[p.page] = p.count);
+  }catch(e){}
+  document.getElementById('page-cards').innerHTML = DASH_PAGES.map(([path,label]) => {
+    const n = counts[path]||0;
+    return `<div class="card" style="margin:0"><div class="card-body">
+      <div style="font-weight:800;color:#fff;margin-bottom:4px">${label}</div>
+      <div style="font-size:11px;color:#555;font-family:monospace">${path}</div>
+      <div style="margin:8px 0">${n ? `<span class="pill warn">${n} override${n>1?'s':''}</span>` : '<span class="pill off">stock</span>'}</div>
+      <a class="btn sm" href="${path}${path.includes('?')?'&':'?'}edit=1">✏️ Edit</a>
+      <button class="btn ghost sm" onclick="showHistory('${path}')">🕘 History</button>
+    </div></div>`;
+  }).join('');
+}
+
+async function showHistory(page){
+  histPage = page;
+  document.getElementById('hist-card').style.display = 'block';
+  document.getElementById('hist-title').textContent = 'History — ' + page;
+  const body = document.getElementById('hist-body');
+  body.textContent = 'Loading…';
+  try{
+    const j = await (await fetch('/api/ui/overrides/history?page='+encodeURIComponent(page))).json();
+    if(!(j.overrides||[]).length){ body.innerHTML = '<span style="color:#555">No overrides ever recorded for this page.</span>'; return; }
+    body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<tr style="color:#555;text-align:left"><th style="padding:6px">Kind</th><th>Selector</th><th>Value</th><th>Updated</th><th>State</th><th></th></tr>' +
+      j.overrides.map(o => `<tr style="border-top:1px solid #14142a${o.active?'':';opacity:.45'}">
+        <td style="padding:6px"><span class="pill ${o.active?'ok':'off'}">${escHtml(o.kind)}</span></td>
+        <td style="font-family:monospace;font-size:10px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(o.selector)}">${escHtml(o.selector)}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(JSON.stringify(o.value))}">${escHtml(JSON.stringify(o.value))}</td>
+        <td style="color:#555;white-space:nowrap">${escHtml(o.updated_at)}</td>
+        <td>${o.active ? '<span class="pill ok">active</span>' : '<span class="pill off">reverted</span>'}</td>
+        <td>${o.active ? `<button class="btn ghost sm" onclick="revertOne(${o.id})">↺ Revert</button>` : ''}</td>
+      </tr>`).join('') + '</table>';
+  }catch(e){ body.textContent = 'failed to load history'; }
+}
+
+async function revertOne(id){
+  await fetch('/api/ui/overrides/'+id+'/revert', {method:'POST'});
+  showHistory(histPage); loadPageCards();
+}
+
+async function resetPage(){
+  if(!histPage || !confirm('Revert ALL active overrides on '+histPage+'?')) return;
+  await fetch('/api/ui/overrides/reset', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({page:histPage})});
+  showHistory(histPage); loadPageCards();
+}
+
+loadSiteCard(); loadPageCards();
+</script>
 </div>
 </body>
 </html>
