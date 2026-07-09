@@ -1,0 +1,34 @@
+name: Website CI
+
+# Lightweight checks for the marketing site in website/ so PRs get a real
+# green check. Runs only when the website (or this workflow) changes.
+on:
+  pull_request:
+    paths:
+      - 'website/**'
+      - '.github/workflows/website-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/website-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  website:
+    name: Lint & link check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: HTML lint (HTMLHint)
+        run: npx --yes htmlhint@1 "website/**/*.html" --config website/.htmlhintrc
+
+      - name: JS syntax, internal links & duplicate ids
+        run: node website/ci/check.mjs

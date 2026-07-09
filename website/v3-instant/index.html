@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Instant Estimate | All Home Building Co. — Bensalem, PA</title>
+<meta name="description" content="Get an instant ballpark price for your remodel or roof in 30 seconds. Kitchens, baths, roofing & additions in Bucks County, PA. Licensed & insured. 215-554-5488.">
+<style>
+  :root{
+    --ink:#0c1017; --panel:#151b25; --line:rgba(255,255,255,.09);
+    --cyan:#25c3ef; --blue:#1668cf; --orange:#f7911e; --green:#22c55e;
+    --txt:#eef3f9; --mut:#9aa7b8;
+    --grad:linear-gradient(120deg,var(--cyan),var(--blue) 60%,var(--orange));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--ink);color:var(--txt);font:16px/1.6 "Segoe UI",system-ui,sans-serif;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:16px 28px;border-radius:12px;font-weight:800;font-size:16px;cursor:pointer;border:0;transition:.15s;width:100%}
+  .btn-primary{background:var(--grad);color:#04121e;box-shadow:0 12px 30px rgba(37,195,239,.3)}
+  .btn-primary:hover{transform:translateY(-2px)}
+  .btn-ghost{background:rgba(255,255,255,.07);color:var(--txt);border:1px solid var(--line)}
+
+  /* HEADER */
+  header{position:sticky;top:0;z-index:100;background:rgba(12,16,23,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .nav{display:flex;align-items:center;height:64px;gap:16px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:.4px;font-size:16px}
+  .brand img{width:34px;height:34px;border-radius:8px;background:#fff;padding:3px}
+  .brand small{display:block;font-size:9px;letter-spacing:2px;color:var(--mut);font-weight:700}
+  .nav .call{margin-left:auto;font-weight:900;color:var(--cyan);font-size:16px;display:flex;gap:7px;align-items:center}
+  .nav .call small{color:var(--mut);font-weight:700;font-size:11px;display:block;text-align:right}
+
+  /* HERO + CALCULATOR */
+  .hero{position:relative;overflow:hidden;padding:52px 0 70px}
+  .hero-bg{position:absolute;inset:0;z-index:0;opacity:.55;
+    background:radial-gradient(55% 55% at 82% 8%,rgba(37,195,239,.32),transparent 60%),
+              radial-gradient(50% 50% at 10% 40%,rgba(247,145,30,.18),transparent 60%)}
+  .hero-inner{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+  .pill{display:inline-flex;gap:8px;align-items:center;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac;font-weight:800;font-size:12.5px;padding:7px 13px;border-radius:20px;margin-bottom:16px}
+  .hero h1{font-size:clamp(32px,4.7vw,52px);line-height:1.05;font-weight:900;letter-spacing:-1px;margin-bottom:16px}
+  .hero .lead{font-size:18px;color:var(--mut);margin-bottom:22px;max-width:480px}
+  .ticks{list-style:none;margin-bottom:24px}
+  .ticks li{display:flex;gap:10px;margin-bottom:11px;font-weight:600;font-size:15.5px}
+  .ticks li::before{content:"✓";color:var(--green);font-weight:900;font-size:17px}
+  .hero-call{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--mut)}
+  .hero-call a{font-weight:900;color:var(--cyan);font-size:20px}
+
+  /* CALC CARD */
+  .calc{background:linear-gradient(180deg,var(--panel),#0e131c);border:1px solid var(--line);border-radius:22px;box-shadow:0 30px 70px rgba(0,0,0,.55);overflow:hidden;position:relative}
+  .calc::before{content:"";position:absolute;inset:0;border-radius:22px;padding:1px;background:var(--grad);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.5;pointer-events:none}
+  .calc-head{padding:20px 24px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+  .calc-head h3{font-size:18px;font-weight:800}
+  .calc-head p{font-size:12.5px;color:var(--mut)}
+  .steps{display:flex;gap:5px;padding:14px 24px 0}
+  .steps i{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.1)}
+  .steps i.on{background:var(--grad)}
+  .calc-body{padding:20px 24px 24px}
+  .cstep{display:none}.cstep.active{display:block;animation:fade .3s}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .q{font-size:16px;font-weight:800;margin-bottom:14px}
+  .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .opt{padding:14px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03);cursor:pointer;font-weight:700;font-size:14px;text-align:center;transition:.14s;display:flex;flex-direction:column;gap:6px;align-items:center}
+  .opt span{font-size:22px}
+  .opt:hover{border-color:var(--cyan);background:rgba(37,195,239,.08)}
+  .opt.sel{border-color:transparent;background:var(--grad);color:#04121e}
+  .rng{margin:18px 0}
+  .rng input[type=range]{width:100%;accent-color:var(--cyan)}
+  .rng .val{text-align:center;font-size:30px;font-weight:900;margin-bottom:4px}
+  .rng .lab{text-align:center;color:var(--mut);font-size:13px}
+  label.fl{display:block;font-size:12px;font-weight:700;color:var(--mut);margin:12px 0 6px}
+  .calc input[type=text],.calc input[type=tel],.calc input[type=email],.calc select{width:100%;padding:13px;border-radius:11px;border:1px solid var(--line);background:#080b12;color:var(--txt);font-size:15px}
+  .calc input:focus,.calc select:focus{outline:2px solid var(--cyan);border-color:transparent}
+  .nav-btns{display:flex;gap:10px;margin-top:16px}
+  .nav-btns .btn{width:auto;flex:1}
+  .estimate-box{text-align:center;padding:8px 0 4px}
+  .estimate-box .lbl{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--mut);font-weight:800}
+  .estimate-box .num{font-size:40px;font-weight:900;margin:6px 0}
+  .estimate-box .note{font-size:12.5px;color:var(--mut);margin-bottom:6px}
+  .unlock{background:rgba(37,195,239,.06);border:1px dashed rgba(37,195,239,.35);border-radius:14px;padding:16px;margin-top:8px}
+  .unlock h4{font-size:15px;font-weight:800;margin-bottom:4px}
+  .unlock p{font-size:12.5px;color:var(--mut);margin-bottom:12px}
+  .fine{font-size:11px;color:var(--mut);text-align:center;margin-top:12px}
+  .done{text-align:center;padding:16px 6px}
+  .done .ok{width:66px;height:66px;border-radius:50%;background:var(--grad);color:#04121e;display:flex;align-items:center;justify-content:center;font-size:34px;margin:0 auto 14px}
+  @media(max-width:880px){.hero-inner{grid-template-columns:1fr}.calc{order:-1}}
+
+  /* TRUST BAR */
+  .tbar{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#0e131c}
+  .tbar .wrap{display:flex;gap:30px;justify-content:center;flex-wrap:wrap;padding:18px 20px;color:var(--mut);font-weight:700;font-size:13.5px;align-items:center}
+  .tbar b{color:var(--txt)}
+
+  /* SIMPLE SECTIONS */
+  .pad{padding:74px 0}
+  .shead{text-align:center;max-width:620px;margin:0 auto 40px}
+  .shead h2{font-size:clamp(26px,4vw,38px);font-weight:900;margin:10px 0}
+  .shead p{color:var(--mut);font-size:16px}
+  .eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:var(--cyan)}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;text-align:center}
+  .card .ic{font-size:32px;margin-bottom:10px}
+  .card h4{font-size:16px;font-weight:800;margin-bottom:6px}
+  .card p{color:var(--mut);font-size:13.5px}
+  @media(max-width:760px){.cards{grid-template-columns:1fr}}
+
+  .quotes{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .qc{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px}
+  .qc .st{color:var(--orange);letter-spacing:2px;margin-bottom:10px}
+  .qc p{font-size:14px;margin-bottom:12px}
+  .qc b{font-size:13px}.qc small{color:var(--mut);font-size:12px;display:block}
+  @media(max-width:760px){.quotes{grid-template-columns:1fr}}
+
+  .band{background:linear-gradient(135deg,rgba(37,195,239,.12),rgba(247,145,30,.1));border:1px solid var(--line);border-radius:22px;padding:44px;text-align:center}
+  .band h2{font-size:clamp(24px,4vw,36px);font-weight:900;margin-bottom:10px}
+  .band p{color:var(--mut);margin-bottom:20px}
+  .band .row{display:flex;gap:12px;max-width:420px;margin:0 auto;flex-wrap:wrap}
+  .band .row .btn{flex:1}
+
+  footer{border-top:1px solid var(--line);padding:34px 0;color:var(--mut);font-size:13.5px}
+  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center}
+  footer a{font-weight:700}
+
+  .mbar{position:fixed;bottom:0;left:0;right:0;z-index:120;display:none;background:#0e131c;border-top:1px solid var(--line)}
+  .mbar a{flex:1;text-align:center;padding:15px;font-weight:800;font-size:14px}
+  .mbar a.call{color:var(--cyan)}.mbar a.quote{background:var(--grad);color:#04121e}
+  @media(max-width:760px){.mbar{display:flex}body{padding-bottom:56px}}
+</style>
+</head>
+<body id="top">
+
+<header><div class="wrap nav">
+  <a class="brand" href="#top"><img src="../assets/ahb-logo.jpeg" alt="All Home Building Co."><span>ALL HOME BUILDING<small>CO. · BENSALEM, PA</small></span></a>
+  <a class="call" href="tel:2155545488">📞 215-554-5488<small>Free estimates · Mon–Sat</small></a>
+</div></header>
+
+<!-- HERO + CALC -->
+<section class="hero"><div class="hero-bg"></div><div class="wrap hero-inner">
+  <div>
+    <div class="pill">⚡ Instant ballpark in 30 seconds</div>
+    <h1>What will your project <span class="grad">actually cost?</span></h1>
+    <p class="lead">Answer 3 quick questions and get an instant price range for your remodel, roof or
+      addition — then lock in a free, exact quote from a licensed Bucks County contractor.</p>
+    <ul class="ticks">
+      <li>No phone tag — see a number right now</li>
+      <li>Licensed &amp; insured PA contractor</li>
+      <li>Free detailed quote &amp; no obligation</li>
+    </ul>
+    <div class="hero-call">Rather talk to a human? <a href="tel:2155545488">Call 215-554-5488</a></div>
+  </div>
+
+  <!-- CALCULATOR -->
+  <div class="calc">
+    <div class="calc-head"><h3>💰 Instant Project Estimator</h3><p>Free · No obligation · Takes 30 seconds</p></div>
+    <div class="steps"><i class="on" id="s1"></i><i id="s2"></i><i id="s3"></i><i id="s4"></i></div>
+    <div class="calc-body">
+      <!-- STEP 1: type -->
+      <div class="cstep active" data-step="1">
+        <div class="q">1. What are you building or remodeling?</div>
+        <div class="opts" id="typeOpts">
+          <div class="opt" data-v="Kitchen" data-lo="15000" data-hi="45000"><span>🍳</span>Kitchen</div>
+          <div class="opt" data-v="Bathroom" data-lo="8000" data-hi="28000"><span>🛁</span>Bathroom</div>
+          <div class="opt" data-v="Roofing" data-lo="7000" data-hi="24000"><span>🏠</span>Roofing</div>
+          <div class="opt" data-v="Addition" data-lo="40000" data-hi="150000"><span>📐</span>Addition</div>
+          <div class="opt" data-v="Basement" data-lo="18000" data-hi="55000"><span>🧱</span>Basement</div>
+          <div class="opt" data-v="Deck" data-lo="6000" data-hi="26000"><span>🌳</span>Deck / Patio</div>
+        </div>
+        <div class="nav-btns"><button class="btn btn-primary" onclick="next(1)">Next →</button></div>
+      </div>
+      <!-- STEP 2: size/scope -->
+      <div class="cstep" data-step="2">
+        <div class="q">2. How big is the project?</div>
+        <div class="rng">
+          <div class="val" id="sizeVal">Standard</div>
+          <input type="range" id="size" min="0" max="2" step="1" value="1" oninput="sizeLabel()">
+          <div class="lab">Slide: smaller ⟵ ⟶ larger / higher-end</div>
+        </div>
+        <label class="fl">Quality of finishes</label>
+        <select id="quality" onchange="calc()">
+          <option value="0.85">Budget-friendly</option>
+          <option value="1" selected>Mid-range (most popular)</option>
+          <option value="1.3">High-end / custom</option>
+        </select>
+        <div class="nav-btns">
+          <button class="btn btn-ghost" onclick="prev(2)">← Back</button>
+          <button class="btn btn-primary" onclick="next(2)">See My Estimate →</button>
+        </div>
+      </div>
+      <!-- STEP 3: reveal + capture -->
+      <div class="cstep" data-step="3">
+        <div class="estimate-box">
+          <div class="lbl">Your ballpark estimate</div>
+          <div class="num grad" id="estRange">$—</div>
+          <div class="note" id="estFor">Based on a mid-range project</div>
+        </div>
+        <div class="unlock">
+          <h4>📩 Get your exact, itemized quote — free</h4>
+          <p>We'll refine this into a detailed written estimate for your home. Where should we send it?</p>
+          <label class="fl">Full name</label><input type="text" id="name" placeholder="Jane Homeowner" required>
+          <label class="fl">Phone</label><input type="tel" id="phone" placeholder="(215) 555-0100" required>
+          <label class="fl">Email</label><input type="email" id="email" placeholder="you@email.com" required>
+          <label class="fl">Project ZIP</label><input type="text" id="zip" placeholder="19020" required>
+        </div>
+        <div class="nav-btns">
+          <button class="btn btn-ghost" onclick="prev(3)">← Back</button>
+          <button class="btn btn-primary" onclick="finish()">Send My Free Quote ✓</button>
+        </div>
+        <p class="fine">🔒 Your info is private &amp; never sold. Estimate is a ballpark only — your written quote is exact.</p>
+      </div>
+      <!-- DONE -->
+      <div class="cstep" data-step="4">
+        <div class="done">
+          <div class="ok">✓</div>
+          <h3 style="font-size:20px;font-weight:800">You're all set!</h3>
+          <p style="color:var(--mut);font-size:14px;margin:8px 0 4px">A specialist will call to confirm your
+            <b id="doneType">project</b> details and send your free written quote — usually within one business day.</p>
+          <div style="margin-top:14px"><a class="btn btn-primary" href="tel:2155545488">📞 Want it faster? Call 215-554-5488</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<div class="tbar"><div class="wrap">
+  <span>✅ <b>Licensed &amp; Insured</b></span>
+  <span>⭐ <b>Satisfaction Guaranteed</b></span>
+  <span>🛡️ <b>Workmanship Warranty</b></span>
+  <span>💳 <b>Ask About Financing</b></span>
+  <span>📍 <b>Bucks County &amp; Philly</b></span>
+</div></div>
+
+<!-- WHY QUICK -->
+<section class="pad"><div class="wrap">
+  <div class="shead"><div class="eyebrow">Why Homeowners Choose Us</div><h2>A quote you can <span class="grad">trust</span> — and a crew you'll recommend</h2></div>
+  <div class="cards">
+    <div class="card"><div class="ic">🧾</div><h4>Honest pricing</h4><p>Detailed written quotes with no hidden costs. What we quote is what you pay.</p></div>
+    <div class="card"><div class="ic">🤝</div><h4>One accountable team</h4><p>A single project manager owns your budget, timeline and quality end-to-end.</p></div>
+    <div class="card"><div class="ic">🛡️</div><h4>Licensed &amp; warrantied</h4><p>Fully licensed, insured PA contractor. Every job backed by a workmanship warranty.</p></div>
+  </div>
+</div></section>
+
+<!-- OUR PROMISE (honest by default — paste real reviews here when ready) -->
+<section class="pad" style="padding-top:0"><div class="wrap">
+  <div class="shead" id="reviewsHead"><div class="eyebrow">Our Promise</div><h2>Trusted across Bucks County</h2>
+    <p>Verified reviews from our customers, Thumbtack &amp; HomeAdvisor appear here — with what you can count on today.</p></div>
+  <div class="quotes" id="reviewQuotes">
+    <div class="qc"><div class="st">🧾</div><p><b>Honest pricing.</b> Your written quote is exact — no surprise line items later.</p><b>No surprises</b><small>Transparent from day one</small></div>
+    <div class="qc"><div class="st">🛡️</div><p><b>Licensed &amp; warrantied.</b> Fully licensed, insured PA contractor. Every job backed by our workmanship warranty.</p><b>Guaranteed work</b><small>We stand behind it</small></div>
+    <div class="qc"><div class="st">🤝</div><p><b>One accountable team.</b> A single project manager owns your budget, timeline and quality end-to-end.</p><b>Real communication</b><small>Never left guessing</small></div>
+  </div>
+  <div style="margin-top:26px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px">
+    <img src="../assets/review-qr.svg" alt="Scan to leave All Home Building a review" style="width:120px;height:120px;background:#fff;padding:8px;border-radius:12px">
+    <div style="min-width:200px">
+      <div class="eyebrow">We'd Love Your Feedback</div>
+      <div style="font-size:20px;font-weight:900;margin:6px 0 4px">Worked with us? <span class="grad">Leave a review</span></div>
+      <p style="color:var(--mut);font-size:13.5px;margin-bottom:12px">Scan the code or tap below — it takes under a minute.</p>
+      <a class="btn btn-primary" style="width:auto;display:inline-flex" href="../review/index.html">⭐ Leave a Review →</a>
+    </div>
+  </div>
+</div></section>
+
+<!-- FINAL CTA -->
+<section class="pad" style="padding-top:0"><div class="wrap"><div class="band">
+  <div class="eyebrow">Free · No Obligation</div>
+  <h2>Get your instant estimate now</h2>
+  <p>See your ballpark price in 30 seconds — then lock in a free written quote.</p>
+  <div class="row">
+    <a class="btn btn-primary" href="#top">⚡ Start Estimate</a>
+    <a class="btn btn-ghost" href="tel:2155545488">📞 Call Us</a>
+  </div>
+</div></div></section>
+
+<footer><div class="wrap">
+  <span>© 2026 All Home Building Co. LLC · 2725 Colmar Ave, Bensalem, PA 19020</span>
+  <span><a href="tel:2155545488">215-554-5488</a> · <a href="mailto:contactahbco@gmail.com">contactahbco@gmail.com</a> · @allhomebuilding</span>
+</div></footer>
+
+<div class="mbar"><a class="call" href="tel:2155545488">📞 Call Now</a><a class="quote" href="#top">⚡ Free Estimate</a></div>
+
+<script>
+  var sel={type:'',lo:0,hi:0};
+  document.querySelectorAll('#typeOpts .opt').forEach(function(o){
+    o.addEventListener('click',function(){
+      document.querySelectorAll('#typeOpts .opt').forEach(x=>x.classList.remove('sel'));
+      o.classList.add('sel');
+      sel.type=o.dataset.v; sel.lo=+o.dataset.lo; sel.hi=+o.dataset.hi; calc();
+    });
+  });
+  var sizeLabels=['Smaller / simple','Standard','Larger / complex'];
+  var sizeMult=[0.75,1,1.35];
+  function sizeLabel(){ document.getElementById('sizeVal').textContent=sizeLabels[+document.getElementById('size').value]; calc(); }
+  function money(n){ return '$'+Math.round(n/500)*500 + ''; }
+  function fmt(n){ return '$'+ (Math.round(n/500)*500).toLocaleString(); }
+  function calc(){
+    if(!sel.type) return;
+    var sm=sizeMult[+document.getElementById('size').value];
+    var q=+document.getElementById('quality').value;
+    var lo=sel.lo*sm*q, hi=sel.hi*sm*q;
+    document.getElementById('estRange').textContent=fmt(lo)+' – '+fmt(hi);
+    document.getElementById('estFor').textContent='Estimated range for a '+(document.getElementById('quality').selectedOptions[0].text.toLowerCase())+' '+sel.type.toLowerCase()+' project';
+  }
+  function show(n){
+    document.querySelectorAll('.cstep').forEach(s=>s.classList.remove('active'));
+    document.querySelector('.cstep[data-step="'+n+'"]').classList.add('active');
+    ['s1','s2','s3','s4'].forEach((id,i)=>document.getElementById(id).classList.toggle('on',i<n));
+  }
+  function next(n){
+    if(n===1 && !sel.type){ document.getElementById('typeOpts').style.outline='2px solid var(--orange)'; setTimeout(()=>document.getElementById('typeOpts').style.outline='',900); return; }
+    if(n===2) calc();
+    show(n+1);
+  }
+  function prev(n){ show(n-1); }
+  function finish(){
+    var name=document.getElementById('name').value, phone=document.getElementById('phone').value,
+        email=document.getElementById('email').value, zip=document.getElementById('zip').value;
+    if(!name||!phone||!email||!zip){ alert('Please fill in your name, phone, email and ZIP so we can send your quote.'); return; }
+    document.getElementById('doneType').textContent=sel.type.toLowerCase()+' project';
+    var payload={service:sel.type,estimate:document.getElementById('estRange').textContent,
+      size:sizeLabels[+document.getElementById('size').value],quality:document.getElementById('quality').selectedOptions[0].text,
+      name:name,phone:phone,email:email,zip:zip,source:'v3-instant'};
+    show(4);
+    fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
+  }
+</script>
+<script>
+  // Load real reviews (first-party QR + Thumbtack/Angi); keep promise cards if none yet.
+  (function(){
+    function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+    function stars(r){r=Math.max(0,Math.min(5,Math.round(r||5)));return '★★★★★'.slice(0,r);}
+    fetch('/api/reviews').then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(!d||!d.reviews||!d.reviews.length)return;
+      var wrap=document.getElementById('reviewQuotes'),head=document.getElementById('reviewsHead');
+      if(head)head.innerHTML='<div class="eyebrow">Real Reviews</div><h2>Trusted across Bucks County</h2><p>Verified reviews from homeowners — collected here and on Thumbtack &amp; HomeAdvisor.</p>';
+      wrap.innerHTML=d.reviews.slice(0,6).map(function(v){
+        var loc=v.location?(' · '+esc(v.location)):'';
+        return '<div class="qc"><div class="st">'+stars(v.rating)+'</div><p>'+esc(v.text)+'</p>'+
+          '<b>'+esc(v.name)+'</b><small>'+esc(v.platform||'AHB123')+loc+'</small></div>';
+      }).join('');
+    }).catch(function(){});
+  })();
+</script>
+<script src="../assets/nova-chat.js" defer></script>
+</body>
+</html>

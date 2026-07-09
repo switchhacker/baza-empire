@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All Home Building Co. | Trusted Remodeling & Roofing in Bensalem, PA</title>
+<meta name="description" content="Bucks County's trusted home remodeling & construction team. Kitchens, baths, roofing, additions. Licensed, insured, family-owned. Free estimates — 215-554-5488.">
+<style>
+  :root{
+    --ink:#1a2230; --slate:#475569; --mut:#6b7280; --line:#e6e9ef;
+    --cream:#f7f5f0; --paper:#ffffff; --sand:#efe9df;
+    --cyan:#1a97c4; --blue:#1560bd; --orange:#e07b1a; --deep:#0e3a5f;
+    --brand:#1560bd;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--cream);color:var(--ink);font:16px/1.65 "Segoe UI",system-ui,-apple-system,sans-serif;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3{font-family:Georgia,"Times New Roman",serif;letter-spacing:-.4px}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 22px}
+  .btn{display:inline-flex;align-items:center;gap:9px;padding:14px 26px;border-radius:9px;font-weight:800;font-size:15px;cursor:pointer;border:0;transition:.16s;white-space:nowrap;font-family:system-ui,sans-serif}
+  .btn-primary{background:var(--orange);color:#fff;box-shadow:0 8px 22px rgba(224,123,26,.32)}
+  .btn-primary:hover{background:#c96b12;transform:translateY(-2px)}
+  .btn-blue{background:var(--deep);color:#fff}
+  .btn-blue:hover{background:#0b2e4c;transform:translateY(-2px)}
+  .btn-out{background:transparent;border:2px solid var(--line);color:var(--ink)}
+  .btn-out:hover{border-color:var(--deep)}
+  .eyebrow{font-size:12px;font-weight:800;letter-spacing:2.5px;text-transform:uppercase;color:var(--orange)}
+  .pad{padding:88px 0}
+
+  /* TOP UTILITY */
+  .util{background:var(--deep);color:#dbe8f3;font-size:13px}
+  .util .wrap{display:flex;justify-content:space-between;align-items:center;height:38px;gap:16px}
+  .util a{font-weight:700}.util b{color:#fff}
+  @media(max-width:760px){.util .left{display:none}.util .wrap{justify-content:center}}
+
+  /* HEADER */
+  header{position:sticky;top:0;z-index:100;background:var(--paper);border-bottom:1px solid var(--line);box-shadow:0 2px 14px rgba(20,30,45,.05)}
+  .nav{display:flex;align-items:center;gap:24px;height:74px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:Georgia,serif;font-weight:700;font-size:19px;color:var(--deep)}
+  .brand img{width:40px;height:40px;border-radius:8px}
+  .brand small{display:block;font-family:system-ui;font-size:9.5px;letter-spacing:2px;color:var(--mut);font-weight:800}
+  .nav-links{display:flex;gap:26px;margin-left:12px}
+  .nav-links a{font-size:14.5px;font-weight:600;color:var(--slate);transition:.2s}
+  .nav-links a:hover{color:var(--deep)}
+  .nav-cta{margin-left:auto;display:flex;gap:12px;align-items:center}
+  @media(max-width:940px){.nav-links{display:none}}
+
+  /* HERO */
+  .hero{background:linear-gradient(180deg,var(--paper),var(--cream));border-bottom:1px solid var(--line);position:relative;overflow:hidden}
+  .hero-inner{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:center;padding:70px 0 78px}
+  .badge-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+  .chip{background:var(--sand);color:var(--deep);font-size:12px;font-weight:800;padding:7px 13px;border-radius:20px;display:inline-flex;gap:6px;align-items:center}
+  .hero h1{font-size:clamp(34px,5vw,56px);line-height:1.06;color:var(--ink);margin-bottom:18px}
+  .hero h1 em{font-style:normal;color:var(--brand)}
+  .hero .lead{font-size:19px;color:var(--slate);max-width:520px;margin-bottom:26px}
+  .hero-cta{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+  .reviews-inline{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--slate)}
+  .reviews-inline .st{color:var(--orange);font-size:18px;letter-spacing:2px}
+  .heroimg{position:relative}
+  .ba{position:relative;border-radius:18px;overflow:hidden;aspect-ratio:4/3;box-shadow:0 30px 60px rgba(14,58,95,.22);border:6px solid #fff;user-select:none}
+  .ba .layer{position:absolute;inset:0;display:flex;align-items:flex-end;padding:16px;font-weight:800;color:#fff;font-family:system-ui}
+  .ba .after{background:linear-gradient(135deg,#0e3a5f,#1a97c4)}
+  .ba .before{background:linear-gradient(135deg,#5b544c,#8a7f70);clip-path:inset(0 50% 0 0)}
+  .ba .tag{position:absolute;bottom:14px;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;background:rgba(0,0,0,.45);padding:5px 10px;border-radius:20px}
+  .ba .tag.b{left:14px}.ba .tag.a{right:14px}
+  .ba .handle{position:absolute;top:0;bottom:0;left:50%;width:3px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.1)}
+  .ba .knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;background:#fff;box-shadow:0 6px 16px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;color:var(--deep);font-weight:900;cursor:ew-resize}
+  .float-badge{position:absolute;top:-16px;right:-14px;background:#fff;border-radius:14px;box-shadow:0 14px 30px rgba(14,58,95,.2);padding:12px 16px;text-align:center;border:1px solid var(--line)}
+  .float-badge b{display:block;font-size:26px;color:var(--brand);font-family:Georgia,serif}
+  .float-badge span{font-size:11px;color:var(--mut);font-weight:700}
+  @media(max-width:900px){.hero-inner{grid-template-columns:1fr}.float-badge{right:8px}}
+
+  /* TRUST STRIP */
+  .strip{background:var(--paper);border-bottom:1px solid var(--line)}
+  .strip .wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:26px 22px;text-align:center}
+  .strip b{display:block;font-size:30px;color:var(--brand);font-family:Georgia,serif}
+  .strip span{font-size:13px;color:var(--mut);font-weight:600}
+  @media(max-width:760px){.strip .wrap{grid-template-columns:1fr 1fr}}
+
+  /* SECTION HEAD */
+  .shead{text-align:center;max-width:660px;margin:0 auto 48px}
+  .shead h2{font-size:clamp(28px,4vw,42px);color:var(--ink);margin:12px 0}
+  .shead p{color:var(--slate);font-size:17px}
+
+  /* SERVICES */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:28px;transition:.2s}
+  .card:hover{transform:translateY(-4px);box-shadow:0 20px 40px rgba(20,30,45,.09);border-color:#d3dae4}
+  .card .ic{width:58px;height:58px;border-radius:14px;background:var(--sand);display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:16px}
+  .card h3{font-size:21px;margin-bottom:8px;color:var(--deep)}
+  .card p{color:var(--slate);font-size:14.5px}
+  .card a{display:inline-block;margin-top:14px;font-weight:800;font-size:13px;color:var(--orange);font-family:system-ui}
+  @media(max-width:860px){.cards{grid-template-columns:1fr}}
+
+  /* WHY (sand band) */
+  .why{background:var(--sand)}
+  .why-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+  .feat{display:flex;gap:14px;margin-bottom:22px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .feat .fic{flex:0 0 46px;height:46px;border-radius:11px;background:var(--deep);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px}
+  .feat h4{font-size:16px;font-weight:800;font-family:system-ui;margin-bottom:3px}
+  .feat p{color:var(--slate);font-size:14px}
+  @media(max-width:860px){.why-grid{grid-template-columns:1fr}}
+
+  /* PROCESS */
+  .proc{display:grid;grid-template-columns:repeat(4,1fr);gap:22px}
+  .pstep{text-align:center}
+  .pstep .n{width:60px;height:60px;border-radius:50%;background:var(--paper);border:2px solid var(--brand);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:22px;margin:0 auto 16px;font-family:Georgia,serif}
+  .pstep h4{font-size:17px;font-weight:800;font-family:system-ui;margin-bottom:6px}
+  .pstep p{color:var(--slate);font-size:14px}
+  @media(max-width:760px){.proc{grid-template-columns:1fr 1fr}}
+
+  /* REVIEWS */
+  .reviews{background:var(--deep);color:#eaf2fa}
+  .reviews .eyebrow{color:#7dd3fc}
+  .reviews .shead h2{color:#fff}.reviews .shead p{color:#b9cee0}
+  .quotes{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .q{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:26px}
+  .q .st{color:#f6a92b;font-size:16px;letter-spacing:2px;margin-bottom:12px}
+  .q p{font-size:15px;margin-bottom:16px;color:#e8f0f8}
+  .q .who{display:flex;align-items:center;gap:12px}
+  .q .av{width:42px;height:42px;border-radius:50%;background:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff;font-family:system-ui}
+  .q .who b{font-size:14px}.q .who small{color:#9fbdd8;font-size:12px;display:block}
+  @media(max-width:860px){.quotes{grid-template-columns:1fr}}
+
+  /* LEAD FORM */
+  .lead-band{background:linear-gradient(135deg,var(--brand),var(--deep));color:#fff}
+  .lead-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+  .lead-grid h2{color:#fff;font-size:clamp(28px,4vw,40px);margin-bottom:14px}
+  .lead-grid p{color:#d5e5f4;font-size:17px;margin-bottom:22px}
+  .lead-list{list-style:none}
+  .lead-list li{display:flex;gap:10px;margin-bottom:12px;font-size:15px;color:#e8f0f8}
+  .lead-list li::before{content:"✓";color:#7ee787;font-weight:900}
+  .formcard{background:var(--paper);color:var(--ink);border-radius:18px;padding:30px;box-shadow:0 30px 60px rgba(0,0,0,.3)}
+  .formcard h3{font-size:22px;color:var(--deep);margin-bottom:4px}
+  .formcard .sub{color:var(--mut);font-size:13.5px;margin-bottom:18px}
+  .fg{margin-bottom:14px}
+  .fg label{display:block;font-size:12.5px;font-weight:800;color:var(--slate);margin-bottom:6px;font-family:system-ui}
+  .fg input,.fg select{width:100%;padding:13px;border:1.5px solid var(--line);border-radius:10px;font-size:15px;color:var(--ink);background:#fff}
+  .fg input:focus,.fg select:focus{outline:2px solid var(--brand);border-color:transparent}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .formcard .btn{width:100%;justify-content:center;font-size:16px;margin-top:6px}
+  .formcard .fine{font-size:11.5px;color:var(--mut);text-align:center;margin-top:12px}
+  .formcard.sent{text-align:center;padding:44px 30px}
+  .formcard .ok{width:70px;height:70px;border-radius:50%;background:#e6f7ea;color:#16a34a;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 16px}
+  @media(max-width:860px){.lead-grid{grid-template-columns:1fr}}
+
+  /* FAQ */
+  .faq{max-width:820px;margin:0 auto}
+  details{border:1px solid var(--line);border-radius:12px;padding:2px 20px;margin-bottom:12px;background:var(--paper)}
+  summary{cursor:pointer;font-weight:800;padding:17px 0;list-style:none;display:flex;justify-content:space-between;align-items:center;font-family:system-ui;color:var(--deep)}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";font-size:24px;color:var(--orange)}
+  details[open] summary::after{content:"–"}
+  details p{color:var(--slate);padding:0 0 18px}
+
+  /* FOOTER */
+  footer{background:var(--ink);color:#c2cad6;padding:56px 0 28px}
+  .fgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:30px}
+  .fgrid h5{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#7dd3fc;margin-bottom:14px;font-family:system-ui}
+  .fgrid a,.fgrid p{display:block;color:#aeb8c6;font-size:14px;margin-bottom:9px}
+  .fgrid a:hover{color:#fff}
+  .fbot{border-top:1px solid rgba(255,255,255,.1);margin-top:34px;padding-top:22px;display:flex;justify-content:space-between;color:#8b96a5;font-size:13px;flex-wrap:wrap;gap:10px}
+  .fbot .brand{color:#fff}
+  @media(max-width:860px){.fgrid{grid-template-columns:1fr 1fr}}
+
+  /* MOBILE STICKY */
+  .mbar{position:fixed;bottom:0;left:0;right:0;z-index:120;display:none;background:var(--paper);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(0,0,0,.08)}
+  .mbar a{flex:1;text-align:center;padding:15px;font-weight:800;font-size:14px}
+  .mbar a.call{color:var(--deep)}
+  .mbar a.quote{background:var(--orange);color:#fff}
+  @media(max-width:760px){.mbar{display:flex}body{padding-bottom:56px}}
+</style>
+</head>
+<body id="top">
+
+<div class="util"><div class="wrap">
+  <span class="left">📍 Serving Bucks County &amp; Greater Philadelphia · Mon–Sat 7am–6pm</span>
+  <span>⭐ <b>Licensed &amp; Insured</b> · Family-Owned · <a href="tel:2155545488"><b>215-554-5488</b></a></span>
+</div></div>
+
+<header><div class="wrap nav">
+  <a class="brand" href="#top"><img src="../assets/ahb-logo.jpeg" alt="All Home Building Co."><span>All Home Building<small>CO. LLC · BENSALEM, PA</small></span></a>
+  <nav class="nav-links">
+    <a href="#services">Services</a><a href="#why">Why Us</a>
+    <a href="#process">Process</a><a href="#reviews">Reviews</a><a href="#faq">FAQ</a>
+  </nav>
+  <div class="nav-cta">
+    <a class="btn btn-out" href="tel:2155545488">📞 215-554-5488</a>
+    <a class="btn btn-primary" href="#quote">Free Estimate</a>
+  </div>
+</div></header>
+
+<!-- HERO -->
+<section class="hero"><div class="wrap hero-inner">
+  <div>
+    <div class="badge-row">
+      <span class="chip">🛡️ Licensed &amp; Insured</span>
+      <span class="chip">⭐ Satisfaction Guaranteed</span>
+      <span class="chip">🏡 Family-Run in PA</span>
+    </div>
+    <h1>Your home, <em>beautifully</em> rebuilt — by people you can trust.</h1>
+    <p class="lead">Kitchens, bathrooms, roofing, additions and full renovations across Bensalem
+      and Bucks County. Honest quotes, clean job sites, and craftsmanship that lasts.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#quote">Get My Free Estimate →</a>
+      <a class="btn btn-blue" href="tel:2155545488">📞 Call 215-554-5488</a>
+    </div>
+    <div class="reviews-inline"><span class="st">✓</span> <b>Licensed, insured &amp; warranty-backed</b> · ask us for local references</div>
+  </div>
+  <div class="heroimg">
+    <div class="ba" id="ba">
+      <div class="layer after"><span></span></div>
+      <div class="layer before" id="beforeLayer"><span></span></div>
+      <div class="tag b">Before</div><div class="tag a">After</div>
+      <div class="handle" id="handle"></div>
+      <div class="knob" id="knob">⇄</div>
+    </div>
+    <div class="float-badge"><b>PA</b><span>LICENSED &amp; INSURED</span></div>
+  </div>
+</div></section>
+
+<!-- STRIP -->
+<section class="strip"><div class="wrap">
+  <div><b>Licensed</b><span>PA HIC registered</span></div>
+  <div><b>Insured</b><span>full general liability</span></div>
+  <div><b>Free</b><span>written estimates</span></div>
+  <div><b>Warranty</b><span>on every project</span></div>
+</div></section>
+
+<!-- SERVICES -->
+<section class="pad" id="services"><div class="wrap">
+  <div class="shead"><div class="eyebrow">Our Services</div>
+    <h2>Everything your home needs, under one roof</h2>
+    <p>One trusted local team for interior remodels, exterior work, and full-scale construction.</p></div>
+  <div class="cards">
+    <div class="card"><div class="ic">🍳</div><h3>Kitchen Remodeling</h3><p>Custom cabinets, stone countertops, islands and lighting designed around how your family lives.</p><a href="#quote">Free kitchen quote →</a></div>
+    <div class="card"><div class="ic">🛁</div><h3>Bathroom Remodeling</h3><p>Walk-in showers, tubs, tile and vanities — a spa-quality bath built to fit your budget.</p><a href="#quote">Free bath quote →</a></div>
+    <div class="card"><div class="ic">🏠</div><h3>Roofing &amp; Siding</h3><p>Roof replacement, repairs, siding and gutters. Storm damage &amp; insurance claims welcome.</p><a href="#quote">Free roof quote →</a></div>
+    <div class="card"><div class="ic">📐</div><h3>Additions &amp; New Builds</h3><p>Room additions, in-law suites, second stories and ground-up homes — permits handled.</p><a href="#quote">Plan an addition →</a></div>
+    <div class="card"><div class="ic">🧱</div><h3>Basements &amp; Decks</h3><p>Finished basements, decks, patios and outdoor living that adds real, usable square footage.</p><a href="#quote">Finish my space →</a></div>
+    <div class="card"><div class="ic">📋</div><h3>Design &amp; Permits</h3><p>In-house design, blueprints and permit filing so your project is legal and stress-free.</p><a href="#quote">Start planning →</a></div>
+  </div>
+</div></section>
+
+<!-- WHY -->
+<section class="why pad" id="why"><div class="wrap why-grid">
+  <div>
+    <div class="eyebrow">The All Home Difference</div>
+    <h2 style="font-size:clamp(28px,4vw,40px);margin:12px 0 26px">Why Bucks County homeowners keep calling us back</h2>
+    <div class="feat"><div class="fic">🤝</div><div><h4>One team, fully accountable</h4><p>Your project manager owns the timeline, budget and quality — no finger-pointing.</p></div></div>
+    <div class="feat"><div class="fic">🧾</div><div><h4>Honest, written pricing</h4><p>Detailed estimates with no hidden costs. The number we quote is the number you pay.</p></div></div>
+    <div class="feat"><div class="fic">🧹</div><div><h4>Respect for your home</h4><p>Clean job sites every day, protected floors, and crews who treat your house like their own.</p></div></div>
+    <div class="feat"><div class="fic">🛡️</div><div><h4>Backed by a warranty</h4><p>Licensed, insured, and every project protected by our workmanship warranty.</p></div></div>
+  </div>
+  <div style="text-align:center">
+    <div class="ba" style="max-width:460px;margin:0 auto" id="ba2">
+      <div class="layer after"><span></span></div>
+      <div class="layer before" id="beforeLayer2"><span></span></div>
+      <div class="tag b">Before</div><div class="tag a">After</div>
+      <div class="handle" id="handle2"></div>
+      <div class="knob" id="knob2">⇄</div>
+    </div>
+    <p style="margin-top:16px;color:var(--slate);font-size:14px">Drag the slider — real transformations, every day.</p>
+  </div>
+</div></section>
+
+<!-- PROCESS -->
+<section class="pad" id="process"><div class="wrap">
+  <div class="shead"><div class="eyebrow">Simple Process</div><h2>Four easy steps to your new space</h2></div>
+  <div class="proc">
+    <div class="pstep"><div class="n">1</div><h4>Free Consultation</h4><p>We visit, measure and listen — no cost, no pressure.</p></div>
+    <div class="pstep"><div class="n">2</div><h4>Clear Estimate</h4><p>A detailed written proposal with materials, price and timeline.</p></div>
+    <div class="pstep"><div class="n">3</div><h4>Quality Build</h4><p>Licensed crews and daily photo updates from start to finish.</p></div>
+    <div class="pstep"><div class="n">4</div><h4>Final Walkthrough</h4><p>We're not done until you love it — warranty included.</p></div>
+  </div>
+</div></section>
+
+<!-- OUR PROMISE (honest by default — paste real Google/Facebook reviews here when ready) -->
+<section class="reviews pad" id="reviews"><div class="wrap">
+  <div class="shead" id="reviewsHead"><div class="eyebrow">Our Promise</div><h2>What every homeowner can count on</h2>
+    <p>Verified reviews from our customers, Thumbtack &amp; HomeAdvisor appear here. In the meantime, here's our commitment — and we're glad to share local references on request.</p></div>
+  <div class="quotes" id="reviewQuotes">
+    <div class="q"><div class="st">🧾</div><p><b>Honest, written pricing.</b> A detailed estimate up front — the number we quote is the number you pay, with no surprise line items.</p><div class="who"><div class="av">✓</div><div><b>No surprises</b><small>Transparent from day one</small></div></div></div>
+    <div class="q"><div class="st">🧹</div><p><b>Respect for your home.</b> Protected floors, tidy job sites, and crews who treat your house like their own — every single day.</p><div class="who"><div class="av">✓</div><div><b>Clean &amp; courteous</b><small>Start to finish</small></div></div></div>
+    <div class="q"><div class="st">🛡️</div><p><b>Backed by a warranty.</b> Licensed, insured, and every project protected by our workmanship warranty. We're not done until you're thrilled.</p><div class="who"><div class="av">✓</div><div><b>Guaranteed work</b><small>We stand behind it</small></div></div></div>
+  </div>
+</div></section>
+
+<!-- LEAVE A REVIEW (QR) -->
+<section class="pad" id="leave-review" style="background:var(--sand)"><div class="wrap">
+  <div style="display:grid;grid-template-columns:1.3fr .7fr;gap:36px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:38px;box-shadow:0 20px 40px rgba(20,30,45,.09)" class="rc-grid">
+    <div>
+      <div class="eyebrow">We'd Love Your Feedback</div>
+      <h2 style="font-size:clamp(26px,3.6vw,38px);margin:12px 0 12px">Had us out on a project?<br>Leave a quick review</h2>
+      <p style="color:var(--slate);font-size:16px;margin-bottom:20px">It takes under a minute and helps other Bucks County homeowners find a contractor they can trust. Scan the code or tap the button.</p>
+      <a class="btn btn-primary" href="../review/index.html">⭐ Leave a Review →</a>
+    </div>
+    <div style="text-align:center">
+      <img src="../assets/review-qr.svg" alt="Scan to leave All Home Building a review" style="width:100%;max-width:190px;background:#fff;padding:10px;border-radius:14px;border:1px solid var(--line)">
+      <div style="font-size:13px;font-weight:800;color:var(--brand);margin-top:10px">📱 Scan to review</div>
+    </div>
+  </div>
+</div></section>
+<style>@media(max-width:760px){.rc-grid{grid-template-columns:1fr!important;text-align:center}}</style>
+
+<!-- LEAD FORM -->
+<section class="lead-band pad" id="quote"><div class="wrap lead-grid">
+  <div>
+    <div class="eyebrow" style="color:#7dd3fc">Free, No-Obligation Estimate</div>
+    <h2>Tell us about your project</h2>
+    <p>Fill out the form and a project specialist will contact you within one business day with your free estimate.</p>
+    <ul class="lead-list">
+      <li>100% free, no-pressure consultation</li>
+      <li>Detailed written pricing — no surprises</li>
+      <li>Licensed, insured &amp; warranty-backed</li>
+      <li>Ask about financing options on qualifying projects</li>
+    </ul>
+    <p style="margin-top:18px"><b style="color:#fff;font-size:20px">Prefer to talk?</b><br>
+      <a href="tel:2155545488" style="color:#7dd3fc;font-weight:800;font-size:22px;font-family:Georgia,serif">📞 215-554-5488</a></p>
+  </div>
+  <form class="formcard" id="qform" onsubmit="return sendQuote(event)">
+    <h3>Get your free estimate</h3>
+    <div class="sub">It only takes a minute.</div>
+    <div class="two">
+      <div class="fg"><label>First name</label><input id="fn" required placeholder="Jane"></div>
+      <div class="fg"><label>Last name</label><input id="ln" required placeholder="Homeowner"></div>
+    </div>
+    <div class="two">
+      <div class="fg"><label>Phone</label><input id="ph" type="tel" required placeholder="(215) 555-0100"></div>
+      <div class="fg"><label>Email</label><input id="em" type="email" required placeholder="you@email.com"></div>
+    </div>
+    <div class="two">
+      <div class="fg"><label>Project type</label><select id="sv">
+        <option>Kitchen Remodel</option><option>Bathroom Remodel</option><option>Roofing / Siding</option>
+        <option>Addition / New Build</option><option>Basement / Deck</option><option>Other</option></select></div>
+      <div class="fg"><label>ZIP code</label><input id="zp" required placeholder="19020"></div>
+    </div>
+    <div class="fg"><label>Project details (optional)</label><input id="msg" placeholder="Tell us a little about what you're planning"></div>
+    <button class="btn btn-primary" type="submit">Request My Free Estimate →</button>
+    <p class="fine">🔒 Your information is private and never sold. Standard message rates may apply.</p>
+  </form>
+</div></section>
+
+<!-- FAQ -->
+<section class="pad" id="faq"><div class="wrap">
+  <div class="shead"><div class="eyebrow">Common Questions</div><h2>Everything you're wondering</h2></div>
+  <div class="faq">
+    <details open><summary>How much does a remodel cost?</summary><p>Every project is different, which is why we provide a free, detailed written estimate based on your exact scope. Request one above or call 215-554-5488 — there's never any obligation.</p></details>
+    <details><summary>What areas do you serve?</summary><p>We proudly serve Bensalem and all of Bucks County plus Greater Philadelphia — including Levittown, Feasterville, Newtown, Langhorne and Yardley.</p></details>
+    <details><summary>Are you licensed and insured?</summary><p>Yes — All Home Building Co. is a fully licensed Pennsylvania contractor carrying liability insurance, and every project is backed by our workmanship warranty.</p></details>
+    <details><summary>How long will my project take?</summary><p>Your written estimate includes a realistic timeline, and we provide progress updates throughout. Bathrooms often take 2–3 weeks; kitchens and additions vary by scope.</p></details>
+    <details><summary>Do you offer financing?</summary><p>Ask your specialist — we can walk you through payment and financing options for qualifying projects. <!-- TODO: confirm financing partner/terms before promoting specific offers --></p></details>
+  </div>
+</div></section>
+
+<!-- FOOTER -->
+<footer><div class="wrap">
+  <div class="fgrid">
+    <div>
+      <div class="brand" style="color:#fff;margin-bottom:14px;display:flex;gap:11px;align-items:center;font-family:Georgia,serif;font-size:19px"><img src="../assets/ahb-logo.jpeg" style="width:40px;height:40px;border-radius:8px" alt="">All Home Building Co.</div>
+      <p>Trusted remodeling &amp; construction for Bucks County and Greater Philadelphia. Licensed &amp; insured Pennsylvania contractor.</p>
+      <p>📍 2725 Colmar Ave, Bensalem, PA 19020</p>
+    </div>
+    <div><h5>Services</h5><a href="#quote">Kitchen Remodeling</a><a href="#quote">Bathroom Remodeling</a><a href="#quote">Roofing &amp; Siding</a><a href="#quote">Additions</a><a href="#quote">Basements &amp; Decks</a></div>
+    <div><h5>Company</h5><a href="#why">Why Choose Us</a><a href="#process">Our Process</a><a href="#reviews">Reviews</a><a href="#faq">FAQ</a></div>
+    <div><h5>Get In Touch</h5><a href="tel:2155545488">📞 215-554-5488</a><a href="mailto:contactahbco@gmail.com">✉️ contactahbco@gmail.com</a><a href="#">📱 @allhomebuilding</a><p>Mon–Sat · 7am–6pm</p></div>
+  </div>
+  <div class="fbot"><span class="brand">© 2026 All Home Building Co. LLC · ahb123.com</span><span>Bensalem · Levittown · Feasterville · Newtown · Langhorne · Yardley</span></div>
+</div></footer>
+
+<div class="mbar"><a class="call" href="tel:2155545488">📞 Call Now</a><a class="quote" href="#quote">Free Estimate</a></div>
+
+<script>
+  // before/after sliders
+  function slider(baId, beforeId, handleId, knobId){
+    var ba=document.getElementById(baId); if(!ba) return;
+    var before=document.getElementById(beforeId), handle=document.getElementById(handleId), knob=document.getElementById(knobId);
+    var drag=false;
+    function set(x){
+      var r=ba.getBoundingClientRect();
+      var p=Math.max(4,Math.min(96,((x-r.left)/r.width)*100));
+      before.style.clipPath='inset(0 '+(100-p)+'% 0 0)';
+      handle.style.left=p+'%'; knob.style.left=p+'%';
+    }
+    knob.addEventListener('mousedown',function(){drag=true});
+    window.addEventListener('mouseup',function(){drag=false});
+    window.addEventListener('mousemove',function(e){if(drag)set(e.clientX)});
+    ba.addEventListener('touchmove',function(e){set(e.touches[0].clientX)},{passive:true});
+    ba.addEventListener('click',function(e){set(e.clientX)});
+  }
+  slider('ba','beforeLayer','handle','knob');
+  slider('ba2','beforeLayer2','handle2','knob2');
+
+  function sendQuote(e){
+    e.preventDefault();
+    var payload={name:fn.value+' '+ln.value,phone:ph.value,email:em.value,service:sv.value,zip:zp.value,message:msg.value,source:'v2-homestead'};
+    var card=document.getElementById('qform');
+    card.classList.add('sent');
+    card.innerHTML='<div class="ok">✓</div><h3>Thank you, '+(fn.value||'friend')+'!</h3><p class="sub" style="margin-top:8px">Your request is in. A specialist will reach out within one business day with your free estimate.</p><a class="btn btn-primary" style="margin-top:16px" href="tel:2155545488">📞 Call now: 215-554-5488</a>';
+    fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
+    return false;
+  }
+</script>
+<script>
+  // Load real reviews (first-party QR + Thumbtack/Angi); keep promise cards if none yet.
+  (function(){
+    function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+    function initials(n){return (String(n||'').trim().split(/\s+/).map(function(w){return w[0];}).join('').slice(0,2)||'★').toUpperCase();}
+    function stars(r){r=Math.max(0,Math.min(5,Math.round(r||5)));return '★★★★★'.slice(0,r);}
+    fetch('/api/reviews').then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(!d||!d.reviews||!d.reviews.length)return;
+      var wrap=document.getElementById('reviewQuotes'),head=document.getElementById('reviewsHead');
+      if(head)head.innerHTML='<div class="eyebrow">Homeowner Reviews</div><h2>What our customers say</h2><p>Verified reviews from homeowners across Bucks County — collected here and on Thumbtack &amp; HomeAdvisor.</p>';
+      wrap.innerHTML=d.reviews.slice(0,6).map(function(v){
+        var loc=v.location?(' · '+esc(v.location)):'';
+        return '<div class="q"><div class="st">'+stars(v.rating)+'</div><p>'+esc(v.text)+'</p>'+
+          '<div class="who"><div class="av">'+esc(initials(v.name))+'</div><div><b>'+esc(v.name)+'</b><small>'+esc(v.platform||'AHB123')+loc+'</small></div></div></div>';
+      }).join('');
+    }).catch(function(){});
+  })();
+</script>
+<script src="../assets/nova-chat.js" defer></script>
+</body>
+</html>

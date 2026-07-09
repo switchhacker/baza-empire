@@ -1,0 +1,22 @@
+# Cloudflare Pages — redirects
+# https://developers.cloudflare.com/pages/configuration/redirects/
+#
+# Scheme A · Momentum is the chosen design and is served directly at the root
+# (website/index.html), so no rewrite is needed for the homepage.
+#
+# The scheme showcase / alternate directions stay reachable for reference:
+/schemes       /schemes.html    200
+
+# Common marketing paths → the estimate funnel on the homepage
+/free-estimate   /#estimate   302
+/estimate        /#estimate   302
+/quote           /#estimate   302
+
+# Reviews — the QR code encodes https://ahb123.com/review → served by /review/index.html
+/reviews         /#reviews    302
+/leave-a-review  /review/     301
+
+# Alternate directions (kept for reference / A-B testing)
+/momentum        /                       302
+/homestead       /v2-homestead/          302
+/instant         /v3-instant/            302
