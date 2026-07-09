@@ -24,3 +24,13 @@ def test_edit_js_core_api_surface():
         assert name in js, f"missing {name}"
     # mutation-loop guard: text apply must be conditional
     assert "el.textContent !== o.value" in js
+
+def test_inspector_capabilities_present():
+    js = read("dashboard", "static", "edit.js")
+    for feature in ["buildInspector", "api/ui/upload", "contenteditable",
+                    "fontSize", "borderRadius", "Reset element", "Hide element"]:
+        assert feature in js, f"inspector missing {feature}"
+
+def test_asset_version_bumped():
+    nav = read("dashboard", "templates", "_nav.html")
+    assert "edit.js?v=2" in nav and "edit.css?v=2" in nav

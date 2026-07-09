@@ -26,7 +26,7 @@ function selectorFor(el) {
   if (el.id) return '#' + esc(el.id);
   var dt = el.getAttribute && el.getAttribute('data-tab');
   if (dt) {
-    var s = el.tagName.toLowerCase() + '[data-tab="' + dt + '"]';
+    var s = el.tagName.toLowerCase() + '[data-tab="' + esc(dt) + '"]';
     if (document.querySelectorAll(s).length === 1) return s;
   }
   var parts = [], cur = el;
@@ -98,7 +98,7 @@ function applyDom() {
       } else if (o.kind === 'order' && Array.isArray(o.value)) {
         var kids = o.value.map(function (s) {
           try { return el.querySelector(':scope > ' + s); } catch (e) { return null; }
-        }).filter(Boolean);
+        }).filter(Boolean).filter(function (k, i, a) { return a.indexOf(k) === i; });
         var current = Array.prototype.filter.call(el.children, function (c) { return kids.indexOf(c) !== -1; });
         var moved = kids.some(function (k, i) { return k !== current[i]; });
         if (moved) kids.forEach(function (k) { el.appendChild(k); });
@@ -171,7 +171,190 @@ function saveOverride(kind, value) {
       page: PAGE, selector: selectorFor(selected), kind: kind, value: value,
       fingerprint: fingerprintFor(selected)
     })
-  }).then(function () { return refresh(); });
+  }).then(function () { return refresh(); }).catch(function () {});
+}
+
+/* ---------- inspector panel (Task 6) ---------- */
+var STYLE_FIELDS = [
+  // [override style prop, label, input type]
+  ['color',           'Text color',   'color'],
+  ['backgroundColor', 'Background',   'color'],
+  ['fontSize',        'Font size',    'px'],
+  ['fontWeight',      'Weight',       'select:normal,600,700,800'],
+  ['fontFamily',      'Font',         'text'],
+  ['textAlign',       'Align',        'select:left,center,right'],
+  ['padding',         'Padding',      'text'],
+  ['margin',          'Margin',       'text'],
+  ['border',          'Border',       'text'],
+  ['borderRadius',    'Radius',       'px'],
+  ['width',           'Width',        'text'],
+  ['opacity',         'Opacity',      'text']
+];
+function existingStyle() {
+  if (!selected) return {};
+  var sel = selectorFor(selected);
+  var found = {};
+  OVERRIDES.forEach(function (o) {
+    if (o.kind === 'style' && o.selector === sel && o.value) found = o.value;
+  });
+  return found;
+}
+function el(tag, attrs, text) {
+  var e = document.createElement(tag);
+  Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function section(panel, label) {
+  var s = el('div', { 'class': 'bep-sec' });
+  s.appendChild(el('div', { 'class': 'bep-lbl' }, label));
+  panel.appendChild(s);
+  return s;
+}
+function btn(label, cls, fn) {
+  var b = el('button', { 'class': 'bep-btn' + (cls ? ' ' + cls : '') }, label);
+  b.addEventListener('click', fn);
+  return b;
+}
+function toast(msg) {
+  var h = document.getElementById('baza-edit-hint');
+  if (h) { h.textContent = msg; setTimeout(function () { if (editMode && h) h.textContent = '✏️ Edit Mode — click any element · Esc to exit'; }, 1600); }
+}
+function buildInspector(panel) {
+  if (!selected) return;
+  panel.innerHTML = '';
+  var sel = selectorFor(selected);
+
+  // head
+  var head = el('div', { 'class': 'bep-head' });
+  head.appendChild(el('span', { 'class': 'bep-title' }, '✏️ <' + selected.tagName.toLowerCase() + '>'));
+  var x = el('span', { 'class': 'bep-x', title: 'Close (element stays selected until Esc)' }, '✕');
+  x.addEventListener('click', hidePanel);
+  head.appendChild(x);
+  panel.appendChild(head);
+
+  // selector info
+  var info = section(panel, 'Element');
+  info.appendChild(el('div', { 'class': 'bep-sel' }, sel));
+
+  // text — inline contenteditable on the page itself
+  if (selected.childElementCount === 0) {
+    var st = section(panel, 'Text');
+    var ta = el('textarea', { rows: '3' });
+    ta.value = (selected.textContent || '').trim();
+    st.appendChild(ta);
+    st.appendChild(btn('Save text', 'primary', function () {
+      saveOverride('text', ta.value).then(function () { toast('✓ text saved'); });
+    }));
+    st.appendChild(btn('Edit on page', '', function () {
+      selected.setAttribute('contenteditable', 'true');
+      selected.focus();
+      var done = function () {
+        selected.removeAttribute('contenteditable');
+        selected.removeEventListener('blur', done);
+        ta.value = (selected.textContent || '').trim();
+        saveOverride('text', ta.value).then(function () { toast('✓ text saved'); });
+      };
+      selected.addEventListener('blur', done);
+    }));
+    st.appendChild(el('div', { 'class': 'bep-note' }, 'Edit on page: type directly into the element, click away to save.'));
+  }
+
+  // image
+  if (selected.tagName === 'IMG') {
+    var si = section(panel, 'Image');
+    var url = el('input', { type: 'text', placeholder: 'Image URL or /static/... path' });
+    url.value = selected.getAttribute('src') || '';
+    si.appendChild(url);
+    var file = el('input', { type: 'file', accept: 'image/*' });
+    si.appendChild(file);
+    file.addEventListener('change', function () {
+      if (!file.files.length) return;
+      var fd = new FormData();
+      fd.append('file', file.files[0]);
+      fetch('/api/ui/upload', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.url) { url.value = j.url; toast('uploaded — hit Save image'); }
+          else toast('✗ ' + (j.error || 'upload failed'));
+        });
+    });
+    si.appendChild(btn('Save image', 'primary', function () {
+      saveOverride('image', url.value).then(function () { toast('✓ image saved'); });
+    }));
+  }
+
+  // link
+  if (selected.tagName === 'A') {
+    var sl = section(panel, 'Link');
+    var href = el('input', { type: 'text' });
+    href.value = selected.getAttribute('href') || '';
+    sl.appendChild(href);
+    sl.appendChild(btn('Save link', 'primary', function () {
+      saveOverride('link', href.value).then(function () { toast('✓ link saved'); });
+    }));
+  }
+
+  // style
+  var ss = section(panel, 'Style');
+  var cur = existingStyle();
+  var inputs = {};
+  STYLE_FIELDS.forEach(function (f) {
+    var prop = f[0], label = f[1], type = f[2];
+    var row = el('div', { 'class': 'bep-row' });
+    row.appendChild(el('label', {}, label));
+    var inp;
+    if (type === 'color') {
+      inp = el('input', { type: 'color' });
+      if (cur[prop]) inp.value = cur[prop];
+    } else if (type === 'px') {
+      inp = el('input', { type: 'number', placeholder: 'px' });
+      if (cur[prop]) inp.value = parseInt(cur[prop], 10) || '';
+    } else if (type.indexOf('select:') === 0) {
+      inp = el('select');
+      inp.appendChild(el('option', { value: '' }, '—'));
+      type.slice(7).split(',').forEach(function (o) {
+        var op = el('option', { value: o }, o);
+        if (cur[prop] === o) op.setAttribute('selected', '');
+        inp.appendChild(op);
+      });
+    } else {
+      inp = el('input', { type: 'text', placeholder: 'e.g. 8px 12px' });
+      if (cur[prop]) inp.value = cur[prop];
+    }
+    inp.dataset.dirty = '';
+    inp.addEventListener('input', function () { inp.dataset.dirty = '1'; });
+    inp.addEventListener('change', function () { inp.dataset.dirty = '1'; });
+    inputs[prop] = { inp: inp, type: type };
+    row.appendChild(inp);
+    ss.appendChild(row);
+  });
+  ss.appendChild(btn('Apply style', 'primary', function () {
+    var props = existingStyle();
+    Object.keys(inputs).forEach(function (prop) {
+      var rec = inputs[prop];
+      if (!rec.inp.dataset.dirty) return;         // only send touched fields
+      var v = rec.inp.value;
+      if (v === '' || v === null) { delete props[prop]; return; }
+      props[prop] = (rec.type === 'px') ? v + 'px' : v;
+    });
+    saveOverride('style', props).then(function () { toast('✓ style saved'); });
+  }));
+  ss.appendChild(el('div', { 'class': 'bep-note' }, 'Only fields you touched are saved. Clear a field to remove that property.'));
+
+  // visibility + reset
+  var sv = section(panel, 'Element actions');
+  sv.appendChild(btn('🙈 Hide element', '', function () {
+    saveOverride('hide', true).then(function () { toast('hidden — restore from /web history'); });
+  }));
+  sv.appendChild(btn('↺ Reset element', 'danger', function () {
+    fetch(API + '/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page: PAGE, selector: sel })
+    }).then(function () { location.reload(); });
+  }));
+  sv.appendChild(el('div', { 'class': 'bep-note' }, 'Reset element reverts every override on this selector and reloads. Full page history & revert: 🌐 Web tab.'));
 }
 
 /* ---------- wiring ---------- */
