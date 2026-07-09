@@ -125,3 +125,56 @@ def test_reset_non_string_fields_rejected(client):
     assert r.status_code == 422
     r = client.post("/api/ui/overrides/reset", json={"page": ["x"]})
     assert r.status_code == 422
+
+
+def test_stale_column_and_report_roundtrip(client):
+    r = client.post("/api/ui/overrides", json={
+        "page": "/x", "selector": "#gone", "kind": "text", "value": "hi"})
+    oid = r.get_json()["id"]
+    r2 = client.post("/api/ui/overrides", json={
+        "page": "/x", "selector": "#alive", "kind": "text", "value": "yo"})
+    oid2 = r2.get_json()["id"]
+    # fresh overrides are not stale
+    rows = client.get("/api/ui/overrides?page=/x").get_json()["overrides"]
+    assert all(o["stale"] == 0 for o in rows)
+    # report one stale, one ok
+    rep = client.post("/api/ui/overrides/stale-report", json={
+        "page": "/x", "stale_ids": [oid], "ok_ids": [oid2]})
+    assert rep.status_code == 200
+    j = rep.get_json()
+    assert j["ok"] and j["marked"] == 1 and j["cleared"] == 1
+    by_id = {o["id"]: o for o in
+             client.get("/api/ui/overrides/history?page=/x").get_json()["overrides"]}
+    assert by_id[oid]["stale"] == 1 and by_id[oid2]["stale"] == 0
+    # summary carries a stale count
+    pages = client.get("/api/ui/overrides/summary").get_json()["pages"]
+    px = [p for p in pages if p["page"] == "/x"][0]
+    assert px["count"] == 2 and px["stale"] == 1
+
+
+def test_stale_report_validation_and_scoping(client):
+    r = client.post("/api/ui/overrides", json={
+        "page": "/a", "selector": "#s", "kind": "text", "value": "v"})
+    oid = r.get_json()["id"]
+    # non-int ids rejected
+    bad = client.post("/api/ui/overrides/stale-report", json={
+        "page": "/a", "stale_ids": ["x"], "ok_ids": []})
+    assert bad.status_code == 422
+    # wrong page does not mark
+    client.post("/api/ui/overrides/stale-report", json={
+        "page": "/other", "stale_ids": [oid], "ok_ids": []})
+    row = client.get("/api/ui/overrides?page=/a").get_json()["overrides"][0]
+    assert row["stale"] == 0
+
+
+def test_resave_clears_stale(client):
+    r = client.post("/api/ui/overrides", json={
+        "page": "/y", "selector": "#s", "kind": "text", "value": "v1"})
+    oid = r.get_json()["id"]
+    client.post("/api/ui/overrides/stale-report", json={
+        "page": "/y", "stale_ids": [oid], "ok_ids": []})
+    # upsert (same page+selector+kind) resets stale to 0 — the element was just edited live
+    client.post("/api/ui/overrides", json={
+        "page": "/y", "selector": "#s", "kind": "text", "value": "v2"})
+    row = client.get("/api/ui/overrides?page=/y").get_json()["overrides"][0]
+    assert row["stale"] == 0 and row["value"] == "v2"

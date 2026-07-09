@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS overrides (
   value TEXT NOT NULL,
   fingerprint TEXT,
   active INTEGER NOT NULL DEFAULT 1,
+  stale INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -55,6 +56,10 @@ def _db():
 def init_db():
     with _db() as c:
         c.executescript(_SCHEMA)
+        try:
+            c.execute("ALTER TABLE overrides ADD COLUMN stale INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def normalize_page(p):
@@ -110,7 +115,7 @@ def save_override():
         if row:
             c.execute(
                 "UPDATE overrides SET value=?, fingerprint=COALESCE(?, fingerprint),"
-                " updated_at=datetime('now') WHERE id=?",
+                " stale=0, updated_at=datetime('now') WHERE id=?",
                 (value, fp, row["id"]))
             oid = row["id"]
         else:
@@ -152,6 +157,32 @@ def reset_overrides():
     return jsonify({"ok": True, "reverted": n})
 
 
+@ui_bp.route("/api/ui/overrides/stale-report", methods=["POST"])
+def stale_report():
+    """Client-side apply engine reports which overrides' selectors no longer
+    match anything on the live page. Only the browser can know this."""
+    b = request.get_json(force=True, silent=True) or {}
+    page = normalize_page(b.get("page"))
+    stale_ids = b.get("stale_ids") or []
+    ok_ids = b.get("ok_ids") or []
+    for ids in (stale_ids, ok_ids):
+        if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+            return jsonify({"error": "stale_ids/ok_ids must be lists of ints"}), 422
+    marked = cleared = 0
+    with _db() as c:
+        if stale_ids:
+            q = ",".join("?" * len(stale_ids))
+            marked = c.execute(
+                "UPDATE overrides SET stale=1 WHERE page=? AND active=1"
+                " AND id IN (%s)" % q, [page] + stale_ids).rowcount
+        if ok_ids:
+            q = ",".join("?" * len(ok_ids))
+            cleared = c.execute(
+                "UPDATE overrides SET stale=0 WHERE page=? AND active=1"
+                " AND id IN (%s)" % q, [page] + ok_ids).rowcount
+    return jsonify({"ok": True, "marked": marked, "cleared": cleared})
+
+
 @ui_bp.route("/api/ui/overrides/history")
 def override_history():
     page = normalize_page(request.args.get("page"))
@@ -166,9 +197,11 @@ def override_history():
 def override_summary():
     with _db() as c:
         rows = c.execute(
-            "SELECT page, COUNT(*) AS n FROM overrides WHERE active=1"
-            " GROUP BY page ORDER BY page").fetchall()
-    return jsonify({"pages": [{"page": r["page"], "count": r["n"]} for r in rows]})
+            "SELECT page, COUNT(*) AS n,"
+            " SUM(CASE WHEN stale=1 THEN 1 ELSE 0 END) AS s"
+            " FROM overrides WHERE active=1 GROUP BY page ORDER BY page").fetchall()
+    return jsonify({"pages": [
+        {"page": r["page"], "count": r["n"], "stale": r["s"] or 0} for r in rows]})
 
 
 @ui_bp.route("/api/ui/upload", methods=["POST"])
