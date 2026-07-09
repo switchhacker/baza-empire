@@ -137,12 +137,12 @@ def test_stale_column_and_report_roundtrip(client):
     # fresh overrides are not stale
     rows = client.get("/api/ui/overrides?page=/x").get_json()["overrides"]
     assert all(o["stale"] == 0 for o in rows)
-    # report one stale, one ok
+    # report one stale, one ok (oid2 stays stale=0, no transition, so cleared=0)
     rep = client.post("/api/ui/overrides/stale-report", json={
         "page": "/x", "stale_ids": [oid], "ok_ids": [oid2]})
     assert rep.status_code == 200
     j = rep.get_json()
-    assert j["ok"] and j["marked"] == 1 and j["cleared"] == 1
+    assert j["ok"] and j["marked"] == 1 and j["cleared"] == 0
     by_id = {o["id"]: o for o in
              client.get("/api/ui/overrides/history?page=/x").get_json()["overrides"]}
     assert by_id[oid]["stale"] == 1 and by_id[oid2]["stale"] == 0
@@ -178,3 +178,21 @@ def test_resave_clears_stale(client):
         "page": "/y", "selector": "#s", "kind": "text", "value": "v2"})
     row = client.get("/api/ui/overrides?page=/y").get_json()["overrides"][0]
     assert row["stale"] == 0 and row["value"] == "v2"
+
+
+def test_stale_report_counts_only_transitions(client):
+    r = client.post("/api/ui/overrides", json={
+        "page": "/z", "selector": "#s", "kind": "text", "value": "v"})
+    oid = r.get_json()["id"]
+    first = client.post("/api/ui/overrides/stale-report", json={
+        "page": "/z", "stale_ids": [oid], "ok_ids": []}).get_json()
+    assert first["marked"] == 1
+    second = client.post("/api/ui/overrides/stale-report", json={
+        "page": "/z", "stale_ids": [oid], "ok_ids": []}).get_json()
+    assert second["marked"] == 0  # already stale — nothing changed
+
+
+def test_stale_report_rejects_booleans(client):
+    r = client.post("/api/ui/overrides/stale-report", json={
+        "page": "/z", "stale_ids": [True], "ok_ids": []})
+    assert r.status_code == 422

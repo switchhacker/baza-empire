@@ -166,7 +166,7 @@ def stale_report():
     stale_ids = b.get("stale_ids") or []
     ok_ids = b.get("ok_ids") or []
     for ids in (stale_ids, ok_ids):
-        if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
             return jsonify({"error": "stale_ids/ok_ids must be lists of ints"}), 422
     marked = cleared = 0
     with _db() as c:
@@ -174,12 +174,12 @@ def stale_report():
             q = ",".join("?" * len(stale_ids))
             marked = c.execute(
                 "UPDATE overrides SET stale=1 WHERE page=? AND active=1"
-                " AND id IN (%s)" % q, [page] + stale_ids).rowcount
+                " AND stale=0 AND id IN (%s)" % q, [page] + stale_ids).rowcount
         if ok_ids:
             q = ",".join("?" * len(ok_ids))
             cleared = c.execute(
                 "UPDATE overrides SET stale=0 WHERE page=? AND active=1"
-                " AND id IN (%s)" % q, [page] + ok_ids).rowcount
+                " AND stale=1 AND id IN (%s)" % q, [page] + ok_ids).rowcount
     return jsonify({"ok": True, "marked": marked, "cleared": cleared})
 
 
