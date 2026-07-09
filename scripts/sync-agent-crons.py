@@ -292,7 +292,7 @@ def render_units(task: dict) -> tuple:
         f"ExecStart={exec_start}\n"
         f"StandardOutput=append:{abs_log}\n"
         "StandardError=inherit\n"
-        f"RuntimeMaxSec={runtime_max_sec}\n"
+        f"TimeoutStartSec={runtime_max_sec}\n"
         f"EnvironmentFile={SECRETS_ENV}\n"
     )
     timer_text = (
