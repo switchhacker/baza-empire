@@ -10,6 +10,7 @@ configs/credentials.json
 baza-web/
 dashboard/artifacts/
 dashboard/uploads/
+dashboard/static/uploads/
 *.bak
 email-pipeline/credentials.json
 email-pipeline/token.json

@@ -1,6 +1,8 @@
 /* Baza Visual Editor — overrides engine + Edit Mode.
    Spec: docs/superpowers/specs/2026-07-08-nav-fixes-and-visual-editor-design.md (B1).
-   Loaded on EVERY dashboard page via _nav.html. Two halves:
+   Loaded on EVERY dashboard page via _nav.html, referenced with a ?v= cache-bust
+   that defeats the browser HTTP cache (there is no service worker caching this file).
+   Two halves:
    1) apply engine — always on: fetch /api/ui/overrides for this page, apply,
       re-apply on DOM mutation (dashboard pages render lots of content via JS).
    2) Edit Mode — ✏️ toggle: hover-highlight, click-select, inspector panel

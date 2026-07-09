@@ -1,5 +1,5 @@
 /* Baza Visual Editor chrome (spec 2026-07-08 B1). ?v= bumped on every change
-   — the service worker caches statics. */
+   to defeat the browser HTTP cache (there is no service worker caching these files). */
 #baza-edit-toggle{background:transparent;border:1px solid #2a2a4a;border-radius:8px;color:#888;font-size:14px;padding:4px 9px;cursor:pointer;margin-left:10px;line-height:1}
 #baza-edit-toggle.on{background:#e94560;border-color:#e94560;color:#fff;box-shadow:0 0 12px #e9456088}
 #baza-edit-toggle.floating{position:fixed;bottom:18px;right:18px;z-index:99998;background:#0d0d1e;font-size:18px;padding:8px 12px}

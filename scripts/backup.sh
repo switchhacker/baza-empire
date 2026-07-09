@@ -58,6 +58,12 @@ if [ -d "$FRAMEWORK/dashboard/artifacts" ]; then
     && log "artifacts tarball created ($(stat -c%s "$TARGET/artifacts.tar.gz") bytes)"
 fi
 
+# 5b. Editor upload assets (referenced by dashboard/ui_overrides.db "image" overrides)
+if [ -d "$FRAMEWORK/dashboard/static/uploads" ]; then
+  tar -czf "$TARGET/uploads.tar.gz" -C "$FRAMEWORK/dashboard/static" uploads 2>/dev/null \
+    && log "uploads tarball created ($(stat -c%s "$TARGET/uploads.tar.gz") bytes)"
+fi
+
 # 6. Agent persona overrides + crons
 tar -czf "$TARGET/agents.tar.gz" -C "$FRAMEWORK" \
   --exclude='**/__pycache__' \
