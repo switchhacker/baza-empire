@@ -17,7 +17,9 @@ def collect_data():
     # Leads (status = 'lead')
     leads = conn.execute("SELECT name, phone, email, source, created_at FROM ahb_clients WHERE status='lead' ORDER BY created_at DESC LIMIT 10").fetchall()
     # Recent events (calls, meetings)
-    events = conn.execute("SELECT title, start_date, type FROM ahb_events WHERE type IN ('call','meeting','callback') ORDER BY start_date DESC LIMIT 8").fetchall()
+    # ahb_events has date/category (no start_date/type); calls & meetings are
+    # identified by title keyword since category values are generic (Business/Reminder/...)
+    events = conn.execute("SELECT title, date, category FROM ahb_events WHERE lower(title) LIKE '%call%' OR lower(title) LIKE '%meet%' ORDER BY date DESC LIMIT 8").fetchall()
     conn.close()
 
     data = f"""LEAD STATUS — {today()}
