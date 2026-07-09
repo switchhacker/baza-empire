@@ -118,3 +118,10 @@ def test_explicit_empty_fingerprint_updates(client):
     assert r.status_code == 200
     ovs = client.get("/api/ui/overrides?page=/ahb123").get_json()["overrides"]
     assert len(ovs) == 1 and ovs[0]["fingerprint"] is None
+
+
+def test_reset_non_string_fields_rejected(client):
+    r = client.post("/api/ui/overrides/reset", json={"page": "/ahb123", "selector": ["x"]})
+    assert r.status_code == 422
+    r = client.post("/api/ui/overrides/reset", json={"page": ["x"]})
+    assert r.status_code == 422

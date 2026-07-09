@@ -135,6 +135,9 @@ def revert_override(oid):
 @ui_bp.route("/api/ui/overrides/reset", methods=["POST"])
 def reset_overrides():
     b = request.get_json(force=True, silent=True) or {}
+    for field in ("page", "selector"):
+        if field in b and not isinstance(b.get(field), str):
+            return jsonify({"error": "%s must be a string" % field}), 422
     page = normalize_page(b.get("page"))
     selector = (b.get("selector") or "").strip()
     with _db() as c:
