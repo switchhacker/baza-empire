@@ -5884,6 +5884,12 @@ def sticky_page():
     return render_template('ahb123.html', active_tab='noted')
 
 
+@app.route('/web')
+def web_editor_page():
+    """Web command center — site status + the Baza visual editor home (spec 2026-07-08)."""
+    return render_template('web.html')
+
+
 @app.route('/mobile')
 def mobile_page():
     # The mobile PWA now IS the full desktop dashboard. Send installs/links to

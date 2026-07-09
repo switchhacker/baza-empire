@@ -30,9 +30,15 @@
     .nav-submenu{position:fixed;top:56px;left:0;right:0;min-width:0;max-height:70vh;overflow-y:auto;border-radius:0}
     .nav-submenu a{padding:14px 18px;font-size:14px}
   }
+  /* Banner shrink (2026-07-08) — canonical override so every host page gets a
+     compact brand, freeing room for the Email/Web main tabs. */
+  .nav-brand{gap:6px!important;padding-top:12px!important;padding-bottom:12px!important;padding-right:14px!important;margin-right:6px!important}
+  .nav-brand h1{font-size:13px!important;letter-spacing:1px!important;white-space:nowrap}
+  .nav-brand>span{font-size:15px!important}
+  @media (max-width:1500px){ .nav-brand h1{display:none!important} }
 </style>
 <nav class="nav">
-  <div class="nav-brand"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
+  <div class="nav-brand" title="BAZA EMPIRE"><span>⚡</span><h1>BAZA EMPIRE</h1></div>
   <div class="nav-dropdown">
     <a class="nav-link {% if _act == 'agents' %}active{% endif %}" href="/">&#129302; Agents</a>
     <div class="nav-submenu">
@@ -54,6 +60,8 @@
       {{ dropdown_links() }}
     </div>
   </div>
+  <a class="nav-link {% if _act == 'email' %}active{% endif %}" href="/email" title="Email Studio">&#128231; Email</a>
+  <a class="nav-link {% if _act == 'web' %}active{% endif %}" href="/web" title="Web — sites &amp; visual editor">&#127760; Web</a>
   <a class="nav-link {% if _act == 'sticky' %}active{% endif %}" href="/sticky" title="Sticky Pad — scatter your thoughts">&#128204; Sticky</a>
   <a class="nav-link {% if _act == 'datahub' %}active{% endif %}" href="/datahub" title="Data Hub — all artifacts across projects">&#128230; Data Hub</a>
   <div class="nav-dropdown">
