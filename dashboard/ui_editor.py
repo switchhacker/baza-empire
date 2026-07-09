@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import uuid
+from contextlib import closing, contextmanager
 
 from flask import Blueprint, jsonify, request
 
@@ -43,13 +44,23 @@ def _conn():
     return conn
 
 
+@contextmanager
+def _db():
+    """Yield a connection that is both transaction-managed and always closed."""
+    with closing(_conn()) as conn:
+        with conn as c:
+            yield c
+
+
 def init_db():
-    with _conn() as c:
+    with _db() as c:
         c.executescript(_SCHEMA)
 
 
 def normalize_page(p):
     """Path key for a page: strip query/hash/trailing slash, ensure leading /."""
+    if not isinstance(p, str):
+        p = "/"
     p = (p or "/").split("?", 1)[0].split("#", 1)[0].strip()
     if not p.startswith("/"):
         p = "/" + p
@@ -70,7 +81,7 @@ def _row(r):
 @ui_bp.route("/api/ui/overrides")
 def list_overrides():
     page = normalize_page(request.args.get("page"))
-    with _conn() as c:
+    with _db() as c:
         rows = c.execute(
             "SELECT * FROM overrides WHERE page=? AND active=1 ORDER BY id",
             (page,)).fetchall()
@@ -80,6 +91,9 @@ def list_overrides():
 @ui_bp.route("/api/ui/overrides", methods=["POST"])
 def save_override():
     b = request.get_json(force=True, silent=True) or {}
+    for field in ("page", "selector", "kind"):
+        if field in b and not isinstance(b.get(field), str):
+            return jsonify({"error": "%s must be a string" % field}), 422
     page = normalize_page(b.get("page"))
     selector = (b.get("selector") or "").strip()
     kind = b.get("kind")
@@ -88,8 +102,8 @@ def save_override():
     if kind not in KINDS:
         return jsonify({"error": "kind must be one of %s" % sorted(KINDS)}), 422
     value = json.dumps(b.get("value"))
-    fp = json.dumps(b["fingerprint"]) if b.get("fingerprint") else None
-    with _conn() as c:
+    fp = json.dumps(b["fingerprint"]) if "fingerprint" in b else None
+    with _db() as c:
         row = c.execute(
             "SELECT id FROM overrides WHERE page=? AND selector=? AND kind=? AND active=1",
             (page, selector, kind)).fetchone()
@@ -109,7 +123,7 @@ def save_override():
 
 @ui_bp.route("/api/ui/overrides/<int:oid>/revert", methods=["POST"])
 def revert_override(oid):
-    with _conn() as c:
+    with _db() as c:
         n = c.execute(
             "UPDATE overrides SET active=0, updated_at=datetime('now') WHERE id=? AND active=1",
             (oid,)).rowcount
@@ -123,7 +137,7 @@ def reset_overrides():
     b = request.get_json(force=True, silent=True) or {}
     page = normalize_page(b.get("page"))
     selector = (b.get("selector") or "").strip()
-    with _conn() as c:
+    with _db() as c:
         if selector:
             n = c.execute(
                 "UPDATE overrides SET active=0, updated_at=datetime('now')"
@@ -138,7 +152,7 @@ def reset_overrides():
 @ui_bp.route("/api/ui/overrides/history")
 def override_history():
     page = normalize_page(request.args.get("page"))
-    with _conn() as c:
+    with _db() as c:
         rows = c.execute(
             "SELECT * FROM overrides WHERE page=? ORDER BY updated_at DESC, id DESC",
             (page,)).fetchall()
@@ -147,7 +161,7 @@ def override_history():
 
 @ui_bp.route("/api/ui/overrides/summary")
 def override_summary():
-    with _conn() as c:
+    with _db() as c:
         rows = c.execute(
             "SELECT page, COUNT(*) AS n FROM overrides WHERE active=1"
             " GROUP BY page ORDER BY page").fetchall()
@@ -162,7 +176,9 @@ def upload_image():
     ext = os.path.splitext(f.filename)[1].lower()
     if ext not in ALLOWED_EXT:
         return jsonify({"error": "extension %s not allowed" % ext}), 422
-    blob = f.read()
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        return jsonify({"error": "file too large (max %dMB)" % (MAX_UPLOAD_BYTES // 1048576)}), 422
+    blob = f.read(MAX_UPLOAD_BYTES + 1)
     if len(blob) > MAX_UPLOAD_BYTES:
         return jsonify({"error": "file too large (max %dMB)" % (MAX_UPLOAD_BYTES // 1048576)}), 422
     os.makedirs(UPLOAD_DIR, exist_ok=True)

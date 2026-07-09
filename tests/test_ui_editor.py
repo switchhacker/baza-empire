@@ -93,3 +93,28 @@ def test_upload_rejects_bad_extension_and_saves_good(client):
     url = r.get_json()["url"]
     assert url.startswith("/static/uploads/") and url.endswith(".png")
     assert os.path.exists(os.path.join(u.UPLOAD_DIR, os.path.basename(url)))
+
+
+def test_non_string_fields_rejected(client):
+    assert _save(client, kind=["text"]).status_code == 422
+    assert _save(client, selector=["x"]).status_code == 422
+    assert _save(client, page=["x"]).status_code == 422
+
+
+def test_upload_size_cap(client, monkeypatch):
+    monkeypatch.setattr(u, "MAX_UPLOAD_BYTES", 10)
+    big = {"file": (io.BytesIO(b"x" * 11), "pic.png")}
+    r = client.post("/api/ui/upload", data=big, content_type="multipart/form-data")
+    assert r.status_code == 422
+
+
+def test_revert_missing_id_404(client):
+    assert client.post("/api/ui/overrides/9999/revert").status_code == 404
+
+
+def test_explicit_empty_fingerprint_updates(client):
+    _save(client, fingerprint={"tag": "div"})
+    r = _save(client, fingerprint=None)
+    assert r.status_code == 200
+    ovs = client.get("/api/ui/overrides?page=/ahb123").get_json()["overrides"]
+    assert len(ovs) == 1 and ovs[0]["fingerprint"] is None
