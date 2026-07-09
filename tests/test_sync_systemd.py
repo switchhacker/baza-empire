@@ -152,7 +152,11 @@ def test_render_units_fields(sync_mod):
     assert sync_mod.PYTHON_BIN in service_text
     assert f"StandardOutput=append:{abs_log}" in service_text
     assert "StandardError=inherit" in service_text
-    assert "RuntimeMaxSec=2700" in service_text  # 45 * 60
+    # TimeoutStartSec, NOT RuntimeMaxSec: systemd ignores RuntimeMaxSec for
+    # Type=oneshot ("has no effect" warning seen live at the 2026-07-08
+    # cutover), so per-cron timeouts were silently unenforced.
+    assert "TimeoutStartSec=2700" in service_text  # 45 * 60
+    assert "RuntimeMaxSec" not in service_text
     assert f"EnvironmentFile={secrets_env}" in service_text
     assert "OnFailure=baza-cron-alert@%n.service" in service_text
 
