@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="/static/css/help.css">
 <script defer src="/static/help.js"></script>
 {% set _act = nav_active|default('') %}
+{% from '_ahb_tabs.html' import dropdown_links %}
 <style>
   /* Canonical dropdown behavior — collapses submenus until hover/tap. Lives
      here so every page that includes _nav.html inherits the same UX without
@@ -50,24 +51,7 @@
   <div class="nav-dropdown">
     <a class="nav-link {% if _act == 'ahb123' %}active{% endif %}" href="/ahb123">&#127970; AHB123</a>
     <div class="nav-submenu">
-      <a href="/ahb123/dashboard">&#128202; Dashboard</a>
-      <a href="/ahb123/clients">&#128101; Clients</a>
-      <a href="/ahb123/projects">&#127959;&#65039; Projects</a>
-      <a href="/ahb123/invoices">&#128176; InvoiceIT</a>
-      <a href="/ahb123/changeorders">&#128260; Change Orders</a>
-      <a href="/ahb123/estimator">&#129518; EstimatOR</a>
-      <a href="/ahb123/architect">&#128208; ArchiteCT</a>
-      <a href="/ahb123/docprep">&#128194; DocPrep</a>
-      <a href="/ahb123/billing">&#128209; Billing</a>
-      <a href="/ahb123/receipts">&#129534; QuickRF</a>
-      <a href="/ahb123/payroll">&#128181; Payroll</a>
-      <a href="/ahb123/taxdocs">&#129413; Uncle Sam</a>
-      <a href="/ahb123/ipay">&#128179; Debt</a>
-      <a href="/ahb123/schedule">&#128197; Calendar</a>
-      <a href="/ahb123/voice">&#127897;&#65039; Voice</a>
-      <a href="/ahb123/chatdept">&#128172; Chat Dept</a>
-      <a href="/ahb123/photos">&#128248; Photos</a>
-      <a href="/ahb123/reviews">&#11088; Reviews</a>
+      {{ dropdown_links() }}
     </div>
   </div>
   <a class="nav-link {% if _act == 'sticky' %}active{% endif %}" href="/sticky" title="Sticky Pad — scatter your thoughts">&#128204; Sticky</a>

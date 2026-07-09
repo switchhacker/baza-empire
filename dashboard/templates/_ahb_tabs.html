@@ -1,0 +1,35 @@
+{# Single source of truth for AHB123 top-level tabs (spec 2026-07-08 A2).
+   BOTH the _nav.html dropdown and the ahb123.html sub-tab bar render from
+   AHB_TABS. Add/rename/reorder tabs HERE — never in the consumers.
+   Keys must match a tab-<key> pane or TAB_GROUPS group in ahb123.html.
+   Leaf tabs inside groups (Treasury/HeavyEq children) stay in TAB_GROUPS. #}
+{% set AHB_TABS = [
+  ('email',     '📧', 'Email'),
+  ('projects',  '🏗️', 'Projects'),
+  ('receipts',  '🧾', 'QuickRF'),
+  ('dashboard', '📊', 'Dashboard'),
+  ('clients',   '👥', 'Clients'),
+  ('treasury',  '🏦', 'Treasury'),
+  ('heavyeq',   '🚜', 'Heavy Equipment'),
+  ('schedule',  '📅', 'Calendar'),
+  ('noted',     '📌', 'Sticky Pad'),
+  ('voice',     '🎙️', 'Voice'),
+  ('chatdept',  '💬', 'Chat Dept'),
+  ('photos',    '🎥', 'Media'),
+  ('social',    '📣', 'Social'),
+  ('reviews',   '⭐', 'Reviews'),
+  ('leads',     '🎯', 'Leads'),
+  ('web',       '🌐', 'Web'),
+] %}
+
+{% macro dropdown_links() -%}
+  {%- for key, icon, label in AHB_TABS %}
+  <a href="/ahb123?tab={{ key }}">{{ icon }} {{ label }}</a>
+  {%- endfor %}
+{%- endmacro %}
+
+{% macro subtab_bar(active='dashboard') -%}
+  {%- for key, icon, label in AHB_TABS %}
+  <div class="sub-tab{% if key == active %} active{% endif %}" data-tab="{{ key }}" onclick="switchTab('{{ key }}')"><span class="sub-tab-icon">{{ icon }}</span> {{ label }}</div>
+  {%- endfor %}
+{%- endmacro %}

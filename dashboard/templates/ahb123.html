@@ -875,25 +875,12 @@
 <body>
 
 {% set nav_active = 'sticky' if active_tab == 'noted' else 'ahb123' %}
+{% from '_ahb_tabs.html' import subtab_bar %}
 {% include "_nav.html" %}
 
 <!-- Sub Navigation Tabs (super-tabs) -->
 <div class="sub-nav">
-  <div class="sub-tab active" data-tab="dashboard" onclick="switchTab('dashboard')"><span class="sub-tab-icon">📊</span> Dashboard</div>
-  <div class="sub-tab" data-tab="clients" onclick="switchTab('clients')"><span class="sub-tab-icon">👥</span> Clients</div>
-  <div class="sub-tab" data-tab="projects" onclick="switchTab('projects')"><span class="sub-tab-icon">🏗️</span> Projects</div>
-  <div class="sub-tab" data-tab="heavyeq" onclick="switchTab('heavyeq')"><span class="sub-tab-icon">🚜</span> Heavy Equipment</div>
-  <div class="sub-tab" data-tab="treasury" onclick="switchTab('treasury')"><span class="sub-tab-icon">🏦</span> Treasury</div>
-  <div class="sub-tab" data-tab="schedule" onclick="switchTab('schedule')"><span class="sub-tab-icon">📅</span> Calendar</div>
-  <div class="sub-tab" data-tab="noted" onclick="switchTab('noted')"><span class="sub-tab-icon">📌</span> Sticky Pad</div>
-  <div class="sub-tab" data-tab="voice" onclick="switchTab('voice')"><span class="sub-tab-icon">🎙️</span> Voice</div>
-  <div class="sub-tab" data-tab="chatdept" onclick="switchTab('chatdept')"><span class="sub-tab-icon">💬</span> Chat Dept</div>
-  <div class="sub-tab" data-tab="email" onclick="switchTab('email')"><span class="sub-tab-icon">📧</span> Email</div>
-  <div class="sub-tab" data-tab="photos" onclick="switchTab('photos')"><span class="sub-tab-icon">🎥</span> Media</div>
-  <div class="sub-tab" data-tab="social" onclick="switchTab('social')"><span class="sub-tab-icon">📣</span> Social</div>
-  <div class="sub-tab" data-tab="reviews" onclick="switchTab('reviews')"><span class="sub-tab-icon">⭐</span> Reviews</div>
-  <div class="sub-tab" data-tab="leads" onclick="switchTab('leads')"><span class="sub-tab-icon">🎯</span> Leads</div>
-  <div class="sub-tab" data-tab="web" onclick="switchTab('web')"><span class="sub-tab-icon">🌐</span> Web</div>
+  {{ subtab_bar('dashboard') }}
 </div>
 <!-- Contextual leaf-tab row (populated by switchTab when group has children) -->
 <div class="leaf-nav" id="leaf-nav" style="display:none"></div>
