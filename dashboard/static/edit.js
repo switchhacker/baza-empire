@@ -122,6 +122,13 @@ function inChrome(t) {
   return !!(t.closest && t.closest('#baza-edit-panel,#baza-edit-toggle,#baza-edit-hint'));
 }
 function setEditMode(on) {
+  // Exiting edit mode must first flush any live "Edit on page" session: Esc
+  // doesn't blur a contenteditable node, so force the blur while `selected`
+  // is still set — the blur handler then saves the edit normally.
+  if (!on && document.activeElement && document.activeElement.hasAttribute &&
+      document.activeElement.hasAttribute('contenteditable')) {
+    document.activeElement.blur();
+  }
   editMode = !!on;
   try { sessionStorage.setItem('bazaEdit', on ? '1' : '0'); } catch (e) {}
   document.body.classList.toggle('baza-editing', editMode);

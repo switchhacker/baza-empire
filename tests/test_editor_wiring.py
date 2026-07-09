@@ -33,4 +33,4 @@ def test_inspector_capabilities_present():
 
 def test_asset_version_bumped():
     nav = read("dashboard", "templates", "_nav.html")
-    assert "edit.js?v=3" in nav and "edit.css?v=3" in nav
+    assert "edit.js?v=4" in nav and "edit.css?v=4" in nav
