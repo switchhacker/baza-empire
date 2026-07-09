@@ -1,0 +1,26 @@
+/* Baza Visual Editor chrome (spec 2026-07-08 B1). ?v= bumped on every change
+   — the service worker caches statics. */
+#baza-edit-toggle{background:transparent;border:1px solid #2a2a4a;border-radius:8px;color:#888;font-size:14px;padding:4px 9px;cursor:pointer;margin-left:10px;line-height:1}
+#baza-edit-toggle.on{background:#e94560;border-color:#e94560;color:#fff;box-shadow:0 0 12px #e9456088}
+#baza-edit-toggle.floating{position:fixed;bottom:18px;right:18px;z-index:99998;background:#0d0d1e;font-size:18px;padding:8px 12px}
+body.baza-editing .baza-hover{outline:2px dashed #7c3aed !important;outline-offset:1px;cursor:crosshair !important}
+body.baza-editing .baza-selected{outline:2px solid #e94560 !important;outline-offset:1px}
+#baza-edit-hint{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#e94560;color:#fff;font:700 12px 'Segoe UI',system-ui,sans-serif;padding:7px 16px;border-radius:16px;z-index:99998;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none}
+/* Inspector panel (populated in Task 6) */
+#baza-edit-panel{position:fixed;top:64px;right:12px;width:310px;max-height:calc(100vh - 90px);overflow-y:auto;background:#0d0d1e;border:1px solid #2a2a4a;border-radius:12px;z-index:99999;box-shadow:0 12px 40px rgba(0,0,0,.7);font:12px 'Segoe UI',system-ui,sans-serif;color:#ccc}
+#baza-edit-panel .bep-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #1a1a3a;cursor:move;background:#11112a;border-radius:12px 12px 0 0}
+#baza-edit-panel .bep-title{font-weight:800;color:#fff;font-size:12px}
+#baza-edit-panel .bep-x{cursor:pointer;color:#666;font-size:15px;padding:0 4px}
+#baza-edit-panel .bep-x:hover{color:#fff}
+#baza-edit-panel .bep-sec{padding:10px 14px;border-bottom:1px solid #14142a}
+#baza-edit-panel .bep-lbl{font-size:10px;font-weight:800;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#baza-edit-panel .bep-sel{font-family:monospace;font-size:10px;color:#7c8aed;word-break:break-all}
+#baza-edit-panel textarea,#baza-edit-panel input[type=text],#baza-edit-panel input[type=number],#baza-edit-panel select{width:100%;background:#07070f;border:1px solid #1a1a3a;border-radius:6px;color:#ddd;font-size:12px;padding:6px 8px;margin-bottom:6px}
+#baza-edit-panel input[type=color]{width:34px;height:26px;border:1px solid #1a1a3a;border-radius:6px;background:#07070f;padding:1px;cursor:pointer}
+#baza-edit-panel .bep-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+#baza-edit-panel .bep-row label{font-size:11px;color:#888;min-width:70px}
+#baza-edit-panel button.bep-btn{background:#1a1a3e;color:#cfcfe8;border:1px solid #2a2a4a;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer}
+#baza-edit-panel button.bep-btn:hover{background:#24244e}
+#baza-edit-panel button.bep-btn.primary{background:#e94560;border-color:#e94560;color:#fff}
+#baza-edit-panel button.bep-btn.danger{background:#2a0d0d;border-color:#5a1a1a;color:#ff6666}
+#baza-edit-panel .bep-note{font-size:10px;color:#555;margin-top:4px}

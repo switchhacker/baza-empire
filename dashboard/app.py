@@ -16369,6 +16369,15 @@ except ImportError:
     from web_site_routes import web_bp as _ahb_web_bp
 app.register_blueprint(_ahb_web_bp)
 
+# ── Visual Editor (overrides API — spec 2026-07-08 B1) ───────────────────────
+try:
+    from dashboard.ui_editor import ui_bp as _ui_bp, init_db as _ui_init_db
+    _ui_init_db()
+except ImportError:
+    from ui_editor import ui_bp as _ui_bp, init_db as _ui_init_db
+    _ui_init_db()
+app.register_blueprint(_ui_bp)
+
 # ── Scaffold (Live Build Tree) blueprint ─────────────────────────────────────
 try:
     from dashboard.scaffold import scaffold_bp
