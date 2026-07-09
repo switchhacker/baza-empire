@@ -5268,10 +5268,10 @@ function _renderLeafNav(groupId, activeLeaf){
   bar.style.display='flex';
   bar.innerHTML = g.children.map(c=>{
     const m=LEAF_META[c]||{label:c,icon:''};
-    return `<div class="leaf-tab${c===activeLeaf?' active':''}" data-tab="${c}" onclick="switchTab('${c}')"><span class="leaf-tab-icon">${m.icon}</span> ${m.label}</div>`;
+    return `<div class="leaf-tab${c===activeLeaf?' active':''}" data-tab="${c}" onclick="switchTab('${c}','${groupId}')"><span class="leaf-tab-icon">${m.icon}</span> ${m.label}</div>`;
   }).join('');
 }
-function switchTab(tabName){
+function switchTab(tabName, viaGroup){
   // Legacy aliases — InvoiceIT and Billing merged into Projects (2026-06-11).
   // Covers old '?tab=' deep links and stale sessionStorage leaf memory.
   if(tabName==='invoices' || tabName==='billing') tabName='projects';
@@ -5283,7 +5283,7 @@ function switchTab(tabName){
   if(TAB_GROUPS[tabName] && !isLeaf){
     const remembered = sessionStorage.getItem('ahbLeaf:'+tabName);
     const target = (remembered && TAB_GROUPS[tabName].children.includes(remembered)) ? remembered : TAB_GROUPS[tabName].children[0];
-    return switchTab(target);
+    return switchTab(target, tabName);
   }
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.sub-tab').forEach(t=>t.classList.remove('active'));
@@ -5295,7 +5295,9 @@ function switchTab(tabName){
   // group path so their leaf rows still render.
   const parent = _parentGroupOf(tabName);
   const directEl = document.querySelector(`.sub-nav .sub-tab[data-tab="${tabName}"]`);
-  const promoted = !!(directEl && parent && parent !== tabName);
+  // viaGroup: set when reached by group-descent or a leaf-row click — those
+  // keep the classic group highlight + leaf row even for promoted leaves.
+  const promoted = !!(directEl && parent && parent !== tabName && viaGroup !== parent);
   const superEl = promoted ? directEl
         : document.querySelector(`.sub-nav .sub-tab[data-tab="${parent || tabName}"]`);
   if(superEl) superEl.classList.add('active');
