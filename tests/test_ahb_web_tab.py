@@ -71,9 +71,15 @@ def test_http_routes_registered():
 
 
 def test_ahb123_template_has_web_tab():
+    # 2026-07-08 nav single-sourcing refactor (6aa6ff4): the sub-tab bar markup
+    # (data-tab="web" / switchTab('web')) is no longer literal text in
+    # ahb123.html — it's generated at render time by the subtab_bar() macro
+    # in _ahb_tabs.html. So verify intent against that source of truth
+    # instead of grepping the raw template for markup it no longer contains.
+    tabs_tpl = open(os.path.join(REPO_ROOT, "dashboard", "templates", "_ahb_tabs.html")).read()
+    assert "('web'" in tabs_tpl                          # web tab registered in AHB_TABS
     tpl = open(os.path.join(REPO_ROOT, "dashboard", "templates", "ahb123.html")).read()
-    assert 'data-tab="web"' in tpl                       # sub-nav button
+    assert "subtab_bar" in tpl                           # ahb123.html renders the shared bar
     assert 'id="tab-web"' in tpl                         # body-level pane
-    assert "switchTab('web')" in tpl
     assert "loadWebTab" in tpl                           # loader wired in switchTab
     assert "/api/ahb/web/status" in tpl

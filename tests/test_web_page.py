@@ -15,6 +15,7 @@ def test_web_page_wires_the_override_apis():
 
 def test_web_page_lists_dash_pages_with_edit_links():
     web = read("dashboard", "templates", "web.html")
+    assert "path.includes('?')?'&':'?'" in web  # query-aware edit-link builder
     assert "edit=1" in web
     for path in ["/ahb123", "/datahub", "/projects", "/cloud", "/settings"]:
         assert f"'{path}'" in web, f"page list missing {path}"

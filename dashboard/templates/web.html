@@ -155,13 +155,19 @@ async function showHistory(page){
 }
 
 async function revertOne(id){
-  await fetch('/api/ui/overrides/'+id+'/revert', {method:'POST'});
+  try{
+    const r = await fetch('/api/ui/overrides/'+id+'/revert', {method:'POST'});
+    if(!r.ok){ alert('Revert failed ('+r.status+')'); return; }
+  }catch(e){ alert('Revert failed: network error'); return; }
   showHistory(histPage); loadPageCards();
 }
 
 async function resetPage(){
   if(!histPage || !confirm('Revert ALL active overrides on '+histPage+'?')) return;
-  await fetch('/api/ui/overrides/reset', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({page:histPage})});
+  try{
+    const r = await fetch('/api/ui/overrides/reset', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({page:histPage})});
+    if(!r.ok){ alert('Reset failed ('+r.status+')'); return; }
+  }catch(e){ alert('Reset failed: network error'); return; }
   showHistory(histPage); loadPageCards();
 }
 
