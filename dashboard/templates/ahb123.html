@@ -5289,13 +5289,18 @@ function switchTab(tabName){
   document.querySelectorAll('.sub-tab').forEach(t=>t.classList.remove('active'));
   const pane = document.getElementById('tab-'+tabName);
   if(pane) pane.classList.add('active');
-  // Highlight the matching super-tab — direct match for leaves, parent group for nested
+  // Highlight the matching super-tab. A leaf with its OWN top-level sub-tab
+  // (e.g. QuickRF, promoted 2026-07-08) is highlighted directly with no leaf
+  // row; parent!==tabName keeps same-named group/leaf pairs (Projects) on the
+  // group path so their leaf rows still render.
   const parent = _parentGroupOf(tabName);
-  const superKey = parent || tabName;
-  const superEl = document.querySelector(`.sub-nav .sub-tab[data-tab="${superKey}"]`);
+  const directEl = document.querySelector(`.sub-nav .sub-tab[data-tab="${tabName}"]`);
+  const promoted = !!(directEl && parent && parent !== tabName);
+  const superEl = promoted ? directEl
+        : document.querySelector(`.sub-nav .sub-tab[data-tab="${parent || tabName}"]`);
   if(superEl) superEl.classList.add('active');
-  // Render the contextual leaf nav (or hide it for leaf super-tabs)
-  if(parent){
+  // Render the contextual leaf nav (or hide it for promoted/plain leaf tabs)
+  if(parent && !promoted){
     _renderLeafNav(parent, tabName);
     sessionStorage.setItem('ahbLeaf:'+parent, tabName);
   } else {
